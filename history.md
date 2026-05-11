@@ -863,3 +863,24 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 기기에서 `SeatbeltOverlay._with_alpha(rl.WHITE, 0.5)` 호출 확인
 - 결과: `with_alpha= 255 255 255 127`
 - 기기 offroad 상태에서 Mici UI만 재시작, 새 UI PID `52763`
+
+## 2026-05-11 추가: 안전벨트 아이콘 크기 70% 축소
+
+사용자 요청: onroad 안전벨트 미착용 overlay의 중앙 seatbelt 아이콘이 너무 커서, 현재를 100%로 보면 약 70% 크기로 줄임.
+
+수정 파일:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+
+구현 방식:
+
+- `SeatbeltOverlay`의 seatbelt texture target size를 `170x252`에서 `119x176`으로 변경했다.
+- pulse 주기 `0.8s`, 상단 빨간 gradient, 표시 조건은 유지했다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- 모델 확인: `comma mici`
+- 적용 시점 상태: `deviceState.started=False`
+- 기기 `py_compile` 통과
+- Mici UI만 재시작, 새 UI PID `54212`

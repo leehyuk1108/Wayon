@@ -293,7 +293,7 @@ class SeatbeltOverlay:
   PULSE_PERIOD_SECONDS = 0.8
 
   def __init__(self):
-    self._seatbelt_icon = gui_app.texture("icons_mici/onroad/seatbelt.png", 170, 252)
+    self._seatbelt_icon = gui_app.texture("icons_mici/onroad/seatbelt.png", 119, 176)
     self._alpha_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
 
   @staticmethod

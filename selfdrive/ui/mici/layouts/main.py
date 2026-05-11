@@ -1,4 +1,5 @@
 import pyray as rl
+import math
 import cereal.messaging as messaging
 from openpilot.selfdrive.ui.mici.layouts.home import MiciHomeLayout
 from openpilot.selfdrive.ui.mici.layouts.settings.settings import SettingsLayout
@@ -30,6 +31,9 @@ class MiciMainLayout(Scroller):
     self._prev_standstill = False
     self._prev_active_alerts = 0
     self._onroad_time_delay: float | None = None
+    self._trip_distance_m = 0.0
+    self._trip_duration_s = 0.0
+    self._trip_last_sample_time: float | None = None
     self._setup = False
 
     # Initialize widgets
@@ -151,6 +155,41 @@ class MiciMainLayout(Scroller):
     eased = progress * progress * (3.0 - 2.0 * progress)
     return 1.0 - eased
 
+  def _reset_trip_tracking(self):
+    self._trip_distance_m = 0.0
+    self._trip_duration_s = 0.0
+    self._trip_last_sample_time = rl.get_time()
+
+  def _sample_trip_tracking(self, force: bool = False):
+    if self._trip_last_sample_time is None:
+      self._trip_last_sample_time = rl.get_time()
+      return
+
+    now = rl.get_time()
+    dt = max(0.0, min(now - self._trip_last_sample_time, 1.0))
+    self._trip_last_sample_time = now
+    if dt <= 0.0:
+      return
+
+    self._trip_duration_s += dt
+    if not force and ui_state.sm.recv_frame["carState"] < ui_state.started_frame:
+      return
+
+    car_state = ui_state.sm["carState"]
+    v_ego_cluster = float(car_state.vEgoCluster)
+    v_ego = v_ego_cluster if v_ego_cluster != 0.0 else float(car_state.vEgo)
+    if math.isfinite(v_ego):
+      self._trip_distance_m += max(0.0, v_ego) * dt
+
+  def _update_trip_tracking(self):
+    if ui_state.started:
+      self._sample_trip_tracking()
+
+  def _finish_trip_tracking(self):
+    self._sample_trip_tracking(force=True)
+    self._home_layout.set_trip_summary(self._trip_distance_m, self._trip_duration_s)
+    self._trip_last_sample_time = None
+
   def _render(self, _):
     for widget in (self._home_layout, self._settings_layout, self._alerts_layout, self._onroad_layout):
       widget.set_rect(self._rect)
@@ -183,14 +222,18 @@ class MiciMainLayout(Scroller):
     if not self._setup or gui_app.widget_in_stack(self._onboarding_window):
       return
 
+    self._update_trip_tracking()
+
     if ui_state.started != self._prev_onroad:
       self._prev_onroad = ui_state.started
 
       # onroad: after delay, pop nav stack and fade to onroad.
       # offroad: fade back to the offroad surface, but don't pop nav stack (can stay in settings).
       if ui_state.started:
+        self._reset_trip_tracking()
         self._onroad_time_delay = rl.get_time()
       else:
+        self._finish_trip_tracking()
         self._onroad_time_delay = None
         self._sync_offroad_scroll()
         self._start_transition(SURFACE_OFFROAD, fade_from_black=True)

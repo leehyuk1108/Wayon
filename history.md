@@ -543,7 +543,7 @@ ssh comma@comma-db5ce68d.local 'cat /data/params/d/IsOffroad; cat /data/params/d
 
 - 현재 기기의 `common/params_pyx.so`는 새 `OffroadWakeCounter` key를 아직 모르는 상태라, live 적용은 `/dev/shm/params/d/OffroadWakeCounter` raw memory file fallback으로 동작하게 했다.
 - `common/params_keys.h`에도 `OffroadWakeCounter`를 추가했지만, 완전한 빌드/재부팅 환경에서 정식 key로 쓰려면 params extension 재빌드가 필요할 수 있다.
-- `system/manager/process_config.py`에 `PythonProcess("offroad_wake_watcher", "starpilot.system.offroad_wake_watcher", always_run, enabled=not PC)`를 추가했다. 다음 manager 재시작/재부팅부터는 manager가 자동 실행한다.
+- `system/manager/process_config.py`에 `PythonProcess("offroad_wake_watcher", "starpilot.system.offroad_wake_watcher", only_offroad, enabled=not PC)`를 추가했다. 다음 manager 재시작/재부팅부터는 offroad에서만 manager가 자동 실행하고, onroad 진입 시 manager가 종료한다.
 - 이번 live 반영에서는 `systemctl restart comma.service`가 권한 문제(`Interactive authentication required`)로 실패했기 때문에, watcher를 수동 백그라운드 프로세스로 실행했다.
 - 수동 실행 명령은 다음 형태였다.
 
@@ -598,6 +598,84 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 기기 코드 확인: `selfdrive/ui/mici/layouts/main.py`에 `SCREEN_WAKE_FADE_DURATION`, `_screen_wake_fade_alpha()`, `screen_fade_alpha` 반영 확인.
 - Mici UI 재시작 확인: `UI_PID=63342`, 상태 `IsOffroad=1`, `IsOnroad=0`, `IsEngaged=0`
 - offroad wake watcher 유지 확인: `PID=59006`, command `/usr/local/venv/bin/python3 -m starpilot.system.offroad_wake_watcher`
+
+## 2026-05-11 추가: offroad wake watcher 실행 조건 최적화
+
+사용자 요청: 차량 시동이 켜져 onroad로 들어가면 문 열림 감지 watcher가 꺼지고, offroad로 돌아오면 다시 켜지게 변경.
+
+수정 파일:
+
+- `system/manager/process_config.py`
+
+구현 방식:
+
+- `offroad_wake_watcher` manager 조건을 `always_run`에서 `only_offroad`로 변경했다.
+- 이제 manager-supervised 상태에서는 `started == True`인 onroad 동안 watcher 프로세스가 종료되고, `started == False`인 offroad에서 다시 실행된다.
+- 기능 자체는 기존처럼 GM 차량의 offroad 문/핸들 CAN 감지와 `OffroadWakeCounter` 증가 방식을 사용한다.
+
+검증:
+
+- 로컬: `python3 -m py_compile system/manager/process_config.py`
+- 로컬: `git diff --check -- system/manager/process_config.py history.md`
+- 기기(`/data/openpilot`): `/usr/local/venv/bin/python3 -m py_compile system/manager/process_config.py`
+- 기기 조건 확인: `offroad_should_run=True`, `onroad_should_run=False`
+- 기기 manager 재시작 후 `managerState` 확인: `offroad_wake_watcher=True`, `ui=True`, `pandad=True`, `hardwared=True`
+- 기존 수동 실행 watcher는 `pkill -f "offroad_wake_watche[r]"`로 정리했고, 이후 PID `72105`가 manager 자식 프로세스(`PPID=72025`)로 실행되는 것을 확인했다.
+
+## 2026-05-11 추가: 재부팅 후 한국어 폰트 깨짐 수정
+
+문제:
+
+- 재부팅/launch 이후 Mici 화면의 한국어 글자가 다시 깨졌다.
+- 기기 `/data/openpilot/selfdrive/assets/fonts/`에는 `Pretendard-SemiBold.otf`만 남아 있고, raylib가 실제 렌더링에 쓰는 `Pretendard-SemiBold.fnt`, `Pretendard-SemiBold.png` atlas 파일이 없었다.
+- 원인은 `selfdrive/assets/.gitignore`가 `fonts/*.fnt`, `fonts/*.png`를 무시하고 있어 Pretendard atlas 파일이 git 커밋에 포함되지 않은 상태였기 때문이다.
+
+수정 파일:
+
+- `selfdrive/assets/.gitignore`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.fnt`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.png`
+
+구현 방식:
+
+- `selfdrive/assets/.gitignore`에 `!fonts/Pretendard-SemiBold.fnt`, `!fonts/Pretendard-SemiBold.png` 예외를 추가했다.
+- 로컬 git에 두 atlas 파일을 강제로 추가했다.
+- 기기에도 두 파일을 다시 복사했다.
+- Mici UI만 재시작해 새 폰트 atlas를 다시 로드하게 했다.
+
+검증:
+
+- 기기 `LanguageSetting=main_ko` 확인.
+- 기기 `Pretendard-SemiBold.fnt/png/otf` 존재와 checksum 확인.
+- 기기 Python import-resource 경로 확인: `/data/openpilot/openpilot/selfdrive/assets/fonts/Pretendard-SemiBold.fnt`, `.png`, `.otf` 모두 존재.
+- 로컬/기기에서 `Pretendard-SemiBold.fnt`에 `안녕하세요`, `안전한 주행 되세요`, `신호가 초록불로 바뀌었습니다`, `앞차가 출발했습니다` 글리프가 모두 포함되어 있음을 확인했다.
+- UI 재시작 후 `managerState` 기준 `ui=True` 확인.
+
+## 2026-05-11 추가: Mici onroad 안전벨트 미착용 오버레이
+
+사용자 요청: 안전벨트 미착용 시 onroad 화면 상단에 빨간색 그라데이션이 pulse되고, 화면 중앙에 `icons/seatbelt.png` 아이콘이 표시되게 변경.
+
+수정 파일:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+- `selfdrive/assets/icons_mici/onroad/seatbelt.png`
+
+구현 방식:
+
+- 루트 `icons/seatbelt.png`를 Mici UI asset loader가 읽을 수 있도록 `selfdrive/assets/icons_mici/onroad/seatbelt.png`로 복사했다.
+- `SeatbeltOverlay`를 추가해 `ui_state.sm["carState"].seatbeltUnlatched`가 true일 때만 표시한다.
+- 상단에는 빨간색 solid band + vertical gradient를 그리고, alpha를 0.8초 주기로 pulse한다.
+- 화면 중앙에는 seatbelt 아이콘을 표시하고, 가독성을 위해 약한 검은 radial shadow를 같이 그린다.
+- reverse camera / driver camera stream에서는 표시하지 않고, 일반 road/wide onroad view에서만 표시한다.
+
+검증:
+
+- 로컬: `python3 -m py_compile selfdrive/ui/mici/onroad/augmented_road_view.py`
+- 로컬: `git diff --check -- selfdrive/ui/mici/onroad/augmented_road_view.py selfdrive/assets/icons_mici/onroad/seatbelt.png`
+- 로컬 프리뷰: `.codex_tmp/seatbelt_overlay_preview.py`로 Mici road 영역과 같은 비율에서 0.8초 pulse 표시 확인.
+- 기기: `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/mici/onroad/augmented_road_view.py`
+- 기기 코드 확인: `PULSE_PERIOD_SECONDS = 0.8`
+- Mici UI 재시작 확인: `UI_PID=61369`, 적용 시점 `deviceState.started=False`
 
 ## 2026-05-11 추가: BSM 아이콘 pulse 조건 보정
 
@@ -671,3 +749,84 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 주의:
 
 - 초록불/신호 변경 알림은 실제 신호등 전용 센서가 아니라 openpilot E2E 모델 추정 기반이다. 따라서 실제 신호가 바뀌지 않았는데도 울릴 수 있다.
+
+## 2026-05-11 추가: Mici offroad home 주행 종료 요약
+
+사용자 요청: 주행 종료 후 offroad home 화면에 이번 주행 통계를 표시하고, 10분 뒤에는 기존 인사 문구로 되돌아가게 변경.
+
+수정 파일:
+
+- `selfdrive/ui/mici/layouts/home.py`
+- `selfdrive/ui/mici/layouts/main.py`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.fnt`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.png`
+- `.codex_tmp/home_summary_preview.py` (Mac 미리보기 전용, 기기 배포 대상 아님)
+
+구현 방식:
+
+- 실제 Mici/C4 UI 논리 해상도는 `536x240`이다.
+  - 코드 기준: `system/ui/lib/application.py`의 작은 UI 기본값 `536x240`
+  - 기기 확인: `/sys/class/drm/card0-DSI-1/modes = 240x536`, UI는 가로로 `536x240` 사용
+- `selfdrive/ui/mici/layouts/main.py`에서 `ui_state.started` 동안 이번 주행 값을 직접 적산한다.
+  - 거리: `carState.vEgoCluster`가 0이 아니면 우선 사용하고, 없으면 `carState.vEgo`를 사용한다.
+  - 시간: onroad started 상태로 유지된 시간을 누적한다.
+  - frame/tick 지연으로 값이 튀지 않도록 샘플 간격은 최대 `1.0`초로 제한한다.
+- `started True -> False` 전환 시 `MiciHomeLayout.set_trip_summary(distance_m, duration_s)`로 이번 주행 요약을 넘긴다.
+- `selfdrive/ui/mici/layouts/home.py`는 최근 주행 요약이 있으면 10분 동안 통계 화면을 표시한다.
+  - 10분이 지나면 자동으로 기존 `안녕하세요!` / `안전한 주행 되세요` 화면으로 돌아간다.
+- 상단 문구는 사용자 요청대로 `수고하셨습니다`로 변경했다.
+- 중앙은 좌우 2열 구성:
+  - 왼쪽: 실제 주행 거리 / `주행 거리`
+  - 오른쪽: 실제 주행 시간 / `주행 시간`
+- 하단 `주행 완료` 문구와 주행 거리/시간 아래 가로 바는 제거했다.
+- `수고하셨습니다`의 `셨` 글자가 기존 Pretendard atlas에 없어서 `Pretendard-SemiBold.fnt/.png`에 해당 glyph를 추가했다.
+
+검증:
+
+- 로컬: `python3 -m py_compile selfdrive/ui/mici/layouts/home.py selfdrive/ui/mici/layouts/main.py`
+- 로컬: `.venv/bin/python3 -m py_compile .codex_tmp/home_summary_preview.py`
+- 로컬: `수고하셨습니다`, `안녕하세요!`, `안전한 주행 되세요`, `주행 거리`, `주행 시간` glyph 포함 확인.
+- 기기: `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/mici/layouts/home.py selfdrive/ui/mici/layouts/main.py`
+- 기기: 위 한글 문구 glyph 포함 확인.
+- 기기 적용: `deviceState.started=False` 상태에서 파일 복사 후 Mici UI만 재시작, `UI_PID=70810`, `ui_running=True`
+
+## 2026-05-11 추가: 기본 comma 부팅 로고 적용
+
+사용자 요청: 부팅 시 표시되는 개구리 + `StarPilot` 로고를 기본 comma 로고로 변경.
+
+확인한 파일/상태:
+
+- 현재 개구리 로고 원본은 `starpilot/assets/other_images/starpilot_boot_logo.jpg`이다.
+- 기기 실제 부팅 배경은 `/usr/comma/bg.jpg`이고, 기존 상태에서 위 StarPilot 로고와 md5가 동일했다.
+- 기본 comma 로고 파일은 `starpilot/assets/other_images/stock_bg.jpg`이다.
+- 기기 파라미터는 기존 `BootLogo=starpilot`이었다.
+
+구현 방식:
+
+- `starpilot/common/starpilot_functions.py`의 `update_boot_logo(starpilot=True, selected_logo=...)`에서 `selected_logo`가 `stock` 또는 `default`이면 `stock_bg.jpg`를 `/usr/comma/bg.jpg`로 복사하도록 수정했다.
+- 기기 `/data/params/d/BootLogo`는 `stock`으로 설정했다.
+- 단순히 `/usr/comma/bg.jpg`만 덮지 않고 부팅 함수도 고친 이유:
+  - manager 부팅 시 `install_starpilot()`가 다시 `update_boot_logo(starpilot=True, selected_logo=params.get("BootLogo"))`를 호출한다.
+  - 코드 수정 없이 파일만 덮으면 다음 부팅 때 StarPilot 기본 개구리 로고가 다시 적용될 수 있다.
+
+## 2026-05-11 추가: Wayon / 웨이온 GitHub README 브랜딩
+
+사용자 요청: openpilot 기반 커스텀 포크의 프로젝트명을 `Wayon / 웨이온`으로 정하고, GitHub 저장소용 README와 소개 문구를 이 브랜드 방향에 맞게 제작.
+
+수정 파일:
+
+- `README.md`
+
+구현 방식:
+
+- 기존 StarPilot 중심 README를 Wayon 브랜드 README로 교체했다.
+- 상단 제목은 `# Wayon`, tagline은 `Your drive, always on.`으로 구성했다.
+- `Way + On` 의미를 한국어로 설명했다.
+- Wayon을 openpilot 기반 커스텀 주행 보조 포크로 명확히 설명했다.
+- 완전 자율주행을 강조하지 않고, 운전자를 대체하지 않는 현실적인 운전 보조 파트너라는 톤으로 작성했다.
+- 주요 컨셉, 기능 방향, 한국 사용자 고려 사항, 안전 고지, 책임 제한, attribution 섹션을 포함했다.
+- 영어 프로젝트명 `Wayon`과 한국어 표기 `웨이온`을 함께 사용했다.
+
+검증:
+
+- `git diff --check -- README.md history.md`

@@ -149,7 +149,7 @@ else:
 
 procs += [
   PythonProcess("device_syncd", "starpilot.system.device_syncd", always_run),
-  PythonProcess("offroad_wake_watcher", "starpilot.system.offroad_wake_watcher", always_run, enabled=not PC),
+  PythonProcess("offroad_wake_watcher", "starpilot.system.offroad_wake_watcher", only_offroad, enabled=not PC),
   PythonProcess("starpilot_process", "starpilot.starpilot_process", always_run),
   PythonProcess("mapd", "starpilot.navigation.mapd_wrapper", always_run),
   PythonProcess("speed_limit_filler", "starpilot.system.speed_limit_filler", run_speed_limit_filler),

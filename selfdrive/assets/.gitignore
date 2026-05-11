@@ -1,4 +1,6 @@
 *.cc
 fonts/*.fnt
 fonts/*.png
+!fonts/Pretendard-SemiBold.fnt
+!fonts/Pretendard-SemiBold.png
 translations_assets.qrc

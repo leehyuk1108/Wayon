@@ -1,3 +1,4 @@
+import math
 import time
 import numpy as np
 import pyray as rl
@@ -23,7 +24,7 @@ from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets import Widget
-from openpilot.common.filter_simple import BounceFilter
+from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 from enum import IntEnum
@@ -288,6 +289,64 @@ class MinSteerSpeedBanner(Widget):
     self._label.render(text_rect)
 
 
+class SeatbeltOverlay:
+  PULSE_PERIOD_SECONDS = 0.8
+
+  def __init__(self):
+    self._seatbelt_icon = gui_app.texture("icons_mici/onroad/seatbelt.png", 170, 252)
+    self._alpha_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
+
+  @staticmethod
+  def _pulse() -> float:
+    return 0.55 + 0.45 * ((math.sin(2.0 * math.pi * rl.get_time() / SeatbeltOverlay.PULSE_PERIOD_SECONDS) + 1.0) / 2.0)
+
+  @staticmethod
+  def _with_alpha(color: rl.Color, alpha: float) -> rl.Color:
+    return rl.Color(color.r, color.g, color.b, int(color.a * alpha))
+
+  def _is_visible(self) -> bool:
+    if not ui_state.started or ui_state.sm.recv_frame["carState"] < ui_state.started_frame:
+      return False
+    return bool(ui_state.sm["carState"].seatbeltUnlatched)
+
+  def render(self, rect: rl.Rectangle) -> None:
+    alpha = self._alpha_filter.update(1.0 if self._is_visible() else 0.0)
+    if alpha <= 0.01:
+      return
+
+    pulse = self._pulse()
+    red = rl.Color(255, 26, 48, int(170 * alpha * pulse))
+    transparent = rl.Color(red.r, red.g, red.b, 0)
+    gradient_height = min(280, int(rect.height * 0.32))
+    solid_height = max(32, int(gradient_height * 0.24))
+
+    rl.draw_rectangle(int(rect.x), int(rect.y), int(rect.width), solid_height, red)
+    rl.draw_rectangle_gradient_v(
+      int(rect.x),
+      int(rect.y + solid_height),
+      int(rect.width),
+      int(gradient_height - solid_height),
+      red,
+      transparent,
+    )
+
+    center_x = rect.x + rect.width / 2
+    center_y = rect.y + rect.height / 2
+    icon_x = center_x - self._seatbelt_icon.width / 2
+    icon_y = center_y - self._seatbelt_icon.height / 2
+    icon_alpha = alpha * (0.82 + 0.18 * pulse)
+
+    shadow_radius = max(self._seatbelt_icon.width, self._seatbelt_icon.height) * 0.58
+    rl.draw_circle_gradient(
+      int(center_x),
+      int(center_y),
+      shadow_radius,
+      self._with_alpha(rl.Color(0, 0, 0, 135), alpha),
+      rl.BLANK,
+    )
+    rl.draw_texture_ex(self._seatbelt_icon, rl.Vector2(icon_x, icon_y), 0.0, 1.0, self._with_alpha(rl.WHITE, icon_alpha))
+
+
 class StandstillTimerOverlay:
   def __init__(self):
     self._last_started_frame = -1
@@ -422,6 +481,7 @@ class AugmentedRoadView(CameraView):
     self._experimental_mode_banner = ExperimentalModeBanner()
     self._min_steer_speed_banner = MinSteerSpeedBanner()
     self._standstill_timer = StandstillTimerOverlay()
+    self._seatbelt_overlay = SeatbeltOverlay()
     self._offroad_label = UnifiedLabel("start the car to\nuse openpilot", 54, FontWeight.DISPLAY,
                                        text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                        alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
@@ -547,6 +607,8 @@ class AugmentedRoadView(CameraView):
       rendered_standstill_timer = self._standstill_timer.render(self._content_rect, in_reverse)
     if not in_reverse and not is_driver_stream and not rendered_standstill_timer:
       self._min_steer_speed_banner.render(self._content_rect)
+    if not in_reverse and not is_driver_stream:
+      self._seatbelt_overlay.render(self._content_rect)
 
     # End clipping region
     rl.end_scissor_mode()

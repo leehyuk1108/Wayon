@@ -169,7 +169,9 @@ def update_boot_logo(starpilot=False, stock=False, selected_logo=None):
     if selected_logo:
       selected = selected_logo.decode("utf-8", "ignore") if isinstance(selected_logo, (bytes, bytearray)) else str(selected_logo)
       selected = selected.strip()
-      if selected.lower() not in {"", "stock", "default"}:
+      if selected.lower() in {"stock", "default"}:
+        target_logo = Path(BASEDIR) / "starpilot/assets/other_images/stock_bg.jpg"
+      elif selected:
         matched_logo = find_matching_theme_asset_file(THEME_SAVE_PATH / "bootlogos", selected)
         if matched_logo is not None:
           target_logo = matched_logo

@@ -1,76 +1,89 @@
-# StarPilot
+# Wayon
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/firestar5683/StarPilot)
-[![Discord](https://img.shields.io/discord/1137853399715549214?label=Discord)](https://firestar.link/discord)
-[![Last Updated](https://img.shields.io/github/last-commit/firestar5683/StarPilot/StarPilot)](https://github.com/firestar5683/StarPilot)
-[![Wiki](https://img.shields.io/badge/Wiki-StarPilot-blue?logo=wiki)](https://wiki.firestar.link)
+**Your drive, always on.**
 
-**StarPilot** is a custom fork of [comma.ai's openpilot](https://comma.ai/openpilot),
-an open source driver assistance system.
+Wayon, 웨이온은 openpilot 기반의 커스텀 주행 보조 포크입니다.
 
+운전자를 대체하는 완전 자율주행 시스템이 아니라, 운전자가 길 위에서 더 편안하고 안정적으로 주행할 수 있도록 돕는 보조 시스템을 지향합니다. 조용히 켜지고, 필요한 순간 자연스럽게 개입하며, 운전자의 판단과 책임을 중심에 두는 경험을 목표로 합니다.
 
-Openpilot provides
-* Automated Lane Centering
-* Adaptive Cruise Control
-* Lane Change Assist
-* Driver Monitoring *without wheel nags*
+## Way + On
 
-StarPilot adds support for many GM vehicles along with improved tuning,
-especially for radar-less (camera only) vehicles.
+Wayon은 **Way**와 **On**의 조합입니다.
 
-StarPilot is built off of [StarPilot](https://github.com/FrogAi/StarPilot)
-and supports the major features StarPilot offers.
+- **Way**: 길, 도로, 주행 방향
+- **On**: 켜짐, 활성화, 항상 준비됨
 
-StarPilot has a vibrant, welcoming community [discord](https://firestar.link/discord).
-Stop by to chat or ask questions!
+이 이름에는 길 위에서 켜지는 주행 보조 시스템, 운전자 옆에서 조용히 주행을 돕는 동반자, 그리고 운전을 대신하기보다 더 편하고 안정적인 운전을 돕는 도구라는 의미를 담았습니다.
 
-## Documentation
+## Project
 
-Please see [https://wiki.firestar.link](https://wiki.firestar.link) for hardware lists,
-installation guides, and software configuration.
+Wayon은 comma.ai의 [openpilot](https://github.com/commaai/openpilot)을 기반으로 한 오픈소스 커스텀 포크입니다. openpilot이 제공하는 차선 중앙 유지, 어댑티브 크루즈 컨트롤, 운전자 모니터링 등의 주행 보조 기능을 바탕으로, 한국 사용자에게 더 자연스러운 UI와 주행 경험을 제공하는 것을 목표로 합니다.
+
+현재 코드베이스는 openpilot 및 StarPilot 계열 구현을 기반으로 하며, C4/Mici 환경과 한국어 사용성을 고려한 개선 작업을 포함합니다.
+
+## Philosophy
+
+Wayon은 과장된 미래형 자율주행을 말하지 않습니다.
+
+우리가 추구하는 방향은 더 현실적입니다. 운전자가 계속 도로를 보고, 차량을 책임지고, 시스템은 그 옆에서 피로를 줄이고 주행을 더 부드럽게 만드는 역할을 합니다.
+
+- 운전자 중심의 주행 보조
+- 안정적이고 예측 가능한 주행 감각
+- 한국어 환경에 어울리는 자연스러운 UI와 문구
+- openpilot 기반 기능의 신중한 개선
+- 완전 자율주행이 아닌 현실적인 운전 보조
+
+## Key Concepts
+
+### 길 위에서 자연스럽게 켜지는 경험
+
+Wayon은 별도의 과장된 존재감을 드러내기보다, 주행이 시작되는 순간 자연스럽게 활성화되어 운전자를 돕는 경험을 지향합니다.
+
+### 조용하지만 신뢰할 수 있는 동반자
+
+필요한 정보는 분명하게 보여주고, 필요 이상의 시각적 소음은 줄입니다. 운전자가 시스템을 믿고 사용할 수 있도록 차분하고 정돈된 인터페이스를 목표로 합니다.
+
+### 한국 사용자를 고려한 커스텀 포크
+
+한글 표시, 알림 문구, C4/Mici UI, 주행 중 정보 표현처럼 실제 사용자가 매일 마주하는 부분을 중요하게 다룹니다.
 
 ## Features
 
-* Full support for Comma C3, C3X, and C4
-  * C4 is currently in release testing. Join our fleet of C4 testers!
-* Model switcher with all of comma's tinygrad driving models
-* Special longitudinal planner tuning for VoACC (visual only, radar-less) vehicles
-* Galaxy: StarPilot's portal to configure your comma device using your phone from anywhere.
-Download models, change settings, update software, visualize live model outputs for tuning.
-* Always On Lateral (full time steering assist)*
-* Speed Limit Controller*
-* Learning Curve Speed Controller*
-* Conditional Experimental Mode (CEM)*
-* Driving Profiles*
-* Custom themes*
-* Alert Volume Controller*
-* Comma Pedal Interceptor support*
-* Toyota SDSU support*
-* ZSS support*
-* High quality dashcam recordings*
-* Enhanced tuning for CEM (dynamic experimental mode switching)
+Wayon은 openpilot 기반 기능을 바탕으로 다음과 같은 방향의 개선을 포함합니다.
 
-\* [Inherited from StarPilot](https://github.com/FrogAi/StarPilot#openpilot-vs-starpilot)
+- openpilot 기반 주행 보조 기능
+- C4/Mici 환경을 고려한 UI 개선
+- 한국어 알림 및 문구 개선
+- 주행 화면과 오프로드 화면의 시각적 정돈
+- GM 차량 및 일부 커스텀 주행 환경을 위한 보정
+- 사용자 설정과 기기 상태 확인을 위한 웹 기반 설정 기능
+- 현실적인 주행 보조 경험을 위한 세부 튜닝
 
-## GM-only Features
+구체적인 지원 차량과 기능은 개발 상태에 따라 달라질 수 있습니다. 실제 차량 적용 전에는 반드시 현재 브랜치의 변경 내역과 차량별 지원 상태를 확인해야 합니다.
 
-* Increased LKAS fault resiliency
-* ASCM_INT and SASCM support
-* Custom lateral torque controller, with special tuning for Bolts
-* 50% extra torque on 2017 Chevy Bolt
-* Improved lateral and longitudinal tuning
-* Dashboard cruise control display speed spoofing for vehicles with pedal interceptor
-* Extra steering wheel button functionality for vehicles with pedal interceptor
-* Optional toggle to boot comma when remote starting your vehicle
+## Safety
 
-## Developer Features
+Wayon은 운전 보조 시스템입니다.
 
-* Native and cross compilation for Windows, Mac, and Ubuntu
-* Custom AGNOS to support C3, C3X, and C4
-* To run UI on PC:
-  * `./c3` for large UI
-  * `./c4` for small UI
-* `./build` to produce cross compiled binaries for comma devices.
-Uses your comma's sysroot/toolchain
-* Toggle: "Use Precompiled Binaries" to allow switching between fast boot / editable builds
-* Custom long maneuver tests, specifically designed for regen-only vehicles
+이 프로젝트는 운전자의 주의 의무를 대체하지 않으며, 차량을 완전히 자율적으로 운행하도록 설계된 시스템도 아닙니다. 운전자는 항상 도로와 주변 상황을 확인하고, 즉시 차량을 제어할 준비가 되어 있어야 합니다.
+
+사용자는 본 소프트웨어의 설치, 수정, 사용으로 인해 발생할 수 있는 모든 위험과 책임을 이해한 상태에서 사용해야 합니다. 공도에서 사용하기 전에는 차량 호환성, 하드웨어 상태, 지역 법규, 안전 요구사항을 직접 확인해야 합니다.
+
+## Disclaimer
+
+Wayon은 openpilot 기반의 커스텀 오픈소스 프로젝트입니다. 이 저장소의 코드는 연구, 개발, 개인 실험 및 커스텀 사용을 목적으로 제공됩니다.
+
+프로젝트 제공자는 특정 차량, 특정 하드웨어, 특정 주행 상황에서의 동작을 보증하지 않습니다. 소프트웨어 사용으로 인해 발생하는 사고, 손상, 법적 문제, 데이터 손실, 차량 이상에 대한 책임은 사용자에게 있습니다.
+
+## Attribution
+
+Wayon은 comma.ai의 openpilot과 관련 오픈소스 생태계 위에서 만들어졌습니다. 이 프로젝트는 원본 프로젝트와 커뮤니티의 기여를 존중하며, 관련 라이선스와 고지를 따릅니다.
+
+- openpilot: <https://github.com/commaai/openpilot>
+- comma.ai: <https://comma.ai>
+
+## Taglines
+
+- **Wayon. Your drive, always on.**
+- **웨이온. 길 위에서 켜지는 새로운 주행 보조 경험.**
+- **운전을 대신하지 않고, 운전을 더 편안하게 돕습니다.**

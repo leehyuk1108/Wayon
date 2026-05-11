@@ -214,6 +214,7 @@ class Device:
     self._override_interactive_timeout: int | None = None
     self._interactive_timeout_callbacks: list[Callable] = []
     self._prev_timed_out = False
+    self._sleep_delay_until: float | None = None
     self._awake: bool = True
     self._last_offroad_wake_counter = 0
 
@@ -226,10 +227,17 @@ class Device:
   def awake(self) -> bool:
     return self._awake
 
+  @property
+  def timed_out(self) -> bool:
+    return time.monotonic() > self._interaction_time
+
   def set_override_interactive_timeout(self, timeout: int | None) -> None:
     # Override the interactive timeout duration temporarily
     self._override_interactive_timeout = timeout
     self._reset_interactive_timeout()
+
+  def delay_sleep_for(self, duration: float) -> None:
+    self._sleep_delay_until = max(self._sleep_delay_until or 0.0, time.monotonic() + duration)
 
   @property
   def interactive_timeout(self) -> int:
@@ -318,13 +326,17 @@ class Device:
       self._reset_interactive_timeout()
     self._last_offroad_wake_counter = offroad_wake_counter
 
-    interaction_timeout = time.monotonic() > self._interaction_time
+    interaction_timeout = self.timed_out
     if interaction_timeout and not self._prev_timed_out:
       for callback in self._interactive_timeout_callbacks:
         callback()
     self._prev_timed_out = interaction_timeout
 
-    self._set_awake(ui_state.started or not interaction_timeout or PC)
+    if not interaction_timeout:
+      self._sleep_delay_until = None
+
+    keep_awake_for_fade = self._sleep_delay_until is not None and time.monotonic() < self._sleep_delay_until
+    self._set_awake(ui_state.started or not interaction_timeout or keep_awake_for_fade or PC)
 
   def _set_awake(self, on: bool):
     if on != self._awake:

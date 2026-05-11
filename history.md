@@ -1025,3 +1025,38 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 기기 `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/layouts/settings/starpilot/system_settings.py`
 - 기기 `/usr/local/venv/bin/python3 -m py_compile /data/safe_staging/merged/selfdrive/ui/ui_state.py /data/safe_staging/merged/selfdrive/ui/layouts/settings/starpilot/system_settings.py`
 - `/data/openpilot/selfdrive/ui/ui_state.py`와 `/data/safe_staging/merged/selfdrive/ui/ui_state.py` MD5 일치 확인
+
+## 2026-05-11 추가: Mici 화면 꺼짐 fade-out 적용
+
+사용자 요청:
+
+- 화면이 켜질 때 fade-in되는 것처럼, offroad 자동 화면 꺼짐 때도 fade-out으로 부드럽게 꺼지게 변경.
+
+수정 파일:
+
+- `selfdrive/ui/ui_state.py`
+- `selfdrive/ui/mici/layouts/main.py`
+
+구현 방식:
+
+- `Device.delay_sleep_for(duration)`을 추가해, timeout 직후 display power를 즉시 끄지 않고 지정 시간 동안 렌더링을 유지할 수 있게 했다.
+- `Device.timed_out` property를 추가해 Mici 레이아웃이 현재 timeout 상태인지 확인할 수 있게 했다.
+- offroad timeout callback에서 `SCREEN_SLEEP_FADE_DURATION = 0.85`초 동안 sleep을 지연시키고, Mici main renderer가 검은 overlay를 `0 -> 100%`로 올려 fade-out을 그리도록 했다.
+- 기존 화면 켜짐 fade-in(`SCREEN_WAKE_FADE_DURATION = 0.85`)은 유지하고, fade-in 시작 시 진행 중인 fade-out 상태를 정리한다.
+- timeout 도중 터치/시동 등으로 interaction timer가 리셋되면 `device.timed_out`이 false가 되어 fade-out이 취소된다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- 모델 확인: `comma mici`
+- 적용 시점 상태: `deviceState.started=False`
+- `ScreenTimeout=300`, `ScreenTimeoutOnroad=30` 유지 확인.
+- `/data/openpilot`과 `/data/safe_staging/merged`의 `ui_state.py`, `mici/layouts/main.py`를 모두 갱신했다.
+- Mici UI만 재시작, 새 UI PID `75201`
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py`
+- 기기 `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py`
+- 기기 `/usr/local/venv/bin/python3 -m py_compile /data/safe_staging/merged/selfdrive/ui/ui_state.py /data/safe_staging/merged/selfdrive/ui/mici/layouts/main.py`
+- `/data/openpilot`과 `/data/safe_staging/merged`의 파일 MD5 일치 확인

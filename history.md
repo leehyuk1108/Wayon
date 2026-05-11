@@ -1144,3 +1144,42 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 테스트 중 UI PID `81209` 유지.
 - 최신 crash log는 기존 `22:59:12`에서 갱신되지 않음.
 - 테스트 후 `ScreenTimeout=300`으로 복구하고 wake counter를 다시 올려 화면을 깨웠다.
+
+## 2026-05-11 추가: Mici sleep fade를 Device 레벨에서 강제 시작
+
+사용자 보고:
+
+- 여전히 화면이 뚝 꺼지는 것처럼 보임.
+- `ScreenTimeout=5`로 바꿨는데도 5초보다 오래 켜져 있는 것처럼 보임.
+
+확인한 점:
+
+- 기기 상태는 `started=False`, `ignition=False`, `pandaType=cuatro`였다.
+- 따라서 `ScreenTimeoutOnroad=30`을 쓰는 상태는 아니었고, offroad timeout인 `ScreenTimeout=5`를 봐야 하는 상태였다.
+- 기존 fade 시작은 Mici main layout의 timeout callback에 의존했다. 특정 nav/화면 상태에서는 callback 기반 overlay fade가 체감되지 않을 수 있으므로, 실제 sleep 지연을 `Device` 레벨에서 먼저 시작하도록 보강했다.
+
+수정 파일:
+
+- `selfdrive/ui/ui_state.py`
+
+구현 방식:
+
+- `SCREEN_SLEEP_FADE_DURATION = 1.2`를 `ui_state.py`에도 추가했다.
+- `Device.update()` 순서를 `_update_wakefulness()` 후 `_update_brightness()`로 바꿨다.
+- timeout이 처음 감지되는 순간 `Device._update_wakefulness()`에서 `self.delay_sleep_for(SCREEN_SLEEP_FADE_DURATION)`를 먼저 호출한다.
+- 이렇게 하면 Mici layout callback이 늦거나 화면 상태가 달라도, `Device`의 backlight fade/delay가 먼저 작동한다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- `/data/openpilot`과 `/data/safe_staging/merged`, `openpilot/...` runtime 경로까지 `ui_state.py`, `mici/layouts/main.py`를 다시 동기화했다.
+- 관련 `__pycache__` 삭제 후 Mici UI만 재시작했다.
+- 테스트를 위해 `ScreenTimeout=5`로 유지했다.
+- Mici UI 새 PID `83031`
+- display power와 screen brightness를 강제로 켰다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py`
+- 기기 네 runtime 경로 `py_compile`
+- 기기에서 `ScreenTimeout=5` 확인

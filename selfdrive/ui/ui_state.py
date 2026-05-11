@@ -13,6 +13,7 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.hardware import HARDWARE, PC
 
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
+SCREEN_SLEEP_FADE_DURATION = 1.2
 
 
 class UIStatus(Enum):
@@ -283,8 +284,8 @@ class Device:
     if self._interaction_time <= 0:
       self._reset_interactive_timeout()
 
-    self._update_brightness()
     self._update_wakefulness()
+    self._update_brightness()
 
   def set_offroad_brightness(self, brightness: int | None):
     if brightness is None:
@@ -334,6 +335,7 @@ class Device:
 
     interaction_timeout = self.timed_out
     if interaction_timeout and not self._prev_timed_out:
+      self.delay_sleep_for(SCREEN_SLEEP_FADE_DURATION)
       for callback in self._interactive_timeout_callbacks:
         callback()
     self._prev_timed_out = interaction_timeout

@@ -1280,7 +1280,7 @@ char id=49483 x=7569  y=1702  width=137   height=148   xoffset=3     yoffset=25 
 char id=49496 x=7718  y=1702  width=129   height=146   xoffset=4     yoffset=25    xadvance=144   page=0  chnl=15
 char id=49548 x=7859  y=1702  width=137   height=122   xoffset=4     yoffset=34    xadvance=144   page=0  chnl=15
 char id=49549 x=8008  y=1702  width=136   height=146   xoffset=4     yoffset=28    xadvance=144   page=0  chnl=15
-char id=49512 x=6420  y=2550  width=138   height=147   xoffset=4     yoffset=25    xadvance=144   page=0  chnl=15
+char id=49512 x=6     y=2762  width=143   height=147   xoffset=0     yoffset=25    xadvance=144   page=0  chnl=15
 char id=49688 x=6     y=1914  width=136   height=144   xoffset=4     yoffset=30    xadvance=144   page=0  chnl=15
 char id=49692 x=154   y=1914  width=136   height=142   xoffset=4     yoffset=29    xadvance=144   page=0  chnl=15
 char id=49704 x=302   y=1914  width=136   height=145   xoffset=4     yoffset=27    xadvance=144   page=0  chnl=15

@@ -50,10 +50,14 @@ class MiciHomeLayout(Widget):
     return time.monotonic() < self._trip_summary_expires_at
 
   def _distance_text(self) -> str:
-    return f"{self._trip_summary_distance_m / 1000.0:.1f} km"
+    return f"{self._trip_summary_distance_m / 1000.0:.1f}km"
 
   def _duration_text(self) -> str:
     minutes = max(1, int(round(self._trip_summary_duration_s / 60.0)))
+    if minutes >= 60:
+      hours = minutes // 60
+      remaining_minutes = minutes % 60
+      return f"{hours}시간 {remaining_minutes}분"
     return f"{minutes}분"
 
   def _handle_mouse_release(self, mouse_pos: MousePos):

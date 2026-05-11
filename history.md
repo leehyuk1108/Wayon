@@ -906,3 +906,41 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 모델 확인: `comma mici`
 - 적용 시점 상태: `deviceState.started=False`
 - 기기 offroad 상태에서 Mici UI만 재시작, 새 UI PID `55093`
+
+## 2026-05-11 추가: 주행 종료 통계 표기와 `셨` 글리프 보정
+
+사용자 요청:
+
+- 주행 종료 통계 화면의 `수고하셨습니다`에서 `셨` 글자가 깨져 보임.
+- 주행 시간이 60분 이상이면 `3시간 0분`처럼 시간/분으로 표시.
+- 주행 거리 값은 `40.0 km`가 아니라 `40.0km`처럼 숫자와 단위 사이 공백 제거.
+
+수정 파일:
+
+- `selfdrive/ui/mici/layouts/home.py`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.fnt`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.png`
+
+구현 방식:
+
+- `MiciHomeLayout._distance_text()`를 `"{km:.1f}km"` 형식으로 변경했다.
+- `MiciHomeLayout._duration_text()`에서 총 분이 60분 이상이면 `hours = minutes // 60`, `remaining_minutes = minutes % 60`로 나눠 `N시간 M분` 형식으로 표시한다.
+- Pretendard atlas에서 `셨`(`char id=49512`)의 기존 좌표가 일부 문장부호 영역과 겹치는 것을 확인했다.
+- `Pretendard-SemiBold.otf` 원본에서 `셨` 글리프만 다시 렌더링해 atlas의 빈 영역 `x=6, y=2762`에 배치하고 `.fnt` 좌표를 해당 위치로 갱신했다.
+- 기존 한글 font weight 경로(`FontWeight.KOREAN = Pretendard-SemiBold.fnt`)는 유지했다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- 모델 확인: `comma mici`
+- 적용 시점 상태: `deviceState.started=False`
+- 기기 폰트 파일과 `home.py` MD5가 로컬과 일치함을 확인했다.
+- 주행 요약 프리뷰용 임시 `home.py`를 한 번만 올려 `40000m, 10800s` 데모 값을 표시한 뒤, 디스크에는 정식 `home.py`를 다시 복원했다.
+- 현재 실행 중인 UI 프로세스는 임시 프리뷰 데이터를 이미 소비했고, `/tmp/wayon_trip_summary_preview` 마커는 삭제된 상태다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/mici/layouts/home.py`
+- 로컬 font atlas 겹침 검사: `char id=49512`가 다른 glyph rectangle과 겹치지 않음
+- 기기 `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/mici/layouts/home.py`
+- 기기 UI PID 확인: `64184 selfdrive.ui.ui`

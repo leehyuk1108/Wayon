@@ -1060,3 +1060,48 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 기기 `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py`
 - 기기 `/usr/local/venv/bin/python3 -m py_compile /data/safe_staging/merged/selfdrive/ui/ui_state.py /data/safe_staging/merged/selfdrive/ui/mici/layouts/main.py`
 - `/data/openpilot`과 `/data/safe_staging/merged`의 파일 MD5 일치 확인
+
+## 2026-05-11 추가: Mici fade-out 후 UI 크래시 루프 안정화
+
+사용자 보고:
+
+- 화면이 꺼진 뒤 comma 로고가 반복 표시되며 혼자 재부팅하는 것처럼 보임.
+
+확인한 원인:
+
+- 실제 OS 재부팅은 아니었다. `uptime` 기준 기기는 계속 켜져 있었고, `ui` 프로세스가 반복 크래시/재시작하면서 comma 로고가 반복 표시됐다.
+- `/data/error_logs/*.log`에 아래 traceback이 반복 기록됨:
+  - `selfdrive/ui/mici/layouts/main.py`
+  - `_on_interactive_timeout()`
+  - `device.delay_sleep_for(SCREEN_SLEEP_FADE_DURATION)`
+  - `AttributeError: 'Device' object has no attribute 'delay_sleep_for'`
+- 기기 runtime import 경로가 `/data/openpilot/openpilot/...`와 `/data/openpilot/...` 양쪽을 사용하므로, fade-out 보조 메서드가 없는 stale `Device` 객체가 잡히는 순간 UI가 죽을 수 있었다.
+
+수정 파일:
+
+- `selfdrive/ui/mici/layouts/main.py`
+
+구현 방식:
+
+- `device.delay_sleep_for` 호출을 `getattr(device, "delay_sleep_for", None)`로 방어했다.
+- `device.timed_out` 접근도 `getattr(device, "timed_out", True)`로 방어했다.
+- 새 `Device` API가 있으면 기존처럼 sleep delay + fade-out을 사용하고, 없으면 기존 방식처럼 즉시 꺼지는 쪽으로 빠져 UI 크래시를 막는다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- `/data/openpilot/selfdrive/ui/mici/layouts/main.py`
+- `/data/openpilot/openpilot/selfdrive/ui/mici/layouts/main.py`
+- `/data/safe_staging/merged/selfdrive/ui/mici/layouts/main.py`
+- `/data/safe_staging/merged/openpilot/selfdrive/ui/mici/layouts/main.py`
+- 위 네 경로를 모두 같은 파일로 맞췄다.
+- 관련 `__pycache__`를 삭제한 뒤 Mici UI만 재시작했다.
+- display power와 screen brightness를 강제로 한 번 켰다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/mici/layouts/main.py selfdrive/ui/ui_state.py`
+- 기기 네 경로 `py_compile`
+- Mici UI 새 PID `79419`
+- 60초 이상 모니터링 중 PID가 유지됨.
+- 최신 error log 이후 새 로그가 생성되지 않음.

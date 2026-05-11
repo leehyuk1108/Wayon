@@ -162,7 +162,7 @@ class MiciMainLayout(Scroller):
     if self._screen_sleep_fade_start_time is None:
       return 0.0
 
-    if not device.timed_out:
+    if not getattr(device, "timed_out", True):
       self._screen_sleep_fade_start_time = None
       return 0.0
 
@@ -279,7 +279,9 @@ class MiciMainLayout(Scroller):
       if not ui_state.sm["carState"].standstill:
         gui_app.pop_widgets_to(self, lambda: self._start_transition(SURFACE_ONROAD))
     else:
-      device.delay_sleep_for(SCREEN_SLEEP_FADE_DURATION)
+      delay_sleep_for = getattr(device, "delay_sleep_for", None)
+      if delay_sleep_for is not None:
+        delay_sleep_for(SCREEN_SLEEP_FADE_DURATION)
       self._screen_sleep_fade_start_time = rl.get_time()
       self._screen_wake_fade_pending = True
       gui_app.pop_widgets_to(self, instant=True)

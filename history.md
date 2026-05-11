@@ -979,3 +979,49 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 기기 `/usr/local/venv/bin/python3 -m py_compile /data/openpilot/selfdrive/ui/mici/layouts/home.py`
 - 기기 `/usr/local/venv/bin/python3 -m py_compile /data/safe_staging/merged/selfdrive/ui/mici/layouts/home.py`
 - 기기 UI PID 확인: `66004 selfdrive.ui.ui`
+
+## 2026-05-11 추가: Mici offroad 화면 자동 꺼짐 5분 적용
+
+사용자 요청:
+
+- offroad 자동 화면 꺼짐 시간을 10분으로 바꾸려다가, 최종적으로 5분으로 변경 요청.
+
+확인한 문제:
+
+- `ScreenTimeout` param은 이미 초 단위 정수로 존재하며 기본값은 `30`초였다.
+- Qt UI 경로는 `selfdrive/ui/ui.cc`에서 `ScreenTimeout`/`ScreenTimeoutOnroad`를 읽지만, 현재 C4/Mici Python UI 경로는 `selfdrive/ui/ui_state.py`의 `Device.interactive_timeout`에서 offroad timeout을 `30`초로 하드코딩하고 있었다.
+- 따라서 param만 `300`으로 바꾸면 Galaxy/설정 값은 바뀌어도 Mici 실제 화면 꺼짐에는 반영되지 않을 수 있었다.
+
+수정 파일:
+
+- `selfdrive/ui/ui_state.py`
+- `selfdrive/ui/layouts/settings/starpilot/system_settings.py`
+- `starpilot/system/the_pond/assets/components/tools/device_settings_layout.json`
+- `starpilot/ui/qt/offroad/device_settings.cc`
+
+구현 방식:
+
+- Mici `Device.interactive_timeout`이 `ui_state.params.get_int("ScreenTimeout")` 또는 onroad 시 `ScreenTimeoutOnroad`를 읽도록 변경했다.
+- 값이 0 이하일 때만 기존 fallback을 사용한다.
+- offroad screen timeout 설정 UI의 최대값을 `60`초에서 `300`초로 늘렸다.
+- Galaxy/The Pond device settings layout에서도 `ScreenTimeout` 최대값을 `300`초로 늘렸다.
+- Qt device settings의 offroad `ScreenTimeout` 최대값도 `300`초로 맞추고, onroad `ScreenTimeoutOnroad`는 기존 `60`초를 유지했다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- 모델 확인: `comma mici`
+- 적용 시점 상태: `deviceState.started=False`
+- 기기 param:
+  - `ScreenTimeout=300`
+  - `ScreenTimeoutOnroad=30`
+  - `ScreenManagement=True`
+- `/data/openpilot`과 `/data/safe_staging/merged`의 Mici UI 파일을 모두 갱신했다.
+- Mici UI만 재시작, 새 UI PID `74483`
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/layouts/settings/starpilot/system_settings.py`
+- 기기 `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/layouts/settings/starpilot/system_settings.py`
+- 기기 `/usr/local/venv/bin/python3 -m py_compile /data/safe_staging/merged/selfdrive/ui/ui_state.py /data/safe_staging/merged/selfdrive/ui/layouts/settings/starpilot/system_settings.py`
+- `/data/openpilot/selfdrive/ui/ui_state.py`와 `/data/safe_staging/merged/selfdrive/ui/ui_state.py` MD5 일치 확인

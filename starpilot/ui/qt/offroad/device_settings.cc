@@ -101,7 +101,10 @@ StarPilotDevicePanel::StarPilotDevicePanel(StarPilotSettingsWindow *parent, bool
       });
       recorderToggle->setVisibleButton(1, false);
       deviceToggle = recorderToggle;
-    } else if (param == "ScreenTimeout" || param == "ScreenTimeoutOnroad") {
+    } else if (param == "ScreenTimeout") {
+      deviceToggle = new StarPilotParamValueControl(param, title, desc, icon, 5, 300, tr(" seconds"), {}, 5);
+
+    } else if (param == "ScreenTimeoutOnroad") {
       deviceToggle = new StarPilotParamValueControl(param, title, desc, icon, 5, 60, tr(" seconds"), {}, 5);
 
     } else {

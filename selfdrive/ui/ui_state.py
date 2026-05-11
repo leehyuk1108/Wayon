@@ -236,8 +236,10 @@ class Device:
     if self._override_interactive_timeout is not None:
       return self._override_interactive_timeout
 
-    ignition_timeout = 10 if gui_app.big_ui() else 5
-    return ignition_timeout if ui_state.ignition else 30
+    fallback = (10 if gui_app.big_ui() else 5) if ui_state.ignition else 30
+    param = "ScreenTimeoutOnroad" if ui_state.ignition else "ScreenTimeout"
+    timeout = ui_state.params.get_int(param)
+    return timeout if timeout > 0 else fallback
 
   def _reset_interactive_timeout(self) -> None:
     self._interaction_time = time.monotonic() + self.interactive_timeout

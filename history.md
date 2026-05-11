@@ -830,3 +830,36 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 검증:
 
 - `git diff --check -- README.md history.md`
+
+## 2026-05-11 추가: onroad 진입 시 UI 크래시 루프 수정
+
+사용자 보고: offroad 상태에서 시동을 걸어 onroad로 진입하면 화면이 꺼지는 듯하다가 comma 로고가 반복 표시되고, 시동을 끌 때까지 무한 재시작처럼 보임.
+
+확인한 원인:
+
+- 기기 IP: `10.52.51.173`
+- 기기 모델: `comma mici`
+- 최근 로그: `/data/error_logs/2026-05-11--20-06-22.log`
+- traceback:
+  - `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `SeatbeltOverlay.render()`
+  - `_with_alpha(rl.WHITE, icon_alpha)`
+  - `AttributeError: 'tuple' object has no attribute 'r'`
+- `rl.WHITE`가 이 런타임에서는 `rl.Color` 객체가 아니라 tuple로 전달되어, 기존 `_with_alpha()`가 `color.r/color.g/color.b/color.a` 접근 중 크래시했다.
+- 안전벨트 미착용 상태에서 onroad 진입하면 Seatbelt overlay가 표시되며 이 경로가 실행되어 UI가 반복 크래시했다. 사용자가 본 comma 로고 반복은 실제 전체 시스템 재부팅이라기보다 UI 크래시/재시작 루프에 가까웠다.
+
+수정 파일:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+
+구현 방식:
+
+- `SeatbeltOverlay._with_alpha()`가 `rl.Color` 객체와 `(r, g, b, a)` tuple/list를 모두 처리하도록 수정했다.
+- alpha는 `0.0~1.0` 범위로 clamp한다.
+
+검증:
+
+- 로컬/기기 `py_compile`
+- 기기에서 `SeatbeltOverlay._with_alpha(rl.WHITE, 0.5)` 호출 확인
+- 결과: `with_alpha= 255 255 255 127`
+- 기기 offroad 상태에서 Mici UI만 재시작, 새 UI PID `52763`

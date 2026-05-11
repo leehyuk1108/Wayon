@@ -302,7 +302,13 @@ class SeatbeltOverlay:
 
   @staticmethod
   def _with_alpha(color: rl.Color, alpha: float) -> rl.Color:
-    return rl.Color(color.r, color.g, color.b, int(color.a * alpha))
+    alpha = max(0.0, min(float(alpha), 1.0))
+    if hasattr(color, "r"):
+      return rl.Color(color.r, color.g, color.b, int(color.a * alpha))
+
+    r, g, b = color[:3]
+    a = color[3] if len(color) > 3 else 255
+    return rl.Color(r, g, b, int(a * alpha))
 
   def _is_visible(self) -> bool:
     if not ui_state.started or ui_state.sm.recv_frame["carState"] < ui_state.started_frame:

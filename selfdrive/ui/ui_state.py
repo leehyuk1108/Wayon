@@ -215,6 +215,7 @@ class Device:
     self._interactive_timeout_callbacks: list[Callable] = []
     self._prev_timed_out = False
     self._sleep_delay_until: float | None = None
+    self._sleep_fade_duration = 0.0
     self._awake: bool = True
     self._last_offroad_wake_counter = 0
 
@@ -238,6 +239,7 @@ class Device:
 
   def delay_sleep_for(self, duration: float) -> None:
     self._sleep_delay_until = max(self._sleep_delay_until or 0.0, time.monotonic() + duration)
+    self._sleep_fade_duration = max(self._sleep_fade_duration, duration)
 
   @property
   def interactive_timeout(self) -> int:
@@ -304,6 +306,10 @@ class Device:
       clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [30, 100]))
 
     brightness = round(self._brightness_filter.update(clipped_brightness))
+    if self._sleep_delay_until is not None and self.timed_out and self._sleep_fade_duration > 0.0:
+      remaining = max(0.0, self._sleep_delay_until - time.monotonic())
+      brightness = round(brightness * min(1.0, remaining / self._sleep_fade_duration))
+
     if not self._awake:
       brightness = 0
 
@@ -334,6 +340,7 @@ class Device:
 
     if not interaction_timeout:
       self._sleep_delay_until = None
+      self._sleep_fade_duration = 0.0
 
     keep_awake_for_fade = self._sleep_delay_until is not None and time.monotonic() < self._sleep_delay_until
     self._set_awake(ui_state.started or not interaction_timeout or keep_awake_for_fade or PC)

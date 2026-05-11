@@ -1105,3 +1105,42 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - Mici UI 새 PID `79419`
 - 60초 이상 모니터링 중 PID가 유지됨.
 - 최신 error log 이후 새 로그가 생성되지 않음.
+
+## 2026-05-11 추가: Mici 화면 꺼짐 fade-out 체감 보강
+
+사용자 보고:
+
+- fade-out을 적용했는데 화면이 꺼질 때 여전히 뚝 꺼지는 것처럼 보임.
+
+확인한 점:
+
+- 기존 구현은 Mici renderer에서 검은 overlay를 그리는 방식이었다.
+- 그러나 display power/backlight가 내려가는 타이밍이 더 강하게 체감되면 overlay fade가 눈에 잘 안 보일 수 있다.
+
+수정 파일:
+
+- `selfdrive/ui/ui_state.py`
+- `selfdrive/ui/mici/layouts/main.py`
+
+구현 방식:
+
+- `Device.delay_sleep_for()`가 sleep delay duration을 `_sleep_fade_duration`으로 저장하도록 했다.
+- timeout 상태이고 sleep delay 중이면 `_update_brightness()`에서 남은 시간 비율에 맞춰 hardware screen brightness를 같이 낮춘다.
+- renderer overlay fade와 실제 backlight fade가 동시에 진행되므로, 화면 꺼짐이 더 확실하게 부드럽게 보인다.
+- `SCREEN_SLEEP_FADE_DURATION`을 `0.85s`에서 `1.20s`로 늘려 fade-out 체감을 키웠다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- `/data/openpilot`과 `/data/safe_staging/merged`, 그리고 `openpilot/...` runtime 경로까지 `ui_state.py`, `mici/layouts/main.py`를 모두 갱신했다.
+- 관련 `__pycache__`를 삭제했다.
+- Mici UI만 재시작, 새 UI PID `81209`
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py`
+- 기기 네 runtime 경로 `py_compile`
+- 테스트를 위해 `ScreenTimeout=5`로 임시 변경 후 wake counter를 올려 10초 동안 관찰했다.
+- 테스트 중 UI PID `81209` 유지.
+- 최신 crash log는 기존 `22:59:12`에서 갱신되지 않음.
+- 테스트 후 `ScreenTimeout=300`으로 복구하고 wake counter를 다시 올려 화면을 깨웠다.

@@ -15,7 +15,7 @@ from openpilot.system.ui.lib.application import gui_app
 ONROAD_DELAY = 2.5  # seconds
 FADE_DURATION = 0.55  # seconds
 SCREEN_WAKE_FADE_DURATION = 0.85  # seconds
-SCREEN_SLEEP_FADE_DURATION = 0.85  # seconds
+SCREEN_SLEEP_FADE_DURATION = 1.20  # seconds
 OFFROAD_SNAP_EPS = 2.0  # px
 
 SURFACE_OFFROAD = "offroad"

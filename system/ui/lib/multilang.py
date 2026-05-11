@@ -177,7 +177,7 @@ class Multilang:
 
   def change_language(self, language_code: str) -> None:
     self._params.put("LanguageSetting", language_code)
-    self._language = language_code
+    self._language = self._normalize_language_code(language_code)
     self.setup()
 
   def tr(self, text: str) -> str:
@@ -197,9 +197,19 @@ class Multilang:
     self.codes = {v: k for k, v in self.languages.items()}
 
     if self._params is not None:
-      lang = str(self._params.get("LanguageSetting")).removeprefix("main_")
-      if lang in self.codes:
+      lang = self._normalize_language_code(str(self._params.get("LanguageSetting")))
+      if f"main_{lang}" in self.codes or lang in self.codes:
         self._language = lang
+
+  def _normalize_language_code(self, language_code: str) -> str:
+    code = str(language_code)
+    if code in self.codes:
+      return code.removeprefix("main_")
+
+    short_code = code.removeprefix("main_")
+    if f"main_{short_code}" in self.codes or short_code in self.codes:
+      return short_code
+    return code
 
 
 multilang = Multilang()

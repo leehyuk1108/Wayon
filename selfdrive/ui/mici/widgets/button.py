@@ -7,6 +7,7 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.scroller import DO_ZOOM
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
+from openpilot.system.ui.lib.multilang import tr
 from openpilot.common.filter_simple import BounceFilter
 
 try:
@@ -19,6 +20,15 @@ COMPLICATION_SIZE    = 36
 LABEL_COLOR          = rl.Color(255, 255, 255, int(255 * 0.9))
 COMPLICATION_GREY    = rl.Color(0xAA, 0xAA, 0xAA, 255)
 PRESSED_SCALE = 1.15 if DO_ZOOM else 1.07
+
+
+def display_text(text: str) -> str:
+  translated = tr(text)
+  if translated != text:
+    return translated
+  if "\n" in text:
+    return "\n".join(tr(part) for part in text.split("\n"))
+  return text
 
 
 class ScrollState(Enum):
@@ -122,10 +132,10 @@ class BigButton(Widget):
 
     self._rotate_icon_t: float | None = None
 
-    self._label = UnifiedLabel(text, font_size=self._get_label_font_size(), font_weight=FontWeight.BOLD,
+    self._label = UnifiedLabel(display_text(text), font_size=self._get_label_font_size(), font_weight=FontWeight.BOLD,
                                text_color=LABEL_COLOR, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM, scroll=scroll,
                                line_height=0.9)
-    self._sub_label = UnifiedLabel(value, font_size=COMPLICATION_SIZE, font_weight=FontWeight.ROMAN,
+    self._sub_label = UnifiedLabel(display_text(value), font_size=COMPLICATION_SIZE, font_weight=FontWeight.ROMAN,
                                    text_color=COMPLICATION_GREY, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM)
     self._update_label_layout()
 
@@ -167,12 +177,12 @@ class BigButton(Widget):
 
   def set_text(self, text: str):
     self.text = text
-    self._label.set_text(text)
+    self._label.set_text(display_text(text))
     self._update_label_layout()
 
   def set_value(self, value: str):
     self.value = value
-    self._sub_label.set_text(value)
+    self._sub_label.set_text(display_text(value))
     self._update_label_layout()
 
   def get_value(self) -> str:

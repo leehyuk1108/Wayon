@@ -20,7 +20,6 @@ from openpilot.selfdrive.ui.mici.onroad.starpilot_status import (
   get_experimental_mode_banner_text,
 )
 from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
-from openpilot.selfdrive.ui.lib.starpilot_visuals import get_border_width
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets import Widget
@@ -572,18 +571,7 @@ class AugmentedRoadView(CameraView):
     self._pm.send('uiDebug', msg)
 
   def _draw_border(self):
-    border_size = self._get_border_width()
-    # Keep full border visible by drawing outside scissor with an inset rect.
-    border_rect = rl.Rectangle(
-      self._content_rect.x + border_size / 2,
-      self._content_rect.y + border_size / 2,
-      self._content_rect.width - border_size,
-      self._content_rect.height - border_size,
-    )
-    rl.draw_rectangle_rounded_lines_ex(border_rect, 0.12, 16, border_size, get_border_color(ui_state))
-
-  def _get_border_width(self) -> int:
-    return get_border_width(8, ui_state.params)
+    rl.draw_rectangle_rounded_lines_ex(self._content_rect, 0.2 * 1.02, 10, 50, rl.BLACK)
 
   @staticmethod
   def _is_in_reverse() -> bool:

@@ -1,6 +1,7 @@
 from opendbc.car import DT_CTRL
 from opendbc.car.can_definitions import CanData
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.gm.cluster_speed import gm_cluster_cruise_speed_from_raw_ms, gm_raw_cruise_speed_from_cluster_ms
 from opendbc.car.gm.values import CAR, CanBus, CruiseButtons, GMFlags
 
 MALIBU_BUTTON_TABLE = {
@@ -280,19 +281,33 @@ def create_lka_icon_command(bus, active, critical, steer):
   return CanData(0x104c006c, dat, bus)
 
 
+def _display_set_speed(CS) -> float:
+  speed_cluster = float(CS.out.cruiseState.speedCluster)
+  if speed_cluster > 0.0:
+    return speed_cluster
+  raw_speed = float(CS.out.cruiseState.speed)
+  if raw_speed > 0.0:
+    return gm_cluster_cruise_speed_from_raw_ms(raw_speed)
+  return raw_speed
+
+
 def create_gm_cc_spam_command(packer, controller, CS, actuators, starpilot_toggles):
   accel = actuators.accel
   v_ego = CS.out.vEgo
   cruise_btn = CruiseButtons.INIT
   rate = 1 if abs(accel) <= 0.15 else 0.2
   ms_convert = CV.MS_TO_KPH if getattr(starpilot_toggles, "is_metric", False) else CV.MS_TO_MPH
-  speed_setpoint = int(round(CS.out.cruiseState.speed * ms_convert))
-  desired_setpoint = int(round((v_ego * 1.01 + 3 * accel) * ms_convert))
+  desired_speed_cluster = gm_cluster_cruise_speed_from_raw_ms(v_ego * 1.01 + 3 * accel)
+  desired_speed_raw = gm_raw_cruise_speed_from_cluster_ms(desired_speed_cluster)
+  min_enable_speed_cluster = gm_cluster_cruise_speed_from_raw_ms(CS.CP.minEnableSpeed)
+  speed_setpoint = int(round(_display_set_speed(CS) * ms_convert))
+  desired_setpoint = int(round(desired_speed_cluster * ms_convert))
+  min_enable_setpoint = int(round(min_enable_speed_cluster * ms_convert))
 
-  if CS.CP.minEnableSpeed - (desired_setpoint / ms_convert) > 3.25:
+  if CS.CP.minEnableSpeed - desired_speed_raw > 3.25:
     cruise_btn = CruiseButtons.CANCEL
     controller.apply_speed = 0
-  elif desired_setpoint < speed_setpoint and speed_setpoint > CS.CP.minEnableSpeed * ms_convert + 1:
+  elif desired_setpoint < speed_setpoint and speed_setpoint > min_enable_setpoint + 1:
     cruise_btn = CruiseButtons.DECEL_SET
     controller.apply_speed = speed_setpoint - 1
   elif desired_setpoint > speed_setpoint:

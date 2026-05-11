@@ -4,6 +4,7 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, create_button_events, structs
 from opendbc.car import DT_CTRL
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.gm.cluster_speed import gm_cluster_cruise_speed_from_raw_ms
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.gm.values import (
   ALT_ACCS,
@@ -141,7 +142,6 @@ class CarState(CarStateBase):
       pt_cp.vl["EBCMWheelSpdRear"]["RLWheelSpd"],
       pt_cp.vl["EBCMWheelSpdRear"]["RRWheelSpd"],
     )
-    ret.vEgoCluster = ret.vEgo * getattr(starpilot_toggles, "cluster_offset", 1.0)
     # standstill=True if ECM allows engagement with brake.
     ret.standstill = abs(pt_cp.vl["EBCMWheelSpdRear"]["RLWheelSpd"]) <= STANDSTILL_THRESHOLD and \
                      abs(pt_cp.vl["EBCMWheelSpdRear"]["RRWheelSpd"]) <= STANDSTILL_THRESHOLD
@@ -372,6 +372,11 @@ class CarState(CarStateBase):
 
     if ret.vEgo < self.CP.minSteerSpeed:
       ret.lowSpeedAlert = True
+
+    if ret.vEgo > 0.0:
+      ret.vEgoCluster = gm_cluster_cruise_speed_from_raw_ms(ret.vEgo)
+    if ret.cruiseState.speed > 0.0:
+      ret.cruiseState.speedCluster = gm_cluster_cruise_speed_from_raw_ms(ret.cruiseState.speed)
 
     fp_ret = custom.StarPilotCarState.new_message()
     if bolt_cancel_personality and self.cruise_buttons == CruiseButtons.CANCEL:

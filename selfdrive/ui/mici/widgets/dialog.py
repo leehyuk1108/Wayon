@@ -9,6 +9,7 @@ from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.mici_keyboard import MiciKeyboard
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos, MouseEvent
+from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import Scroller
 from openpilot.system.ui.widgets.slider import RedBigSlider, BigSlider
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -18,6 +19,15 @@ from openpilot.selfdrive.ui.mici.widgets.side_button import SideButton
 DEBUG = False
 
 PADDING = 20
+
+
+def display_text(text: str) -> str:
+  translated = tr(text)
+  if translated != text:
+    return translated
+  if "\n" in text:
+    return "\n".join(tr(part) for part in text.split("\n"))
+  return text
 
 
 class BigDialogBase(NavWidget, abc.ABC):
@@ -81,7 +91,7 @@ class BigInputDialog(BigDialogBase):
                confirm_callback: Callable[[str], None] | None = None,
                auto_return_to_letters: str = ""):
     super().__init__()
-    self._hint_label = UnifiedLabel(hint, font_size=35, text_color=rl.Color(255, 255, 255, int(255 * 0.35)),
+    self._hint_label = UnifiedLabel(display_text(hint), font_size=35, text_color=rl.Color(255, 255, 255, int(255 * 0.35)),
                                     font_weight=FontWeight.MEDIUM)
     self._keyboard = MiciKeyboard(auto_return_to_letters=auto_return_to_letters)
     self._keyboard.set_text(default_text)
@@ -253,7 +263,7 @@ class BigDialogOptionButton(Widget):
     self.set_rect(rl.Rectangle(0, 0, int(gui_app.width / 2 + 220), self.HEIGHT))
     self._selected = False
     self._label = UnifiedLabel(
-      option,
+      display_text(option),
       font_size=70,
       text_color=rl.Color(255, 255, 255, int(255 * 0.58)),
       font_weight=FontWeight.DISPLAY_REGULAR,

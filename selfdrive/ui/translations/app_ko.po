@@ -596,6 +596,334 @@ msgstr "오프라인"
 msgid "OK"
 msgstr "확인"
 
+#: starpilot-c4-mici-localization
+msgid "toggles"
+msgstr "토글"
+
+#: starpilot-c4-mici-localization
+msgid "network"
+msgstr "네트워크"
+
+#: starpilot-c4-mici-localization
+msgid "visuals"
+msgstr "화면"
+
+#: starpilot-c4-mici-localization
+msgid "device"
+msgstr "장치"
+
+#: starpilot-c4-mici-localization
+msgid "developer"
+msgstr "개발자"
+
+#: starpilot-c4-mici-localization
+msgid "force drive state"
+msgstr "주행 상태 강제"
+
+#: starpilot-c4-mici-localization
+msgid "offroad"
+msgstr "오프로드"
+
+#: starpilot-c4-mici-localization
+msgid "onroad"
+msgstr "온로드"
+
+#: starpilot-c4-mici-localization
+msgid "off"
+msgstr "꺼짐"
+
+#: starpilot-c4-mici-localization
+msgid "driving model"
+msgstr "주행 모델"
+
+#: starpilot-c4-mici-localization
+msgid "galaxy"
+msgstr "갤럭시"
+
+#: starpilot-c4-mici-localization
+msgid "pair"
+msgstr "페어링"
+
+#: starpilot-c4-mici-localization
+msgid "paired"
+msgstr "페어링됨"
+
+#: starpilot-c4-mici-localization
+msgid "subscribed"
+msgstr "구독 중"
+
+#: starpilot-c4-mici-localization
+msgid "upgrade to prime"
+msgstr "prime 업그레이드"
+
+#: starpilot-c4-mici-localization
+msgid "connect"
+msgstr "연결"
+
+#: starpilot-c4-mici-localization
+msgid "server"
+msgstr "서버"
+
+#: starpilot-c4-mici-localization
+msgid "connect\nserver"
+msgstr "연결\n서버"
+
+#: starpilot-c4-mici-localization
+msgid "comma connect"
+msgstr "comma connect"
+
+#: starpilot-c4-mici-localization
+msgid "konik connect"
+msgstr "konik connect"
+
+#: starpilot-c4-mici-localization
+msgid "update openpilot"
+msgstr "openpilot 업데이트"
+
+#: starpilot-c4-mici-localization
+msgid "update now"
+msgstr "지금 업데이트"
+
+#: starpilot-c4-mici-localization
+msgid "download update"
+msgstr "업데이트 다운로드"
+
+#: starpilot-c4-mici-localization
+msgid "updater failed\nto respond"
+msgstr "업데이터가\n응답하지 않음"
+
+#: starpilot-c4-mici-localization
+msgid "failed to update"
+msgstr "업데이트 실패"
+
+#: starpilot-c4-mici-localization
+msgid "up to date"
+msgstr "최신 상태"
+
+#: starpilot-c4-mici-localization
+msgid "checking..."
+msgstr "확인 중..."
+
+#: starpilot-c4-mici-localization
+msgid "simple mode"
+msgstr "간단 모드"
+
+#: starpilot-c4-mici-localization
+msgid "device ID"
+msgstr "기기 ID"
+
+#: starpilot-c4-mici-localization
+msgid "serial"
+msgstr "시리얼"
+
+#: starpilot-c4-mici-localization
+msgid "reset driver\nmonitoring"
+msgstr "운전자 모니터링\n초기화"
+
+#: starpilot-c4-mici-localization
+msgid "reset driver monitoring"
+msgstr "운전자 모니터링 초기화"
+
+#: starpilot-c4-mici-localization
+msgid "reset calibration"
+msgstr "캘리브레이션 초기화"
+
+#: starpilot-c4-mici-localization
+msgid "reset"
+msgstr "초기화"
+
+#: starpilot-c4-mici-localization
+msgid "uninstall openpilot"
+msgstr "openpilot 제거"
+
+#: starpilot-c4-mici-localization
+msgid "uninstall"
+msgstr "제거"
+
+#: starpilot-c4-mici-localization
+msgid "reboot"
+msgstr "재부팅"
+
+#: starpilot-c4-mici-localization
+msgid "power off"
+msgstr "전원 끄기"
+
+#: starpilot-c4-mici-localization
+msgid "regulatory info"
+msgstr "규제 정보"
+
+#: starpilot-c4-mici-localization
+msgid "driver\ncamera preview"
+msgstr "운전자 카메라\n미리보기"
+
+#: starpilot-c4-mici-localization
+msgid "driver"
+msgstr "운전자"
+
+#: starpilot-c4-mici-localization
+msgid "camera preview"
+msgstr "카메라 미리보기"
+
+#: starpilot-c4-mici-localization
+msgid "review\ntraining guide"
+msgstr "사용 가이드\n보기"
+
+#: starpilot-c4-mici-localization
+msgid "review"
+msgstr "보기"
+
+#: starpilot-c4-mici-localization
+msgid "training guide"
+msgstr "사용 가이드"
+
+#: starpilot-c4-mici-localization
+msgid "terms &\nconditions"
+msgstr "이용 약관"
+
+#: starpilot-c4-mici-localization
+msgid "terms &"
+msgstr "이용"
+
+#: starpilot-c4-mici-localization
+msgid "conditions"
+msgstr "약관"
+
+#: starpilot-c4-mici-localization
+msgid "slide to"
+msgstr "밀어서"
+
+#: starpilot-c4-mici-localization
+msgid "Disengage to reset"
+msgstr "초기화하려면 먼저 비활성화하세요"
+
+#: starpilot-c4-mici-localization
+msgid "Disengage to reboot"
+msgstr "재부팅하려면 먼저 비활성화하세요"
+
+#: starpilot-c4-mici-localization
+msgid "Disengage to power off"
+msgstr "전원을 끄려면 먼저 비활성화하세요"
+
+#: starpilot-c4-mici-localization
+msgid "driving personality"
+msgstr "주행 성향"
+
+#: starpilot-c4-mici-localization
+msgid "aggressive"
+msgstr "공격적"
+
+#: starpilot-c4-mici-localization
+msgid "standard"
+msgstr "표준"
+
+#: starpilot-c4-mici-localization
+msgid "relaxed"
+msgstr "편안함"
+
+#: starpilot-c4-mici-localization
+msgid "safe mode"
+msgstr "안전 모드"
+
+#: starpilot-c4-mici-localization
+msgid "experimental mode"
+msgstr "실험 모드"
+
+#: starpilot-c4-mici-localization
+msgid "use metric units"
+msgstr "미터법 사용"
+
+#: starpilot-c4-mici-localization
+msgid "lane departure warnings"
+msgstr "차선 이탈 경고"
+
+#: starpilot-c4-mici-localization
+msgid "always-on driver monitor"
+msgstr "운전자 모니터링 항상 켜기"
+
+#: starpilot-c4-mici-localization
+msgid "record & upload driver camera"
+msgstr "운전자 카메라 녹화 및 업로드"
+
+#: starpilot-c4-mici-localization
+msgid "record & upload mic audio"
+msgstr "마이크 오디오 녹음 및 업로드"
+
+#: starpilot-c4-mici-localization
+msgid "enable openpilot"
+msgstr "openpilot 활성화"
+
+#: starpilot-c4-mici-localization
+msgid "SSH keys"
+msgstr "SSH 키"
+
+#: starpilot-c4-mici-localization
+msgid "Not set"
+msgstr "설정 안 됨"
+
+#: starpilot-c4-mici-localization
+msgid "Loading..."
+msgstr "불러오는 중..."
+
+#: starpilot-c4-mici-localization
+msgid "enter GitHub username..."
+msgstr "GitHub 사용자 이름 입력..."
+
+#: starpilot-c4-mici-localization
+msgid "car make"
+msgstr "제조사"
+
+#: starpilot-c4-mici-localization
+msgid "car model"
+msgstr "차종"
+
+#: starpilot-c4-mici-localization
+msgid "disable auto fingerprint"
+msgstr "자동 핑거프린트 비활성화"
+
+#: starpilot-c4-mici-localization
+msgid "use prebuilt binaries"
+msgstr "미리 빌드된 바이너리 사용"
+
+#: starpilot-c4-mici-localization
+msgid "joystick debug mode"
+msgstr "조이스틱 디버그 모드"
+
+#: starpilot-c4-mici-localization
+msgid "longitudinal maneuver mode"
+msgstr "가감속 테스트 모드"
+
+#: starpilot-c4-mici-localization
+msgid "lateral maneuver mode"
+msgstr "조향 테스트 모드"
+
+#: starpilot-c4-mici-localization
+msgid "alpha longitudinal"
+msgstr "알파 롱컨"
+
+#: starpilot-c4-mici-localization
+msgid "ui debug mode"
+msgstr "UI 디버그 모드"
+
+#: starpilot-c4-mici-localization
+msgid "Select"
+msgstr "선택"
+
+#: starpilot-c4-mici-localization
+msgid "select make"
+msgstr "제조사 선택"
+
+#: starpilot-c4-mici-localization
+msgid "select model"
+msgstr "차종 선택"
+
+#: starpilot-c4-mici-localization
+msgid "No fingerprint list available"
+msgstr "핑거프린트 목록이 없습니다"
+
+#: starpilot-c4-mici-localization
+msgid "Select a car make first"
+msgstr "먼저 제조사를 선택하세요"
+
 #: selfdrive/ui/layouts/sidebar.py:72 selfdrive/ui/layouts/sidebar.py:136
 #: selfdrive/ui/layouts/sidebar.py:144
 msgid "ONLINE"
@@ -1188,3 +1516,823 @@ msgstr "✓ 구독됨"
 #, python-format
 msgid "🔥 Firehose Mode 🔥"
 msgstr "🔥 파이어호스 모드 🔥"
+
+#: starpilot-c4-localization
+msgid "Settings"
+msgstr "설정"
+
+#: starpilot-c4-localization
+msgid "No alerts"
+msgstr "알림 없음"
+
+#: starpilot-c4-localization
+msgid "no alerts"
+msgstr "알림 없음"
+
+#: starpilot-c4-localization
+msgid "StarPilot"
+msgstr "StarPilot"
+
+#: starpilot-c4-localization
+msgid "Firehose"
+msgstr "파이어호스"
+
+#: starpilot-c4-localization
+msgid "Developer"
+msgstr "개발자"
+
+#: starpilot-c4-localization
+msgid "Alerts & Sounds"
+msgstr "알림 및 소리"
+
+#: starpilot-c4-localization
+msgid "Driving Controls"
+msgstr "주행 제어"
+
+#: starpilot-c4-localization
+msgid "Map Data"
+msgstr "지도 데이터"
+
+#: starpilot-c4-localization
+msgid "System"
+msgstr "시스템"
+
+#: starpilot-c4-localization
+msgid "Appearance"
+msgstr "화면 설정"
+
+#: starpilot-c4-localization
+msgid "Vehicle Settings"
+msgstr "차량 설정"
+
+#: starpilot-c4-localization
+msgid "DRIVING MODEL"
+msgstr "주행 모델"
+
+#: starpilot-c4-localization
+msgid "GAS / BRAKE"
+msgstr "가감속"
+
+#: starpilot-c4-localization
+msgid "STEERING"
+msgstr "조향"
+
+#: starpilot-c4-localization
+msgid "Sounds"
+msgstr "소리"
+
+#: starpilot-c4-localization
+msgid "System Settings"
+msgstr "시스템 설정"
+
+#: starpilot-c4-localization
+msgid "Driving Model"
+msgstr "주행 모델"
+
+#: starpilot-c4-localization
+msgid "Gas / Brake"
+msgstr "가감속"
+
+#: starpilot-c4-localization
+msgid "Steering"
+msgstr "조향"
+
+#: starpilot-c4-localization
+msgid "Pair Device"
+msgstr "장치 페어링"
+
+#: starpilot-c4-localization
+msgid "PAIR"
+msgstr "페어링"
+
+#: starpilot-c4-localization
+msgid "Reset Calibration"
+msgstr "캘리브레이션 초기화"
+
+#: starpilot-c4-localization
+msgid "RESET"
+msgstr "초기화"
+
+#: starpilot-c4-localization
+msgid "Reboot"
+msgstr "재부팅"
+
+#: starpilot-c4-localization
+msgid "Power Off"
+msgstr "전원 끄기"
+
+#: starpilot-c4-localization
+msgid "Dongle ID"
+msgstr "동글 ID"
+
+#: starpilot-c4-localization
+msgid "Serial"
+msgstr "시리얼"
+
+#: starpilot-c4-localization
+msgid "Driver Camera"
+msgstr "운전자 카메라"
+
+#: starpilot-c4-localization
+msgid "PREVIEW"
+msgstr "미리보기"
+
+#: starpilot-c4-localization
+msgid "Review Training Guide"
+msgstr "사용 가이드 보기"
+
+#: starpilot-c4-localization
+msgid "REVIEW"
+msgstr "보기"
+
+#: starpilot-c4-localization
+msgid "Regulatory"
+msgstr "규제 정보"
+
+#: starpilot-c4-localization
+msgid "VIEW"
+msgstr "보기"
+
+#: starpilot-c4-localization
+msgid "CHANGE"
+msgstr "변경"
+
+#: starpilot-c4-localization
+msgid "N/A"
+msgstr "없음"
+
+#: starpilot-c4-localization
+msgid "Pair your device with comma connect (connect.comma.ai) and claim your comma prime offer."
+msgstr "장치를 comma connect(connect.comma.ai)에 연결하고 comma prime 혜택을 받으세요."
+
+#: starpilot-c4-localization
+msgid "Preview the driver facing camera to ensure that driver monitoring has good visibility. (vehicle must be off)"
+msgstr "운전자 모니터링 시야가 잘 확보되는지 운전자 카메라를 미리 봅니다. 차량 전원이 꺼져 있어야 합니다."
+
+#: starpilot-c4-localization
+msgid "openpilot requires the device to be mounted within 4° left or right and within 5° up or 9° down."
+msgstr "openpilot은 장치가 좌우 4° 이내, 위쪽 5° 또는 아래쪽 9° 이내로 장착되어야 합니다."
+
+#: starpilot-c4-localization
+msgid "Review the rules, features, and limitations of openpilot"
+msgstr "openpilot의 규칙, 기능, 제한 사항을 확인하세요."
+
+#: starpilot-c4-localization
+msgid "Disengage to Reset Calibration"
+msgstr "캘리브레이션을 초기화하려면 먼저 비활성화하세요"
+
+#: starpilot-c4-localization
+msgid "Are you sure you want to reset calibration?"
+msgstr "캘리브레이션을 초기화할까요?"
+
+#: starpilot-c4-localization
+msgid "Disengage to Reboot"
+msgstr "재부팅하려면 먼저 비활성화하세요"
+
+#: starpilot-c4-localization
+msgid "Are you sure you want to reboot?"
+msgstr "정말 재부팅할까요?"
+
+#: starpilot-c4-localization
+msgid "Disengage to Power Off"
+msgstr "전원을 끄려면 먼저 비활성화하세요"
+
+#: starpilot-c4-localization
+msgid "Are you sure you want to power off?"
+msgstr "정말 전원을 끌까요?"
+
+#: starpilot-c4-localization
+msgid "down"
+msgstr "아래"
+
+#: starpilot-c4-localization
+msgid "up"
+msgstr "위"
+
+#: starpilot-c4-localization
+msgid "left"
+msgstr "왼쪽"
+
+#: starpilot-c4-localization
+msgid "right"
+msgstr "오른쪽"
+
+#: starpilot-c4-localization
+msgid "Enable openpilot"
+msgstr "openpilot 활성화"
+
+#: starpilot-c4-localization
+msgid "Experimental Mode"
+msgstr "실험 모드"
+
+#: starpilot-c4-localization
+msgid "Safe Mode"
+msgstr "안전 모드"
+
+#: starpilot-c4-localization
+msgid "Disengage on Accelerator Pedal"
+msgstr "가속 페달 조작 시 비활성화"
+
+#: starpilot-c4-localization
+msgid "Enable Lane Departure Warnings"
+msgstr "차선 이탈 경고 켜기"
+
+#: starpilot-c4-localization
+msgid "Always-On Driver Monitoring"
+msgstr "운전자 모니터링 항상 켜기"
+
+#: starpilot-c4-localization
+msgid "Record and Upload Driver Camera"
+msgstr "운전자 카메라 녹화 및 업로드"
+
+#: starpilot-c4-localization
+msgid "Record and Upload Microphone Audio"
+msgstr "마이크 오디오 녹음 및 업로드"
+
+#: starpilot-c4-localization
+msgid "Use Metric System"
+msgstr "미터법 사용"
+
+#: starpilot-c4-localization
+msgid "Driving Personality"
+msgstr "주행 성향"
+
+#: starpilot-c4-localization
+msgid "Aggressive"
+msgstr "공격적"
+
+#: starpilot-c4-localization
+msgid "Standard"
+msgstr "표준"
+
+#: starpilot-c4-localization
+msgid "Relaxed"
+msgstr "편안함"
+
+#: starpilot-c4-localization
+msgid "Use Prebuilt Binaries"
+msgstr "미리 빌드된 바이너리 사용"
+
+#: starpilot-c4-localization
+msgid "UI Debug Mode"
+msgstr "UI 디버그 모드"
+
+#: starpilot-c4-localization
+msgid "checking..."
+msgstr "확인 중..."
+
+#: starpilot-c4-localization
+msgid "downloading..."
+msgstr "다운로드 중..."
+
+#: starpilot-c4-localization
+msgid "finalizing update..."
+msgstr "업데이트 마무리 중..."
+
+#: starpilot-c4-localization
+msgid "Automatically Install Updates"
+msgstr "업데이트 자동 설치"
+
+#: starpilot-c4-localization
+msgid "Automatically install updates when parked with an active internet connection."
+msgstr "주차 중이고 인터넷 연결이 있을 때 업데이트를 자동으로 설치합니다."
+
+#: starpilot-c4-localization
+msgid "Error Log"
+msgstr "오류 로그"
+
+#: starpilot-c4-localization
+msgid "No error log found."
+msgstr "오류 로그가 없습니다."
+
+#: starpilot-c4-localization
+msgid "Factory Reset"
+msgstr "공장 초기화"
+
+#: starpilot-c4-localization
+msgid "Skip"
+msgstr "건너뛰기"
+
+#: starpilot-c4-localization
+msgid "Current Version"
+msgstr "현재 버전"
+
+#: starpilot-c4-localization
+msgid "Download"
+msgstr "다운로드"
+
+#: starpilot-c4-localization
+msgid "CHECK"
+msgstr "확인"
+
+#: starpilot-c4-localization
+msgid "Install Update"
+msgstr "업데이트 설치"
+
+#: starpilot-c4-localization
+msgid "INSTALL"
+msgstr "설치"
+
+#: starpilot-c4-localization
+msgid "Target Branch"
+msgstr "대상 브랜치"
+
+#: starpilot-c4-localization
+msgid "SELECT"
+msgstr "선택"
+
+#: starpilot-c4-localization
+msgid "Uninstall"
+msgstr "제거"
+
+#: starpilot-c4-localization
+msgid "UNINSTALL"
+msgstr "제거"
+
+#: starpilot-c4-localization
+msgid "up to date, last checked never"
+msgstr "최신 상태, 아직 확인한 적 없음"
+
+#: starpilot-c4-localization
+msgid "failed to check for update"
+msgstr "업데이트 확인 실패"
+
+#: starpilot-c4-localization
+msgid "update available"
+msgstr "업데이트 가능"
+
+#: starpilot-c4-localization
+msgid "Select a branch"
+msgstr "브랜치 선택"
+
+#: starpilot-c4-localization
+msgid "Sounds & Alerts"
+msgstr "소리 및 알림"
+
+#: starpilot-c4-localization
+msgid "Manage system volumes and custom alert toggles."
+msgstr "시스템 볼륨과 사용자 알림 토글을 관리합니다."
+
+#: starpilot-c4-localization
+msgid "ON"
+msgstr "켜짐"
+
+#: starpilot-c4-localization
+msgid "OFF"
+msgstr "꺼짐"
+
+#: starpilot-c4-localization
+msgid "LOCKED"
+msgstr "잠김"
+
+#: starpilot-c4-localization
+msgid "Muted"
+msgstr "음소거"
+
+#: starpilot-c4-localization
+msgid "Auto"
+msgstr "자동"
+
+#: starpilot-c4-localization
+msgid "Off"
+msgstr "꺼짐"
+
+#: starpilot-c4-localization
+msgid "Switchback Mode Cooldown"
+msgstr "스위치백 모드 쿨다운"
+
+#: starpilot-c4-localization
+msgid "Min Steer Speed Alert"
+msgstr "최소 조향 속도 알림"
+
+#: starpilot-c4-localization
+msgid "Disengage Volume"
+msgstr "비활성화 음량"
+
+#: starpilot-c4-localization
+msgid "Engage Volume"
+msgstr "활성화 음량"
+
+#: starpilot-c4-localization
+msgid "Prompt Volume"
+msgstr "안내 음량"
+
+#: starpilot-c4-localization
+msgid "Distracted Volume"
+msgstr "부주의 경고 음량"
+
+#: starpilot-c4-localization
+msgid "Refuse Volume"
+msgstr "거부 알림 음량"
+
+#: starpilot-c4-localization
+msgid "Warning Soft"
+msgstr "약한 경고"
+
+#: starpilot-c4-localization
+msgid "Warning Immediate"
+msgstr "즉시 경고"
+
+#: starpilot-c4-localization
+msgid "Green Light"
+msgstr "초록불"
+
+#: starpilot-c4-localization
+msgid "Lead Departure"
+msgstr "앞차 출발"
+
+#: starpilot-c4-localization
+msgid "Loud Blindspot"
+msgstr "사각지대 강한 알림"
+
+#: starpilot-c4-localization
+msgid "Speed Limit"
+msgstr "제한 속도"
+
+#: starpilot-c4-localization
+msgid "Needs BSM"
+msgstr "BSM 필요"
+
+#: starpilot-c4-localization
+msgid "Needs Speed Limits"
+msgstr "제한 속도 데이터 필요"
+
+#: starpilot-c4-localization
+msgid "Driving Models"
+msgstr "주행 모델"
+
+#: starpilot-c4-localization
+msgid "Current Model"
+msgstr "현재 모델"
+
+#: starpilot-c4-localization
+msgid "On Device"
+msgstr "기기에 있음"
+
+#: starpilot-c4-localization
+msgid "Available to Download"
+msgstr "다운로드 가능"
+
+#: starpilot-c4-localization
+msgid "Active"
+msgstr "활성"
+
+#: starpilot-c4-localization
+msgid "Built-in"
+msgstr "내장"
+
+#: starpilot-c4-localization
+msgid "Incomplete"
+msgstr "미완료"
+
+#: starpilot-c4-localization
+msgid "Saved"
+msgstr "저장됨"
+
+#: starpilot-c4-localization
+msgid "Popular"
+msgstr "인기"
+
+#: starpilot-c4-localization
+msgid "Options"
+msgstr "옵션"
+
+#: starpilot-c4-localization
+msgid "Delete"
+msgstr "삭제"
+
+#: starpilot-c4-localization
+msgid "Favorite"
+msgstr "즐겨찾기"
+
+#: starpilot-c4-localization
+msgid "Unfavorite"
+msgstr "즐겨찾기 해제"
+
+#: starpilot-c4-localization
+msgid "Current"
+msgstr "현재"
+
+#: starpilot-c4-localization
+msgid "Protected"
+msgstr "보호됨"
+
+#: starpilot-c4-localization
+msgid "Automation and Tuning"
+msgstr "자동화 및 튜닝"
+
+#: starpilot-c4-localization
+msgid "Custom Series"
+msgstr "사용자 시리즈"
+
+#: starpilot-c4-localization
+msgid "Refresh Catalog"
+msgstr "목록 새로고침"
+
+#: starpilot-c4-localization
+msgid "Cancel Download"
+msgstr "다운로드 취소"
+
+#: starpilot-c4-localization
+msgid "Downloading"
+msgstr "다운로드 중"
+
+#: starpilot-c4-localization
+msgid "Refreshing..."
+msgstr "새로고침 중..."
+
+#: starpilot-c4-localization
+msgid "No models available"
+msgstr "사용 가능한 모델 없음"
+
+#: starpilot-c4-localization
+msgid "Add"
+msgstr "추가"
+
+#: starpilot-c4-localization
+msgid "Remove"
+msgstr "제거"
+
+#: starpilot-c4-localization
+msgid "Reset All"
+msgstr "모두 초기화"
+
+#: starpilot-c4-localization
+msgid "View"
+msgstr "보기"
+
+#: starpilot-c4-localization
+msgid "Steering Tuning"
+msgstr "조향 튜닝"
+
+#: starpilot-c4-localization
+msgid "Advanced Lateral Tuning"
+msgstr "고급 조향 튜닝"
+
+#: starpilot-c4-localization
+msgid "Steering modes"
+msgstr "조향 모드"
+
+#: starpilot-c4-localization
+msgid "Lane"
+msgstr "차선"
+
+#: starpilot-c4-localization
+msgid "Lane changes"
+msgstr "차선 변경"
+
+#: starpilot-c4-localization
+msgid "Tune"
+msgstr "튜닝"
+
+#: starpilot-c4-localization
+msgid "Advanced controls"
+msgstr "고급 제어"
+
+#: starpilot-c4-localization
+msgid "Steering Modes"
+msgstr "조향 모드"
+
+#: starpilot-c4-localization
+msgid "Always On Lateral"
+msgstr "조향 항상 켜기"
+
+#: starpilot-c4-localization
+msgid "Enable With LKAS"
+msgstr "LKAS와 함께 활성화"
+
+#: starpilot-c4-localization
+msgid "Pause Below"
+msgstr "이 속도 아래에서 일시 중지"
+
+#: starpilot-c4-localization
+msgid "Quality of Life"
+msgstr "편의 기능"
+
+#: starpilot-c4-localization
+msgid "Pause Steering Below"
+msgstr "이 속도 아래에서 조향 일시 중지"
+
+#: starpilot-c4-localization
+msgid "Lane Changes"
+msgstr "차선 변경"
+
+#: starpilot-c4-localization
+msgid "Automatic Lane Changes"
+msgstr "자동 차선 변경"
+
+#: starpilot-c4-localization
+msgid "Lane Change Delay"
+msgstr "차선 변경 지연"
+
+#: starpilot-c4-localization
+msgid "Min Lane Change Speed"
+msgstr "최소 차선 변경 속도"
+
+#: starpilot-c4-localization
+msgid "Minimum Lane Width"
+msgstr "최소 차선 폭"
+
+#: starpilot-c4-localization
+msgid "One Lane Change Per Signal"
+msgstr "깜빡이 한 번에 차선 한 번"
+
+#: starpilot-c4-localization
+msgid "Lane Change Smoothing"
+msgstr "차선 변경 부드러움"
+
+#: starpilot-c4-localization
+msgid "Configure"
+msgstr "설정"
+
+#: starpilot-c4-localization
+msgid "Enable First"
+msgstr "먼저 활성화"
+
+#: starpilot-c4-localization
+msgid "Lateral Tuning"
+msgstr "조향 튜닝"
+
+#: starpilot-c4-localization
+msgid "Gas/Brake"
+msgstr "가감속"
+
+#: starpilot-c4-localization
+msgid "Fine-tune acceleration, braking, and driving behavior."
+msgstr "가속, 제동, 주행 동작을 세밀하게 조정합니다."
+
+#: starpilot-c4-localization
+msgid "Longitudinal Tuning"
+msgstr "가감속 튜닝"
+
+#: starpilot-c4-localization
+msgid "Advanced"
+msgstr "고급"
+
+#: starpilot-c4-localization
+msgid "Driving Personalities"
+msgstr "주행 성향"
+
+#: starpilot-c4-localization
+msgid "Adaptive"
+msgstr "적응형"
+
+#: starpilot-c4-localization
+msgid "Speed Limit Controller"
+msgstr "제한 속도 컨트롤러"
+
+#: starpilot-c4-localization
+msgid "Override & Fallback"
+msgstr "오버라이드 및 대체값"
+
+#: starpilot-c4-localization
+msgid "Cruise & Stops"
+msgstr "크루즈 및 정차"
+
+#: starpilot-c4-localization
+msgid "Standstill & Gears"
+msgstr "정차 및 기어"
+
+#: starpilot-c4-localization
+msgid "Profiles"
+msgstr "프로필"
+
+#: starpilot-c4-localization
+msgid "Human-Like Driving"
+msgstr "사람 같은 주행"
+
+#: starpilot-c4-localization
+msgid "Detection"
+msgstr "감지"
+
+#: starpilot-c4-localization
+msgid "Tuning"
+msgstr "튜닝"
+
+#: starpilot-c4-localization
+msgid "Drivetrain"
+msgstr "구동계"
+
+#: starpilot-c4-localization
+msgid "Braking"
+msgstr "제동"
+
+#: starpilot-c4-localization
+msgid "Speed"
+msgstr "속도"
+
+#: starpilot-c4-localization
+msgid "Triggers"
+msgstr "작동 조건"
+
+#: starpilot-c4-localization
+msgid "Offline Maps"
+msgstr "오프라인 지도"
+
+#: starpilot-c4-localization
+msgid "Download Offline Maps"
+msgstr "오프라인 지도 다운로드"
+
+#: starpilot-c4-localization
+msgid "Download Readiness"
+msgstr "다운로드 준비 상태"
+
+#: starpilot-c4-localization
+msgid "Storage"
+msgstr "저장 공간"
+
+#: starpilot-c4-localization
+msgid "Last Updated"
+msgstr "마지막 업데이트"
+
+#: starpilot-c4-localization
+msgid "Regions"
+msgstr "지역"
+
+#: starpilot-c4-localization
+msgid "None selected"
+msgstr "선택 없음"
+
+#: starpilot-c4-localization
+msgid "No regions selected"
+msgstr "선택된 지역 없음"
+
+#: starpilot-c4-localization
+msgid "Tap to add"
+msgstr "눌러서 추가"
+
+#: starpilot-c4-localization
+msgid "Tap to remove"
+msgstr "눌러서 제거"
+
+#: starpilot-c4-localization
+msgid "Selected"
+msgstr "선택됨"
+
+#: starpilot-c4-localization
+msgid "Offline"
+msgstr "오프라인"
+
+#: starpilot-c4-localization
+msgid "Vehicle Identity"
+msgstr "차량 식별"
+
+#: starpilot-c4-localization
+msgid "Identity"
+msgstr "식별"
+
+#: starpilot-c4-localization
+msgid "Features"
+msgstr "기능"
+
+#: starpilot-c4-localization
+msgid "Controls"
+msgstr "제어"
+
+#: starpilot-c4-localization
+msgid "Current Vehicle"
+msgstr "현재 차량"
+
+#: starpilot-c4-localization
+msgid "No vehicle selected"
+msgstr "선택된 차량 없음"
+
+#: starpilot-c4-localization
+msgid "Hardware"
+msgstr "하드웨어"
+
+#: starpilot-c4-localization
+msgid "Fingerprint"
+msgstr "핑거프린트"
+
+#: starpilot-c4-localization
+msgid "Forced"
+msgstr "강제"
+
+#: starpilot-c4-localization
+msgid "Car Make"
+msgstr "제조사"
+
+#: starpilot-c4-localization
+msgid "Car Model"
+msgstr "차종"
+
+#: starpilot-c4-localization
+msgid "Disable Fingerprinting"
+msgstr "핑거프린트 비활성화"
+
+#: starpilot-c4-localization
+msgid "Select Make"
+msgstr "제조사 선택"
+
+#: starpilot-c4-localization
+msgid "Select Model"
+msgstr "차종 선택"
+
+#: starpilot-c4-localization
+msgid "CANCEL"
+msgstr "취소"
+
+#: starpilot-c4-localization
+msgid "OK"
+msgstr "확인"

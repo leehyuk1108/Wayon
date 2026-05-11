@@ -5,6 +5,7 @@ from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, DT_CTRL, create_gas_in
 from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.gm import gmcan
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.gm.cluster_speed import gm_cluster_cruise_speed_from_raw_ms
 from opendbc.car.gm.values import (
   ASCM_INT, CAR, CC_ONLY_CAR, CC_REGEN_PADDLE_CAR, DBC, EV_CAR, SDGM_CAR, AccState, CanBus, CarControllerParams,
   CruiseButtons, GMFlags, GMSafetyFlags,
@@ -220,6 +221,16 @@ class CarController(CarControllerBase):
       self.gm_auto_hold_enabled = self.params_.get_bool("GMAutoHold")
     except UnknownKeyName:
       self.gm_auto_hold_enabled = False
+
+  @staticmethod
+  def _display_set_speed(CS) -> float:
+    speed_cluster = float(CS.out.cruiseState.speedCluster)
+    if speed_cluster > 0.0:
+      return speed_cluster
+    raw_speed = float(CS.out.cruiseState.speed)
+    if raw_speed > 0.0:
+      return gm_cluster_cruise_speed_from_raw_ms(raw_speed)
+    return raw_speed
 
   def calc_pedal_command(self, accel: float, long_active: bool, v_ego: float):
     if not long_active:
@@ -439,6 +450,8 @@ class CarController(CarControllerBase):
     hud_v_cruise = hud_control.setSpeed
     if hud_v_cruise > 70:
       hud_v_cruise = 0
+    display_set_speed = self._display_set_speed(CS)
+    display_v_ego = CS.out.vEgoCluster if CS.out.vEgoCluster > 0.0 else gm_cluster_cruise_speed_from_raw_ms(CS.out.vEgo)
     dash_speed_spoof_active = should_spoof_dash_speed(self.CP, starpilot_toggles)
 
     # Send CAN commands.
@@ -641,7 +654,7 @@ class CarController(CarControllerBase):
             # Using extend instead of append since the message is only sent intermittently
             can_sends.extend(gmcan.create_gm_cc_spam_command(self.packer_pt, self, CS, actuators, starpilot_toggles))
           elif (CS.out.cruiseState.enabled and CC.enabled and self.frame % 52 == 0 and
-                CS.cruise_buttons == CruiseButtons.UNPRESS and CS.out.gasPressed and CS.out.cruiseState.speed < CS.out.vEgo < hud_v_cruise):
+                CS.cruise_buttons == CruiseButtons.UNPRESS and CS.out.gasPressed and display_set_speed < display_v_ego < hud_v_cruise):
             if self.CP.carFingerprint == CAR.CHEVROLET_MALIBU_HYBRID_CC:
               can_sends.append(gmcan.create_buttons_malibu(
                 self.packer_pt, CanBus.POWERTRAIN, CruiseButtons.DECEL_SET,

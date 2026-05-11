@@ -4,9 +4,19 @@ from collections.abc import Callable
 import pyray as rl
 
 from openpilot.system.ui.lib.application import gui_app, FontWeight
+from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.common.filter_simple import FirstOrderFilter, BounceFilter
+
+
+def display_text(text: str) -> str:
+  translated = tr(text)
+  if translated != text:
+    return translated
+  if "\n" in text:
+    return "\n".join(tr(part) for part in text.split("\n"))
+  return text
 
 
 class SliderBase(Widget, abc.ABC):
@@ -40,7 +50,7 @@ class SliderBase(Widget, abc.ABC):
 
     self._is_dragging_circle = False
 
-    self._label = self._child(UnifiedLabel(title, font_size=36, font_weight=FontWeight.SEMI_BOLD, text_color=rl.WHITE,
+    self._label = self._child(UnifiedLabel(display_text(title), font_size=36, font_weight=FontWeight.SEMI_BOLD, text_color=rl.WHITE,
                                            alignment=rl.GuiTextAlignment.TEXT_ALIGN_RIGHT,
                                            alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE, line_height=0.9, shimmer=True))
 

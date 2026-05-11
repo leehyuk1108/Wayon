@@ -58,7 +58,9 @@ class UIState:
         "liveParameters",
         "rawAudioData",
         "starpilotCarState",
+        "starpilotOnroadEvents",
         "starpilotPlan",
+        "starpilotSelfdriveState",
       ]
     )
 
@@ -213,6 +215,7 @@ class Device:
     self._interactive_timeout_callbacks: list[Callable] = []
     self._prev_timed_out = False
     self._awake: bool = True
+    self._last_offroad_wake_counter = 0
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
@@ -241,6 +244,27 @@ class Device:
 
   def add_interactive_timeout_callback(self, callback: Callable):
     self._interactive_timeout_callbacks.append(callback)
+
+  def _offroad_wake_counter(self) -> int:
+    value = None
+    try:
+      value = ui_state.params_memory.get("OffroadWakeCounter", return_default=True)
+    except Exception:
+      pass
+
+    if value is None:
+      try:
+        with open(ui_state.params_memory.get_param_path("OffroadWakeCounter"), "rb") as f:
+          value = f.read()
+      except OSError:
+        return 0
+
+    try:
+      if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="ignore")
+      return int(value or 0)
+    except (TypeError, ValueError):
+      return 0
 
   def update(self):
     # do initial reset
@@ -284,8 +308,13 @@ class Device:
     ignition_just_turned_off = not ui_state.ignition and self._ignition
     self._ignition = ui_state.ignition
 
-    if ignition_just_turned_off or any(ev.left_down for ev in gui_app.mouse_events):
+    if ignition_just_turned_off or any(ev.left_down or ev.left_pressed for ev in gui_app.mouse_events):
       self._reset_interactive_timeout()
+
+    offroad_wake_counter = self._offroad_wake_counter()
+    if not ui_state.started and not ui_state.ignition and offroad_wake_counter != self._last_offroad_wake_counter:
+      self._reset_interactive_timeout()
+    self._last_offroad_wake_counter = offroad_wake_counter
 
     interaction_timeout = time.monotonic() > self._interaction_time
     if interaction_timeout and not self._prev_timed_out:

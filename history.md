@@ -884,3 +884,25 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 적용 시점 상태: `deviceState.started=False`
 - 기기 `py_compile` 통과
 - Mici UI만 재시작, 새 UI PID `54212`
+
+## 2026-05-11 추가: onroad -> offroad 전환도 동일 crossfade 적용
+
+사용자 요청: offroad에서 onroad로 넘어갈 때 만든 전환처럼, onroad에서 offroad로 돌아갈 때도 같은 crossfade 느낌으로 전환되게 변경.
+
+수정 파일:
+
+- `selfdrive/ui/mici/layouts/main.py`
+
+구현 방식:
+
+- 기존 onroad -> offroad 전환은 `_start_transition(SURFACE_OFFROAD, fade_from_black=True)`를 사용해, onroad 화면에서 자연스럽게 이어지는 방식이 아니라 검은 화면에서 offroad가 나타나는 형태였다.
+- 이를 `_start_transition(SURFACE_OFFROAD)`로 변경해 offroad -> onroad와 같은 전환 경로를 사용하게 했다.
+- 주행 종료 통계 저장(`_finish_trip_tracking()`), offroad scroll 위치 동기화(`_sync_offroad_scroll()`), 10분 주행 요약 표시 로직은 유지했다.
+
+검증:
+
+- 로컬/기기 `py_compile`
+- 대상 IP: `192.168.0.5`
+- 모델 확인: `comma mici`
+- 적용 시점 상태: `deviceState.started=False`
+- 기기 offroad 상태에서 Mici UI만 재시작, 새 UI PID `55093`

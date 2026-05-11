@@ -236,7 +236,7 @@ class MiciMainLayout(Scroller):
         self._finish_trip_tracking()
         self._onroad_time_delay = None
         self._sync_offroad_scroll()
-        self._start_transition(SURFACE_OFFROAD, fade_from_black=True)
+        self._start_transition(SURFACE_OFFROAD)
 
     # FIXME: these two pops can interrupt user interacting in the settings
     if self._onroad_time_delay is not None and rl.get_time() - self._onroad_time_delay >= ONROAD_DELAY:

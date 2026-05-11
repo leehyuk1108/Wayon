@@ -944,3 +944,38 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 로컬 font atlas 겹침 검사: `char id=49512`가 다른 glyph rectangle과 겹치지 않음
 - 기기 `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/mici/layouts/home.py`
 - 기기 UI PID 확인: `64184 selfdrive.ui.ui`
+
+## 2026-05-11 추가: 주행 종료 통계 화면 레이아웃 정리
+
+사용자 요청:
+
+- 주행 거리/주행 시간 값 아래의 작은 `주행 거리`, `주행 시간` 캡션 제거.
+- 상단 `수고하셨습니다` 글씨 크기 확대.
+- `km` 값과 시간 값을 조금 아래로 이동.
+
+수정 파일:
+
+- `selfdrive/ui/mici/layouts/home.py`
+
+구현 방식:
+
+- `_distance_caption_label`, `_duration_caption_label` 생성과 render 호출을 제거했다.
+- `수고하셨습니다` title font size를 `30`에서 `42`로 키웠다.
+- title 영역 높이를 `38`에서 `56`으로 넓혔다.
+- 거리/시간 값의 y 위치를 `self.rect.y + 84`에서 `self.rect.y + 104`로 내려, 제목과 값 사이 여백을 더 자연스럽게 만들었다.
+- 중앙 divider는 값 영역에 맞춰 `self.rect.y + 98`, height `82`로 조정했다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- 모델 확인: `comma mici`
+- 적용 시점 상태: `deviceState.started=False`
+- `/data/openpilot`과 `/data/safe_staging/merged`의 `home.py`가 정식 파일로 복원되어 있고, 임시 프리뷰 marker는 소비 후 삭제됨.
+- 프리뷰는 `40000m, 10800s` 데모 값으로 한 번 띄웠다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/mici/layouts/home.py`
+- 기기 `/usr/local/venv/bin/python3 -m py_compile /data/openpilot/selfdrive/ui/mici/layouts/home.py`
+- 기기 `/usr/local/venv/bin/python3 -m py_compile /data/safe_staging/merged/selfdrive/ui/mici/layouts/home.py`
+- 기기 UI PID 확인: `66004 selfdrive.ui.ui`

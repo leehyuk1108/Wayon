@@ -123,6 +123,7 @@ KONIK_PATH = _FP_CACHE_ROOT / "use_konik"
 MAPS_PATH = _FP_DATA_ROOT / "media/0/osm/offline"
 
 NNFF_MODELS_PATH = Path(BASEDIR) / "starpilot/assets/nnff_models"
+NNFF_SUBSTITUTE_PATH = NNFF_MODELS_PATH / "substitute.toml"
 
 BUTTON_FUNCTIONS = {
   "NOTHING": 0,
@@ -244,7 +245,7 @@ params_memory = Params(memory=True)
 
 @cache
 def get_nnff_model_files():
-  return [file.stem for file in NNFF_MODELS_PATH.iterdir() if file.is_file()]
+  return [file.stem for file in NNFF_MODELS_PATH.iterdir() if file.is_file() and file.suffix == ".json"]
 
 @cache
 def get_nnff_substitutes():
@@ -252,6 +253,9 @@ def get_nnff_substitutes():
   with open(TORQUE_SUBSTITUTE_PATH, "rb") as f:
     substitutes_data = tomllib.load(f)
     substitutes = {key: value for key, value in substitutes_data.items()}
+  if NNFF_SUBSTITUTE_PATH.exists():
+    with open(NNFF_SUBSTITUTE_PATH, "rb") as f:
+      substitutes.update(tomllib.load(f))
   return substitutes
 
 def nnff_supported(car_fingerprint):

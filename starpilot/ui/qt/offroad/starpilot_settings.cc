@@ -21,11 +21,17 @@ bool nnffLogFileExists(const QString &carFingerprint) {
   if (models.isEmpty()) {
     QFileInfoList fileInfoList = QDir(QStringLiteral("../../starpilot/assets/nnff_models")).entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
     for (const QFileInfo &fileInfo : fileInfoList) {
-      models.append(fileInfo.completeBaseName());
+      if (fileInfo.suffix() == "json") {
+        models.append(fileInfo.completeBaseName());
+      }
     }
 
-    QFile sub_file("../../opendbc/car/torque_data/substitute.toml");
-    if (sub_file.open(QIODevice::ReadOnly)) {
+    auto loadSubstitutes = [&substitutes](const QString &path) {
+      QFile sub_file(path);
+      if (!sub_file.open(QIODevice::ReadOnly)) {
+        return;
+      }
+
       QTextStream in(&sub_file);
       while (!in.atEnd()) {
         QString line = in.readLine().trimmed();
@@ -42,7 +48,10 @@ bool nnffLogFileExists(const QString &carFingerprint) {
           }
         }
       }
-    }
+    };
+
+    loadSubstitutes("../../opendbc/car/torque_data/substitute.toml");
+    loadSubstitutes("../../starpilot/assets/nnff_models/substitute.toml");
   }
 
   QStringList fingerprintsToCheck;

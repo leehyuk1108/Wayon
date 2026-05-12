@@ -1701,3 +1701,31 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - `selfdrive/ui/mici/onroad/augmented_road_view.py`
   - 마지막 카메라 프레임을 유지 중인 동안에는 offroad fallback 검은 배경/문구를 그리지 않도록 변경했다.
   - 결과적으로 기존 `FADE_DURATION = 0.55초` 크로스페이드가 마지막 onroad 카메라 프레임 위에서 자연스럽게 보이도록 했다.
+
+## 2026-05-12 추가: Chevrolet Traverse NNFF 모델 substitute
+
+사용자 요청:
+
+- Chevrolet Traverse에 Trailblazer NNFF 모델을 적용할 수 있는지 확인 후 적용 요청.
+
+확인:
+
+- `starpilot/assets/nnff_models/CHEVROLET_TRAILBLAZER.json` 모델은 존재한다.
+- Traverse 전용 NNFF 모델 파일은 없었다.
+- `opendbc/car/torque_data/substitute.toml`에 직접 `CHEVROLET_TRAVERSE` 매핑을 추가하면 Traverse가 이미 `override.toml`에 정의되어 있어 torque config 중복 정의 문제가 생길 수 있다.
+
+수정:
+
+- `starpilot/assets/nnff_models/substitute.toml`을 새로 만들고, NNFF 전용으로만 아래 매핑을 추가했다.
+  - `CHEVROLET_TRAVERSE = CHEVROLET_TRAILBLAZER`
+- `starpilot/common/starpilot_variables.py`
+  - NNFF 모델 목록은 `.json` 파일만 보도록 필터링했다.
+  - 기존 torque substitute를 읽은 뒤, NNFF 전용 substitute 파일을 overlay로 추가하도록 변경했다.
+- `starpilot/ui/qt/offroad/starpilot_settings.cc`
+  - Qt 설정 화면의 NNFF 모델 존재 확인도 `.json`만 모델로 보고, NNFF 전용 substitute 파일을 함께 읽도록 맞췄다.
+
+동작:
+
+- Traverse의 기본 torque tune 값은 그대로 유지된다.
+- 사용자가 `NNFF` 토글을 켠 경우에만 Traverse가 Trailblazer NNFF 모델을 substitute로 로드할 수 있다.
+- `NNFFLite`는 기존처럼 별도 경량 로직이며 이 매핑에 의존하지 않는다.

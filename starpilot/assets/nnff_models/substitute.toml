@@ -1,0 +1,3 @@
+# NNFF-only substitutions. Keep this separate from opendbc torque substitutes
+# so vehicle torque tuning remains on the car-specific values.
+"CHEVROLET_TRAVERSE" = "CHEVROLET_TRAILBLAZER"

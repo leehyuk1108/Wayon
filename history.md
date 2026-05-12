@@ -1597,3 +1597,21 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
     - `python3 ./manager.py`
     - `system.hardware.hardwared`
     - `selfdrive.ui.ui`
+
+## 2026-05-12 추가: Mici confidence ball 표시 복구
+
+사용자 보고:
+
+- 오른쪽 `confidence ball`이 기존에는 반쯤 잘려 보였지만, 12px 안쪽 이동 이후 아예 안 보인다고 보고.
+
+원인 판단:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`에서 confidence ball을 그린 뒤 `_draw_border()`를 호출하고 있었다.
+- 기존에는 공 중심이 화면 오른쪽 끝에 걸쳐 있어 border 영향이 덜했지만, 12px 안쪽으로 옮긴 뒤에는 두꺼운 검은 rounded border 아래에 묻힐 가능성이 커졌다.
+
+수정:
+
+- `_draw_border()`를 먼저 그리고, 그 다음 `self._confidence_ball.render(self.rect)`를 호출하도록 렌더 순서를 변경했다.
+- confidence ball 위치 계산 자체는 유지한다.
+  - `STATUS_DOT_RIGHT_MARGIN = 12`
+  - 오른쪽 화면 경계에서 12px 안쪽에 완전히 보이도록 유지.

@@ -522,10 +522,10 @@ class AugmentedRoadView(CameraView):
 
     # Custom UI extension point - add custom overlays here
     # Use self._content_rect for positioning within camera bounds
-    if not in_reverse and not is_driver_stream:
-      self._confidence_ball.render(self.rect)
     if is_driver_stream or not in_reverse:
       self._draw_border()
+    if not in_reverse and not is_driver_stream:
+      self._confidence_ball.render(self.rect)
 
     self._bookmark_icon.render(self.rect)
 

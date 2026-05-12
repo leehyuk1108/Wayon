@@ -1642,3 +1642,15 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
   - `laneChange` 이벤트 배너에서 `_last_icon_side`를 따라 좌/우 `turn_signal_left/right` 아이콘을 붙이던 분기를 제거했다.
   - `차선 변경 중 / 전후방 및 측면에 유의하세요` 배너는 텍스트와 기존 그라디언트만 표시한다.
   - `preLaneChangeLeft/Right` 승인 대기 이벤트의 방향지시등 아이콘은 별도 이벤트라 유지했다.
+
+## 2026-05-12 추가: Mici 안전벨트 미체결 아이콘 축소
+
+사용자 요청:
+
+- 안전벨트 미체결 시 중앙에 뜨는 안전벨트 아이콘을 더 작게 표시.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `SeatbeltOverlay`의 `icons_mici/onroad/seatbelt.png` texture 크기를 `119x176`에서 `92x136`으로 축소했다.
+  - 상단 빨간 pulse 그라디언트와 0.8초 pulse 주기는 그대로 유지했다.

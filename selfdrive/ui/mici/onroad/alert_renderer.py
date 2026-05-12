@@ -123,6 +123,7 @@ class AlertRenderer(Widget):
     self._alert_text2_gen = ''
     self._resume_required_start_time: float | None = None
     self._parking_brake_start_time: float | None = None
+    self._parking_brake_timer_visible = False
     self._last_started_frame = -1
 
     # animation filters
@@ -140,6 +141,10 @@ class AlertRenderer(Widget):
   def _reset_timers(self) -> None:
     self._resume_required_start_time = None
     self._parking_brake_start_time = None
+    self._parking_brake_timer_visible = False
+
+  def parking_brake_timer_visible(self) -> bool:
+    return self._parking_brake_timer_visible
 
   def _load_icons(self):
     self._txt_turn_signal_left = gui_app.texture('icons_mici/onroad/turn_signal_left.png', 104, 96)
@@ -274,6 +279,8 @@ class AlertRenderer(Widget):
     return AlertLayout(text_rect, icon_layout)
 
   def _render(self, rect: rl.Rectangle) -> bool:
+    self._parking_brake_timer_visible = False
+
     if not ui_state.started:
       self._reset_timers()
       self._prev_alert = None
@@ -304,6 +311,7 @@ class AlertRenderer(Widget):
       if draw_parking_timer:
         self._prev_alert = None
         self._resume_required_start_time = None
+        self._parking_brake_timer_visible = True
         self._draw_parking_brake_timer(True)
         return True
 
@@ -324,6 +332,7 @@ class AlertRenderer(Widget):
       return True
     if event_name in PARKING_BRAKE_EVENT_NAMES and parking_brake_active:
       self._resume_required_start_time = None
+      self._parking_brake_timer_visible = True
       self._draw_parking_brake_timer(active_alert is not None)
       return True
 

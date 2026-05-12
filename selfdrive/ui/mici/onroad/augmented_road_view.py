@@ -515,7 +515,8 @@ class AugmentedRoadView(CameraView):
     standstill_timer_visible = False
     if not in_reverse and not is_driver_stream:
       standstill_timer_visible = self._standstill_timer.render(self._content_rect, in_reverse)
-    if not in_reverse and not is_driver_stream and not standstill_timer_visible:
+    parking_brake_timer_visible = self._alert_renderer.parking_brake_timer_visible()
+    if not in_reverse and not is_driver_stream and not standstill_timer_visible and not parking_brake_timer_visible:
       self._seatbelt_overlay.render(self._content_rect)
 
     # End clipping region

@@ -1754,3 +1754,22 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 
 - Mici에서 패널 전원을 완전히 내린 뒤 터치 wake가 불안정해지는 문제를 피한다.
 - 화면 꺼짐은 백라이트 0으로 처리하고, 터치 입력/다음 wake 경로는 유지한다.
+
+## 2026-05-12 추가: parking brake 타이머 표시 중 안전벨트 오버레이 숨김
+
+사용자 확인:
+
+- `정차 타이머`라고 말한 대상이 일반 standstill timer나 autohold/resumeRequired 타이머가 아니라, 사이드 브레이크 체결 시 뜨는 parking brake 타이머라고 정정.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/alert_renderer.py`
+  - `carState.parkingBrake` 기반 parking brake 타이머가 실제로 렌더되는 프레임을 `parking_brake_timer_visible()`로 노출했다.
+  - `resumeRequired` / autohold 타이머 경로는 이 flag에 포함하지 않았다.
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - 기존 standstill timer visible 조건에 더해, parking brake 타이머가 표시 중이면 `SeatbeltOverlay.render(...)`를 호출하지 않도록 변경했다.
+
+동작:
+
+- 사이드 브레이크 체결 타이머가 중앙에 뜰 때는 안전벨트 미체결 오버레이가 겹치지 않는다.
+- autohold/resumeRequired 타이머는 이번 숨김 조건에 포함하지 않았다.

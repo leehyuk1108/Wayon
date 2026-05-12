@@ -1680,3 +1680,24 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
   - `ui_state.started` 상태지만 `selfdriveState`가 아직 새 onroad frame 이후로 도착하지 않은 경우 표시되는 문구를 변경했다.
   - 기존: `waiting for\ncontrols to start`
   - 변경: `주행 시스템 부팅중\n잠시만 기다려주세요`
+
+## 2026-05-12 추가: Mici onroad -> offroad 크로스페이드 보정
+
+사용자 보고:
+
+- onroad에서 offroad로 전환될 때 크로스페이드가 있어도, offroad 전환 순간 카메라 뷰가 먼저 꺼져서 실제로는 `꺼졌다 켜지는` 것처럼 보인다고 보고.
+
+원인 판단:
+
+- `ui_state.started`가 false가 되는 순간 `CameraView._offroad_transition()`이 마지막 카메라 프레임을 즉시 지우고 있었다.
+- 같은 프레임에서 `AugmentedRoadView`도 offroad fallback 검은 배경과 `start the car...` 문구를 바로 그려서, `MiciMainLayout`의 fade overlay가 덮을 onroad 화면이 남아 있지 않았다.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/cameraview.py`
+  - offroad 전환 시 마지막 카메라 프레임을 `0.9초` 동안 유지하도록 변경했다.
+  - 유지 중에는 VisionIPC reconnect/recv를 시도하지 않고 기존 프레임만 렌더한다.
+  - 다시 onroad로 들어갈 때는 기존처럼 오래된 프레임과 VisionIPC 상태를 초기화한다.
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - 마지막 카메라 프레임을 유지 중인 동안에는 offroad fallback 검은 배경/문구를 그리지 않도록 변경했다.
+  - 결과적으로 기존 `FADE_DURATION = 0.55초` 크로스페이드가 마지막 onroad 카메라 프레임 위에서 자연스럽게 보이도록 했다.

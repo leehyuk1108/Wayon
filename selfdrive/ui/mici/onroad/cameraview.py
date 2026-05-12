@@ -12,6 +12,7 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 
 CONNECTION_RETRY_INTERVAL = 0.2  # seconds between connection attempts
+OFFROAD_FRAME_HOLD_SECONDS = 0.9
 MICI_FORCE_TEXTURE_CAMERA = os.getenv("MICI_FORCE_TEXTURE_CAMERA", "0") == "1"
 
 VERSION = """
@@ -109,6 +110,7 @@ class CameraView(Widget):
     self._target_client: VisionIpcClient | None = None
     self._target_stream_type: VisionStreamType | None = None
     self._switching: bool = False
+    self._hold_frame_until: float = 0.0
 
     self._texture_needs_update = True
     self.last_connection_attempt: float = 0.0
@@ -155,7 +157,13 @@ class CameraView(Widget):
       if self.client:
         del self.client
       self.client = VisionIpcClient(self._name, self._stream_type, conflate=True)
-    self.frame = None
+      self.frame = None
+      self._hold_frame_until = 0.0
+    elif self.frame is not None:
+      self._hold_frame_until = rl.get_time() + OFFROAD_FRAME_HOLD_SECONDS
+
+  def holding_frame(self) -> bool:
+    return self.frame is not None and not ui_state.started and rl.get_time() < self._hold_frame_until
 
   def _set_placeholder_color(self, color: rl.Color):
     """Set a placeholder color to be drawn when no frame is available."""
@@ -223,18 +231,23 @@ class CameraView(Widget):
     if self._switching:
       self._handle_switch()
 
-    if not self._ensure_connection():
-      self._draw_placeholder(rect)
-      return
+    if not self.holding_frame():
+      if self._hold_frame_until > 0.0 and not ui_state.started:
+        self._hold_frame_until = 0.0
+        self.frame = None
 
-    # Try to get a new buffer without blocking
-    buffer = self.client.recv(timeout_ms=0)
-    if buffer:
-      self._texture_needs_update = True
-      self.frame = buffer
-    elif not self.client.is_connected():
-      # ensure we clear the displayed frame when the connection is lost
-      self.frame = None
+      if not self._ensure_connection():
+        self._draw_placeholder(rect)
+        return
+
+      # Try to get a new buffer without blocking
+      buffer = self.client.recv(timeout_ms=0)
+      if buffer:
+        self._texture_needs_update = True
+        self.frame = buffer
+      elif not self.client.is_connected():
+        # ensure we clear the displayed frame when the connection is lost
+        self.frame = None
 
     if not self.frame:
       self._draw_placeholder(rect)

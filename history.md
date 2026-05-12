@@ -1654,3 +1654,16 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - `selfdrive/ui/mici/onroad/augmented_road_view.py`
   - `SeatbeltOverlay`의 `icons_mici/onroad/seatbelt.png` texture 크기를 `119x176`에서 `92x136`으로 축소했다.
   - 상단 빨간 pulse 그라디언트와 0.8초 pulse 주기는 그대로 유지했다.
+
+## 2026-05-12 추가: 정차 타이머 표시 중 안전벨트 오버레이 숨김
+
+사용자 요청:
+
+- 정차중 타이머가 떠 있을 때는 안전벨트 미체결 경고가 뜨지 않도록 변경.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `StandstillTimerOverlay.render(...)`의 반환값을 `standstill_timer_visible`로 저장한다.
+  - 정차 타이머가 실제로 렌더된 프레임에는 `SeatbeltOverlay.render(...)`를 호출하지 않는다.
+  - 정차 타이머가 표시되지 않는 상태에서는 기존처럼 안전벨트 미체결 오버레이가 표시된다.

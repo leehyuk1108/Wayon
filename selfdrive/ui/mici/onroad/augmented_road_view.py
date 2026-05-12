@@ -512,9 +512,10 @@ class AugmentedRoadView(CameraView):
       self._hud_renderer.render_foreground()
     if (not in_reverse) and (not is_driver_stream) and alert_to_render is None:
       self._experimental_mode_banner.render(self._content_rect)
+    standstill_timer_visible = False
     if not in_reverse and not is_driver_stream:
-      self._standstill_timer.render(self._content_rect, in_reverse)
-    if not in_reverse and not is_driver_stream:
+      standstill_timer_visible = self._standstill_timer.render(self._content_rect, in_reverse)
+    if not in_reverse and not is_driver_stream and not standstill_timer_visible:
       self._seatbelt_overlay.render(self._content_rect)
 
     # End clipping region

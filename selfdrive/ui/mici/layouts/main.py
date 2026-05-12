@@ -1,5 +1,6 @@
 import pyray as rl
 import math
+import time
 import cereal.messaging as messaging
 from openpilot.selfdrive.ui.mici.layouts.home import MiciHomeLayout
 from openpilot.selfdrive.ui.mici.layouts.settings.settings import SettingsLayout
@@ -10,11 +11,13 @@ from openpilot.selfdrive.ui.mici.layouts.onboarding import OnboardingWindow
 from openpilot.system.ui.widgets.scroller import Scroller
 from openpilot.system.ui.lib.scroll_panel2 import ScrollState
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.hardware import PC
 
 
 ONROAD_DELAY = 2.5  # seconds
 FADE_DURATION = 0.55  # seconds
 SCREEN_WAKE_FADE_DURATION = 0.85  # seconds
+SCREEN_SLEEP_FADE_DURATION = 2.0  # seconds
 OFFROAD_SNAP_EPS = 2.0  # px
 
 SURFACE_OFFROAD = "offroad"
@@ -155,6 +158,18 @@ class MiciMainLayout(Scroller):
     eased = progress * progress * (3.0 - 2.0 * progress)
     return 1.0 - eased
 
+  def _screen_sleep_fade_alpha(self) -> float:
+    interaction_time = getattr(device, "_interaction_time", -1.0)
+    if not device.awake or ui_state.started or PC or interaction_time <= 0:
+      return 0.0
+
+    time_remaining = interaction_time - time.monotonic()
+    if time_remaining >= SCREEN_SLEEP_FADE_DURATION:
+      return 0.0
+
+    progress = 1.0 - max(0.0, min(1.0, time_remaining / SCREEN_SLEEP_FADE_DURATION))
+    return progress * progress * (3.0 - 2.0 * progress)
+
   def _reset_trip_tracking(self):
     self._trip_distance_m = 0.0
     self._trip_duration_s = 0.0
@@ -213,7 +228,7 @@ class MiciMainLayout(Scroller):
     else:
       self._onroad_layout.render(self._rect)
 
-    screen_fade_alpha = max(fade_alpha, self._screen_wake_fade_alpha())
+    screen_fade_alpha = max(fade_alpha, self._screen_wake_fade_alpha(), self._screen_sleep_fade_alpha())
     if screen_fade_alpha > 0.0:
       rl.draw_rectangle_rec(self._rect, rl.Color(0, 0, 0, int(255 * screen_fade_alpha)))
 

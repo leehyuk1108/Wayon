@@ -1461,3 +1461,60 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 
 - 파일 내용은 로컬 기준으로 맞췄지만, 기기 git HEAD 자체는 아직 `df8fa249`다. 즉 현재 기기는 오래된 commit 위에 로컬 워킹트리 파일들이 live patch로 얹힌 상태다.
 - 완전한 영구화를 위해서는 이 로컬 워킹트리 상태를 커밋/push하고, 기기 repo도 그 commit으로 checkout/pull되게 맞추는 단계가 필요하다.
+
+## 2026-05-12 추가: Mici 화면 꺼짐 직전 2초 black overlay fade-out 재도입
+
+사용자 요청:
+
+- 이전처럼 실제 화면 꺼짐을 지연시키는 방식이 아니라, 화면이 꺼지기 2초 전부터 검은 오버레이가 서서히 진해지고 2초가 지나면 기존 로직대로 실제 화면 전원이 꺼지는 방식 제안.
+
+구현 방식:
+
+- `selfdrive/ui/mici/layouts/main.py`
+  - `SCREEN_SLEEP_FADE_DURATION = 2.0` 추가.
+  - 기존 `device._interaction_time`을 기준으로 남은 시간이 2초 미만이면 smoothstep easing으로 `0.0 -> 1.0` alpha를 계산한다.
+  - `ui_state.started`, `PC`, 이미 sleep 상태, 초기화 전 상태에서는 alpha를 `0.0`으로 반환한다.
+  - 기존 wake fade-in / onroad-offroad crossfade black overlay 계산에 sleep fade alpha를 함께 합성했다.
+  - transition fade, wake fade, sleep fade 중 가장 큰 alpha를 사용해 검은 overlay를 그린다.
+  - 실제 `set_display_power()` 호출 시점이나 timeout 연장/지연은 건드리지 않았다.
+  - `system/ui/lib/application.py`에 전역 overlay callback을 추가하는 방식과 `selfdrive/ui/ui_state.py`에 새 public method를 추가하는 방식도 검토했지만, manager 부모 프로세스가 이미 import한 공용 모듈 캐시와 충돌할 수 있어 적용하지 않았다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py system/ui/lib/application.py` 통과.
+- 기기 active/staging에 `selfdrive/ui/mici/layouts/main.py`, `history.md`, 그리고 이전 시도에서 만진 `selfdrive/ui/ui_state.py`, `system/ui/lib/application.py`를 로컬 기준으로 다시 동기화.
+- 기기 checksum:
+  - `selfdrive/ui/mici/layouts/main.py: OK`
+  - `history.md: OK`
+  - `selfdrive/ui/ui_state.py: OK`
+  - `system/ui/lib/application.py: OK`
+- 기기 py_compile:
+  - `selfdrive/ui/mici/layouts/main.py`
+  - `selfdrive/ui/ui_state.py`
+  - `system/ui/lib/application.py`
+- Mici UI 재시작 후 새 PID `147809`.
+- 40초 안정성 확인 중 PID `147809` 유지.
+- 임시로 `ScreenTimeout=6`으로 낮춰 검증:
+  - 시작: `test_start=204 0 ui=147809`
+  - fade window 진입 시점: `test_fade_window=204 0 ui=147809`
+  - timeout 이후 실제 화면 OFF: `test_after_timeout=0 4 ui=147809`
+  - 원래 timeout `300`으로 복구 후 wake: `restored_display=204 0 ui=147809`
+
+## 2026-05-12 추가: Mici 저속 조향 불가 안내 배너 제거
+
+사용자 요청:
+
+- 부팅 후 첫 주행 때 openpilot을 인게이지하지 않았는데도 `Steer Unavailable Under 11 km/h`류의 주황색 배너가 뜨므로, 해당 배너를 없애달라고 요청.
+
+구현 방식:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - Mici 전용 `MinSteerSpeedBanner` 클래스를 제거했다.
+  - `AugmentedRoadView`에서 `_min_steer_speed_banner` 생성 및 render 호출을 제거했다.
+  - 이 배너에서만 쓰던 `CV`, `ALERT_COLORS`, `AlertStatus` import도 제거했다.
+  - 실제 openpilot 이벤트 `EventName.belowSteerSpeed` 및 `selfdrive/selfdrived/events.py`의 이벤트 경고는 건드리지 않았다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/mici/onroad/augmented_road_view.py` 통과.
+- 로컬 검색에서 `MinSteerSpeedBanner`, `_min_steer_speed_banner`, `Steer Unavailable`, `ALERT_COLORS`, `AlertStatus`, `CV`, `rendered_standstill_timer` 잔여 참조 없음.

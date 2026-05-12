@@ -1629,3 +1629,16 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
   - 이벤트 배너는 기존 문구와 그라디언트만 표시한다.
   - `BlindSpotIndicators` 별도 렌더러는 유지하므로, 단순 BSM 감지/방향지시등 pulse 아이콘은 계속 표시된다.
   - 이벤트 배너용 blind spot texture 로딩도 제거했다.
+
+## 2026-05-12 추가: Mici laneChange 이벤트 방향지시등 아이콘 제거
+
+사용자 요청:
+
+- Mici 기준으로 `차선 변경 중` 이벤트에 붙는 방향지시등 아이콘 제거.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/alert_renderer.py`
+  - `laneChange` 이벤트 배너에서 `_last_icon_side`를 따라 좌/우 `turn_signal_left/right` 아이콘을 붙이던 분기를 제거했다.
+  - `차선 변경 중 / 전후방 및 측면에 유의하세요` 배너는 텍스트와 기존 그라디언트만 표시한다.
+  - `preLaneChangeLeft/Right` 승인 대기 이벤트의 방향지시등 아이콘은 별도 이벤트라 유지했다.

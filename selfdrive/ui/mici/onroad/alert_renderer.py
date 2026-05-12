@@ -244,10 +244,7 @@ class AlertRenderer(Widget):
       icon_margin_y = 5
 
     elif event_name == 'laneChange':
-      icon_side = self._last_icon_side
-      txt_icon = self._txt_turn_signal_left if self._last_icon_side == 'left' else self._txt_turn_signal_right
-      icon_margin_x = 2
-      icon_margin_y = 5
+      self._turn_signal_timer = 0.0
 
     elif event_name == 'laneChangeBlocked':
       self._turn_signal_timer = 0.0

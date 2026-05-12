@@ -1667,3 +1667,16 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
   - `StandstillTimerOverlay.render(...)`의 반환값을 `standstill_timer_visible`로 저장한다.
   - 정차 타이머가 실제로 렌더된 프레임에는 `SeatbeltOverlay.render(...)`를 호출하지 않는다.
   - 정차 타이머가 표시되지 않는 상태에서는 기존처럼 안전벨트 미체결 오버레이가 표시된다.
+
+## 2026-05-12 추가: Mici controls 준비 대기 문구 변경
+
+사용자 요청:
+
+- 완전 첫 부팅 후 onroad 진입 시 표시되는 `waiting for controls to start` 문구를 한국어로 변경.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `ui_state.started` 상태지만 `selfdriveState`가 아직 새 onroad frame 이후로 도착하지 않은 경우 표시되는 문구를 변경했다.
+  - 기존: `waiting for\ncontrols to start`
+  - 변경: `주행 시스템 부팅중\n잠시만 기다려주세요`

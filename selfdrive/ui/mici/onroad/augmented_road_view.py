@@ -428,7 +428,7 @@ class AugmentedRoadView(CameraView):
     if ui_state.panda_type == log.PandaState.PandaType.unknown:
       self._offroad_label.set_text("system booting")
     elif ui_state.started and not self._controls_ready():
-      self._offroad_label.set_text("waiting for\ncontrols to start")
+      self._offroad_label.set_text("주행 시스템 부팅중\n잠시만 기다려주세요")
     else:
       self._offroad_label.set_text("start the car to\nuse openpilot")
 

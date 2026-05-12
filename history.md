@@ -1577,3 +1577,23 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
   - `DoReboot`, `DoUninstall`은 이번 요청 범위가 전원 off 방지이므로 그대로 유지했다.
 - 테스트 기대값:
   - `system/hardware/tests/test_power_monitoring.py`에서 offroad 시간 초과, 저전압, delay 이후에도 `should_shutdown(...) == False`가 되도록 기대값을 수정했다.
+
+검증 및 기기 반영:
+
+- 로컬:
+  - `python3 -m py_compile system/hardware/power_monitoring.py system/manager/manager.py system/hardware/tests/test_power_monitoring.py` 통과.
+  - `python3 -m pytest system/hardware/tests/test_power_monitoring.py`는 로컬 Python에 `pytest`가 없어 실행 불가.
+- Git:
+  - `1a47c41b Disable software power off`를 `origin/StarPilot`에 push.
+- 기기 `192.168.35.175`:
+  - `/data/openpilot`를 `7440534f -> 1a47c41b`로 fast-forward.
+  - 기기 venv 기준 `PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot /usr/local/venv/bin/python3 -m py_compile ...` 통과.
+  - `ForcePowerDown=True`, 저전압/배터리 0/긴 offroad 시간 조건에서도 `should_shutdown_force_low_capacity=False` 확인.
+  - `sudo systemctl restart comma.service`로 manager/hardwared/UI 새 코드 로드.
+  - `DoShutdown=True`를 직접 세팅한 뒤 4초 후 `DoShutdown_after_manager=False` 확인.
+  - 검증 후 `ForcePowerDown`과 `DoShutdown` 모두 제거됨을 확인.
+  - 재시작 후 프로세스 확인:
+    - `bash /data/openpilot/launch_chffrplus.sh`
+    - `python3 ./manager.py`
+    - `system.hardware.hardwared`
+    - `selfdrive.ui.ui`

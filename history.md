@@ -1518,3 +1518,38 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 
 - 로컬 `python3 -m py_compile selfdrive/ui/mici/onroad/augmented_road_view.py` 통과.
 - 로컬 검색에서 `MinSteerSpeedBanner`, `_min_steer_speed_banner`, `Steer Unavailable`, `ALERT_COLORS`, `AlertStatus`, `CV`, `rendered_standstill_timer` 잔여 참조 없음.
+
+## 2026-05-12 주행 중 발견된 이슈 조사/수정
+
+사용자가 실제 주행 중 발견해 전달한 증상:
+
+1. 오른쪽 `confidence ball`로 보이는 onroad UI 요소가 화면 오른쪽에서 잘려 보임.
+2. 신호 변경 알림이 뜨는 동시에 콤마 로고가 표시되며 UI/프로세스가 재시작된 것으로 보임.
+   - 오래 걸리지는 않아 하드 리붓보다는 소프트 리붓 또는 UI/manager 프로세스 재시작 가능성이 있음.
+   - 이후 `openpilot crashed` 이벤트가 발생했고 engage가 불가능했다고 보고됨.
+   - 같은 계열의 `lead depart` / 전방 차량 출발 알림도 동일한 문제 가능성이 있음.
+3. `openpilot crashed` 이벤트가 표시되는 동시에 약 0.1초 만에 사라짐.
+   - 원래라면 crash 상태가 계속 남아 있어야 할 가능성이 있으므로 alert 유지/표시 경로 확인 필요.
+
+다음 조사 포인트:
+
+- `greenLightAlert`, `leadDepartAlert`, `greenPrompt` 계열 알림 생성 경로와 Mici `AlertRenderer` / `CircularAlertsRenderer` / 이미지 asset 로딩 경로 확인.
+- 실제 기기 로그에서 해당 시점 `ui`, `selfdrived`, `modeld`, `starpilot_process`, manager restart 흔적 확인.
+- `openpilot crashed` 이벤트가 짧게 사라지는 원인이 event source clearing인지, alert renderer animation/prev alert 처리인지, manager process state 갱신 문제인지 분리.
+- 오른쪽 confidence ball 위치 계산이 Mici content rect와 side panel 폭을 넘는지 확인.
+
+해결 방향:
+
+- 기기 `/data/error_logs`에서 Mici UI crash 원인을 확인했다.
+  - `selfdrive/ui/mici/onroad/circular_alerts.py`의 `_with_alpha(rl.WHITE, alpha)` 호출에서, 기기 `pyray`의 `rl.WHITE`가 `rl.Color` 객체가 아니라 tuple로 들어와 `.r` 접근 중 `AttributeError`가 발생했다.
+  - 신호 변경 / 전방 차량 출발 원형 알림 표시 시 UI 프로세스가 죽고 manager가 UI를 다시 띄우면서 콤마 로고와 `openpilot crashed`가 이어진 것으로 판단했다.
+- 사용자 요청에 맞춰 신호 변경 / 전방 차량 출발 알림은 원형 아이콘 알림을 쓰지 않고, 일반 이벤트처럼 상단 초록 그라디언트 + 텍스트만 표시하도록 변경했다.
+  - `selfdrive/ui/mici/onroad/hud_renderer.py`에서 `CircularAlertsRenderer` import, 생성, update, render 호출을 제거했다.
+  - 기존 `selfdrive/ui/mici/onroad/alert_renderer.py`가 `greenLight`, `leadDeparting`, `greenLightAlert`, `leadDepartAlert`, `greenPrompt`, `StarPilotAlertStatus.starpilot` 계열을 초록 그라디언트로 처리하므로 이 경로만 남겼다.
+- `openpilot crashed` 표시가 순간적으로 사라지는 문제를 줄이기 위해 Mici `AlertRenderer`에도 Qt onroad와 같은 `/data/error_logs/error.txt` 감지를 추가했다.
+  - 해당 파일이 있으면 `openpilot crashed / 오류 로그를 확인해주세요` critical mid alert를 계속 반환한다.
+- 오른쪽 `confidence ball` 잘림은 오른쪽 경계에 원 중심이 너무 붙어 원 반지름 일부가 밖으로 나갈 수 있는 구조라, 중심을 12px 안쪽으로 이동했다.
+- 로컬 검증:
+  - `python3 -m py_compile selfdrive/ui/mici/onroad/hud_renderer.py selfdrive/ui/mici/onroad/alert_renderer.py selfdrive/ui/mici/onroad/confidence_ball.py selfdrive/ui/mici/onroad/circular_alerts.py` 통과.
+- 기기 배포 상태:
+  - 이 시점에는 `192.168.35.175` SSH가 `Host is down / No route to host`로 응답하지 않아 기기 반영은 대기 상태.

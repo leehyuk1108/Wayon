@@ -1,5 +1,6 @@
 import time
 from enum import StrEnum
+from pathlib import Path
 from typing import NamedTuple
 import pyray as rl
 import random
@@ -30,6 +31,7 @@ AUTOHOLD_TIMER_BG_ALPHA = 170
 
 SELFDRIVE_STATE_TIMEOUT = 5  # Seconds
 SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
+ERROR_LOG_PATH = Path("/data/error_logs/error.txt")
 
 # Constants
 ALERT_COLORS = {
@@ -96,6 +98,14 @@ ALERT_CRITICAL_REBOOT = Alert(
   text2="Reboot Device",
   size=AlertSize.full,
   status=AlertStatus.critical,
+)
+
+ALERT_OPENPILOT_CRASHED = Alert(
+  text1="openpilot crashed",
+  text2="오류 로그를 확인해주세요",
+  size=AlertSize.mid,
+  status=AlertStatus.critical,
+  alert_type="openpilotCrashed",
 )
 
 
@@ -174,6 +184,10 @@ class AlertRenderer(Widget):
   def get_alert(self, sm: messaging.SubMaster) -> Alert | None:
     """Generate the current alert based on selfdrive state."""
     ss = sm['selfdriveState']
+
+    if ERROR_LOG_PATH.is_file():
+      self._prev_alert = ALERT_OPENPILOT_CRASHED
+      return ALERT_OPENPILOT_CRASHED
 
     # Check if selfdriveState messages have stopped arriving
     if not sm.updated['selfdriveState']:

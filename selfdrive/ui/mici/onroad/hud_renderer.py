@@ -2,7 +2,6 @@ import pyray as rl
 from dataclasses import dataclass
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.mici.onroad.blind_spot_indicators import BlindSpotIndicators
-from openpilot.selfdrive.ui.mici.onroad.circular_alerts import CircularAlertsRenderer
 from openpilot.selfdrive.ui.mici.onroad.torque_bar import TorqueBar
 from openpilot.selfdrive.ui.mici.onroad.speed_limit_utils import resolve_display_speed_limit_ms
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
@@ -140,7 +139,6 @@ class HudRenderer(Widget):
     self._font_display: rl.Font = gui_app.font(FontWeight.DISPLAY)
 
     self._blind_spot_indicators = BlindSpotIndicators()
-    self._circular_alerts_renderer = CircularAlertsRenderer()
     self._turn_intent = TurnIntent()
     self._torque_bar = TorqueBar()
 
@@ -177,7 +175,6 @@ class HudRenderer(Widget):
     controls_state = sm['controlsState']
     car_state = sm['carState']
     self._blind_spot_indicators.update()
-    self._circular_alerts_renderer.update()
 
     v_cruise_cluster = car_state.vCruiseCluster
     set_speed = (
@@ -262,7 +259,6 @@ class HudRenderer(Widget):
 
     self._draw_steering_wheel(self._rect)
     self._draw_speed_limit_prompt(self._rect)
-    self._circular_alerts_renderer.render(self._rect)
     self._blind_spot_indicators.render(self._rect)
 
   def _render(self, rect: rl.Rectangle) -> None:

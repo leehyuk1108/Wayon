@@ -6,6 +6,9 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.filter_simple import FirstOrderFilter
 
+STATUS_DOT_RADIUS = 24
+STATUS_DOT_RIGHT_MARGIN = 12
+
 
 def draw_circle_gradient(center_x: float, center_y: float, radius: int,
                          top: rl.Color, bottom: rl.Color) -> None:
@@ -51,9 +54,9 @@ class ConfidenceBall(Widget):
       self.rect.height,
     )
 
-    status_dot_radius = 24
+    status_dot_radius = STATUS_DOT_RADIUS
     dot_height = (1 - self._confidence_filter.x) * (content_rect.height - 2 * status_dot_radius) + status_dot_radius
-    dot_height = self._rect.y + dot_height
+    dot_height = content_rect.y + dot_height
 
     # confidence zones
     if ui_state.status == UIStatus.ENGAGED or ui_state.always_on_lateral_active or self._demo:
@@ -75,6 +78,6 @@ class ConfidenceBall(Widget):
       top_dot_color = rl.Color(50, 50, 50, 255)
       bottom_dot_color = rl.Color(13, 13, 13, 255)
 
-    draw_circle_gradient(content_rect.x + content_rect.width - status_dot_radius,
+    draw_circle_gradient(content_rect.x + content_rect.width - status_dot_radius - STATUS_DOT_RIGHT_MARGIN,
                          dot_height, status_dot_radius,
                          top_dot_color, bottom_dot_color)

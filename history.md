@@ -1555,3 +1555,25 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
   - `python3 -m py_compile selfdrive/ui/mici/onroad/hud_renderer.py selfdrive/ui/mici/onroad/alert_renderer.py selfdrive/ui/mici/onroad/confidence_ball.py selfdrive/ui/mici/onroad/circular_alerts.py starpilot/starpilot_process.py` 통과.
 - 기기 배포 상태:
   - 이 시점에는 `192.168.35.175` SSH가 `Host is down / No route to host`로 응답하지 않아 기기 반영은 대기 상태.
+
+## 2026-05-12 추가: 소프트웨어 전원 종료 경로 비활성화
+
+사용자 요청:
+
+- `HyukLee-og/openpilot@19684af`를 참고하되, 토글은 만들지 않고 콤마 기기 전원이 꺼지지 않도록 변경.
+
+구현 방식:
+
+- 참고 커밋은 `system/hardware/power_monitoring.py::should_shutdown(...)`에서 기존 자동 종료 로직 앞에 토글 조건을 두고 `return False`로 우회하는 구조였다.
+- Wayon에서는 토글 없이 항상 적용되도록 `PowerMonitoring.should_shutdown(...)`이 무조건 `False`를 반환하게 했다.
+  - offroad 경과 시간 종료
+  - 저전압 종료
+  - 내부 추정 배터리 용량 0 이하 종료
+  - `DisablePowerDown`
+  - `ForcePowerDown`
+  위 조건들은 모두 shutdown 판단에 영향을 주지 않는다.
+- `system/manager/manager.py`에서도 `DoShutdown` 요청을 제거하고 무시하도록 보강했다.
+  - 설정 화면 또는 다른 경로에서 `DoShutdown`이 세팅되어도 manager가 종료/전원 off로 진행하지 않는다.
+  - `DoReboot`, `DoUninstall`은 이번 요청 범위가 전원 off 방지이므로 그대로 유지했다.
+- 테스트 기대값:
+  - `system/hardware/tests/test_power_monitoring.py`에서 offroad 시간 초과, 저전압, delay 이후에도 `should_shutdown(...) == False`가 되도록 기대값을 수정했다.

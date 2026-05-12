@@ -810,6 +810,10 @@ def manager_thread() -> None:
     shutdown = False
     for param in ("DoUninstall", "DoShutdown", "DoReboot"):
       if params.get_bool(param):
+        if param == "DoShutdown":
+          params.remove(param)
+          cloudlog.warning("Ignoring DoShutdown because software power-off is disabled")
+          continue
         shutdown = True
         params.put("LastManagerExitReason", f"{param} {datetime.datetime.now()}")
         cloudlog.warning(f"Shutting down manager - {param} set")
@@ -845,8 +849,8 @@ def main() -> None:
     cloudlog.warning("reboot")
     HARDWARE.reboot()
   elif params.get_bool("DoShutdown"):
-    cloudlog.warning("shutdown")
-    HARDWARE.shutdown()
+    params.remove("DoShutdown")
+    cloudlog.warning("Ignoring DoShutdown because software power-off is disabled")
 
 
 if __name__ == "__main__":

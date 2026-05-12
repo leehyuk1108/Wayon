@@ -12,7 +12,8 @@ from openpilot.selfdrive.ui.lib.prime_state import PrimeState
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.hardware import HARDWARE, PC
 
-BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
+MICI = HARDWARE.get_device_type() == "mici"
+BACKLIGHT_OFFROAD = 65 if MICI else 50
 
 
 class UIStatus(Enum):
@@ -335,7 +336,8 @@ class Device:
     if on != self._awake:
       self._awake = on
       cloudlog.debug(f"setting display power {int(on)}")
-      HARDWARE.set_display_power(on)
+      if on or not MICI:
+        HARDWARE.set_display_power(on)
       gui_app.set_should_render(on)
 
 

@@ -1729,3 +1729,28 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - Traverse의 기본 torque tune 값은 그대로 유지된다.
 - 사용자가 `NNFF` 토글을 켠 경우에만 Traverse가 Trailblazer NNFF 모델을 substitute로 로드할 수 있다.
 - `NNFFLite`는 기존처럼 별도 경량 로직이며 이 매핑에 의존하지 않는다.
+
+## 2026-05-12 추가: Mici 화면 꺼짐 후 터치 wake 불량 보정
+
+사용자 보고:
+
+- offroad 화면이 꺼진 뒤 화면을 눌러도 다시 켜지지 않는다고 보고.
+
+확인:
+
+- 기기 `10.129.108.173`에서 `comma mici`, host `comma-db5ce68d` 확인.
+- `selfdrive.ui.ui`와 `hardwared` 프로세스는 살아 있었다.
+- `deviceState.started=False`로 offroad 상태였다.
+- `/sys/class/backlight/panel0-backlight/bl_power=4` 상태로 패널 전원이 내려가 있었고, UI 재시작 후 화면이 다시 켜졌다.
+
+수정:
+
+- `selfdrive/ui/ui_state.py`
+  - Mici에서는 interactive timeout으로 sleep에 들어갈 때 `HARDWARE.set_display_power(False)`를 호출하지 않도록 변경했다.
+  - 대신 기존 `_update_brightness()` 경로처럼 awake가 false이면 brightness를 `0`으로 낮춰 화면을 끈다.
+  - 다시 wake될 때는 기존처럼 `HARDWARE.set_display_power(True)`를 호출한다.
+
+의도:
+
+- Mici에서 패널 전원을 완전히 내린 뒤 터치 wake가 불안정해지는 문제를 피한다.
+- 화면 꺼짐은 백라이트 0으로 처리하고, 터치 입력/다음 wake 경로는 유지한다.

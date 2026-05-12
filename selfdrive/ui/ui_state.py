@@ -13,7 +13,6 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.hardware import HARDWARE, PC
 
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
-SCREEN_SLEEP_FADE_DURATION = 1.2
 
 
 class UIStatus(Enum):
@@ -215,8 +214,6 @@ class Device:
     self._override_interactive_timeout: int | None = None
     self._interactive_timeout_callbacks: list[Callable] = []
     self._prev_timed_out = False
-    self._sleep_delay_until: float | None = None
-    self._sleep_fade_duration = 0.0
     self._awake: bool = True
     self._last_offroad_wake_counter = 0
 
@@ -238,17 +235,13 @@ class Device:
     self._override_interactive_timeout = timeout
     self._reset_interactive_timeout()
 
-  def delay_sleep_for(self, duration: float) -> None:
-    self._sleep_delay_until = max(self._sleep_delay_until or 0.0, time.monotonic() + duration)
-    self._sleep_fade_duration = max(self._sleep_fade_duration, duration)
-
   @property
   def interactive_timeout(self) -> int:
     if self._override_interactive_timeout is not None:
       return self._override_interactive_timeout
 
-    fallback = (10 if gui_app.big_ui() else 5) if ui_state.ignition else 30
-    param = "ScreenTimeoutOnroad" if ui_state.ignition else "ScreenTimeout"
+    fallback = (10 if gui_app.big_ui() else 5) if ui_state.started else 30
+    param = "ScreenTimeoutOnroad" if ui_state.started else "ScreenTimeout"
     timeout = ui_state.params.get_int(param)
     return timeout if timeout > 0 else fallback
 
@@ -307,9 +300,6 @@ class Device:
       clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [30, 100]))
 
     brightness = round(self._brightness_filter.update(clipped_brightness))
-    if self._sleep_delay_until is not None and self.timed_out and self._sleep_fade_duration > 0.0:
-      remaining = max(0.0, self._sleep_delay_until - time.monotonic())
-      brightness = round(brightness * min(1.0, remaining / self._sleep_fade_duration))
 
     if not self._awake:
       brightness = 0
@@ -335,17 +325,11 @@ class Device:
 
     interaction_timeout = self.timed_out
     if interaction_timeout and not self._prev_timed_out:
-      self.delay_sleep_for(SCREEN_SLEEP_FADE_DURATION)
       for callback in self._interactive_timeout_callbacks:
         callback()
     self._prev_timed_out = interaction_timeout
 
-    if not interaction_timeout:
-      self._sleep_delay_until = None
-      self._sleep_fade_duration = 0.0
-
-    keep_awake_for_fade = self._sleep_delay_until is not None and time.monotonic() < self._sleep_delay_until
-    self._set_awake(ui_state.started or not interaction_timeout or keep_awake_for_fade or PC)
+    self._set_awake(ui_state.started or not interaction_timeout or PC)
 
   def _set_awake(self, on: bool):
     if on != self._awake:

@@ -1183,3 +1183,281 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - 로컬 `python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py`
 - 기기 네 runtime 경로 `py_compile`
 - 기기에서 `ScreenTimeout=5` 확인
+
+## 2026-05-11 추가: Mici offroad 화면 꺼짐을 정확히 5초 안에 fade-out하도록 재수정
+
+사용자 보고:
+
+- 여전히 fade-out이 보이지 않고, 화면이 5초보다 훨씬 오래 켜져 있음.
+
+확인한 실제 원인:
+
+- `ScreenTimeout=5`, `started=False`, `ignition=False`는 기기에서 정상 확인됐다.
+- UI만 kill/restart하면 manager가 `prepare()` 단계에서 미리 import한 Python 모듈 캐시를 fork로 다시 물려줄 수 있어, `ui_state.py` 변경이 실제 UI child에 적용되지 않을 수 있었다.
+- manager까지 tmux pane에서 재시작한 뒤 디버그 로그를 확인하자 기존 구현은 `5초 timeout 이후 1.2초 fade delay`로 동작했다.
+- 따라서 실제 display power off는 약 `6.2초`가 되어, 사용자가 말한 “5초보다 오래 켜짐”이 맞았다.
+
+수정 파일:
+
+- `selfdrive/ui/ui_state.py`
+- `selfdrive/ui/mici/layouts/main.py`
+
+구현 방식:
+
+- `Device.sleep_fade_progress`를 추가했다.
+- offroad sleep timeout이 끝난 뒤 fade를 시작하지 않고, timeout 직전 마지막 `SCREEN_SLEEP_FADE_DURATION=1.2s` 동안 fade progress가 `0.0 -> 1.0`으로 올라가게 했다.
+- `_update_brightness()`는 이 progress에 맞춰 실제 backlight brightness를 미리 낮춘다.
+- Mici renderer의 검은 overlay도 `device.sleep_fade_progress`를 사용해 같은 타이밍으로 그린다.
+- timeout 순간에는 더 이상 sleep delay를 걸지 않고 바로 `HARDWARE.set_display_power(False)`가 호출되도록 했다.
+- 이전 구현의 `Device.delay_sleep_for()`와 `_sleep_delay_until` / `_sleep_fade_duration`은 제거했다.
+
+기기 반영:
+
+- 대상 IP: `192.168.0.5`
+- 아래 runtime/staging 경로를 모두 같은 파일로 맞췄다.
+  - `/data/openpilot/selfdrive/ui/ui_state.py`
+  - `/data/openpilot/openpilot/selfdrive/ui/ui_state.py`
+  - `/data/safe_staging/merged/selfdrive/ui/ui_state.py`
+  - `/data/safe_staging/merged/openpilot/selfdrive/ui/ui_state.py`
+  - `/data/openpilot/selfdrive/ui/mici/layouts/main.py`
+  - `/data/openpilot/openpilot/selfdrive/ui/mici/layouts/main.py`
+  - `/data/safe_staging/merged/selfdrive/ui/mici/layouts/main.py`
+  - `/data/safe_staging/merged/openpilot/selfdrive/ui/mici/layouts/main.py`
+- 관련 `__pycache__`를 삭제했다.
+- UI 모듈 캐시 문제 때문에 tmux `comma:0` pane을 `cd /data/openpilot && exec ./launch_chffrplus.sh`로 respawn해 manager까지 새로 올렸다.
+- 테스트를 위해 `ScreenTimeout=5`로 유지했다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/ui_state.py selfdrive/ui/mici/layouts/main.py`
+- 기기 active/staging `ui_state.py` md5 일치: `7bc9cc81eabd0b81f230f2d08d5e2ca3`
+- 기기 active/staging `mici/layouts/main.py` md5 일치: `b4bea6b91a6b0da29e6a9adaa23dc5d2`
+- `/tmp/wayon_screen_timeout_debug.log` 제거 후 재생성되지 않음.
+- `/dev/shm/params/d/OffroadWakeCounter`를 증가시켜 offroad wake를 강제 발생시킨 뒤 backlight sysfs를 0.25초 간격으로 확인했다.
+- 측정값:
+  - `0.0s ~ 3.7s`: `brightness=165`, `bl_power=0`
+  - `3.96s`: `brightness=142`, `bl_power=0`
+  - `4.24s`: `brightness=104`, `bl_power=0`
+  - `4.52s`: `brightness=66`, `bl_power=0`
+  - `4.82s`: `brightness=25`, `bl_power=0`
+  - `5.10s`: `brightness=0`, `bl_power=4`
+- 즉 5초 직전에 fade-out이 진행되고, 5초 지점 근처에서 실제 display power가 꺼지는 것을 숫자로 확인했다.
+- manager 재시작 중 orphan으로 남은 이전 `system.updated.updated` 프로세스가 overlay lock을 잡아 새 updated가 잠시 crash/restart했으나, stale PID `87869`를 정리한 뒤 manager 하위 정상 `updated` 하나만 남았다.
+
+## 2026-05-11 추가: 테스트용 5초 timeout을 실제 사용값 5분으로 복구
+
+사용자 보고:
+
+- 콤마 화면이 다시 켜지지 않음.
+
+확인한 점:
+
+- 화면 전원 값은 `bl_power=0`으로 켜진 상태였지만, backlight brightness가 `0`으로 남아 있어 검은 화면처럼 보였다.
+- 직전 fade-out 검증을 위해 `ScreenTimeout=5`를 유지해둔 것이 원인이었다.
+
+조치:
+
+- sysfs로 display를 즉시 깨웠다.
+  - `/sys/class/backlight/panel0-backlight/bl_power = 0`
+  - `/sys/class/backlight/panel0-backlight/brightness = 165`
+- `ScreenTimeout`을 실제 사용값인 `300`초, 즉 5분으로 되돌렸다.
+- `/dev/shm/params/d/OffroadWakeCounter`를 증가시켜 UI 내부 offroad wake 타이머도 같이 리셋했다.
+
+검증:
+
+- 적용 직후: `brightness=165`, `bl_power=0`
+- 8초 뒤: `brightness=165`, `bl_power=0`
+- 따라서 5초 테스트값 때문에 곧바로 다시 꺼지는 문제는 해소됐다.
+
+## 2026-05-12 추가: comma 로고만 남는 화면 복구
+
+사용자 보고:
+
+- 화면이 켜져도 offroad home이 나오지 않고 comma 로고만 계속 표시됨.
+
+확인한 점:
+
+- 차량 상태는 `started=False`, ignition line/CAN 모두 `False`로 offroad였다.
+- `ScreenTimeout=300`, `brightness=165`, `bl_power=0`으로 timeout/백라이트 문제는 아니었다.
+- UI 프로세스는 살아 있었고 렌더 루프도 돌고 있었지만, weston 재시작 후 Wayland socket 권한이 root 소유로 남아 있었다.
+- 실제 확인값:
+  - `/var/tmp/weston/wayland-0`: `root:root`, socket mode가 `srwxr-xr-x`
+  - UI는 `comma` 사용자이므로 창이 compositor에 제대로 붙지 못하고, 화면에는 weston 배경/로고가 남을 수 있었다.
+
+조치:
+
+- offroad 상태를 확인한 뒤 `weston.service`를 재시작했다.
+- 이후 `/var/tmp/weston` 권한을 명시적으로 복구했다.
+  - `sudo chown -R comma:comma /var/tmp/weston`
+  - `sudo chmod -R 700 /var/tmp/weston`
+- Mici UI만 재시작했다.
+- display를 다시 깨웠다.
+  - `brightness=165`
+  - `bl_power=0`
+- `/dev/shm/params/d/OffroadWakeCounter`를 증가시켜 UI 내부 wake 타이머도 리셋했다.
+
+검증:
+
+- 새 UI PID: `95933`
+- 8초 뒤에도 `brightness=165`, `bl_power=0`
+- `/var/tmp/weston` 권한:
+  - `comma:comma 700 /var/tmp/weston`
+  - `comma:comma 700 /var/tmp/weston/wayland-0`
+- 최신 `updated` lock crash 로그는 stale `updated`가 남아 있었을 때의 기록이며, stale PID를 제거한 뒤 manager 하위 정상 `system.updated.updated` 하나만 남겼다.
+
+## 2026-05-12 추가: 재부팅 후 Mici 한국어 폰트 깨짐 복구
+
+사용자 보고:
+
+- 전원 재연결로 재부팅한 뒤 Mici offroad 화면의 한국어 글자가 다시 깨져 보임.
+
+확인한 점:
+
+- 기기 언어는 `LanguageSetting=main_ko`로 정상 유지되어 있었다.
+- 기기 `/data/openpilot/selfdrive/assets/fonts/`와 `/data/safe_staging/merged/selfdrive/assets/fonts/`에는 `Pretendard-SemiBold.otf`만 있고, raylib가 실제 렌더링에 쓰는 `Pretendard-SemiBold.fnt`, `Pretendard-SemiBold.png` atlas 파일이 없었다.
+- 기기 git 기준 `selfdrive/assets/.gitignore`가 아직 예전 상태라 `fonts/*.fnt`, `fonts/*.png`를 무시하고 있었고, Pretendard atlas 예외가 없었다.
+- 그래서 재부팅/overlay 정리 과정에서 live로 복사했던 `.fnt/.png`가 ignored 파일로 취급되어 사라질 수 있었다.
+
+조치:
+
+- 로컬에 이미 추적 중인 다음 파일을 기기 active + alias + staging 경로에 다시 복사했다.
+  - `selfdrive/assets/fonts/Pretendard-SemiBold.fnt`
+  - `selfdrive/assets/fonts/Pretendard-SemiBold.png`
+  - `selfdrive/assets/fonts/Pretendard-SemiBold.otf`
+- 복사 대상:
+  - `/data/openpilot/selfdrive/assets/fonts/`
+  - `/data/openpilot/openpilot/selfdrive/assets/fonts/`
+  - `/data/safe_staging/merged/selfdrive/assets/fonts/`
+  - `/data/safe_staging/merged/openpilot/selfdrive/assets/fonts/`
+- `selfdrive/assets/.gitignore`도 기기 active + staging 경로에 복사해 다음 예외가 들어가게 했다.
+  - `!fonts/Pretendard-SemiBold.fnt`
+  - `!fonts/Pretendard-SemiBold.png`
+- Mici UI를 재시작해 raylib가 새 font atlas를 다시 로드하게 했다.
+- 화면 wake를 위해 `OffroadWakeCounter`를 증가시키고 backlight를 `brightness=204`, `bl_power=0`으로 복구했다.
+
+검증:
+
+- 적용 후 기기 상태:
+  - `display=204 0`
+  - `ui=132451`
+  - `lang=main_ko`
+- 35초 뒤에도 화면 유지:
+  - `display_35s=165 0`
+  - `ui=132451`
+- active/staging에 font atlas 존재 확인:
+  - active `.fnt/.png` 2개
+  - staging `.fnt/.png` 2개
+- `Pretendard-SemiBold.fnt` glyph count: `1520`
+- 샘플 문자열 `안녕하세요 안전한 주행 되세요 수고하셨습니다 주행거리 주행시간 신호가 초록불로 바뀌었습니다 앞차가 출발했습니다` 기준 missing glyph 없음.
+- 기기 git 상태는 현재 `.gitignore` 수정과 `.fnt/.png` untracked 상태다. 완전한 영구화를 위해서는 다음 커밋/push 때 이 세 파일 상태를 반드시 포함해야 한다.
+
+## 2026-05-12 추가: 재부팅 후 live patch 잔존 여부 확인 및 안전벨트 overlay 재반영
+
+사용자 질문:
+
+- 재부팅/복구 과정에서 git 상태로 돌아간 것이라면 기존에 작업한 fade-in/crossfade, 안전벨트 미착용 overlay 등이 사라진 것 아닌지 확인 요청.
+
+확인한 점:
+
+- 기기 git HEAD는 아직 `df8fa249`(`StarPilot`)로, 로컬 최신 커밋/작업트리보다 오래된 상태였다.
+- 기기 active `selfdrive/ui/mici/layouts/main.py`에는 다음 Mici 전환 관련 코드가 남아 있었다.
+  - `SCREEN_WAKE_FADE_DURATION`
+  - `_screen_wake_fade_alpha()`
+  - `SURFACE_OFFROAD` / `SURFACE_ONROAD`
+  - `_start_transition(...)`
+- 즉 화면 wake fade-in과 onroad/offroad surface crossfade 쪽은 기기 active 파일에 남아 있었다.
+- 반면 기기 active `selfdrive/ui/mici/onroad/augmented_road_view.py`에는 `SeatbeltOverlay`, `seatbeltUnlatched`, `seatbelt.png` 참조가 없었다.
+- 따라서 안전벨트 미착용 overlay는 재부팅/복구 이후 기기 active 코드에서 빠진 상태였다.
+
+조치:
+
+- 로컬에 남아 있던 안전벨트 overlay 구현 파일과 아이콘을 기기 active + alias + staging 경로에 다시 복사했다.
+  - `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `selfdrive/assets/icons_mici/onroad/seatbelt.png`
+- 복사 대상:
+  - `/data/openpilot/selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `/data/openpilot/openpilot/selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `/data/safe_staging/merged/selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `/data/safe_staging/merged/openpilot/selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `/data/openpilot/selfdrive/assets/icons_mici/onroad/seatbelt.png`
+  - `/data/openpilot/openpilot/selfdrive/assets/icons_mici/onroad/seatbelt.png`
+  - `/data/safe_staging/merged/selfdrive/assets/icons_mici/onroad/seatbelt.png`
+  - `/data/safe_staging/merged/openpilot/selfdrive/assets/icons_mici/onroad/seatbelt.png`
+- Mici UI를 재시작해 새 `augmented_road_view.py`를 로드하게 했다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/mici/onroad/augmented_road_view.py`
+- 기기 `/usr/local/venv/bin/python3 -m py_compile selfdrive/ui/mici/onroad/augmented_road_view.py`
+- 새 UI PID: `134395`
+- 화면 상태: `display=204 0`
+- 기기 active `main.py` 전환 관련 refs: `28`
+- 기기 active `augmented_road_view.py` 안전벨트 refs: `6`
+- 기기 active `seatbelt.png` size: `66393`
+- 기기 active Pretendard atlas files: `2`
+- 현재 구조는 기기 git HEAD가 오래된 상태에서 live patch가 얹힌 상태다. 완전한 영구화를 위해서는 로컬의 현재 수정사항을 커밋/push하고, 기기 쪽도 그 커밋으로 맞추거나 안전하게 pull/checkout해야 한다.
+
+## 2026-05-12 추가: 기기를 로컬 워킹트리 기준으로 동기화
+
+사용자 요청:
+
+- 재부팅/복구 때문에 일부 작업이 사라질 수 있으므로, 기기 상태를 현재 로컬 기준으로 맞춰달라고 요청.
+
+기준:
+
+- 기기 git HEAD는 `df8fa249`로 오래된 상태였다.
+- 로컬 기준 파일 목록은 `df8fa249..HEAD`에서 변경된 파일과 현재 로컬 uncommitted 변경 파일을 합쳐 산출했다.
+- 단순 `git pull`을 기기에서 실행하지 않았다. 로컬 HEAD에는 이후 제거한 sleep fade-out 커밋도 포함되어 있고, 로컬 워킹트리에서 이를 되돌린 상태이므로 git pull만 하면 원치 않는 fade-out이 다시 들어갈 수 있기 때문이다.
+
+동기화한 파일:
+
+- `README.md`
+- `history.md`
+- `selfdrive/assets/.gitignore`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.fnt`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.png`
+- `selfdrive/assets/icons_mici/onroad/seatbelt.png`
+- `selfdrive/ui/layouts/settings/starpilot/system_settings.py`
+- `selfdrive/ui/mici/layouts/home.py`
+- `selfdrive/ui/mici/layouts/main.py`
+- `selfdrive/ui/mici/onroad/augmented_road_view.py`
+- `selfdrive/ui/ui_state.py`
+- `starpilot/common/starpilot_functions.py`
+- `starpilot/system/the_pond/assets/components/tools/device_settings_layout.json`
+- `starpilot/ui/qt/offroad/device_settings.cc`
+- `system/manager/process_config.py`
+
+복사 대상:
+
+- `/data/openpilot/<path>`
+- `/data/safe_staging/merged/<path>`
+- package/resource alias가 필요한 경로는 `/data/openpilot/openpilot/<path>`, `/data/safe_staging/merged/openpilot/<path>`에도 복사.
+
+검증:
+
+- 기기 active `/data/openpilot`에서 위 15개 파일 모두 로컬 SHA-256과 일치.
+- 기기 staging `/data/safe_staging/merged`에서도 위 15개 파일 모두 로컬 SHA-256과 일치.
+- alias 경로에서는 코드/asset 파일이 일치했다. `README.md`, `history.md`는 alias에 둘 필요가 없어 checksum 대상에서만 read fail로 보였고, active/staging 원본은 정상 일치했다.
+- 기기 py_compile:
+  - `selfdrive/ui/ui_state.py`
+  - `selfdrive/ui/mici/layouts/main.py`
+  - `selfdrive/ui/mici/layouts/home.py`
+  - `selfdrive/ui/mici/onroad/augmented_road_view.py`
+  - `selfdrive/ui/layouts/settings/starpilot/system_settings.py`
+  - `system/manager/process_config.py`
+  - `starpilot/common/starpilot_functions.py`
+- The Pond device settings JSON: `python -m json.tool` 통과.
+- Mici UI 재시작 후:
+  - 새 UI PID: `136047`
+  - 화면 상태: `display=204 0`
+  - `LanguageSetting=main_ko`
+  - Mici fade-in/crossfade refs: `28`
+  - 안전벨트 overlay refs: `6`
+  - sleep fade-out refs: `0`
+  - Pretendard atlas files: `2`
+  - `seatbelt.png` size: `66393`
+
+주의:
+
+- 파일 내용은 로컬 기준으로 맞췄지만, 기기 git HEAD 자체는 아직 `df8fa249`다. 즉 현재 기기는 오래된 commit 위에 로컬 워킹트리 파일들이 live patch로 얹힌 상태다.
+- 완전한 영구화를 위해서는 이 로컬 워킹트리 상태를 커밋/push하고, 기기 repo도 그 commit으로 checkout/pull되게 맞추는 단계가 필요하다.

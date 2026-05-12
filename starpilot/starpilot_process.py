@@ -130,8 +130,9 @@ def transition_offroad(starpilot_planner, model_manager, theme_manager, thread_m
     thread_manager.run_with_lock(send_stats)
 
 def transition_onroad(error_log):
-  if error_log.is_file():
-    error_log.unlink()
+  # Keep crash logs until the user clears them from settings, so the
+  # openpilot-crashed alert does not disappear during an onroad transition.
+  pass
 
 def update_checks(now, model_manager, theme_manager, thread_manager, params, params_memory, starpilot_toggles, boot_run=False):
   while not (is_url_pingable("https://github.com") or is_url_pingable("https://gitlab.com")):
@@ -199,8 +200,6 @@ def starpilot_thread():
   time_validated = False
 
   error_log = ERROR_LOGS_PATH / "error.txt"
-  if error_log.is_file():
-    error_log.unlink()
 
   if safe_mode_active:
     apply_safe_mode(params, params_raw, params_memory)

@@ -1548,8 +1548,10 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
   - 기존 `selfdrive/ui/mici/onroad/alert_renderer.py`가 `greenLight`, `leadDeparting`, `greenLightAlert`, `leadDepartAlert`, `greenPrompt`, `StarPilotAlertStatus.starpilot` 계열을 초록 그라디언트로 처리하므로 이 경로만 남겼다.
 - `openpilot crashed` 표시가 순간적으로 사라지는 문제를 줄이기 위해 Mici `AlertRenderer`에도 Qt onroad와 같은 `/data/error_logs/error.txt` 감지를 추가했다.
   - 해당 파일이 있으면 `openpilot crashed / 오류 로그를 확인해주세요` critical mid alert를 계속 반환한다.
+- `starpilot/starpilot_process.py`가 프로세스 시작 시점과 onroad 전환 시점에 `/data/error_logs/error.txt`를 자동 삭제하던 동작을 제거했다.
+  - 이제 crash log는 사용자가 설정에서 직접 삭제하기 전까지 유지되고, `openpilot crashed` alert도 순간적으로 사라지지 않는다.
 - 오른쪽 `confidence ball` 잘림은 오른쪽 경계에 원 중심이 너무 붙어 원 반지름 일부가 밖으로 나갈 수 있는 구조라, 중심을 12px 안쪽으로 이동했다.
 - 로컬 검증:
-  - `python3 -m py_compile selfdrive/ui/mici/onroad/hud_renderer.py selfdrive/ui/mici/onroad/alert_renderer.py selfdrive/ui/mici/onroad/confidence_ball.py selfdrive/ui/mici/onroad/circular_alerts.py` 통과.
+  - `python3 -m py_compile selfdrive/ui/mici/onroad/hud_renderer.py selfdrive/ui/mici/onroad/alert_renderer.py selfdrive/ui/mici/onroad/confidence_ball.py selfdrive/ui/mici/onroad/circular_alerts.py starpilot/starpilot_process.py` 통과.
 - 기기 배포 상태:
   - 이 시점에는 `192.168.35.175` SSH가 `Host is down / No route to host`로 응답하지 않아 기기 반영은 대기 상태.

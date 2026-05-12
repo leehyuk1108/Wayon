@@ -144,8 +144,6 @@ class AlertRenderer(Widget):
   def _load_icons(self):
     self._txt_turn_signal_left = gui_app.texture('icons_mici/onroad/turn_signal_left.png', 104, 96)
     self._txt_turn_signal_right = gui_app.texture('icons_mici/onroad/turn_signal_left.png', 104, 96, flip_x=True)
-    self._txt_blind_spot_left = gui_app.texture('icons_mici/onroad/blind_spot_left.png', 134, 150)
-    self._txt_blind_spot_right = gui_app.texture('icons_mici/onroad/blind_spot_left.png', 134, 150, flip_x=True)
     self._txt_autohold = gui_app.texture("icons/autohold.png", AUTOHOLD_ICON_SIZE, AUTOHOLD_ICON_SIZE, keep_aspect_ratio=True)
     self._txt_parking = gui_app.texture("icons/parking.png", AUTOHOLD_ICON_SIZE, AUTOHOLD_ICON_SIZE, keep_aspect_ratio=True)
 
@@ -252,16 +250,7 @@ class AlertRenderer(Widget):
       icon_margin_y = 5
 
     elif event_name == 'laneChangeBlocked':
-      CS = ui_state.sm['carState']
-      if CS.leftBlinker:
-        icon_side = IconSide.left
-      elif CS.rightBlinker:
-        icon_side = IconSide.right
-      else:
-        icon_side = self._last_icon_side
-      txt_icon = self._txt_blind_spot_left if icon_side == 'left' else self._txt_blind_spot_right
-      icon_margin_x = 8
-      icon_margin_y = 0
+      self._turn_signal_timer = 0.0
 
     else:
       self._turn_signal_timer = 0.0

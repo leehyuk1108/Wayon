@@ -1615,3 +1615,17 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 - confidence ball 위치 계산 자체는 유지한다.
   - `STATUS_DOT_RIGHT_MARGIN = 12`
   - 오른쪽 화면 경계에서 12px 안쪽에 완전히 보이도록 유지.
+
+## 2026-05-12 추가: Mici laneChangeBlocked 이벤트 아이콘 제거
+
+사용자 요청:
+
+- Mici 기준으로 차선 변경 중 사각지대 차량 감지 이벤트에 붙는 아이콘을 제거.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/alert_renderer.py`
+  - `laneChangeBlocked` 이벤트 배너에서 좌/우 blind spot 아이콘을 붙이던 분기를 제거했다.
+  - 이벤트 배너는 기존 문구와 그라디언트만 표시한다.
+  - `BlindSpotIndicators` 별도 렌더러는 유지하므로, 단순 BSM 감지/방향지시등 pulse 아이콘은 계속 표시된다.
+  - 이벤트 배너용 blind spot texture 로딩도 제거했다.

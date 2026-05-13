@@ -1773,3 +1773,34 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 
 - 사이드 브레이크 체결 타이머가 중앙에 뜰 때는 안전벨트 미체결 오버레이가 겹치지 않는다.
 - autohold/resumeRequired 타이머는 이번 숨김 조건에 포함하지 않았다.
+
+## 2026-05-13 추가: GM 저속 조향 보조 이벤트 표시 조건 보정
+
+사용자 보고:
+
+- 인게이지 상태에서 약 10km/h 이하일 때 떠야 하는 `belowSteerSpeed` 이벤트가 Mici 화면에 보이지 않는다고 보고.
+
+확인:
+
+- Chevrolet Traverse의 GM `minSteerSpeed`는 `7mph` 기반으로 약 11km/h 근처다.
+- `opendbc/car/gm/carstate.py`는 현재 속도가 `CP.minSteerSpeed`보다 낮으면 `carState.lowSpeedAlert=True`를 채운다.
+- `selfdrive/selfdrived/events.py`의 `belowSteerSpeed` 문구는 이미 Mici에 맞게 `조향 보조 꺼짐` / `최소 속도 ...`로 잡혀 있었다.
+- 문제 원인은 GM 전용 이벤트 생성 조건이었다. 기존 `selfdrive/car/car_specific.py`는 속도가 최소 조향 속도 위에서 아래로 "떨어지는 순간"에만 `belowSteerSpeed`를 1회 추가했다. 그래서 이미 저속 상태에서 openpilot을 인게이지하면 crossing 조건이 성립하지 않아 이벤트가 생성되지 않았다.
+
+수정:
+
+- `selfdrive/car/car_specific.py`
+  - GM 경로에서 부팅/offroad 상태의 저속 배너는 계속 억제한다.
+  - openpilot이 인게이지된 상태(`carControl.enabled=True`)이고 `carState.lowSpeedAlert=True`이면 `belowSteerSpeed` 이벤트를 추가하도록 변경했다.
+  - 기존 `gm_low_speed_alert_shown` 1회성 플래그는 제거했다.
+
+기대 동작:
+
+- GM 차량에서 openpilot 인게이지 중 속도가 최소 조향 속도보다 낮으면 Mici 상단 알림으로 `조향 보조 꺼짐` 이벤트가 표시된다.
+- 이미 저속 상태에서 인게이지해도 이벤트가 표시된다.
+- openpilot이 인게이지되지 않은 부팅 직후/offroad 상태에서는 예전처럼 저속 조향 배너가 뜨지 않는다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/car/car_specific.py selfdrive/selfdrived/events.py selfdrive/selfdrived/selfdrived.py opendbc/car/gm/carstate.py` 통과.
+- macOS에서 이벤트 객체 직접 실행 검증은 `msgq/ipc_pyx.so`가 기기용 바이너리라 로드되지 않아 수행하지 못했다.

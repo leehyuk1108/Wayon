@@ -61,7 +61,6 @@ class CarSpecificEvents:
 
     self.steering_unpressed = 0
     self.low_speed_alert = False
-    self.gm_low_speed_alert_shown = False
     self.no_steer_warning = False
     self.silent_steer_warning = True
 
@@ -130,15 +129,9 @@ class CarSpecificEvents:
       events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears, pcm_enable=self.CP.pcmCruise,
                                          suppress_low_speed_alert=True)
 
-      # Show the low-speed steer alert once per drive when speed dips below min steer speed.
-      crossed_below_min_steer_speed = (
-        self.CP.minSteerSpeed > 0. and
-        CS_prev.vEgo >= self.CP.minSteerSpeed and
-        CS.vEgo < self.CP.minSteerSpeed
-      )
-      if CS.lowSpeedAlert and crossed_below_min_steer_speed and not self.gm_low_speed_alert_shown:
+      # Keep startup/offroad quiet, but show the alert while engaged below min steer speed.
+      if CC.enabled and CS.lowSpeedAlert:
         events.add(EventName.belowSteerSpeed)
-        self.gm_low_speed_alert_shown = True
 
       # Most camera-ACC cars can engage below 5 kph only when stopped with brake applied;
       # SDGM remains narrower.

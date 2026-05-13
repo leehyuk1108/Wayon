@@ -134,6 +134,7 @@ pkill -x selfdrive.ui.ui
 - 검증 명령:
   - `python3 -m py_compile selfdrive/selfdrived/events.py selfdrive/ui/mici/onroad/alert_renderer.py`
   - JSON 대조 결과: `json_entries 106`, `unique_entries 106`, `missing_schema 0`
+- 기기 import 검증 중 `messaging.SubMaster([])`가 빈 서비스 목록에서 실패하는 것을 확인해, 정적 alert override용 더미 SubMaster를 사용하도록 수정했다.
 - 주의: 문구 override는 `events.py` import 시점에 적용되므로, JSON의 제목/보조문구를 바꾼 뒤에는 selfdrived/manager 재시작이 가장 확실하다. Mici renderer의 글자 크기 override는 파일 mtime 기반으로 다시 읽을 수 있지만, 실제 기기 반영 때는 UI 재시작까지 함께 하는 것을 권장한다.
 
 ### 주의

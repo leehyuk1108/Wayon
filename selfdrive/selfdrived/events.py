@@ -1386,6 +1386,16 @@ class _MiciFormatValues(dict):
     return "{" + key + "}"
 
 
+class _MiciStaticSubMaster:
+  data: dict = {}
+
+  def __getitem__(self, key: str):
+    raise KeyError(key)
+
+  def all_checks(self, services) -> bool:
+    return True
+
+
 def _mici_alert_format_values(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster,
                               metric: bool) -> _MiciFormatValues:
   values = _MiciFormatValues()
@@ -1464,8 +1474,8 @@ def _mici_apply_alert_text_override(alert: Alert, config: dict, CP: car.CarParam
   return alert
 
 
-def _mici_static_alert_args() -> tuple[car.CarParams, car.CarState, messaging.SubMaster, bool]:
-  return car.CarParams.new_message(), car.CarState.new_message(), messaging.SubMaster([]), True
+def _mici_static_alert_args() -> tuple[car.CarParams, car.CarState, _MiciStaticSubMaster, bool]:
+  return car.CarParams.new_message(), car.CarState.new_message(), _MiciStaticSubMaster(), True
 
 
 def _mici_wrap_alert_callback(callback: AlertCallbackType, config: dict) -> AlertCallbackType:

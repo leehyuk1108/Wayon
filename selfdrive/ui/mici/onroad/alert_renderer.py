@@ -1,3 +1,4 @@
+import json
 import time
 from enum import StrEnum
 from pathlib import Path
@@ -32,6 +33,7 @@ AUTOHOLD_TIMER_BG_ALPHA = 170
 SELFDRIVE_STATE_TIMEOUT = 5  # Seconds
 SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
 ERROR_LOG_PATH = Path("/data/error_logs/error.txt")
+MICI_EVENT_ALERT_OVERRIDES_PATH = Path(__file__).resolve().parents[1] / "mici_event_alert_overrides.json"
 
 # Constants
 ALERT_COLORS = {
@@ -44,6 +46,20 @@ GREEN_PROMPT_COLOR = rl.Color(0, 175, 95, 255)
 E2E_PROMPT_EVENT_NAMES = ('greenLightAlert', 'leadDepartAlert', 'greenLight', 'leadDeparting')
 PARKING_BRAKE_EVENT_NAMES = ('parkBrake', 'silentParkBrake')
 STARPILOT_ALERT_STATUS = int(StarPilotAlertStatus.starpilot)
+
+EVENT_TYPE_JSON_NAME = {
+  "enable": "ENABLE",
+  "preEnable": "PRE_ENABLE",
+  "overrideLateral": "OVERRIDE_LATERAL",
+  "overrideLongitudinal": "OVERRIDE_LONGITUDINAL",
+  "noEntry": "NO_ENTRY",
+  "warning": "WARNING",
+  "userDisable": "USER_DISABLE",
+  "softDisable": "SOFT_DISABLE",
+  "immediateDisable": "IMMEDIATE_DISABLE",
+  "permanent": "PERMANENT",
+  "greenPrompt": "GREEN_PROMPT",
+}
 
 TURN_SIGNAL_BLINK_PERIOD = 1 / (80 / 60)  # Mazda heartbeat turn signal BPM
 
@@ -76,6 +92,10 @@ class Alert:
   status: int = 0
   visual_alert: int = car.CarControl.HUDControl.VisualAlert.none
   alert_type: str = ""
+  source: str = ""
+  title_font_px: int | None = None
+  subtitle_font_px: int | None = None
+  has_mici_override: bool = False
 
 
 # Pre-defined alert instances
@@ -134,6 +154,8 @@ class AlertRenderer(Widget):
     self._turn_signal_timer = 0.0
     self._turn_signal_alpha_filter = FirstOrderFilter(0.0, 0.3, 1 / gui_app.target_fps)
     self._last_icon_side: IconSide | None = None
+    self._alert_override_mtime: float | None = None
+    self._alert_overrides: dict[str, dict] = {}
 
     self._load_icons()
     ui_state.add_offroad_transition_callback(self._reset_timers)
@@ -167,6 +189,46 @@ class AlertRenderer(Widget):
     event_name, event_type = AlertRenderer._event_parts(alert)
     return event_type == GREEN_PROMPT_EVENT_TYPE or event_name in E2E_PROMPT_EVENT_NAMES or alert.status == STARPILOT_ALERT_STATUS
 
+  def _load_alert_overrides(self) -> None:
+    try:
+      mtime = MICI_EVENT_ALERT_OVERRIDES_PATH.stat().st_mtime
+    except OSError:
+      self._alert_override_mtime = None
+      self._alert_overrides = {}
+      return
+
+    if self._alert_override_mtime == mtime:
+      return
+
+    try:
+      with open(MICI_EVENT_ALERT_OVERRIDES_PATH, encoding="utf-8") as f:
+        self._alert_overrides = json.load(f).get("events", {})
+      self._alert_override_mtime = mtime
+    except (OSError, json.JSONDecodeError):
+      self._alert_override_mtime = None
+      self._alert_overrides = {}
+
+  @staticmethod
+  def _font_px(value) -> int | None:
+    try:
+      font_px = int(value)
+    except (TypeError, ValueError):
+      return None
+    return font_px if font_px > 0 else None
+
+  def _apply_render_overrides(self, alert: Alert) -> Alert:
+    self._load_alert_overrides()
+    event_name, event_type = self._event_parts(alert)
+    json_event_type = EVENT_TYPE_JSON_NAME.get(event_type, event_type.upper())
+    config = self._alert_overrides.get(f"{alert.source}.{event_name}.{json_event_type}")
+    if config is None:
+      return alert
+
+    alert.has_mici_override = True
+    alert.title_font_px = self._font_px(config.get("titleFontPx"))
+    alert.subtitle_font_px = self._font_px(config.get("subtitleFontPx"))
+    return alert
+
   def _get_starpilot_alert(self, sm: messaging.SubMaster) -> Alert | None:
     if sm.recv_frame.get("starpilotSelfdriveState", -1) < ui_state.started_frame:
       return None
@@ -182,6 +244,7 @@ class AlertRenderer(Widget):
       status=self._enum_raw(ss.alertStatus),
       visual_alert=car.CarControl.HUDControl.VisualAlert.none,
       alert_type=ss.alertType,
+      source="STARPILOT_EVENTS",
     )
 
   def get_alert(self, sm: messaging.SubMaster) -> Alert | None:
@@ -215,18 +278,21 @@ class AlertRenderer(Widget):
     # No alert if size is none
     if ss.alertSize == 0:
       if starpilot_alert is not None:
+        starpilot_alert = self._apply_render_overrides(starpilot_alert)
         self._prev_alert = starpilot_alert
         return starpilot_alert
       return None
 
     selfdrive_event_name = ss.alertType.split('/')[0] if ss.alertType else ''
     if selfdrive_event_name == 'resumeRequired' and starpilot_alert is not None and self._is_green_prompt(starpilot_alert):
+      starpilot_alert = self._apply_render_overrides(starpilot_alert)
       self._prev_alert = starpilot_alert
       return starpilot_alert
 
     # Return current alert
     ret = Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,
-                visual_alert=ss.alertHudVisual, alert_type=ss.alertType)
+                visual_alert=ss.alertHudVisual, alert_type=ss.alertType, source="EVENTS")
+    ret = self._apply_render_overrides(ret)
     self._prev_alert = ret
     return ret
 
@@ -489,13 +555,16 @@ class AlertRenderer(Widget):
   def _draw_text(self, alert: Alert, alert_layout: AlertLayout) -> None:
     icon_side = alert_layout.icon.side if alert_layout.icon is not None else None
     event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
-    preserve_case = event_name == 'reverseGear'
+    preserve_case = event_name == 'reverseGear' or alert.has_mici_override
 
     # TODO: hack
     alert_text1 = alert.text1 if preserve_case else alert.text1.lower().replace('calibrating: ', 'calibrating:\n')
     can_draw_second_line = False
     # TODO: there should be a common way to determine font size based on text length to maximize rect
-    if len(alert_text1) <= 12:
+    if alert.title_font_px is not None:
+      can_draw_second_line = bool(alert.text2)
+      font_size = alert.title_font_px
+    elif len(alert_text1) <= 12:
       can_draw_second_line = True
       font_size = 92 - 10
     elif len(alert_text1) <= 16:
@@ -504,7 +573,7 @@ class AlertRenderer(Widget):
     else:
       font_size = 64 - 10
 
-    if icon_side is not None:
+    if icon_side is not None and alert.title_font_px is None:
       font_size -= 10
 
     color = rl.Color(255, 255, 255, int(255 * 0.9 * self._alpha_filter.x))
@@ -534,7 +603,9 @@ class AlertRenderer(Widget):
     if can_draw_second_line and alert_text2:
       last_line_h = self._alert_text1_label.rect.y + self._alert_text1_label.get_content_height(int(alert_layout.text_rect.width))
       last_line_h -= 4
-      if len(alert_text2) > 18:
+      if alert.subtitle_font_px is not None:
+        small_font_size = alert.subtitle_font_px
+      elif len(alert_text2) > 18:
         small_font_size = 36
       elif len(alert_text2) > 24:
         small_font_size = 32

@@ -15,11 +15,10 @@
 - 원본 참고 remote: `hyuklee-og` / `https://github.com/HyukLee-og/StarPilot.git`
 - 최신 로컬 HEAD: 작업 시점의 `git log -1 --oneline`으로 확인
 - 최신 `origin/StarPilot`: 작업 시점의 `git status --short --branch` 또는 `git ls-remote origin refs/heads/StarPilot`로 확인
-- 이 문서 업데이트 직전 기준 마지막 커밋: `fbf7baef Update Wayon alert override history`
+- 이 문서 업데이트 직전 기준 마지막 커밋: `d72c23ed Refresh history handoff header`
 - 현재 Git 상태 기준: tracked 변경은 커밋/푸쉬 완료 상태를 유지하는 것이 목표다. 단, 작업용 미추적 파일/폴더 `.codex_tmp/`, `icons/`는 남아 있을 수 있다.
-- 이번 `history.md` 최신화는 로컬 repo 및 `origin/StarPilot` 기준이다.
-- 이번 최신화 시점에는 기기 `/data/openpilot`에 새로 SSH 접속해 반영 상태를 확인하지 않았다.
-- `mici_event_alert_overrides.json`은 repo에 저장된 재사용용 이벤트 튜닝 데이터다. 현재 런타임이 이 JSON을 자동으로 읽어 이벤트 문구를 override하는 경로는 아직 없다.
+- 이번 `history.md` 최신화는 로컬 repo, `origin/StarPilot`, 기기 `/data/openpilot` 반영 상태를 분리해 기록하는 기준이다.
+- `mici_event_alert_overrides.json`은 repo에 저장된 재사용용 이벤트 튜닝 데이터이며, Mici 런타임에서는 `events.py`와 `alert_renderer.py`가 이 값을 읽어 문구와 글자 크기 override를 적용한다.
 - Mici/C4 관련 UI는 Qt 경로만 보면 안 된다. 실제 주요 경로는 Python/Raylib 기반 `selfdrive/ui/mici/...`, `selfdrive/ui/ui_state.py`, `system/ui/...`이다.
 
 ## 현재 기준 상태
@@ -116,6 +115,26 @@ pkill -x selfdrive.ui.ui
 - Mici의 `BigButton`, dialog option, input hint, slider label처럼 동적으로 들어오는 텍스트도 `tr()`를 적용하도록 했다.
 - 줄바꿈이 있는 버튼 문자열은 줄 단위로 번역 fallback을 시도하도록 `display_text()` helper를 추가했다.
 - `LanguageSetting`이 `main_ko` 형태로 저장되어도 내부 언어 코드는 `ko`로 정규화되도록 `system/ui/lib/multilang.py`를 수정했다.
+
+### 2026-05-13 Mici 이벤트 편집값 런타임 반영
+
+- 사용자가 웹 편집기에서 저장한 `selfdrive/ui/mici/mici_event_alert_overrides.json` 값이 실제 주행 중 Mici 알림에 반영되지 않는 문제를 확인했다.
+- 원인은 JSON 파일이 repo에 저장되어 있고 Pretendard 폰트 생성에는 포함되어 있었지만, 실제 런타임 알림 경로에서 이 파일을 읽는 코드가 없었던 것이다.
+- `selfdrive/selfdrived/events.py`에 Mici 전용 override loader를 추가했다.
+  - `HARDWARE.get_device_type() == 'mici'`일 때만 동작한다.
+  - JSON의 `EVENTS.*`와 `STARPILOT_EVENTS.*` 항목을 실제 이벤트 테이블에 적용한다.
+  - 정적 `Alert`는 `alert_text_1`, `alert_text_2`를 직접 덮어쓴다.
+  - callback 기반 알림은 wrapper를 씌워 알림 생성 뒤 저장된 제목/보조문구를 적용한다.
+  - `{minSteerSpeed}`, `{minEnableSpeed}`, `{calPerc}`, `{MIN_SPEED_FILTER}`, `{pitch}`, `{yaw}`, `{offset}`, `{seconds}`, `{bad camera list}`, `{service names}`, `{accel}`, `{steer}`, `{memoryUsagePercent}`, `{frameDropPerc}`, `{temperature}` placeholder를 기존 이벤트 callback과 같은 데이터 기준으로 채운다.
+- `selfdrive/ui/mici/onroad/alert_renderer.py`에 같은 JSON을 읽는 렌더링 override를 추가했다.
+  - `titleFontPx`, `subtitleFontPx`가 있으면 Mici alert text 렌더링에 실제 font size로 사용한다.
+  - override가 적용된 이벤트는 저장된 대소문자를 보존한다. 예를 들어 `AEB`가 `aeb`로 강제 소문자화되지 않는다.
+  - 파일 mtime을 캐시하므로 글자 크기 값은 UI 프로세스 안에서도 파일 변경 시 다시 읽을 수 있다.
+- JSON 106개 항목은 전부 `EVENTS`/`STARPILOT_EVENTS` enum schema와 매칭되는 것을 확인했다.
+- 검증 명령:
+  - `python3 -m py_compile selfdrive/selfdrived/events.py selfdrive/ui/mici/onroad/alert_renderer.py`
+  - JSON 대조 결과: `json_entries 106`, `unique_entries 106`, `missing_schema 0`
+- 주의: 문구 override는 `events.py` import 시점에 적용되므로, JSON의 제목/보조문구를 바꾼 뒤에는 selfdrived/manager 재시작이 가장 확실하다. Mici renderer의 글자 크기 override는 파일 mtime 기반으로 다시 읽을 수 있지만, 실제 기기 반영 때는 UI 재시작까지 함께 하는 것을 권장한다.
 
 ### 주의
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import bisect
+import json
 import math
 import os
 from enum import IntEnum
 from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
 
 from cereal import log, car, custom
@@ -57,6 +59,8 @@ class ET:
 EVENT_NAME = {v: k for k, v in EventName.schema.enumerants.items()}
 
 STARPILOT_EVENT_NAME = {v: k for k, v in StarPilotEventName.schema.enumerants.items()}
+
+MICI_EVENT_ALERT_OVERRIDES_PATH = Path(__file__).resolve().parents[1] / "ui/mici/mici_event_alert_overrides.json"
 
 
 class Events:
@@ -1363,6 +1367,147 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 }
 
 
+MICI_EVENT_TYPE_BY_JSON_NAME = {
+  "ENABLE": ET.ENABLE,
+  "PRE_ENABLE": ET.PRE_ENABLE,
+  "OVERRIDE_LATERAL": ET.OVERRIDE_LATERAL,
+  "OVERRIDE_LONGITUDINAL": ET.OVERRIDE_LONGITUDINAL,
+  "NO_ENTRY": ET.NO_ENTRY,
+  "WARNING": ET.WARNING,
+  "USER_DISABLE": ET.USER_DISABLE,
+  "SOFT_DISABLE": ET.SOFT_DISABLE,
+  "IMMEDIATE_DISABLE": ET.IMMEDIATE_DISABLE,
+  "PERMANENT": ET.PERMANENT,
+}
+
+
+class _MiciFormatValues(dict):
+  def __missing__(self, key: str) -> str:
+    return "{" + key + "}"
+
+
+def _mici_alert_format_values(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster,
+                              metric: bool) -> _MiciFormatValues:
+  values = _MiciFormatValues()
+  values["minSteerSpeed"] = get_display_speed(CP.minSteerSpeed, metric)
+  values["minEnableSpeed"] = get_display_speed(CP.minEnableSpeed, metric)
+  values["MIN_SPEED_FILTER"] = get_display_speed(MIN_SPEED_FILTER, metric)
+
+  try:
+    duration = FEEDBACK_MAX_DURATION - ((sm["audioFeedback"].blockNum + 1) * SAMPLE_BUFFER / SAMPLE_RATE)
+    values["seconds"] = str(round(duration))
+  except Exception:
+    pass
+
+  try:
+    values["calPerc"] = f"{sm['liveCalibration'].calPerc:.0f}"
+    rpy = sm["liveCalibration"].rpyCalib
+    values["yaw"] = f"{math.degrees(rpy[2] if len(rpy) == 3 else math.nan):.1f}"
+    values["pitch"] = f"{math.degrees(rpy[1] if len(rpy) == 3 else math.nan):.1f}"
+  except Exception:
+    pass
+
+  try:
+    all_cams = ("roadCameraState", "driverCameraState", "wideRoadCameraState")
+    bad_cams = [s.replace("State", "") for s in all_cams if s in sm.data.keys() and not sm.all_checks([s, ])]
+    values["bad camera list"] = ", ".join(bad_cams)
+  except Exception:
+    pass
+
+  try:
+    bad_services = [s for s in sm.data.keys() if not sm.all_checks([s, ])]
+    values["service names"] = ", ".join(bad_services[:4])
+  except Exception:
+    pass
+
+  try:
+    values["accel"] = str(round(sm["carControl"].actuators.accel / 4. * 100.))
+    values["steer"] = str(round(sm["carControl"].actuators.torque * 100.))
+  except Exception:
+    pass
+
+  try:
+    values["memoryUsagePercent"] = str(sm["deviceState"].memoryUsagePercent)
+    cpu = max(sm["deviceState"].cpuTempC, default=0.)
+    gpu = max(sm["deviceState"].gpuTempC, default=0.)
+    values["temperature"] = f"{max((cpu, gpu, sm['deviceState'].memoryTempC)):.0f}"
+  except Exception:
+    pass
+
+  try:
+    values["frameDropPerc"] = f"{sm['modelV2'].frameDropPerc:.1f}"
+  except Exception:
+    pass
+
+  try:
+    values["offset"] = f"{sm['liveParameters'].angleOffsetDeg:.1f}"
+  except Exception:
+    pass
+
+  return values
+
+
+def _mici_format_alert_text(text: str, fallback: str, CP: car.CarParams, CS: car.CarState,
+                            sm: messaging.SubMaster, metric: bool) -> str:
+  try:
+    return text.format_map(_mici_alert_format_values(CP, CS, sm, metric))
+  except Exception:
+    return fallback
+
+
+def _mici_apply_alert_text_override(alert: Alert, config: dict, CP: car.CarParams, CS: car.CarState,
+                                    sm: messaging.SubMaster, metric: bool) -> Alert:
+  if "title" in config:
+    alert.alert_text_1 = _mici_format_alert_text(config["title"], alert.alert_text_1, CP, CS, sm, metric)
+  if "subtitle" in config:
+    alert.alert_text_2 = _mici_format_alert_text(config["subtitle"], alert.alert_text_2, CP, CS, sm, metric)
+  return alert
+
+
+def _mici_static_alert_args() -> tuple[car.CarParams, car.CarState, messaging.SubMaster, bool]:
+  return car.CarParams.new_message(), car.CarState.new_message(), messaging.SubMaster([]), True
+
+
+def _mici_wrap_alert_callback(callback: AlertCallbackType, config: dict) -> AlertCallbackType:
+  def wrapped(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool,
+              soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+    alert = callback(CP, CS, sm, metric, soft_disable_time, personality, starpilot_toggles)
+    return _mici_apply_alert_text_override(alert, config, CP, CS, sm, metric)
+  return wrapped
+
+
+def _apply_mici_event_alert_overrides() -> None:
+  if not MICI_EVENT_ALERT_OVERRIDES_PATH.is_file():
+    return
+
+  with open(MICI_EVENT_ALERT_OVERRIDES_PATH, encoding="utf-8") as f:
+    configs = json.load(f).get("events", {})
+
+  sources = {
+    "EVENTS": (EVENTS, EventName.schema.enumerants),
+    "STARPILOT_EVENTS": (STARPILOT_EVENTS, StarPilotEventName.schema.enumerants),
+  }
+  static_CP, static_CS, static_sm, static_metric = _mici_static_alert_args()
+
+  for config in configs.values():
+    source = config.get("source")
+    event_name = config.get("eventName")
+    event_type = MICI_EVENT_TYPE_BY_JSON_NAME.get(config.get("eventType", ""))
+    if source not in sources or event_name is None or event_type is None:
+      continue
+
+    alerts, enumerants = sources[source]
+    event_id = enumerants.get(event_name)
+    if event_id is None or event_id not in alerts or event_type not in alerts[event_id]:
+      continue
+
+    alert = alerts[event_id][event_type]
+    if isinstance(alert, Alert):
+      _mici_apply_alert_text_override(alert, config, static_CP, static_CS, static_sm, static_metric)
+    else:
+      alerts[event_id][event_type] = _mici_wrap_alert_callback(alert, config)
+
+
 if HARDWARE.get_device_type() == 'mici':
   EVENTS.update({
     EventName.preDriverDistracted: {
@@ -1429,6 +1574,7 @@ if HARDWARE.get_device_type() == 'mici':
       ET.NO_ENTRY: NoEntryAlert("후진"),
     },
   })
+  _apply_mici_event_alert_overrides()
 
 
 if __name__ == '__main__':

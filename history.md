@@ -1791,13 +1791,14 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 
 - `selfdrive/car/car_specific.py`
   - GM 경로에서 부팅/offroad 상태의 저속 배너는 계속 억제한다.
-  - openpilot이 인게이지된 상태(`carControl.enabled=True`)이고 `carState.lowSpeedAlert=True`이면 `belowSteerSpeed` 이벤트를 추가하도록 변경했다.
+  - openpilot이 인게이지된 상태(`carControl.enabled=True`)이고 `carState.lowSpeedAlert=True`이거나, `carState.vEgo < carParams.minSteerSpeed`이면 `belowSteerSpeed` 이벤트를 추가하도록 변경했다.
   - 기존 `gm_low_speed_alert_shown` 1회성 플래그는 제거했다.
 
 기대 동작:
 
 - GM 차량에서 openpilot 인게이지 중 속도가 최소 조향 속도보다 낮으면 Mici 상단 알림으로 `조향 보조 꺼짐` 이벤트가 표시된다.
 - 이미 저속 상태에서 인게이지해도 이벤트가 표시된다.
+- 최소 조향 속도보다 높은 상태로 주행하다가 아래로 내려와도 이벤트가 표시된다.
 - openpilot이 인게이지되지 않은 부팅 직후/offroad 상태에서는 예전처럼 저속 조향 배너가 뜨지 않는다.
 
 검증:

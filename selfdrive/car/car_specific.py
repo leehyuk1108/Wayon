@@ -130,7 +130,8 @@ class CarSpecificEvents:
                                          suppress_low_speed_alert=True)
 
       # Keep startup/offroad quiet, but show the alert while engaged below min steer speed.
-      if CC.enabled and CS.lowSpeedAlert:
+      gm_below_min_steer_speed = self.CP.minSteerSpeed > 0. and CS.vEgo < self.CP.minSteerSpeed
+      if CC.enabled and (CS.lowSpeedAlert or gm_below_min_steer_speed):
         events.add(EventName.belowSteerSpeed)
 
       # Most camera-ACC cars can engage below 5 kph only when stopped with brake applied;

@@ -1805,3 +1805,33 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 
 - 로컬 `python3 -m py_compile selfdrive/car/car_specific.py selfdrive/selfdrived/events.py selfdrive/selfdrived/selfdrived.py opendbc/car/gm/carstate.py` 통과.
 - macOS에서 이벤트 객체 직접 실행 검증은 `msgq/ipc_pyx.so`가 기기용 바이너리라 로드되지 않아 수행하지 못했다.
+
+## 2026-05-13 추가: 오토홀드 타이머 중 E2E 초록 프롬프트 표시 우선순위 보정
+
+사용자 보고:
+
+- 오토홀드 타이머가 작동 중일 때 초록불 신호 변경 알림은 소리만 나고 화면에는 보이지 않는다고 보고.
+- 전방 차량 출발 알림도 같은 문제가 있을지 확인 요청.
+
+확인:
+
+- 오토홀드/재출발 타이머는 `selfdriveState`의 `resumeRequired` 알림으로 들어온다.
+- 초록불 변경(`greenLight`)과 전방 차량 출발(`leadDeparting`)은 `starpilotSelfdriveState`의 StarPilot 알림으로 들어온다.
+- Mici `AlertRenderer.get_alert()`는 `selfdriveState.alertSize != none`이면 `starpilotSelfdriveState` 알림을 확인하지 않고 바로 `selfdriveState` 알림을 반환했다.
+- 따라서 `resumeRequired` 타이머가 떠 있는 동안에는 초록불/앞차 출발 알림의 소리는 별도 경로로 재생되지만, 화면 비주얼은 오토홀드 타이머에 가려졌다.
+
+수정:
+
+- `selfdrive/ui/mici/onroad/alert_renderer.py`
+  - `starpilotSelfdriveState` 알림을 먼저 읽어둔다.
+  - 현재 `selfdriveState` 알림이 `resumeRequired`이고, StarPilot 알림이 `greenLight` / `leadDeparting` 계열 E2E 초록 프롬프트이면 StarPilot 알림을 우선 렌더하도록 변경했다.
+
+기대 동작:
+
+- 오토홀드 타이머가 떠 있는 중에도 초록불 변경 알림과 전방 차량 출발 알림이 상단 초록 그라디언트 텍스트로 표시된다.
+- 해당 알림이 끝나면 기존 오토홀드 타이머 표시로 돌아간다.
+- 다른 일반/위험 `selfdriveState` 알림의 우선순위는 건드리지 않았다.
+
+검증:
+
+- 로컬 `python3 -m py_compile selfdrive/ui/mici/onroad/alert_renderer.py selfdrive/selfdrived/events.py selfdrive/selfdrived/selfdrived.py` 통과.

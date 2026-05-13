@@ -192,6 +192,8 @@ class AlertRenderer(Widget):
       self._prev_alert = ALERT_OPENPILOT_CRASHED
       return ALERT_OPENPILOT_CRASHED
 
+    starpilot_alert = self._get_starpilot_alert(sm)
+
     # Check if selfdriveState messages have stopped arriving
     if not sm.updated['selfdriveState']:
       recv_frame = sm.recv_frame['selfdriveState']
@@ -212,10 +214,15 @@ class AlertRenderer(Widget):
 
     # No alert if size is none
     if ss.alertSize == 0:
-      if starpilot_alert := self._get_starpilot_alert(sm):
+      if starpilot_alert is not None:
         self._prev_alert = starpilot_alert
         return starpilot_alert
       return None
+
+    selfdrive_event_name = ss.alertType.split('/')[0] if ss.alertType else ''
+    if selfdrive_event_name == 'resumeRequired' and starpilot_alert is not None and self._is_green_prompt(starpilot_alert):
+      self._prev_alert = starpilot_alert
+      return starpilot_alert
 
     # Return current alert
     ret = Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,

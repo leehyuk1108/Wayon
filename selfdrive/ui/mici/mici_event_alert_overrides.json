@@ -8,8 +8,7 @@
       "source": "EVENTS",
       "title": "오토홀드",
       "subtitle": "오토홀드가 활성화되었습니다",
-      "subtitleFontPx": 35,
-      "note": "브레이크를 놓으면 어찌고는 설명이 너므 길어서 짧게"
+      "subtitleFontPx": 35
     },
     "EVENTS.belowSteerSpeed.WARNING": {
       "eventName": "belowSteerSpeed",

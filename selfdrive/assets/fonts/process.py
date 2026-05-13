@@ -14,7 +14,7 @@ GLYPH_PADDING = 6
 EXTRA_CHARS = "–‑✓×°§•X⚙✕◀▶✔⌫⇧␣○●↳çêüñ–‑✓×°§•€£¥²"
 UNIFONT_LANGUAGES = {"ar", "th", "zh-CHT", "zh-CHS", "ko", "ja"}
 CJK_FONT_PREFIXES = ("pretendard",)
-KOREAN_EXTRA_CHARS = "안녕하세요총주행거리시간안전한되세요"
+KOREAN_EXTRA_CHARS = "안녕하세요총주행거리시간안전한되세요냉느망명짧찌"
 KOREAN_SOURCE_PATHS = (
   SELFDRIVE_DIR / "selfdrived" / "events.py",
   SELFDRIVE_DIR / "ui" / "mici",
@@ -37,7 +37,8 @@ def _text_files(path: Path):
   if path.is_file():
     yield path
   elif path.is_dir():
-    yield from path.rglob("*.py")
+    for pattern in ("*.py", "*.json"):
+      yield from path.rglob(pattern)
 
 
 def _korean_source_chars():

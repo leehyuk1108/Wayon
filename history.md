@@ -1,27 +1,44 @@
-# StarPilot C4/Mici 작업 이력
+# Wayon / StarPilot C4/Mici 작업 이력
 
-최종 업데이트: 2026-05-11 KST
+최종 업데이트: 2026-05-13 KST
+기준 브랜치: `StarPilot`
+기준 원격: `origin` / `https://github.com/leehyuk1108/Wayon.git`
+최신 HEAD 확인 방법: `git log -1 --oneline` 및 `git status --short --branch`
 
-이 문서는 `HyukLee-og/StarPilot`의 `StarPilot` 브랜치를 로컬로 클론한 뒤, C4/Mici 기기에 맞춰 진행한 작업을 다음 작업자가 바로 이어받을 수 있게 정리한 기록이다.
+이 문서는 처음에는 `HyukLee-og/StarPilot`의 `StarPilot` 브랜치를 로컬로 클론해 시작했고, 이후 프로젝트명을 `Wayon / 웨이온`으로 정리하면서 `leehyuk1108/Wayon`의 `StarPilot` 브랜치로 푸쉬 중인 C4/Mici 작업 기록이다. 다음 작업자가 로컬 repo, GitHub 상태, 기기 반영 상태, Mici/Python UI 경계, 폰트/이벤트/전원 관련 caveat를 바로 이어받을 수 있게 정리한다.
+
+## 최종 handoff 요약
+
+- 로컬 repo: `/Users/ijonghyeog/Desktop/starpilot`
+- 현재 브랜치: `StarPilot`
+- 현재 origin: `https://github.com/leehyuk1108/Wayon.git`
+- 원본 참고 remote: `hyuklee-og` / `https://github.com/HyukLee-og/StarPilot.git`
+- 최신 로컬 HEAD: 작업 시점의 `git log -1 --oneline`으로 확인
+- 최신 `origin/StarPilot`: 작업 시점의 `git status --short --branch` 또는 `git ls-remote origin refs/heads/StarPilot`로 확인
+- 이 문서 업데이트 직전 기준 마지막 커밋: `fbf7baef Update Wayon alert override history`
+- 현재 Git 상태 기준: tracked 변경은 커밋/푸쉬 완료 상태를 유지하는 것이 목표다. 단, 작업용 미추적 파일/폴더 `.codex_tmp/`, `icons/`는 남아 있을 수 있다.
+- 이번 `history.md` 최신화는 로컬 repo 및 `origin/StarPilot` 기준이다.
+- 이번 최신화 시점에는 기기 `/data/openpilot`에 새로 SSH 접속해 반영 상태를 확인하지 않았다.
+- `mici_event_alert_overrides.json`은 repo에 저장된 재사용용 이벤트 튜닝 데이터다. 현재 런타임이 이 JSON을 자동으로 읽어 이벤트 문구를 override하는 경로는 아직 없다.
+- Mici/C4 관련 UI는 Qt 경로만 보면 안 된다. 실제 주요 경로는 Python/Raylib 기반 `selfdrive/ui/mici/...`, `selfdrive/ui/ui_state.py`, `system/ui/...`이다.
 
 ## 현재 기준 상태
 
 - 로컬 repo: `/Users/ijonghyeog/Desktop/starpilot`
-- 원격 repo: `https://github.com/HyukLee-og/StarPilot.git`
+- 원격 repo: `https://github.com/leehyuk1108/Wayon.git`
+- 원본 참고 repo: `https://github.com/HyukLee-og/StarPilot.git`
 - 로컬 브랜치: `StarPilot`
-- 로컬 기준 HEAD: `2e7036ab`
+- 로컬 기준 HEAD: 작업 시점의 `git log -1 --oneline`으로 확인
+- 원격 기준 HEAD: 작업 시점의 `git ls-remote origin refs/heads/StarPilot`로 확인
 - 실제 기기: `comma@comma-db5ce68d.local`
-- 실제 기기 IP: `192.168.35.175`
+- 최근 사용한 기기 IP 기록: `192.168.35.175`, `10.129.108.173`, `192.168.0.5`
 - 기기 repo 경로: `/data/openpilot`
-- 기기 브랜치/HEAD: `StarPilot` / `2e7036ab`
-- 기기 하드웨어 확인: `HARDWARE Tici`, `DEVICE_TYPE mici`
-- 기기 상태 확인 시점: `IsOffroad=1`, `IsOnroad=0`, `IsEngaged=0`
-- 기기 UI 프로세스: `selfdrive.ui.ui`, 마지막 재시작 후 PID `59072`
-- 기기 offroad wake watcher: 수동 백그라운드 실행 중, PID `59006`
-- 기기 언어 파라미터: `LanguageSetting=main_ko`
-- 단위 파라미터: `IsMetric=1`
+- 기기 브랜치/HEAD: 최신 상태는 작업 전 반드시 재확인 필요
+- 기기 하드웨어 확인 기록: `HARDWARE Tici`, `DEVICE_TYPE mici`
+- 기기 언어 파라미터 확인 기록: `LanguageSetting=main_ko`
+- 단위 파라미터 확인 기록: `IsMetric=1`
 
-현재 작업은 아직 커밋하지 않은 working tree 변경 상태다. 재부팅만으로는 일반적으로 `/data/openpilot`의 working tree가 자동으로 원격 원본으로 되돌아가지 않는다. 다만 업데이트/브랜치 전환/강제 reset/재설치/overlay 갱신 작업을 하면 덮일 수 있으므로, 장기 보존하려면 커밋하거나 별도 백업이 필요하다.
+재부팅만으로는 일반적으로 `/data/openpilot`의 working tree가 자동으로 원격 원본으로 되돌아가지 않는다. 다만 업데이트/브랜치 전환/강제 reset/재설치/overlay 갱신 작업을 하면 덮일 수 있으므로, 장기 보존해야 하는 변경은 GitHub에 커밋/푸쉬하거나 기기 active/staging 반영 상태를 별도로 확인해야 한다. 특히 이 문서의 최신 HEAD는 로컬/원격 기준이며, 실제 기기 `/data/openpilot` HEAD와 파일 checksum은 작업 전 다시 확인해야 한다.
 
 ## 초기 확인
 

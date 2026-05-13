@@ -1835,3 +1835,74 @@ PYTHONPATH=/data/openpilot/starpilot/third_party:/data/openpilot \
 검증:
 
 - 로컬 `python3 -m py_compile selfdrive/ui/mici/onroad/alert_renderer.py selfdrive/selfdrived/events.py selfdrive/selfdrived/selfdrived.py` 통과.
+
+## 2026-05-13 추가: Mici 이벤트 편집값 영구 저장 및 Wayon 상태 재검토
+
+사용자 요청:
+
+- 로컬 웹 편집기에서 조정한 `mici_event_alert_overrides.json`을 임시 파일로 두지 말고, 나중에도 계속 쓸 수 있게 repo에 따로 저장하고 GitHub에 푸쉬 요청.
+- 이후 `mici_event_alert_overrides.json`뿐 아니라 최근 Wayon 작업 전체에 이상이 없는지 검토 요청.
+- 최종 지시: 런타임 코드 쪽 추가 수정은 하지 않고, `history.md`만 최신 상태로 업데이트.
+
+저장된 파일:
+
+- `selfdrive/ui/mici/mici_event_alert_overrides.json`
+  - `.codex_tmp/mici_event_alert_overrides.json`에서 저장된 Mici 이벤트 편집값을 repo 안으로 옮긴 영구 보관 파일이다.
+  - `schema=1`
+  - `updatedAt=2026-05-13T10:25:02.000Z`
+  - 저장 이벤트 수: `106`
+  - `EVENTS` 100개, `STARPILOT_EVENTS` 6개
+  - 대표 반영값:
+    - `EVENTS.excessiveActuation.NO_ENTRY`: `제어 입력 과다` / `비정상적인 제어 입력 감지됨`
+    - `EVENTS.excessiveActuation.SOFT_DISABLE`: `운전자 개입 요구됨` / `비정상적인 제어 입력 감지됨`
+    - `EVENTS.preEnableStandstill.PRE_ENABLE`: `오토홀드` / `오토홀드가 활성화되었습니다`
+    - `EVENTS.paramsdTemporaryError.NO_ENTRY`: `조향 정렬 비정상` / `조향 정렬 (Offset: {offset}°)`
+    - `EVENTS.belowSteerSpeed.WARNING`: `조향 보조 꺼짐` / `최소 속도 {minSteerSpeed}`
+
+폰트/글자 처리:
+
+- `selfdrive/assets/fonts/process.py`
+  - Mici UI 경로의 `.py`뿐 아니라 `.json` 파일도 한글 glyph 수집 대상에 포함하도록 변경했다.
+  - 기존 추가 글자에 `냉느망명짧찌`를 더했다.
+- `selfdrive/assets/fonts/Pretendard-SemiBold.fnt`
+- `selfdrive/assets/fonts/Pretendard-SemiBold.png`
+  - 위 JSON에 들어간 한글까지 포함되도록 Pretendard SemiBold atlas를 다시 생성했다.
+  - 최종 검증에서 `glyph_missing=0` 확인.
+
+중요한 경계:
+
+- 현재 `mici_event_alert_overrides.json`은 재사용 가능한 이벤트 튜닝 데이터로 저장된 상태다.
+- 현재 Mici 런타임 코드가 이 JSON을 자동으로 읽어 이벤트 문구를 override하는 경로는 없다.
+- 따라서 이 JSON 안의 문구가 곧바로 기기 이벤트 화면에 전부 적용된 상태라고 보면 안 된다.
+- 실제 기기 이벤트 문구 적용까지 하려면 이후 둘 중 하나가 필요하다.
+  - `selfdrive/selfdrived/events.py`에 JSON 내용을 반영
+  - 또는 Mici/event alert override loader를 별도로 구현해 이 JSON을 런타임에서 읽도록 연결
+
+검토 결과:
+
+- 로컬 `HEAD`와 `origin/StarPilot`가 같은 상태인지 확인했다.
+- 최신 확인 시점 기준 커밋:
+  - `ac96e771 Persist Mici alert tuning data`
+  - `f205e9fd Use explicit Mici alert override filename`
+  - `cb0eb92a Clean persisted Mici alert overrides`
+- `mici_event_alert_overrides.json` 검증:
+  - JSON 파싱 정상
+  - 저장 이벤트 `106`
+  - 구조/필수 필드 문제 `0`
+  - NFC 정규화 문제 `0`
+  - 이상 공백 문제 `0`
+  - `note` 같은 임시 메타데이터 잔여 `0`
+  - `events.py`의 `EVENTS` / `STARPILOT_EVENTS` 정의와 이벤트명/타입 매칭 문제 `0`
+- 폰트 검증:
+  - JSON 표시 문자열 기준 Pretendard SemiBold glyph 누락 `0`
+- Wayon 최근 변경 파일 검토:
+  - `git diff --check` 통과
+  - 변경된 Python 파일 `py_compile` 통과
+  - `starpilot/assets/nnff_models/substitute.toml` TOML 파싱 통과
+  - `starpilot/system/the_pond/assets/components/tools/device_settings_layout.json` JSON 파싱 통과
+
+검증 한계:
+
+- macOS 로컬에서는 `msgq/ipc_pyx.so` / `openpilot/common/params_pyx.so`가 기기/Linux용 바이너리라 직접 import 기반 runtime test 및 `pytest` 일부가 실행되지 않았다.
+- 이번 `history.md` 업데이트 작업에서는 기기 `/data/openpilot` 반영 여부를 새로 확인하지 않았다.
+- 현재 기록은 로컬 repo 및 `origin/StarPilot` 기준의 handoff 상태다.

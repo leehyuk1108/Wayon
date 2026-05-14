@@ -149,6 +149,7 @@ else:
 
 procs += [
   PythonProcess("device_syncd", "starpilot.system.device_syncd", always_run),
+  PythonProcess("wayon_cloud", "starpilot.system.wayon_cloud_uploader", always_run, nice=19),
   PythonProcess("offroad_wake_watcher", "starpilot.system.offroad_wake_watcher", only_offroad, enabled=not PC),
   PythonProcess("starpilot_process", "starpilot.starpilot_process", always_run),
   PythonProcess("mapd", "starpilot.navigation.mapd_wrapper", always_run),

@@ -13,7 +13,10 @@ venv/
 a.out
 .hypothesis
 .cache/
+.codex_tmp/
 .host_runtime/
+.playwright-cli/
+.wrangler/
 .comma_sysroot/
 .venv-linux-arm64/
 compiledmodels/

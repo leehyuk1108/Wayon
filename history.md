@@ -1,6 +1,6 @@
 # Wayon / StarPilot C4/Mici 작업 이력
 
-최종 업데이트: 2026-05-13 KST
+최종 업데이트: 2026-05-14 KST
 기준 브랜치: `StarPilot`
 기준 원격: `origin` / `https://github.com/leehyuk1108/Wayon.git`
 최신 HEAD 확인 방법: `git log -1 --oneline` 및 `git status --short --branch`
@@ -15,8 +15,9 @@
 - 원본 참고 remote: `hyuklee-og` / `https://github.com/HyukLee-og/StarPilot.git`
 - 최신 로컬 HEAD: 작업 시점의 `git log -1 --oneline`으로 확인
 - 최신 `origin/StarPilot`: 작업 시점의 `git status --short --branch` 또는 `git ls-remote origin refs/heads/StarPilot`로 확인
-- 이 문서 업데이트 직전 기준 마지막 커밋: `d72c23ed Refresh history handoff header`
+- 이 문서 업데이트 직전 기준 마지막 커밋: `86521864 Fix Mici alert override import`
 - 현재 Git 상태 기준: tracked 변경은 커밋/푸쉬 완료 상태를 유지하는 것이 목표다. 단, 작업용 미추적 파일/폴더 `.codex_tmp/`, `icons/`는 남아 있을 수 있다.
+- 2026-05-14에 Wayon Cloud 초안을 repo에 추가했다. Cloudflare Worker/D1/KV 기반으로 차량 전압, onroad/offroad 상태, 현재 위치, offroad 시간당 wide/driver 스냅샷, onroad->offroad 주행 경로 요약을 업로드/조회하는 구조다.
 - 이번 `history.md` 최신화는 로컬 repo, `origin/StarPilot`, 기기 `/data/openpilot` 반영 상태를 분리해 기록하는 기준이다.
 - `mici_event_alert_overrides.json`은 repo에 저장된 재사용용 이벤트 튜닝 데이터이며, Mici 런타임에서는 `events.py`와 `alert_renderer.py`가 이 값을 읽어 문구와 글자 크기 override를 적용한다.
 - Mici/C4 관련 UI는 Qt 경로만 보면 안 된다. 실제 주요 경로는 Python/Raylib 기반 `selfdrive/ui/mici/...`, `selfdrive/ui/ui_state.py`, `system/ui/...`이다.
@@ -86,6 +87,86 @@ pkill -x selfdrive.ui.ui
 ```
 
 마지막 UI 재시작은 offroad 상태에서 수행했고, PID가 `64023 -> 66926`으로 바뀐 것을 확인했다.
+
+## Wayon Cloud / Cloudflare 대시보드 작업
+
+### 목적
+
+- 기기에서 웹서버/실시간 스트리밍을 무겁게 띄우지 않고, Cloudflare로 저주파 데이터를 push한다.
+- 웹 대시보드에서는 아래 내용을 확인한다.
+  - 차량 전압
+  - 시동/onroad 상태
+  - 현재 위치
+  - offroad 상태의 운전자 카메라 및 전방 광각 카메라 스냅샷
+  - onroad에서 offroad로 바뀔 때 완료된 주행의 출발지/도착지/경로
+
+### Cloudflare 리소스
+
+- 기존 흔적 삭제 완료:
+  - Worker: `comma-cloud`
+  - D1: `comma_cloud` / `87c86535-593b-47b1-95a4-03fd86b0a55f`
+- 새 Worker:
+  - 이름: `wayon-cloud`
+  - URL: `https://wayon-cloud.leehyuk1108-comma.workers.dev`
+  - 배포 당시 Version ID: `91ab6380-fade-4f96-b130-157c24c0e8cb`
+- 새 D1:
+  - 이름: `wayon_cloud`
+  - ID: `c953a6c9-eb7a-4695-b1a4-702c5ede186d`
+  - 테이블: `latest_state`, `snapshots`, `trips`
+- 새 KV:
+  - 이름: `WAYON_SNAPSHOTS`
+  - ID: `f66d9a8906494da3a3a254e340d205ae`
+- R2는 계정에서 아직 활성화되어 있지 않아, 초안은 스냅샷 JPEG를 KV에 저장한다.
+
+### Repo 추가 파일
+
+- `cloudflare/wayon-cloud/README.md`
+- `cloudflare/wayon-cloud/wrangler.toml`
+- `cloudflare/wayon-cloud/schema.sql`
+- `cloudflare/wayon-cloud/src/worker.js`
+- `cloudflare/wayon-cloud/public/index.html`
+- `cloudflare/wayon-cloud/public/styles.css`
+- `cloudflare/wayon-cloud/public/app.js`
+- `cloudflare/wayon-cloud/device_config.example.json`
+- `starpilot/system/wayon_cloud_uploader.py`
+
+### 기기 업로더 구조
+
+- manager process 이름: `wayon_cloud`
+- 등록 파일: `system/manager/process_config.py`
+- 모듈: `starpilot.system.wayon_cloud_uploader`
+- priority: `nice=19`
+- 기기 설정 파일:
+
+```text
+/data/wayon_cloud/config.json
+```
+
+- config가 없으면 업로더는 조용히 대기한다.
+- onroad 중에는 기본 15초 간격으로 전압/시동상태/위치/팬/thermal 상태를 업로드한다.
+- offroad 중에는 기본 300초 간격으로 상태를 업로드한다.
+- offroad 스냅샷은 기본 3600초 간격이다.
+- onroad 진입 시 route buffer를 시작하고, offroad 전환 시 trip record를 `/api/trips`로 업로드한다.
+- offroad 스냅샷은 기존 `snapshot()`이 `RecordFront`에 따라 driver camera를 생략할 수 있어서, Wayon Cloud 업로더에서는 offroad일 때 `wideRoadCameraState`와 `driverCameraState`를 명시적으로 함께 캡처한다.
+
+### 검증 기록
+
+- 로컬:
+  - `python3 -m py_compile starpilot/system/wayon_cloud_uploader.py system/manager/process_config.py`
+  - `node --check cloudflare/wayon-cloud/src/worker.js`
+  - `node --check cloudflare/wayon-cloud/public/app.js`
+  - `sqlite3 :memory: < cloudflare/wayon-cloud/schema.sql`
+- Cloudflare:
+  - `wrangler deploy --dry-run`에서 D1/KV/assets 바인딩 확인
+  - remote D1 schema 적용 완료
+  - `/api/state` view token 인증 확인
+  - `/api/telemetry` upload token 인증/쓰기 확인 후 smoke-test row 삭제
+
+### Secret / 토큰 주의
+
+- `WAYON_UPLOAD_TOKEN`, `WAYON_VIEW_TOKEN`은 Cloudflare secret으로 설정했고 repo에는 저장하지 않는다.
+- 작업 당시 로컬 임시 토큰 파일은 `/tmp/wayon_cloud_tokens.json`와 `.codex_tmp/wayon_cloud_tokens.json`에 두었다. 이 파일들은 repo에 커밋하지 않는 로컬 비밀 파일이다.
+- 다음 작업자가 기기에 새로 반영해야 한다면 Cloudflare secret을 재발급하거나 `/data/wayon_cloud/config.json`이 남아 있는지 먼저 확인해야 한다.
 
 ## 한국어 이벤트/알림 작업
 

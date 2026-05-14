@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wayon Cloud</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Wayon Cloud</p>
+          <h1>웨이온 상태 대시보드</h1>
+        </div>
+        <form id="tokenForm" class="token-form">
+          <input id="tokenInput" type="password" autocomplete="current-password" placeholder="보기 토큰">
+          <button type="submit">연결</button>
+        </form>
+      </header>
+
+      <section class="status-grid">
+        <article class="metric primary">
+          <span>시동 상태</span>
+          <strong id="driveState">-</strong>
+        </article>
+        <article class="metric">
+          <span>차량 전압</span>
+          <strong id="voltage">-</strong>
+        </article>
+        <article class="metric">
+          <span>팬</span>
+          <strong id="fan">-</strong>
+        </article>
+        <article class="metric">
+          <span>최근 업데이트</span>
+          <strong id="updatedAt">-</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <div id="map" class="map"></div>
+        <aside class="side">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>최근 스냅샷</h2>
+              <span id="snapshotStatus">-</span>
+            </div>
+            <div id="snapshots" class="snapshots"></div>
+          </section>
+          <section class="panel trips-panel">
+            <div class="panel-head">
+              <h2>주행 기록</h2>
+              <span id="tripStatus">-</span>
+            </div>
+            <div id="trips" class="trips"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

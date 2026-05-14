@@ -9,7 +9,15 @@ const tripsEl = document.getElementById("trips");
 const snapshotStatus = document.getElementById("snapshotStatus");
 const tripStatus = document.getElementById("tripStatus");
 
-let token = localStorage.getItem("wayonViewToken") || "";
+function tokenFromHash() {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  return params.get("token") || "";
+}
+
+let token = tokenFromHash() || localStorage.getItem("wayonViewToken") || "";
+if (token) {
+  localStorage.setItem("wayonViewToken", token);
+}
 tokenInput.value = token;
 
 const map = L.map("map", {

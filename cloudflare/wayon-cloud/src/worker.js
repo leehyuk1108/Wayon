@@ -1,4 +1,12 @@
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "authorization, content-type",
+  "access-control-max-age": "86400",
+};
+
 const JSON_HEADERS = {
+  ...CORS_HEADERS,
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
@@ -221,6 +229,38 @@ async function handleState(request, env) {
   return json({ state, snapshots: snapshots.results || [] });
 }
 
+function parseTripRoute(trip) {
+  const { route_json: routeJson, ...rest } = trip;
+  return {
+    ...rest,
+    route: JSON.parse(routeJson || "[]"),
+  };
+}
+
+async function handleExport(request, env) {
+  if (!authorize(request, env, false)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  const state = await env.DB.prepare(`
+    SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
+  `).first();
+  const snapshots = await env.DB.prepare(`
+    SELECT id, device_id, camera, captured_at, kv_key, size_bytes, created_at
+    FROM snapshots ORDER BY captured_at DESC LIMIT 24
+  `).all();
+  const trips = await env.DB.prepare(`
+    SELECT * FROM trips ORDER BY ended_at DESC LIMIT 25
+  `).all();
+
+  return json({
+    generatedAt: nowIso(),
+    state,
+    snapshots: snapshots.results || [],
+    trips: (trips.results || []).map(parseTripRoute),
+  });
+}
+
 async function handleTrips(request, env, pathname) {
   if (!authorize(request, env, false)) {
     return json({ error: "unauthorized" }, 401);
@@ -262,6 +302,7 @@ async function handleSnapshotImage(request, env) {
 
   return new Response(image, {
     headers: {
+      ...CORS_HEADERS,
       "content-type": "image/jpeg",
       "cache-control": "private, max-age=60",
     },
@@ -270,6 +311,10 @@ async function handleSnapshotImage(request, env) {
 
 export default {
   async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+
     if (!requireBindings(env)) {
       return json({ error: "missing_cloudflare_bindings" }, 503);
     }
@@ -288,6 +333,9 @@ export default {
     }
     if (request.method === "GET" && pathname === "/api/state") {
       return handleState(request, env);
+    }
+    if (request.method === "GET" && (pathname === "/api/export" || pathname === "/api/json")) {
+      return handleExport(request, env);
     }
     if (request.method === "GET" && pathname.startsWith("/api/trips")) {
       return handleTrips(request, env, pathname);

@@ -13,6 +13,27 @@ snapshots. The Worker stores live state in D1 and JPEG snapshots in KV.
 The dashboard and API are served from the same Worker. API reads and writes are
 protected with bearer tokens.
 
+## JSON API
+
+Read requests use the view token:
+
+```sh
+curl -H "Authorization: Bearer $WAYON_VIEW_TOKEN" \
+  https://wayon-cloud.leehyuk1108-comma.workers.dev/api/json
+```
+
+Available read endpoints:
+
+- `GET /api/json`: combined JSON feed for external visualizers
+- `GET /api/export`: alias of `/api/json`
+- `GET /api/state`: latest state plus recent snapshots
+- `GET /api/trips`: recent trip summaries
+- `GET /api/trips/:id`: one trip with route points
+- `GET /api/snapshot?key=...`: JPEG snapshot object
+
+The JSON endpoints include CORS headers, so another browser-based visualizer can
+fetch them with an `Authorization: Bearer ...` header.
+
 ## Deploy
 
 1. Create Cloudflare resources:

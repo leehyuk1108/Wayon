@@ -161,6 +161,7 @@ pkill -x selfdrive.ui.ui
   - remote D1 schema 적용 완료
   - `/api/state` view token 인증 확인
   - `/api/telemetry` upload token 인증/쓰기 확인 후 smoke-test row 삭제
+  - `/api/json`과 `/api/export`는 외부 visualizer용 통합 JSON feed이며, `Authorization: Bearer <view token>`과 CORS preflight를 지원한다.
 
 ### Secret / 토큰 주의
 

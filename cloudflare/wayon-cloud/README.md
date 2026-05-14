@@ -1,8 +1,8 @@
 # Wayon Cloud
 
 Wayon Cloud is a lightweight Cloudflare Worker dashboard for a Wayon/openpilot
-device. The comma device only pushes low-rate telemetry and occasional offroad
-snapshots. The Worker stores live state in D1 and JPEG snapshots in KV.
+device. The comma device only pushes low-rate vehicle telemetry and occasional
+offroad snapshots. The Worker stores live state in D1 and JPEG snapshots in KV.
 
 ## Cloudflare Resources
 
@@ -27,9 +27,12 @@ Available read endpoints:
 - `GET /api/json`: combined JSON feed for external visualizers
 - `GET /api/export`: alias of `/api/json`
 - `GET /api/state`: latest state plus recent snapshots
-- `GET /api/trips`: recent trip summaries
-- `GET /api/trips/:id`: one trip with route points
+- `GET /api/trips`: recent legacy trip summaries, if uploaded
+- `GET /api/trips/:id`: one legacy trip with route points, if uploaded
 - `GET /api/snapshot?key=...`: JPEG snapshot object
+
+Live speed is stored as `state.speed_mps` from the vehicle `carState`
+dashboard/cluster speed path, not from GPS.
 
 The JSON endpoints include CORS headers, so another browser-based visualizer can
 fetch them with an `Authorization: Bearer ...` header.

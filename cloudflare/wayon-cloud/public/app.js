@@ -2,6 +2,7 @@ const tokenForm = document.getElementById("tokenForm");
 const tokenInput = document.getElementById("tokenInput");
 const driveState = document.getElementById("driveState");
 const voltage = document.getElementById("voltage");
+const speed = document.getElementById("speed");
 const fan = document.getElementById("fan");
 const updatedAt = document.getElementById("updatedAt");
 const snapshotsEl = document.getElementById("snapshots");
@@ -92,6 +93,7 @@ function renderState(state) {
   if (!state) {
     driveState.textContent = "대기 중";
     voltage.textContent = "-";
+    speed.textContent = "-";
     fan.textContent = "-";
     updatedAt.textContent = "-";
     return;
@@ -99,6 +101,7 @@ function renderState(state) {
 
   driveState.textContent = state.onroad ? "주행 중" : "주차 중";
   voltage.textContent = state.voltage_v ? `${fmtNumber(state.voltage_v, 2)}V` : "-";
+  speed.textContent = state.speed_mps == null ? "-" : `${Math.round(Number(state.speed_mps) * 3.6)}km/h`;
   fan.textContent = state.fan_percent == null ? "-" : `${state.fan_percent}%`;
   updatedAt.textContent = fmtDate(state.updated_at);
 
@@ -111,6 +114,9 @@ function renderState(state) {
     }
     currentMarker.bindPopup(`현재 위치<br>${fmtDate(state.updated_at)}`);
     map.setView(position, Math.max(map.getZoom(), 13));
+  } else if (currentMarker) {
+    currentMarker.remove();
+    currentMarker = null;
   }
 }
 

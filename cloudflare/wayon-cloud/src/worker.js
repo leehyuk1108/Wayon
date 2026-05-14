@@ -83,6 +83,7 @@ async function handleTelemetry(request, env) {
   const deviceId = String(payload.deviceId || "unknown");
   const updatedAt = payload.updatedAt || nowIso();
   const gps = payload.gps || {};
+  const speedMps = payload.vehicleSpeedMps ?? payload.speedMps ?? gps.speedMps;
 
   await env.DB.prepare(`
     INSERT INTO latest_state (
@@ -124,7 +125,7 @@ async function handleTelemetry(request, env) {
     payload.screenBrightnessPercent ?? null,
     nullableNumber(gps.latitude),
     nullableNumber(gps.longitude),
-    nullableNumber(gps.speedMps),
+    nullableNumber(speedMps),
     nullableNumber(gps.bearingDeg),
     nullableNumber(gps.accuracyM),
     JSON.stringify(payload),

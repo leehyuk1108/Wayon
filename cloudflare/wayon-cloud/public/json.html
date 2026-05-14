@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wayon Cloud JSON</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080b0f;
+        --panel: #10161d;
+        --line: rgba(255, 255, 255, 0.08);
+        --text: #edf3f7;
+        --muted: #8d9aa7;
+        --accent: #7ee2b8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        min-height: 100vh;
+        padding: 24px;
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 14px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      #status {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      pre {
+        min-height: calc(100vh - 94px);
+        margin: 0;
+        padding: 16px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: #d5efe4;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Wayon Cloud JSON</h1>
+        <span id="status">불러오는 중</span>
+      </header>
+      <pre id="output">{}</pre>
+    </main>
+    <script>
+      const statusEl = document.getElementById("status");
+      const outputEl = document.getElementById("output");
+
+      function tokenFromHash() {
+        const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        return params.get("token") || "";
+      }
+
+      function fmtDate(value) {
+        return new Date(value).toLocaleString("ko-KR", {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+      }
+
+      async function refresh() {
+        const token = tokenFromHash();
+        if (!token) {
+          statusEl.textContent = "토큰 없음";
+          outputEl.textContent = JSON.stringify({ error: "missing_token" }, null, 2);
+          return;
+        }
+
+        const response = await fetch("/api/json", {
+          headers: { authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const data = await response.json();
+        outputEl.textContent = JSON.stringify(data, null, 2);
+        statusEl.textContent = response.ok ? `업데이트 ${fmtDate(Date.now())}` : `오류 ${response.status}`;
+      }
+
+      refresh().catch((error) => {
+        statusEl.textContent = "오류";
+        outputEl.textContent = JSON.stringify({ error: String(error) }, null, 2);
+      });
+      setInterval(() => refresh().catch(console.error), 30000);
+    </script>
+  </body>
+</html>

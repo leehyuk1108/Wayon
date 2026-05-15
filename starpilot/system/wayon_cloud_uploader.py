@@ -29,6 +29,8 @@ DEFAULT_ROUTE_POINT_MIN_DISTANCE_M = 15.0
 DEFAULT_ROUTE_POINT_LIMIT = 720
 DEFAULT_SNAPSHOT_INTERVAL_OFFROAD = 3600.0
 CONFIG_RELOAD_INTERVAL = 60.0
+LOOP_SLEEP_ONROAD = 1.0
+LOOP_SLEEP_OFFROAD = 1.0
 LOG_FILE_CANDIDATES = ("qlog.zst", "qlog.bz2", "qlog", "rlog.zst", "rlog.bz2", "rlog")
 
 
@@ -626,6 +628,7 @@ def main():
       next_snapshot = now + max(300.0, snapshot_interval)
 
     previous_started = started
+    time.sleep(LOOP_SLEEP_ONROAD if started else LOOP_SLEEP_OFFROAD)
 
 
 if __name__ == "__main__":

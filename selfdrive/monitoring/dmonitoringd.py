@@ -13,7 +13,8 @@ def dmonitoringd_thread():
 
   params = Params()
   pm = messaging.PubMaster(['driverMonitoringState'])
-  sm = messaging.SubMaster(['driverStateV2', 'liveCalibration', 'carState', 'selfdriveState', 'modelV2'], poll='driverStateV2')
+  sm = messaging.SubMaster(['driverStateV2', 'liveCalibration', 'carState', 'selfdriveState', 'modelV2'], poll='driverStateV2',
+                           ignore_alive=['carState'], ignore_avg_freq=['carState'], ignore_valid=['carState'])
 
   DM = DriverMonitoring(rhd_saved=params.get_bool("IsRhdDetected"), always_on=params.get_bool("AlwaysOnDM"))
   demo_mode=False

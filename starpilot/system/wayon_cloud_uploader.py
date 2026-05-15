@@ -139,12 +139,21 @@ def last_gps_payload(params):
   if latitude is None or longitude is None:
     return {}
 
-  return {
+  payload = {
     "latitude": float(latitude),
     "longitude": float(longitude),
     "bearingDeg": float(data.get("bearing", 0.0)),
     "source": "lastGpsPosition",
   }
+
+  try:
+    param_path = Path("/data/params/d/LastGPSPosition")
+    if param_path.is_file():
+      payload["timestampMillis"] = int(param_path.stat().st_mtime * 1000)
+  except Exception:
+    pass
+
+  return payload
 
 
 def gps_payload(sm, params=None):
@@ -589,8 +598,10 @@ def main():
 
     if started and not previous_started:
       print("Wayon cloud: using 60s lightweight onroad telemetry")
+      next_telemetry = now
 
     if not started and previous_started:
+      next_telemetry = now
       route_summary_due = now + route_summary_grace_period
       next_route_summary = route_summary_due if next_route_summary <= now else min(next_route_summary, route_summary_due)
       next_snapshot = min(next_snapshot, now + 30.0)

@@ -599,7 +599,7 @@ def main():
     snapshot_interval = float(config.get("snapshot_interval_offroad", DEFAULT_SNAPSHOT_INTERVAL_OFFROAD))
 
     if started and not previous_started:
-      print("Wayon cloud: using 60s lightweight onroad telemetry")
+      print(f"Wayon cloud: using {telemetry_interval:.0f}s lightweight onroad telemetry")
       next_telemetry = now
 
     if not started and previous_started:

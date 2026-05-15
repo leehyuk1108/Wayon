@@ -567,7 +567,7 @@ def capture_offroad_images():
 
 def main():
   params = Params()
-  sm = messaging.SubMaster(["deviceState", "pandaStates", "gpsLocationExternal", "gpsLocation", "selfdriveState", "carState"])
+  sm = messaging.SubMaster(["deviceState", "pandaStates", "gpsLocationExternal", "gpsLocation", "selfdriveState", "carState"], poll="carState")
 
   config = None
   next_config_load = 0.0

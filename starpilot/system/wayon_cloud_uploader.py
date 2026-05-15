@@ -32,6 +32,8 @@ CONFIG_RELOAD_INTERVAL = 60.0
 LOOP_SLEEP_ONROAD = 1.0
 LOOP_SLEEP_OFFROAD = 1.0
 LOG_FILE_CANDIDATES = ("qlog.zst", "qlog.bz2", "qlog", "rlog.zst", "rlog.bz2", "rlog")
+STATE_SERVICES = ["deviceState", "pandaStates", "gpsLocationExternal", "gpsLocation", "selfdriveState"]
+TELEMETRY_SERVICES = STATE_SERVICES + ["carState"]
 
 
 def utc_now():
@@ -224,6 +226,15 @@ def telemetry_payload(sm, params, device_id):
     "vehicleSpeedSource": vehicle_speed.get("source"),
     "dongleId": get_param_str(params, "DongleId"),
   }
+
+
+def fresh_telemetry_payload(params, device_id, started):
+  services = TELEMETRY_SERVICES if started else STATE_SERVICES
+  poll = "carState" if started else None
+  sm = messaging.SubMaster(services, poll=poll)
+  for _ in range(10):
+    sm.update(100)
+  return telemetry_payload(sm, params, device_id)
 
 
 def haversine_m(a, b):
@@ -567,7 +578,7 @@ def capture_offroad_images():
 
 def main():
   params = Params()
-  sm = messaging.SubMaster(["deviceState", "pandaStates", "gpsLocationExternal", "gpsLocation", "selfdriveState", "carState"], poll="carState")
+  sm = messaging.SubMaster(STATE_SERVICES)
 
   config = None
   next_config_load = 0.0
@@ -610,7 +621,7 @@ def main():
 
     if now >= next_telemetry:
       try:
-        post_json(config, "/api/telemetry", telemetry_payload(sm, params, device_id))
+        post_json(config, "/api/telemetry", fresh_telemetry_payload(params, device_id, started))
         next_telemetry = now + max(5.0, telemetry_interval)
       except Exception as exc:
         print(f"Wayon cloud: telemetry upload failed: {exc}")

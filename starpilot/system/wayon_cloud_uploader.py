@@ -24,6 +24,7 @@ DEFAULT_TELEMETRY_INTERVAL_OFFROAD = 300.0
 DEFAULT_ROUTE_SUMMARY_INTERVAL_OFFROAD = 60.0
 DEFAULT_ROUTE_SUMMARY_GRACE_PERIOD = 45.0
 DEFAULT_ROUTE_SUMMARY_MAX_AGE = 24.0 * 60.0 * 60.0
+DEFAULT_LATEST_ROUTE_GPS_MAX_AGE = 2.0 * 60.0 * 60.0
 DEFAULT_ROUTE_POINT_INTERVAL = 10.0
 DEFAULT_ROUTE_POINT_MIN_DISTANCE_M = 15.0
 DEFAULT_ROUTE_POINT_LIMIT = 720
@@ -171,6 +172,9 @@ def gps_payload(sm, params=None):
       continue
 
   if not candidates:
+    route_gps = latest_route_gps_payload()
+    if route_gps:
+      return route_gps
     return last_gps_payload(params) if params is not None else {}
 
   _, gps = max(candidates, key=lambda item: item[0])
@@ -321,6 +325,56 @@ def segment_log_file(segment_dir):
     if path.is_file() and path.stat().st_size > 0:
       return path
   return None
+
+
+def latest_route_gps_payload(max_age_s=DEFAULT_LATEST_ROUTE_GPS_MAX_AGE):
+  try:
+    from openpilot.tools.lib.logreader import LogReader
+
+    log_root = Path(Paths.log_root())
+    if not log_root.is_dir():
+      return {}
+
+    now = time.time()
+    segment_dirs = sorted(
+      (path for path in log_root.iterdir() if path.is_dir()),
+      key=lambda path: path.stat().st_mtime,
+      reverse=True,
+    )
+
+    latest = None
+    for segment_dir in segment_dirs[:8]:
+      log_file = segment_log_file(segment_dir)
+      if log_file is None:
+        continue
+      if now - max(segment_dir.stat().st_mtime, log_file.stat().st_mtime) > max_age_s:
+        continue
+
+      for msg in LogReader(str(log_file), sort_by_time=True, only_union_types=True):
+        which = msg.which()
+        if which not in ("gpsLocationExternal", "gpsLocation"):
+          continue
+        gps = getattr(msg, which)
+        if not gps.hasFix or abs(gps.latitude) <= 0.001 or abs(gps.longitude) <= 0.001:
+          continue
+
+        latest = {
+          "latitude": float(gps.latitude),
+          "longitude": float(gps.longitude),
+          "altitude": float(gps.altitude),
+          "bearingDeg": float(gps.bearingDeg),
+          "accuracyM": float(gps.horizontalAccuracy),
+          "timestampMillis": int(gps.unixTimestampMillis),
+          "source": f"routeLog:{which}",
+          "satellites": int(gps.satelliteCount),
+        }
+
+      if latest:
+        return latest
+  except Exception as exc:
+    print(f"Wayon cloud: failed to read latest route GPS: {exc}")
+
+  return {}
 
 
 def recent_route_groups(max_age_s):

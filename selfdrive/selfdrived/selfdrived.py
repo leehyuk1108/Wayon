@@ -49,6 +49,7 @@ SafetyModel = car.CarParams.SafetyModel
 StarPilotEventName = custom.StarPilotOnroadEvent.EventName
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
+SELFDRIVED_LAG_ALERT_DT = DT_CTRL * 2.0
 
 
 class SelfdriveD:
@@ -385,7 +386,7 @@ class SelfdriveD:
           self.events.add(EventName.cameraMalfunction)
         elif not self.sm.all_freq_ok(self.camera_packets):
           self.events.add(EventName.cameraFrameRate)
-    if not REPLAY and self.rk.lagging:
+    if not REPLAY and self.rk.avg_dt.get_average() > SELFDRIVED_LAG_ALERT_DT:
       self.events.add(EventName.selfdrivedLagging)
     if self.sm['radarState'].radarErrors.canError:
       self.events.add(EventName.canError)

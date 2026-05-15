@@ -321,7 +321,7 @@ def main() -> None:
 
   # *** setup messaging
   sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'], poll='modelV2',
-                           ignore_valid=['starpilotPlan'])
+                           ignore_alive=['carState'], ignore_avg_freq=['liveTracks'], ignore_valid=['starpilotPlan'])
   pm = messaging.PubMaster(['radarState'])
 
   radar_ts = float(getattr(CP, "radarTimeStepDEPRECATED", DT_MDL) or DT_MDL)

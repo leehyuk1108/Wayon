@@ -190,10 +190,10 @@ def gps_payload(sm, params=None):
   }
 
 
-def telemetry_payload(sm, params, device_id):
+def telemetry_payload(sm, params, device_id, started_override=False):
   device_state = sm["deviceState"]
   panda_state = first_panda_state(sm["pandaStates"])
-  started = bool(device_state.started)
+  started = bool(device_state.started) or bool(started_override)
   vehicle_speed = vehicle_speed_payload(sm, started)
 
   ignition = False
@@ -215,7 +215,7 @@ def telemetry_payload(sm, params, device_id):
   return {
     "deviceId": device_id,
     "updatedAt": utc_now(),
-    "onroad": bool(device_state.started),
+    "onroad": started,
     "ignition": ignition,
     "enabled": enabled,
     "voltageV": voltage_v,
@@ -234,11 +234,13 @@ def telemetry_payload(sm, params, device_id):
 
 def fresh_telemetry_payload(params, device_id, started):
   services = TELEMETRY_SERVICES if started else STATE_SERVICES
-  poll = "carState" if started else None
-  sm = messaging.SubMaster(services, poll=poll)
-  for _ in range(10):
+  sm = messaging.SubMaster(services)
+  deadline = time.monotonic() + (2.0 if started else 1.0)
+  while time.monotonic() < deadline:
     sm.update(100)
-  return telemetry_payload(sm, params, device_id)
+    if sm.seen["deviceState"] and (not started or sm.seen["carState"]):
+      break
+  return telemetry_payload(sm, params, device_id, started_override=started)
 
 
 def haversine_m(a, b):

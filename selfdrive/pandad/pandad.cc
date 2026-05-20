@@ -40,6 +40,7 @@
 #define MAX_IR_PANDA_VAL 50
 #define CUTOFF_IL 400
 #define SATURATE_IL 1000
+#define SNAPSHOT_IR_CHECK_FRAMES 20
 
 ExitHandler do_exit;
 
@@ -389,6 +390,9 @@ void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control) 
   static int prev_ir_pwr = 999;
   static uint32_t prev_frame_id = UINT32_MAX;
   static bool driver_view = false;
+  static const bool snapshot_ir_supported = Hardware::get_device_type() == cereal::InitData::DeviceType::MICI;
+  static bool snapshot_ir_active = false;
+  static uint32_t snapshot_ir_check_frame = SNAPSHOT_IR_CHECK_FRAMES;
 
   // TODO: can we merge these?
   static FirstOrderFilter integ_lines_filter(0, 30.0, 0.05);
@@ -396,6 +400,11 @@ void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control) 
 
   {
     sm.update(0);
+    if (snapshot_ir_supported && snapshot_ir_check_frame++ >= SNAPSHOT_IR_CHECK_FRAMES) {
+      snapshot_ir_active = params.getBool("IsTakingSnapshot");
+      snapshot_ir_check_frame = 0;
+    }
+
     if (sm.updated("deviceState") && !no_fan_control) {
       // Fan speed
       uint16_t fan_speed = sm["deviceState"].getDeviceState().getFanSpeedPercentDesired();
@@ -429,8 +438,12 @@ void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control) 
       }
     }
 
+    if (snapshot_ir_active) {
+      ir_pwr = 100;
+    }
+
     // Disable IR on input timeout
-    if (nanos_since_boot() - last_driver_camera_t > 1e9) {
+    if (!snapshot_ir_active && nanos_since_boot() - last_driver_camera_t > 1e9) {
       ir_pwr = 0;
     }
 

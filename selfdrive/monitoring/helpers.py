@@ -133,7 +133,7 @@ def face_orientation_from_net(angles_desc, pos_desc, rpy_calib):
 
 
 class DriverMonitoring:
-  def __init__(self, rhd_saved=False, settings=None, always_on=False):
+  def __init__(self, rhd_saved=False, settings=None, always_on=False, ignore_phone_dm=False):
     # init policy settings
     self.settings = settings if settings is not None else DRIVER_MONITOR_SETTINGS(device_type=HARDWARE.get_device_type())
 
@@ -145,6 +145,7 @@ class DriverMonitoring:
     self.phone_prob = 0.
 
     self.always_on = always_on
+    self.ignore_phone_dm = ignore_phone_dm
     self.distracted_types = []
     self.driver_distracted = False
     self.driver_distraction_filter = FirstOrderFilter(0., self.settings._DISTRACTED_FILTER_TS, self.settings._DT_DMON)
@@ -288,7 +289,9 @@ class DriverMonitoring:
     self.phone_prob = driver_data.phoneProb
 
     self.distracted_types = self._get_distracted_types()
-    self.driver_distracted = (DistractedType.DISTRACTED_PHONE in self.distracted_types
+    phone_distracted = DistractedType.DISTRACTED_PHONE in self.distracted_types
+    phone_distracted &= not self.ignore_phone_dm
+    self.driver_distracted = (phone_distracted
                               or DistractedType.DISTRACTED_POSE in self.distracted_types
                               or DistractedType.DISTRACTED_BLINK in self.distracted_types) \
                               and driver_data.faceProb > self.settings._FACE_THRESHOLD and self.pose.low_std

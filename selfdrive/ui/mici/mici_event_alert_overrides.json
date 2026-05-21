@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updatedAt": "2026-05-13T10:25:02.000Z",
+  "updatedAt": "2026-05-21T07:14:17.710Z",
   "events": {
     "EVENTS.preEnableStandstill.PRE_ENABLE": {
       "eventName": "preEnableStandstill",
@@ -704,7 +704,9 @@
       "eventType": "WARNING",
       "source": "EVENTS",
       "title": "운전자 개입 필요",
-      "subtitle": "조향각 한도 도달함"
+      "subtitle": "조향각 한도 도달함",
+      "titleFontPx": 66,
+      "subtitleFontPx": 47
     },
     "EVENTS.steerTempUnavailable.NO_ENTRY": {
       "eventName": "steerTempUnavailable",
@@ -821,6 +823,21 @@
       "subtitle": "변경 가능한 차선이 없습니다",
       "titleFontPx": 79,
       "subtitleFontPx": 36
+    },
+    "EVENTS.preDriverDistracted.PERMANENT": {
+      "eventName": "preDriverDistracted",
+      "eventType": "PERMANENT",
+      "source": "EVENTS",
+      "title": "운전에 집중하세요",
+      "subtitle": ""
+    },
+    "EVENTS.promptDriverDistracted.PERMANENT": {
+      "eventName": "promptDriverDistracted",
+      "eventType": "PERMANENT",
+      "source": "EVENTS",
+      "title": "운전에 집중하세요",
+      "subtitle": "운전자 부주의 감지됨",
+      "titleFontPx": 60
     }
   }
 }

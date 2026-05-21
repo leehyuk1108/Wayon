@@ -119,6 +119,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SecOCKey", {PERSISTENT | DONT_LOG, STRING}},
     {"ShowDebugInfo", {PERSISTENT, BOOL}},
     {"ShowAllToggles", {PERSISTENT, BOOL, "0", "0", 3}},
+    {"SimulationIgnorePhoneDM", {PERSISTENT, BOOL}},
     {"UsePrebuilt", {PERSISTENT, BOOL, "1"}},
     {"RouteCount", {PERSISTENT, INT, "0"}},
     {"SnoozeUpdate", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},

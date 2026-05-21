@@ -1182,16 +1182,16 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   StarPilotEventName.phoneLeadClosing: {
     ET.WARNING: Alert(
-      "전방을 확인하세요",
-      "전방 차량 접근 감지됨",
+      "전방 주의",
+      "전방 차량과 접근중",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.none, AudibleAlert.warningSoft, 2.),
   },
 
   StarPilotEventName.phoneLaneIntrusion: {
     ET.WARNING: Alert(
-      "차선 침범 주의",
-      "주변 차량 진입 감지됨",
+      "전방 차량 주의",
+      "전방 차량 차선 침범함",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.none, AudibleAlert.warningSoft, 2.),
   },

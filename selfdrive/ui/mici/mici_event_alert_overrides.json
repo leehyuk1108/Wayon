@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updatedAt": "2026-05-21T07:14:17.710Z",
+  "updatedAt": "2026-05-21T08:45:55.577Z",
   "events": {
     "EVENTS.preEnableStandstill.PRE_ENABLE": {
       "eventName": "preEnableStandstill",
@@ -797,18 +797,17 @@
       "eventName": "phoneLeadClosing",
       "eventType": "WARNING",
       "source": "STARPILOT_EVENTS",
-      "title": "전방을 확인하세요",
-      "subtitle": "전방 차량 접근 감지됨",
-      "titleFontPx": 70,
+      "title": "전방 주의",
+      "subtitle": "전방 차량과 접근중",
       "subtitleFontPx": 45
     },
     "STARPILOT_EVENTS.phoneLaneIntrusion.WARNING": {
       "eventName": "phoneLaneIntrusion",
       "eventType": "WARNING",
       "source": "STARPILOT_EVENTS",
-      "title": "차선 침범 주의",
-      "subtitle": "주변 차량 진입 감지됨",
-      "titleFontPx": 70,
+      "title": "전방 차량 주의",
+      "subtitle": "전방 차량 차선 침범함",
+      "titleFontPx": 75,
       "subtitleFontPx": 45
     },
     "STARPILOT_EVENTS.nnffLoaded.PERMANENT": {

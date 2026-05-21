@@ -153,6 +153,7 @@ struct StarPilotOnroadEvent @0xa5cd762cd951a455 {
     switchbackModeInactive @30;
     lkasEnable @31;
     lkasDisable @32;
+    phoneForwardRisk @33;
   }
 }
 

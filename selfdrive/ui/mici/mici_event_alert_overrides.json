@@ -793,6 +793,15 @@
       "subtitle": "전방 차량이 출발했습니다",
       "titleFontPx": 79
     },
+    "STARPILOT_EVENTS.phoneForwardRisk.WARNING": {
+      "eventName": "phoneForwardRisk",
+      "eventType": "WARNING",
+      "source": "STARPILOT_EVENTS",
+      "title": "전방을 확인하세요",
+      "subtitle": "차량 접근 감지됨",
+      "titleFontPx": 70,
+      "subtitleFontPx": 45
+    },
     "STARPILOT_EVENTS.nnffLoaded.PERMANENT": {
       "eventName": "nnffLoaded",
       "eventType": "PERMANENT",

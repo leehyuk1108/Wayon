@@ -7,10 +7,12 @@ from openpilot.selfdrive.controls.lib.desire_helper import TurnDirection
 from openpilot.selfdrive.selfdrived.events import ET, EVENT_NAME, STARPILOT_EVENT_NAME, EventName, StarPilotEventName, Events
 
 from openpilot.starpilot.common.starpilot_variables import CRUISING_SPEED, NON_DRIVING_GEARS
+from openpilot.starpilot.controls.lib.phone_forward_risk import lead_forward_risk, phone_detected_from_distracted_type
 
 DEJA_VU_G_FORCE = 0.75
 RANDOM_EVENTS_CHANCE = 0.01 * DT_MDL
 RANDOM_EVENTS_LENGTH = 5
+PHONE_FORWARD_RISK_COOLDOWN = 4.0
 
 RANDOM_EVENT_START = StarPilotEventName.accel30
 RANDOM_EVENT_END = StarPilotEventName.youveGotMail
@@ -30,12 +32,47 @@ class StarPilotEvents:
     self.stopped_for_light = False
 
     self.max_acceleration = 0
+    self.phone_forward_risk_cooldown = 0
     self.random_event_timer = 0
     self.tracked_lead_distance = 0
+
+    self.phone_forward_risk_lead_history_initialized = False
+    self.previous_lead_radar_track_id = -1
+    self.previous_lead_status = False
+    self.previous_lead_y_rel = 0.0
 
     self.played_events = set()
 
     self.error_log = error_log
+
+  def _update_phone_forward_risk(self, v_ego, sm):
+    self.phone_forward_risk_cooldown = max(0.0, self.phone_forward_risk_cooldown - DT_MDL)
+
+    lead = self.starpilot_planner.lead_one
+    lead_status = bool(getattr(lead, "status", False))
+    lead_radar_track_id = int(getattr(lead, "radarTrackId", -1)) if lead_status else -1
+    lead_y_rel = float(getattr(lead, "yRel", 0.0)) if lead_status else 0.0
+
+    phone_detected = phone_detected_from_distracted_type(sm["driverMonitoringState"].distractedType)
+    lane_width = max(self.starpilot_planner.lane_width_left, self.starpilot_planner.lane_width_right)
+    forward_risk = phone_detected and lead_forward_risk(
+      v_ego,
+      lead,
+      previous_lead_status=self.previous_lead_status,
+      previous_lead_y_rel=self.previous_lead_y_rel,
+      previous_radar_track_id=self.previous_lead_radar_track_id,
+      lane_width=lane_width,
+      lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
+    )
+
+    if forward_risk and self.phone_forward_risk_cooldown <= 0.0:
+      self.events.add(StarPilotEventName.phoneForwardRisk)
+      self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
+
+    self.previous_lead_status = lead_status
+    self.previous_lead_radar_track_id = lead_radar_track_id
+    self.previous_lead_y_rel = lead_y_rel
+    self.phone_forward_risk_lead_history_initialized = True
 
   def update(self, long_control_active, v_cruise, sm, starpilot_toggles):
     current_alert = sm["selfdriveState"].alertType
@@ -88,6 +125,8 @@ class StarPilotEvents:
         self.events.add(StarPilotEventName.leadDeparting)
     else:
       self.tracked_lead_distance = 0
+
+    self._update_phone_forward_risk(max(sm["carState"].vEgo, 0), sm)
 
     if "nnffLoaded" not in self.played_events and self.startup_seen and alerts_empty and len(self.events) == 0 and self.starpilot_planner.params.get("NNFFModelName") is not None and starpilot_toggles.nnff:
       self.events.add(StarPilotEventName.nnffLoaded)

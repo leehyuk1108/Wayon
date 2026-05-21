@@ -1,0 +1,64 @@
+PHONE_DISTRACTED_TYPE = 1 << 2
+
+MIN_FORWARD_RISK_SPEED = 5.0
+CUT_IN_CLOSE_DISTANCE = 35.0
+INTRUSION_DISTANCE = 45.0
+FAST_CLOSING_DISTANCE = 55.0
+FAST_CLOSING_SPEED = 3.0
+FAST_CLOSING_TTC = 6.0
+DEFAULT_LANE_WIDTH = 3.6
+
+
+def phone_detected_from_distracted_type(distracted_type):
+  return bool(int(distracted_type) & PHONE_DISTRACTED_TYPE)
+
+
+def _lead_value(lead, name, default=0.0):
+  try:
+    return float(getattr(lead, name))
+  except (TypeError, ValueError):
+    return default
+
+
+def _lead_int(lead, name, default=-1):
+  try:
+    return int(getattr(lead, name))
+  except (TypeError, ValueError):
+    return default
+
+
+def lead_forward_risk(v_ego, lead, previous_lead_status=False, previous_lead_y_rel=0.0,
+                      previous_radar_track_id=-1, lane_width=0.0, lead_history_initialized=True):
+  if lead is None or not bool(getattr(lead, "status", False)) or v_ego < MIN_FORWARD_RISK_SPEED:
+    return False
+
+  d_rel = _lead_value(lead, "dRel")
+  if d_rel <= 0.0:
+    return False
+
+  if bool(getattr(lead, "fcw", False)):
+    return True
+
+  y_rel = _lead_value(lead, "yRel")
+  v_rel = _lead_value(lead, "vRel")
+  v_lead = _lead_value(lead, "vLead")
+  radar_track_id = _lead_int(lead, "radarTrackId")
+
+  effective_lane_width = lane_width if lane_width > 0.0 else DEFAULT_LANE_WIDTH
+  lane_half_width = max(1.25, min(2.0, effective_lane_width / 2.0))
+
+  new_radar_target = previous_lead_status and previous_radar_track_id >= 0 and radar_track_id >= 0
+  new_radar_target &= previous_radar_track_id != radar_track_id
+
+  close_cut_in = lead_history_initialized and (not previous_lead_status or new_radar_target)
+  close_cut_in &= d_rel < min(CUT_IN_CLOSE_DISTANCE, max(20.0, v_ego * 2.5))
+
+  entering_lane = previous_lead_status and abs(previous_lead_y_rel) > lane_half_width + 0.35
+  entering_lane &= abs(y_rel) <= lane_half_width
+  entering_lane &= d_rel < INTRUSION_DISTANCE
+
+  closing_speed = max(0.0, -v_rel, v_ego - v_lead)
+  fast_closing = d_rel < FAST_CLOSING_DISTANCE and closing_speed >= FAST_CLOSING_SPEED
+  fast_closing &= d_rel / max(closing_speed, 0.1) <= FAST_CLOSING_TTC
+
+  return close_cut_in or entering_lane or fast_closing

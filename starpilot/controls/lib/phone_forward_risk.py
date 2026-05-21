@@ -27,21 +27,37 @@ def _lead_int(lead, name, default=-1):
     return default
 
 
-def lead_forward_risk(v_ego, lead, previous_lead_status=False, previous_lead_y_rel=0.0,
-                      previous_radar_track_id=-1, lane_width=0.0, lead_history_initialized=True):
+def _lead_active(v_ego, lead):
   if lead is None or not bool(getattr(lead, "status", False)) or v_ego < MIN_FORWARD_RISK_SPEED:
     return False
 
   d_rel = _lead_value(lead, "dRel")
-  if d_rel <= 0.0:
+  return d_rel > 0.0
+
+
+def lead_closing_risk(v_ego, lead):
+  if not _lead_active(v_ego, lead):
     return False
 
   if bool(getattr(lead, "fcw", False)):
     return True
 
-  y_rel = _lead_value(lead, "yRel")
+  d_rel = _lead_value(lead, "dRel")
   v_rel = _lead_value(lead, "vRel")
   v_lead = _lead_value(lead, "vLead")
+  closing_speed = max(0.0, -v_rel, v_ego - v_lead)
+  fast_closing = d_rel < FAST_CLOSING_DISTANCE and closing_speed >= FAST_CLOSING_SPEED
+  return fast_closing and d_rel / max(closing_speed, 0.1) <= FAST_CLOSING_TTC
+
+
+def lead_lane_intrusion_risk(v_ego, lead, previous_lead_status=False, previous_lead_y_rel=0.0,
+                             previous_radar_track_id=-1, lane_width=0.0,
+                             lead_history_initialized=True):
+  if not _lead_active(v_ego, lead):
+    return False
+
+  d_rel = _lead_value(lead, "dRel")
+  y_rel = _lead_value(lead, "yRel")
   radar_track_id = _lead_int(lead, "radarTrackId")
 
   effective_lane_width = lane_width if lane_width > 0.0 else DEFAULT_LANE_WIDTH
@@ -57,8 +73,4 @@ def lead_forward_risk(v_ego, lead, previous_lead_status=False, previous_lead_y_r
   entering_lane &= abs(y_rel) <= lane_half_width
   entering_lane &= d_rel < INTRUSION_DISTANCE
 
-  closing_speed = max(0.0, -v_rel, v_ego - v_lead)
-  fast_closing = d_rel < FAST_CLOSING_DISTANCE and closing_speed >= FAST_CLOSING_SPEED
-  fast_closing &= d_rel / max(closing_speed, 0.1) <= FAST_CLOSING_TTC
-
-  return close_cut_in or entering_lane or fast_closing
+  return close_cut_in or entering_lane

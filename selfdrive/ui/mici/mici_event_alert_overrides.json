@@ -793,12 +793,21 @@
       "subtitle": "전방 차량이 출발했습니다",
       "titleFontPx": 79
     },
-    "STARPILOT_EVENTS.phoneForwardRisk.WARNING": {
-      "eventName": "phoneForwardRisk",
+    "STARPILOT_EVENTS.phoneLeadClosing.WARNING": {
+      "eventName": "phoneLeadClosing",
       "eventType": "WARNING",
       "source": "STARPILOT_EVENTS",
       "title": "전방을 확인하세요",
-      "subtitle": "차량 접근 감지됨",
+      "subtitle": "전방 차량 접근 감지됨",
+      "titleFontPx": 70,
+      "subtitleFontPx": 45
+    },
+    "STARPILOT_EVENTS.phoneLaneIntrusion.WARNING": {
+      "eventName": "phoneLaneIntrusion",
+      "eventType": "WARNING",
+      "source": "STARPILOT_EVENTS",
+      "title": "차선 침범 주의",
+      "subtitle": "주변 차량 진입 감지됨",
       "titleFontPx": 70,
       "subtitleFontPx": 45
     },

@@ -7,7 +7,11 @@ from openpilot.selfdrive.controls.lib.desire_helper import TurnDirection
 from openpilot.selfdrive.selfdrived.events import ET, EVENT_NAME, STARPILOT_EVENT_NAME, EventName, StarPilotEventName, Events
 
 from openpilot.starpilot.common.starpilot_variables import CRUISING_SPEED, NON_DRIVING_GEARS
-from openpilot.starpilot.controls.lib.phone_forward_risk import lead_forward_risk, phone_detected_from_distracted_type
+from openpilot.starpilot.controls.lib.phone_forward_risk import (
+  lead_closing_risk,
+  lead_lane_intrusion_risk,
+  phone_detected_from_distracted_type,
+)
 
 DEJA_VU_G_FORCE = 0.75
 RANDOM_EVENTS_CHANCE = 0.01 * DT_MDL
@@ -55,19 +59,24 @@ class StarPilotEvents:
 
     phone_detected = phone_detected_from_distracted_type(sm["driverMonitoringState"].distractedType)
     lane_width = max(self.starpilot_planner.lane_width_left, self.starpilot_planner.lane_width_right)
-    forward_risk = phone_detected and lead_forward_risk(
-      v_ego,
-      lead,
-      previous_lead_status=self.previous_lead_status,
-      previous_lead_y_rel=self.previous_lead_y_rel,
-      previous_radar_track_id=self.previous_lead_radar_track_id,
-      lane_width=lane_width,
-      lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
-    )
+    if phone_detected and self.phone_forward_risk_cooldown <= 0.0:
+      lane_intrusion = lead_lane_intrusion_risk(
+        v_ego,
+        lead,
+        previous_lead_status=self.previous_lead_status,
+        previous_lead_y_rel=self.previous_lead_y_rel,
+        previous_radar_track_id=self.previous_lead_radar_track_id,
+        lane_width=lane_width,
+        lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
+      )
+      lead_closing = lead_closing_risk(v_ego, lead)
 
-    if forward_risk and self.phone_forward_risk_cooldown <= 0.0:
-      self.events.add(StarPilotEventName.phoneForwardRisk)
-      self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
+      if lane_intrusion:
+        self.events.add(StarPilotEventName.phoneLaneIntrusion)
+        self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
+      elif lead_closing:
+        self.events.add(StarPilotEventName.phoneLeadClosing)
+        self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
 
     self.previous_lead_status = lead_status
     self.previous_lead_radar_track_id = lead_radar_track_id

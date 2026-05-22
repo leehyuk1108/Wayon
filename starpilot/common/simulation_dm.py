@@ -4,7 +4,7 @@ from typing import Any
 
 
 SIMULATION_IGNORE_PHONE_DM = "SimulationIgnorePhoneDM"
-DEFAULT_PARAMS_ROOT = Path("/data/params/d")
+DEFAULT_FALLBACK_ROOT = Path("/data/starpilot/params")
 
 
 def _param_known(params: Any, key: str) -> bool:
@@ -15,17 +15,31 @@ def _param_known(params: Any, key: str) -> bool:
     return False
 
 
-def _param_path(params: Any | None, key: str, root: Path | None) -> Path:
+def _fallback_root(params: Any | None, root: Path | None) -> Path:
   if root is not None:
-    return root / key
+    return root
 
+  if params is not None:
+    try:
+      params_path = Path(params.get_param_path())
+      return params_path.parent / "starpilot_fallback" / params_path.name
+    except Exception:
+      pass
+
+  return DEFAULT_FALLBACK_ROOT
+
+
+def _fallback_param_path(params: Any | None, key: str, root: Path | None) -> Path:
+  return _fallback_root(params, root) / key
+
+
+def _legacy_param_path(params: Any | None, key: str) -> Path | None:
   if params is not None:
     try:
       return Path(params.get_param_path(key))
     except Exception:
       pass
-
-  return DEFAULT_PARAMS_ROOT / key
+  return None
 
 
 def _raw_bool(path: Path, default: bool = False) -> bool:
@@ -43,7 +57,15 @@ def get_simulation_ignore_phone_dm(params: Any | None = None, root: Path | None 
     except Exception:
       pass
 
-  return _raw_bool(_param_path(params, SIMULATION_IGNORE_PHONE_DM, root))
+  fallback_path = _fallback_param_path(params, SIMULATION_IGNORE_PHONE_DM, root)
+  if fallback_path.exists():
+    return _raw_bool(fallback_path)
+
+  legacy_path = _legacy_param_path(params, SIMULATION_IGNORE_PHONE_DM)
+  if legacy_path is not None:
+    return _raw_bool(legacy_path)
+
+  return False
 
 
 def put_simulation_ignore_phone_dm(enabled: bool, params: Any | None = None, root: Path | None = None) -> None:
@@ -54,12 +76,18 @@ def put_simulation_ignore_phone_dm(enabled: bool, params: Any | None = None, roo
     except Exception:
       pass
 
-  path = _param_path(params, SIMULATION_IGNORE_PHONE_DM, root)
+  path = _fallback_param_path(params, SIMULATION_IGNORE_PHONE_DM, root)
   tmp_path = path.with_name(f".tmp_{SIMULATION_IGNORE_PHONE_DM}_{os.getpid()}")
   try:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path.write_text("1" if enabled else "0", encoding="utf-8")
     os.replace(tmp_path, path)
+    legacy_path = _legacy_param_path(params, SIMULATION_IGNORE_PHONE_DM)
+    if legacy_path is not None:
+      try:
+        legacy_path.unlink(missing_ok=True)
+      except OSError:
+        pass
   except OSError:
     try:
       tmp_path.unlink(missing_ok=True)

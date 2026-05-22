@@ -1,12 +1,25 @@
 from cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle
+from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigToggle
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.starpilot.common.simulation_dm import get_simulation_ignore_phone_dm, put_simulation_ignore_phone_dm
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
+
+
+class SimulationIgnorePhoneDMControl(BigToggle):
+  def __init__(self):
+    super().__init__("simulation: ignore phone DM", "", initial_state=get_simulation_ignore_phone_dm(ui_state.params))
+
+  def _handle_mouse_release(self, mouse_pos):
+    super()._handle_mouse_release(mouse_pos)
+    put_simulation_ignore_phone_dm(self._checked, ui_state.params)
+
+  def refresh(self):
+    self.set_checked(get_simulation_ignore_phone_dm(ui_state.params))
 
 
 class TogglesLayoutMici(NavScroller):
@@ -19,7 +32,7 @@ class TogglesLayoutMici(NavScroller):
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled")
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM")
-    simulation_ignore_phone_dm_toggle = BigParamControl("simulation: ignore phone DM", "SimulationIgnorePhoneDM")
+    simulation_ignore_phone_dm_toggle = SimulationIgnorePhoneDMControl()
     record_front = BigParamControl("record & upload driver camera", "RecordFront", toggle_callback=restart_needed_callback)
     record_mic = BigParamControl("record & upload mic audio", "RecordAudio", toggle_callback=restart_needed_callback)
     enable_openpilot = BigParamControl("enable openpilot", "OpenpilotEnabledToggle", toggle_callback=restart_needed_callback)
@@ -101,5 +114,5 @@ class TogglesLayoutMici(NavScroller):
         ui_state.params.remove("ExperimentalMode")
 
     # Refresh toggles from params to mirror external changes
-    for key, item in self._refresh_toggles:
-      item.set_checked(ui_state.params.get_bool(key))
+    for _, item in self._refresh_toggles:
+      item.refresh()

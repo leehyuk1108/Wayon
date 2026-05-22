@@ -4,6 +4,7 @@ from opendbc.car import structs
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process
 from openpilot.selfdrive.monitoring.helpers import DriverMonitoring
+from openpilot.starpilot.common.simulation_dm import get_simulation_ignore_phone_dm
 
 GearShifter = structs.CarState.GearShifter
 
@@ -18,7 +19,7 @@ def dmonitoringd_thread():
 
   DM = DriverMonitoring(rhd_saved=params.get_bool("IsRhdDetected"),
                         always_on=params.get_bool("AlwaysOnDM"),
-                        ignore_phone_dm=params.get_bool("SimulationIgnorePhoneDM"))
+                        ignore_phone_dm=get_simulation_ignore_phone_dm(params))
   demo_mode=False
 
   sm = sm.extend(['starpilotCarState'])
@@ -47,7 +48,7 @@ def dmonitoringd_thread():
     # load live always-on toggle
     if sm['driverStateV2'].frameId % 40 == 1:
       DM.always_on = params.get_bool("AlwaysOnDM")
-      DM.ignore_phone_dm = params.get_bool("SimulationIgnorePhoneDM")
+      DM.ignore_phone_dm = get_simulation_ignore_phone_dm(params)
       demo_mode = params.get_bool("IsDriverViewEnabled") and sm["carState"].gearShifter != GearShifter.reverse
 
     # save rhd virtual toggle every 5 mins

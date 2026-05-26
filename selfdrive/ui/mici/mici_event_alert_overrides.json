@@ -798,7 +798,7 @@
       "eventType": "WARNING",
       "source": "STARPILOT_EVENTS",
       "title": "전방 주의",
-      "subtitle": "앞차 가까움",
+      "subtitle": "전방 차량과 접근중",
       "subtitleFontPx": 45
     },
     "STARPILOT_EVENTS.phoneLaneIntrusion.WARNING": {

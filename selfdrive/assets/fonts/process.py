@@ -14,7 +14,7 @@ GLYPH_PADDING = 6
 EXTRA_CHARS = "–‑✓×°§•X⚙✕◀▶✔⌫⇧␣○●↳çêüñ–‑✓×°§•€£¥²"
 UNIFONT_LANGUAGES = {"ar", "th", "zh-CHT", "zh-CHS", "ko", "ja"}
 CJK_FONT_PREFIXES = ("pretendard",)
-KOREAN_EXTRA_CHARS = "안녕하세요총주행거리시간안전한되세요냉느망명짧찌"
+KOREAN_EXTRA_CHARS = "안녕하세요총주행거리시간안전한되세요냉느망명짧찌근"
 KOREAN_SOURCE_PATHS = (
   SELFDRIVE_DIR / "selfdrived" / "events.py",
   SELFDRIVE_DIR / "ui" / "mici",

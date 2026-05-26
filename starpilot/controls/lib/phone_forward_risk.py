@@ -6,6 +6,7 @@ INTRUSION_DISTANCE = 45.0
 FAST_CLOSING_DISTANCE = 55.0
 FAST_CLOSING_SPEED = 3.0
 FAST_CLOSING_TTC = 6.0
+FAST_CLOSING_DT = 0.05
 DEFAULT_LANE_WIDTH = 3.6
 
 
@@ -35,7 +36,8 @@ def _lead_active(v_ego, lead):
   return d_rel > 0.0
 
 
-def lead_closing_risk(v_ego, lead):
+def lead_closing_risk(v_ego, lead, previous_lead_status=False, previous_lead_d_rel=0.0,
+                      lead_history_initialized=True, dt=FAST_CLOSING_DT):
   if not _lead_active(v_ego, lead):
     return False
 
@@ -44,8 +46,11 @@ def lead_closing_risk(v_ego, lead):
 
   d_rel = _lead_value(lead, "dRel")
   v_rel = _lead_value(lead, "vRel")
-  v_lead = _lead_value(lead, "vLead")
-  closing_speed = max(0.0, -v_rel, v_ego - v_lead)
+  observed_closing_speed = 0.0
+  if lead_history_initialized and previous_lead_status and previous_lead_d_rel > d_rel:
+    observed_closing_speed = (previous_lead_d_rel - d_rel) / max(dt, 0.01)
+
+  closing_speed = max(0.0, -v_rel, observed_closing_speed)
   fast_closing = d_rel < FAST_CLOSING_DISTANCE and closing_speed >= FAST_CLOSING_SPEED
   return fast_closing and d_rel / max(closing_speed, 0.1) <= FAST_CLOSING_TTC
 

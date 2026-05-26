@@ -42,6 +42,8 @@ class StarPilotEvents:
 
     self.phone_forward_risk_lead_history_initialized = False
     self.previous_lead_radar_track_id = -1
+    self.previous_lead_d_rel = 0.0
+    self.previous_lead_closing_risk = False
     self.previous_lead_status = False
     self.previous_lead_y_rel = 0.0
 
@@ -54,12 +56,15 @@ class StarPilotEvents:
 
     lead = self.starpilot_planner.lead_one
     lead_status = bool(getattr(lead, "status", False))
+    lead_d_rel = float(getattr(lead, "dRel", 0.0)) if lead_status else 0.0
     lead_radar_track_id = int(getattr(lead, "radarTrackId", -1)) if lead_status else -1
     lead_y_rel = float(getattr(lead, "yRel", 0.0)) if lead_status else 0.0
 
     phone_detected = phone_detected_from_distracted_type(sm["driverMonitoringState"].distractedType)
     lane_width = max(self.starpilot_planner.lane_width_left, self.starpilot_planner.lane_width_right)
-    if phone_detected and self.phone_forward_risk_cooldown <= 0.0:
+    lane_intrusion = False
+    lead_closing = False
+    if phone_detected:
       lane_intrusion = lead_lane_intrusion_risk(
         v_ego,
         lead,
@@ -69,18 +74,27 @@ class StarPilotEvents:
         lane_width=lane_width,
         lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
       )
-      lead_closing = lead_closing_risk(v_ego, lead)
+      lead_closing = lead_closing_risk(
+        v_ego,
+        lead,
+        previous_lead_status=self.previous_lead_status,
+        previous_lead_d_rel=self.previous_lead_d_rel,
+        lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
+        dt=DT_MDL,
+      )
 
-      if lane_intrusion:
+      if self.phone_forward_risk_cooldown <= 0.0 and lane_intrusion:
         self.events.add(StarPilotEventName.phoneLaneIntrusion)
         self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
-      elif lead_closing:
+      elif self.phone_forward_risk_cooldown <= 0.0 and lead_closing and not self.previous_lead_closing_risk:
         self.events.add(StarPilotEventName.phoneLeadClosing)
         self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
 
     self.previous_lead_status = lead_status
     self.previous_lead_radar_track_id = lead_radar_track_id
+    self.previous_lead_d_rel = lead_d_rel
     self.previous_lead_y_rel = lead_y_rel
+    self.previous_lead_closing_risk = lead_closing
     self.phone_forward_risk_lead_history_initialized = True
 
   def update(self, long_control_active, v_cruise, sm, starpilot_toggles):

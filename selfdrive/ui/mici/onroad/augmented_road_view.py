@@ -6,12 +6,10 @@ from cereal import messaging, car, log
 from opendbc.car import structs
 from msgq.visionipc import VisionStreamType
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.selfdrive.ui.mici.onroad import SIDE_PANEL_WIDTH
 from openpilot.selfdrive.ui.mici.onroad.alert_renderer import AlertRenderer
 from openpilot.selfdrive.ui.mici.onroad.driver_state import DriverStateRenderer
 from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.mici.onroad.model_renderer import ModelRenderer
-from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
 from openpilot.selfdrive.ui.mici.onroad.starpilot_status import (
   ENGAGED_COLOR,
   EXPERIMENTAL_COLOR,
@@ -388,7 +386,6 @@ class AugmentedRoadView(CameraView):
     self._hud_renderer = HudRenderer()
     self._alert_renderer = AlertRenderer()
     self._driver_state_renderer = DriverStateRenderer()
-    self._confidence_ball = ConfidenceBall()
     self._experimental_mode_banner = ExperimentalModeBanner()
     self._standstill_timer = StandstillTimerOverlay()
     self._seatbelt_overlay = SeatbeltOverlay()
@@ -448,7 +445,7 @@ class AugmentedRoadView(CameraView):
     self._content_rect = rl.Rectangle(
       self.rect.x,
       self.rect.y,
-      self.rect.width - SIDE_PANEL_WIDTH,
+      self.rect.width,
       self.rect.height,
     )
 
@@ -526,8 +523,6 @@ class AugmentedRoadView(CameraView):
     # Use self._content_rect for positioning within camera bounds
     if is_driver_stream or not in_reverse:
       self._draw_border()
-    if not in_reverse and not is_driver_stream:
-      self._confidence_ball.render(self.rect)
 
     self._bookmark_icon.render(self.rect)
 

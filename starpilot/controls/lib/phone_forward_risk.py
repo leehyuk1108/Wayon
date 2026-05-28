@@ -7,6 +7,9 @@ FAST_CLOSING_DISTANCE = 55.0
 FAST_CLOSING_SPEED = 3.0
 FAST_CLOSING_TTC = 6.0
 FAST_CLOSING_DT = 0.05
+OBSERVED_CLOSING_DISTANCE = 25.0
+OBSERVED_CLOSING_MIN_DREL_DROP = 0.5
+OBSERVED_CLOSING_MIN_REPORTED_SPEED = 2.0
 DEFAULT_LANE_WIDTH = 3.6
 
 
@@ -46,11 +49,16 @@ def lead_closing_risk(v_ego, lead, previous_lead_status=False, previous_lead_d_r
 
   d_rel = _lead_value(lead, "dRel")
   v_rel = _lead_value(lead, "vRel")
+  reported_closing_speed = max(0.0, -v_rel)
   observed_closing_speed = 0.0
   if lead_history_initialized and previous_lead_status and previous_lead_d_rel > d_rel:
-    observed_closing_speed = (previous_lead_d_rel - d_rel) / max(dt, 0.01)
+    d_rel_drop = previous_lead_d_rel - d_rel
+    if (d_rel < OBSERVED_CLOSING_DISTANCE and
+        d_rel_drop >= OBSERVED_CLOSING_MIN_DREL_DROP and
+        reported_closing_speed >= OBSERVED_CLOSING_MIN_REPORTED_SPEED):
+      observed_closing_speed = d_rel_drop / max(dt, 0.01)
 
-  closing_speed = max(0.0, -v_rel, observed_closing_speed)
+  closing_speed = max(reported_closing_speed, observed_closing_speed)
   fast_closing = d_rel < FAST_CLOSING_DISTANCE and closing_speed >= FAST_CLOSING_SPEED
   return fast_closing and d_rel / max(closing_speed, 0.1) <= FAST_CLOSING_TTC
 

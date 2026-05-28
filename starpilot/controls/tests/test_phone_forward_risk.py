@@ -81,9 +81,29 @@ def test_bad_zero_lead_speed_does_not_create_closing_risk():
 def test_observed_distance_drop_is_closing_risk():
   assert lead_closing_risk(
     v_ego=24.0,
-    lead=lead(dRel=34.5, vRel=0.0, vLead=24.0),
+    lead=lead(dRel=22.5, vRel=-2.0, vLead=22.0),
     previous_lead_status=True,
-    previous_lead_d_rel=35.0,
+    previous_lead_d_rel=23.1,
+    lead_history_initialized=True,
+  )
+
+
+def test_observed_distance_drop_needs_reported_closing_confirmation():
+  assert not lead_closing_risk(
+    v_ego=24.0,
+    lead=lead(dRel=22.5, vRel=-0.4, vLead=23.6),
+    previous_lead_status=True,
+    previous_lead_d_rel=23.1,
+    lead_history_initialized=True,
+  )
+
+
+def test_far_lead_with_small_relative_speed_and_distance_jitter_is_not_closing_risk():
+  assert not lead_closing_risk(
+    v_ego=24.0,
+    lead=lead(dRel=42.8, vRel=-0.4, vLead=23.6),
+    previous_lead_status=True,
+    previous_lead_d_rel=43.2,
     lead_history_initialized=True,
   )
 

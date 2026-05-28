@@ -1185,7 +1185,7 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "전방 주의",
       "전방 차량과 접근중",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.MID, VisualAlert.none, AudibleAlert.warningSoft, 2.),
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 2.),
   },
 
   StarPilotEventName.phoneLaneIntrusion: {

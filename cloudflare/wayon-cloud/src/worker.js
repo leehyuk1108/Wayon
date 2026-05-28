@@ -60,6 +60,12 @@ function nullableNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function boundedLimit(value, fallback = 100, max = 1000) {
+  const parsed = Number.parseInt(value || "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -238,6 +244,30 @@ function parseTripRoute(trip) {
   };
 }
 
+function maxRouteSpeedMps(routeJson) {
+  let maxSpeed = null;
+  try {
+    const route = JSON.parse(routeJson || "[]");
+    for (const point of route) {
+      const speed = Number(point?.speedMps ?? point?.speed_mps ?? point?.speed);
+      if (Number.isFinite(speed)) {
+        maxSpeed = Math.max(maxSpeed ?? speed, speed);
+      }
+    }
+  } catch {
+    return null;
+  }
+  return maxSpeed;
+}
+
+function parseTripSummary(trip) {
+  const { route_json: routeJson, ...rest } = trip;
+  return {
+    ...rest,
+    max_speed_mps: maxRouteSpeedMps(routeJson),
+  };
+}
+
 async function handleExport(request, env) {
   if (!authorize(request, env, false)) {
     return json({ error: "unauthorized" }, 401);
@@ -262,6 +292,38 @@ async function handleExport(request, env) {
   });
 }
 
+async function handleSnapshotsList(request, env) {
+  if (!authorize(request, env, false)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  const url = new URL(request.url);
+  const limit = boundedLimit(url.searchParams.get("limit"), 500, 1000);
+  const date = url.searchParams.get("date");
+  const dateWhere = date ? "WHERE date(captured_at, '+9 hours') = ?" : "";
+  const snapshotQuery = `
+    SELECT id, device_id, camera, captured_at, kv_key, size_bytes, created_at
+    FROM snapshots ${dateWhere}
+    ORDER BY captured_at DESC LIMIT ?
+  `;
+  const snapshots = date
+    ? await env.DB.prepare(snapshotQuery).bind(date, limit).all()
+    : await env.DB.prepare(snapshotQuery).bind(limit).all();
+  const days = await env.DB.prepare(`
+    SELECT date(captured_at, '+9 hours') AS date, COUNT(*) AS count
+    FROM snapshots GROUP BY date ORDER BY date DESC
+  `).all();
+  const total = await env.DB.prepare(`SELECT COUNT(*) AS count FROM snapshots`).first();
+
+  return json({
+    generatedAt: nowIso(),
+    snapshots: snapshots.results || [],
+    days: days.results || [],
+    total: total?.count || 0,
+    limit,
+  });
+}
+
 async function handleTrips(request, env, pathname) {
   if (!authorize(request, env, false)) {
     return json({ error: "unauthorized" }, 401);
@@ -280,13 +342,20 @@ async function handleTrips(request, env, pathname) {
     });
   }
 
+  const url = new URL(request.url);
+  const limit = boundedLimit(url.searchParams.get("limit"), 100, 1000);
   const trips = await env.DB.prepare(`
     SELECT id, device_id, started_at, ended_at, duration_s, distance_m,
-           start_lat, start_lon, end_lat, end_lon, route_point_count
-    FROM trips ORDER BY ended_at DESC LIMIT 100
-  `).all();
+           start_lat, start_lon, end_lat, end_lon, route_point_count,
+           CASE
+             WHEN duration_s > 0 AND distance_m IS NOT NULL THEN distance_m / duration_s
+             ELSE NULL
+           END AS avg_speed_mps,
+           route_json
+    FROM trips ORDER BY ended_at DESC LIMIT ?
+  `).bind(limit).all();
 
-  return json({ trips: trips.results || [] });
+  return json({ trips: (trips.results || []).map(parseTripSummary) });
 }
 
 async function handleSnapshotImage(request, env) {
@@ -337,6 +406,9 @@ export default {
     }
     if (request.method === "GET" && (pathname === "/api/export" || pathname === "/api/json")) {
       return handleExport(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/snapshots") {
+      return handleSnapshotsList(request, env);
     }
     if (request.method === "GET" && pathname.startsWith("/api/trips")) {
       return handleTrips(request, env, pathname);

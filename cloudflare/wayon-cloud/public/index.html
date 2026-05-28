@@ -8,59 +8,134 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Wayon Cloud</p>
-          <h1>웨이온 상태 대시보드</h1>
+    <main class="screen">
+      <header class="topline">
+        <div class="brand">
+          <strong>WAYON CLOUD</strong>
+          <span>TRAVERSE / LIVE VEHICLE TELEMETRY</span>
         </div>
         <form id="tokenForm" class="token-form">
-          <input id="tokenInput" type="password" autocomplete="current-password" placeholder="보기 토큰">
-          <button type="submit">연결</button>
+          <label for="tokenInput">VIEW TOKEN</label>
+          <input id="tokenInput" type="password" autocomplete="current-password" placeholder="Wayon Cloud Key">
+          <button type="submit">SYNC</button>
         </form>
+        <div id="connectionStatus" class="sync"><i></i> 대기 중</div>
       </header>
 
-      <section class="status-grid">
-        <article class="metric primary">
-          <span>시동 상태</span>
-          <strong id="driveState">-</strong>
-        </article>
-        <article class="metric">
-          <span>차량 전압</span>
-          <strong id="voltage">-</strong>
-        </article>
-        <article class="metric">
-          <span>계기판 속도</span>
-          <strong id="speed">-</strong>
-        </article>
-        <article class="metric">
-          <span>팬</span>
-          <strong id="fan">-</strong>
-        </article>
-        <article class="metric">
-          <span>최근 업데이트</span>
-          <strong id="updatedAt">-</strong>
-        </article>
-      </section>
+      <section class="grid">
+        <aside class="left-stack">
+          <section>
+            <div class="label-row">
+              <div class="hud-label">RANGE:</div>
+              <div class="hud-label blue">STATE:</div>
+            </div>
+            <div class="headline-row">
+              <div>
+                <div class="big-number"><span id="rangeValue">--</span><small id="rangeUnit">km</small></div>
+                <div id="rangeSubtext" class="subline">주행 가능 거리 데이터 없음</div>
+              </div>
+              <div>
+                <div id="driveState" class="state-word">--</div>
+                <div id="lastGpsTime" class="subline">GPS --</div>
+              </div>
+            </div>
 
-      <section class="workspace">
-        <div id="map" class="map"></div>
-        <aside class="side">
-          <section class="panel">
-            <div class="panel-head">
-              <h2>최근 스냅샷</h2>
-              <span id="snapshotStatus">-</span>
+            <div class="range-scale">
+              <div class="range-top">
+                <span id="rangePercent" class="pct">--%</span>
+                <span id="dailyBadge" class="daily">LIVE<br>--</span>
+              </div>
+              <div id="rangeBars" class="range-bars" aria-label="range gauge"></div>
+              <div class="ticks"><span>E</span><span>1/2</span><span>SAFE</span><span>F</span></div>
+            </div>
+          </section>
+
+          <section class="vehicle-block">
+            <h1>TRAVERSE</h1>
+            <p id="vehicleMeta">Wayon linked</p>
+            <div class="stat-line">
+              <div class="stat"><span>IGNITION</span><strong id="ignitionState">--</strong></div>
+              <div class="stat"><span>BATTERY</span><strong id="voltage">--</strong></div>
+              <div class="stat"><span>POWER</span><strong id="powerDraw">--</strong></div>
+              <div class="stat"><span>UPDATED</span><strong id="updatedAt">--</strong></div>
+            </div>
+          </section>
+        </aside>
+
+        <section class="map-panel" aria-label="vehicle map">
+          <div id="map" class="map"></div>
+          <div class="crosshair" aria-hidden="true"></div>
+          <div class="map-caption">
+            <div>
+              <strong>CURRENT POSITION</strong>
+              <span id="currentAddress">위치 데이터 대기 중</span>
+            </div>
+            <em id="currentCoords">--</em>
+          </div>
+        </section>
+
+        <aside class="right-stack">
+          <section>
+            <div class="hud-label">LIVE:</div>
+            <div class="speed-panel">
+              <div class="data-box">
+                <span>CLUSTER SPEED</span>
+                <strong><span id="speed">--</span><small> km/h</small></strong>
+              </div>
+              <div class="data-box">
+                <span>ONROAD STATE</span>
+                <strong id="driveGlyph">--</strong>
+              </div>
+              <div class="data-box">
+                <span>DEVICE CASE</span>
+                <strong><span id="thermal">--</span><small></small></strong>
+              </div>
+              <div class="data-box">
+                <span>FAN SPEED</span>
+                <strong><span id="fan">--</span><small> %</small></strong>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <div class="section-head">
+              <span class="section-kicker">PARKING SNAPSHOTS</span>
+              <span id="snapshotStatus">--</span>
             </div>
             <div id="snapshots" class="snapshots"></div>
           </section>
-          <section class="panel trips-panel">
-            <div class="panel-head">
-              <h2>주행 기록</h2>
-              <span id="tripStatus">-</span>
-            </div>
-            <div id="trips" class="trips"></div>
+
+          <section class="stat-line compact">
+            <a class="stat link" href="/json.html" target="_blank" rel="noreferrer"><span>JSON VIEW</span><strong>/API/JSON</strong></a>
+            <div class="stat"><span>TRIP ARCHIVE</span><strong id="tripStatus">--</strong></div>
+            <div class="stat"><span>ROUTE POINTS</span><strong id="routePointStatus">--</strong></div>
           </section>
         </aside>
+
+        <section class="bottom">
+          <section class="chart-wrap">
+            <div class="chart-title">
+              <div>
+                <strong id="monthTotal">-- km</strong>
+                <span>TOTAL FROM LAST 31 DAYS</span>
+              </div>
+              <span id="chartMonth" class="section-kicker">--</span>
+            </div>
+            <div id="monthChart" class="bars-chart" aria-label="last 31 days chart">
+              <div class="axis"><span id="chartMax">--</span><span>1/2</span><span>0</span></div>
+            </div>
+            <div class="chart-foot">
+              <span>AVG: <b id="monthAvg">--</b></span>
+              <span>MAX: <b id="monthMaxSpeed">--</b></span>
+              <span>TIME: <b id="monthTime">--</b></span>
+            </div>
+          </section>
+
+          <section class="trip-list-wrap">
+            <div class="month">RECENT</div>
+            <div id="trips" class="trip-list"></div>
+          </section>
+        </section>
       </section>
     </main>
 

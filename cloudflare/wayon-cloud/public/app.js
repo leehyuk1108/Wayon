@@ -13,19 +13,21 @@ const dailyBadge = el("dailyBadge");
 const rangeBars = el("rangeBars");
 const vehicleMeta = el("vehicleMeta");
 const ignitionState = el("ignitionState");
-const voltage = el("voltage");
-const powerDraw = el("powerDraw");
-const updatedAt = el("updatedAt");
+const batteryInfo = el("batteryInfo");
+const odometer = el("odometer");
+const vehicleUpdatedAt = el("vehicleUpdatedAt");
 const currentAddress = el("currentAddress");
 const currentCoords = el("currentCoords");
 const speed = el("speed");
 const driveGlyph = el("driveGlyph");
-const thermal = el("thermal");
-const fan = el("fan");
+const fuelLevel = el("fuelLevel");
+const fuelUnit = el("fuelUnit");
+const oilLife = el("oilLife");
 const snapshotsEl = el("snapshots");
 const snapshotStatus = el("snapshotStatus");
 const tripStatus = el("tripStatus");
-const routePointStatus = el("routePointStatus");
+const tirePressure = el("tirePressure");
+const dtcStatus = el("dtcStatus");
 const monthTotal = el("monthTotal");
 const chartMonth = el("chartMonth");
 const monthChart = el("monthChart");
@@ -143,14 +145,48 @@ function parseRawState(state) {
 
 function firstNumber(...values) {
   for (const value of values) {
-    const n = finiteNumber(value);
+    const candidate = typeof value === "string" ? value.replace(/,/g, "").replace(/[^\d.-]/g, "") : value;
+    if (candidate === "" || candidate == null) continue;
+    const n = finiteNumber(candidate);
     if (n != null) return n;
   }
   return null;
 }
 
-function rangeFields(raw) {
+function vehicleData(vehicleStatus) {
+  return vehicleStatus?.ok && vehicleStatus.data ? vehicleStatus.data : {};
+}
+
+function cleanValue(value) {
+  const text = String(value ?? "").trim();
+  return text && text !== "--" ? text : "";
+}
+
+function fuelLiters(status) {
+  const fuel = cleanValue(status.fuel);
+  if (!fuel || fuel.includes("%")) return null;
+  return firstNumber(fuel);
+}
+
+function fuelPercent(status) {
+  const fuel = cleanValue(status.fuel);
+  if (!fuel) return null;
+  if (fuel.includes("%")) return firstNumber(fuel);
+  const liters = fuelLiters(status);
+  return liters == null ? null : Math.min(100, (liters / 82) * 100);
+}
+
+function tirePressureSummary(status) {
+  const source = `${cleanValue(status.tire_pressure_all)} ${cleanValue(status.tire_pressure)}`;
+  const matches = [...source.matchAll(/(\d+)\s*(kpa|psi)/gi)].slice(0, 4);
+  if (!matches.length) return "--";
+  const unit = matches[0][2].toUpperCase();
+  return `${matches.map((match) => match[1]).join("/")} ${unit}`;
+}
+
+function rangeFields(raw, status) {
   const rangeKm = firstNumber(
+    status.range,
     raw.rangeKm,
     raw.range_km,
     raw.vehicleRangeKm,
@@ -160,6 +196,7 @@ function rangeFields(raw) {
     raw.myChevrolet?.range_km,
   );
   const percent = firstNumber(
+    fuelPercent(status),
     raw.rangePercent,
     raw.range_percent,
     raw.batteryPercent,
@@ -235,18 +272,21 @@ function renderEmptyState() {
   rangePercent.textContent = "--%";
   dailyBadge.innerHTML = "LIVE<br>--";
   ignitionState.textContent = "--";
-  voltage.textContent = "--";
-  powerDraw.textContent = "--";
-  updatedAt.textContent = "--";
+  batteryInfo.textContent = "--";
+  odometer.textContent = "--";
+  vehicleUpdatedAt.textContent = "--";
   currentAddress.textContent = "위치 데이터 대기 중";
   currentCoords.textContent = "--";
   speed.textContent = "--";
-  thermal.textContent = "--";
-  fan.textContent = "--";
+  fuelLevel.textContent = "--";
+  fuelUnit.textContent = " L";
+  oilLife.textContent = "--";
+  tirePressure.textContent = "--";
+  dtcStatus.textContent = "--";
   updateRangeBars(null);
 }
 
-function renderState(state) {
+function renderState(state, status = {}) {
   if (!state) {
     renderEmptyState();
     return;
@@ -256,28 +296,40 @@ function renderState(state) {
   const onroad = Boolean(Number(state.onroad));
   const ignition = Boolean(Number(state.ignition));
   const enabled = Boolean(Number(state.enabled));
-  const { rangeKm, percent } = rangeFields(raw);
+  const { rangeKm, percent } = rangeFields(raw, status);
   const lat = finiteNumber(state.latitude);
   const lon = finiteNumber(state.longitude);
   const accuracy = finiteNumber(state.gps_accuracy_m);
   const gpsTime = raw.gps?.timestampMillis ? new Date(Number(raw.gps.timestampMillis)).toISOString() : state.updated_at;
+  const fuel = cleanValue(status.fuel);
+  const fuelLitersValue = fuelLiters(status);
+  const oil = firstNumber(status.oil);
+  const vehicleBattery = firstNumber(status.battery);
+  const batteryLevel = firstNumber(status.battery_level);
+  const odometerValue = cleanValue(status.mileage);
+  const vehicleLastUpdate = cleanValue(status.last_update);
 
   driveState.textContent = onroad ? "주행중" : "주차됨";
   driveGlyph.textContent = onroad ? (enabled ? "E" : "D") : "P";
   rangeValue.textContent = rangeKm == null ? "--" : String(Math.round(rangeKm));
   rangeUnit.textContent = "km";
-  rangeSubtext.textContent = rangeKm == null ? "Cloud range 데이터 없음" : "예상 주행 가능 거리";
+  rangeSubtext.textContent = fuelLitersValue == null ? "Firebase fuel 데이터 없음" : `연료 ${Math.round(fuelLitersValue)}L / 82L`;
   rangePercent.textContent = percent == null ? "--%" : `${Math.round(percent)}%`;
-  dailyBadge.innerHTML = onroad ? "LIVE<br>ON" : "PARK<br>OFF";
+  dailyBadge.innerHTML = percent == null ? "FUEL<br>--" : `FUEL<br>${Math.round(percent)}%`;
   lastGpsTime.textContent = `GPS ${fmtDate(gpsTime)}`;
   vehicleMeta.textContent = raw.dongleId ? `Wayon linked · ${raw.dongleId}` : "Wayon linked";
   ignitionState.textContent = ignition ? "ON" : "OFF";
-  voltage.textContent = state.voltage_v == null ? "--" : `${fmtNumber(state.voltage_v, 2)} V`;
-  powerDraw.textContent = state.power_w == null ? "--" : `${fmtNumber(state.power_w, 1)} W`;
-  updatedAt.textContent = fmtDate(state.updated_at);
+  batteryInfo.textContent = batteryLevel == null && vehicleBattery == null
+    ? (state.voltage_v == null ? "--" : `${fmtNumber(state.voltage_v, 2)} V`)
+    : `${batteryLevel == null ? "--" : `${Math.round(batteryLevel)}%`} · ${vehicleBattery == null ? fmtNumber(state.voltage_v, 2) : fmtNumber(vehicleBattery, 1)} V`;
+  odometer.textContent = odometerValue ? `${odometerValue} km` : "--";
+  vehicleUpdatedAt.textContent = vehicleLastUpdate || fmtDate(state.updated_at);
   speed.textContent = fmtKph(state.speed_mps);
-  thermal.textContent = (state.thermal_status || "--").toString().toUpperCase();
-  fan.textContent = state.fan_percent == null ? "--" : String(Math.round(Number(state.fan_percent)));
+  fuelLevel.textContent = fuelLitersValue == null ? (fuel || "--") : String(Math.round(fuelLitersValue));
+  fuelUnit.textContent = fuel.includes("%") ? " %" : " L";
+  oilLife.textContent = oil == null ? "--" : String(Math.round(oil));
+  tirePressure.textContent = tirePressureSummary(status);
+  dtcStatus.textContent = cleanValue(status.dtc) || "--";
   updateRangeBars(percent);
 
   if (Number.isFinite(lat) && Number.isFinite(lon)) {
@@ -346,7 +398,6 @@ function drawRoute(route) {
   routeLayer.clearLayers();
   const points = routePoints(route);
   if (points.length < 2) {
-    routePointStatus.textContent = points.length ? "1 POINT" : "--";
     return;
   }
 
@@ -362,7 +413,6 @@ function drawRoute(route) {
   }
   const bounds = L.latLngBounds(points.map((point) => [point.lat, point.lon]));
   map.fitBounds(bounds, { padding: [42, 42], animate: true });
-  routePointStatus.textContent = `${points.length} POINTS`;
 }
 
 async function selectTrip(id) {
@@ -383,7 +433,6 @@ function renderTrips(trips) {
     empty.className = "empty-message";
     empty.textContent = "저장된 주행 기록이 없습니다.";
     tripsEl.append(empty);
-    routePointStatus.textContent = "--";
     return;
   }
 
@@ -462,16 +511,17 @@ async function refresh() {
     return;
   }
 
-  const [{ state, snapshots }, { trips }] = await Promise.all([
+  const [{ state, snapshots, vehicleStatus }, { trips }] = await Promise.all([
     api("/api/state"),
     api("/api/trips"),
   ]);
+  const status = vehicleData(vehicleStatus);
 
-  renderState(state);
+  renderState(state, status);
   renderSnapshots(snapshots || []);
   renderTrips(trips || []);
   renderChart(trips || []);
-  setConnection("online", `CLOUD SYNC OK · ${fmtDate(new Date())}`);
+  setConnection("online", `WAYON + FIREBASE SYNC · ${fmtDate(new Date())}`);
 
   if (!activeTripId && trips?.length) {
     await selectTrip(trips[0].id);
@@ -493,12 +543,12 @@ tokenForm.addEventListener("submit", (event) => {
 
 refresh().catch((error) => {
   console.error(error);
-  setConnection("error", "연결 실패");
+  setConnection("error", `연결 실패 · ${error.message || error}`);
 });
 
 setInterval(() => {
   refresh().catch((error) => {
     console.error(error);
-    setConnection("error", "연결 실패");
+    setConnection("error", `연결 실패 · ${error.message || error}`);
   });
 }, 30000);

@@ -11,6 +11,8 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 };
 
+const FIREBASE_CAR_STATUS_URL = "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json";
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -68,6 +70,22 @@ function boundedLimit(value, fallback = 100, max = 1000) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+async function fetchVehicleStatus() {
+  try {
+    const response = await fetch(FIREBASE_CAR_STATUS_URL, {
+      headers: { accept: "application/json" },
+      cf: { cacheTtl: 0, cacheEverything: false },
+    });
+    if (!response.ok) {
+      return { ok: false, error: `${response.status} ${response.statusText}` };
+    }
+    const data = await response.json();
+    return { ok: true, source: "firebase", updatedAt: nowIso(), data: data || {} };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
 }
 
 function base64ToBytes(value) {
@@ -225,15 +243,18 @@ async function handleState(request, env) {
     return json({ error: "unauthorized" }, 401);
   }
 
-  const state = await env.DB.prepare(`
-    SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
-  `).first();
-  const snapshots = await env.DB.prepare(`
-    SELECT id, device_id, camera, captured_at, kv_key, size_bytes
-    FROM snapshots ORDER BY captured_at DESC LIMIT 12
-  `).all();
+  const [state, snapshots, vehicleStatus] = await Promise.all([
+    env.DB.prepare(`
+      SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
+    `).first(),
+    env.DB.prepare(`
+      SELECT id, device_id, camera, captured_at, kv_key, size_bytes
+      FROM snapshots ORDER BY captured_at DESC LIMIT 12
+    `).all(),
+    fetchVehicleStatus(),
+  ]);
 
-  return json({ state, snapshots: snapshots.results || [] });
+  return json({ state, snapshots: snapshots.results || [], vehicleStatus });
 }
 
 function parseTripRoute(trip) {
@@ -273,20 +294,24 @@ async function handleExport(request, env) {
     return json({ error: "unauthorized" }, 401);
   }
 
-  const state = await env.DB.prepare(`
-    SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
-  `).first();
-  const snapshots = await env.DB.prepare(`
-    SELECT id, device_id, camera, captured_at, kv_key, size_bytes, created_at
-    FROM snapshots ORDER BY captured_at DESC LIMIT 24
-  `).all();
-  const trips = await env.DB.prepare(`
-    SELECT * FROM trips ORDER BY ended_at DESC LIMIT 25
-  `).all();
+  const [state, snapshots, trips, vehicleStatus] = await Promise.all([
+    env.DB.prepare(`
+      SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
+    `).first(),
+    env.DB.prepare(`
+      SELECT id, device_id, camera, captured_at, kv_key, size_bytes, created_at
+      FROM snapshots ORDER BY captured_at DESC LIMIT 24
+    `).all(),
+    env.DB.prepare(`
+      SELECT * FROM trips ORDER BY ended_at DESC LIMIT 25
+    `).all(),
+    fetchVehicleStatus(),
+  ]);
 
   return json({
     generatedAt: nowIso(),
     state,
+    vehicleStatus,
     snapshots: snapshots.results || [],
     trips: (trips.results || []).map(parseTripRoute),
   });

@@ -28,8 +28,8 @@ def test_phone_detected_uses_phone_bit_only():
   assert not phone_detected_from_distracted_type(1 << 1)
 
 
-def test_close_new_lead_is_lane_intrusion_after_history_exists():
-  assert lead_lane_intrusion_risk(
+def test_close_new_lead_without_lateral_history_is_not_lane_intrusion():
+  assert not lead_lane_intrusion_risk(
     v_ego=18.0,
     lead=lead(dRel=24.0),
     previous_lead_status=False,
@@ -46,8 +46,8 @@ def test_initial_lead_sample_does_not_alert_as_cut_in():
   )
 
 
-def test_close_new_radar_track_is_lane_intrusion():
-  assert lead_lane_intrusion_risk(
+def test_close_new_radar_track_without_lateral_history_is_not_lane_intrusion():
+  assert not lead_lane_intrusion_risk(
     v_ego=18.0,
     lead=lead(dRel=24.0, radarTrackId=7),
     previous_lead_status=True,

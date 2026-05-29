@@ -70,7 +70,7 @@ def test_adjacent_vehicle_entering_lane_is_lane_intrusion():
 def test_fast_closing_lead_is_closing_risk():
   assert lead_closing_risk(
     v_ego=24.0,
-    lead=lead(dRel=35.0, vRel=-7.0, vLead=17.0),
+    lead=lead(dRel=22.0, vRel=-7.0, vLead=17.0),
   )
 
 
@@ -78,12 +78,22 @@ def test_bad_zero_lead_speed_does_not_create_closing_risk():
   assert not lead_closing_risk(v_ego=24.0, lead=lead(dRel=35.0, vRel=0.0, vLead=0.0))
 
 
-def test_observed_distance_drop_is_closing_risk():
-  assert lead_closing_risk(
+def test_observed_distance_drop_without_fast_reported_closing_is_not_closing_risk():
+  assert not lead_closing_risk(
     v_ego=24.0,
     lead=lead(dRel=22.5, vRel=-2.0, vLead=22.0),
     previous_lead_status=True,
     previous_lead_d_rel=23.1,
+    lead_history_initialized=True,
+  )
+
+
+def test_moderate_closing_at_comfortable_distance_is_not_closing_risk():
+  assert not lead_closing_risk(
+    v_ego=24.0,
+    lead=lead(dRel=35.0, vRel=-6.0, vLead=18.0),
+    previous_lead_status=True,
+    previous_lead_d_rel=35.2,
     lead_history_initialized=True,
   )
 

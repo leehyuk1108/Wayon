@@ -29,7 +29,7 @@ AMBIENT_DB = 30 # DB where MIN_VOLUME is applied
 DB_SCALE = 30 # AMBIENT_DB + DB_SCALE is where MAX_VOLUME is applied
 
 VOLUME_BASE = 20
-if HARDWARE.get_device_type() in ("tici", "tizi"):
+if HARDWARE.get_device_type() in ("tici", "tizi", "mici"):
   VOLUME_BASE = 10
 
 AudibleAlert = car.CarControl.HUDControl.AudibleAlert

@@ -44,9 +44,6 @@ def lead_closing_risk(v_ego, lead, previous_lead_status=False, previous_lead_d_r
   if not _lead_active(v_ego, lead):
     return False
 
-  if bool(getattr(lead, "fcw", False)):
-    return True
-
   d_rel = _lead_value(lead, "dRel")
   v_rel = _lead_value(lead, "vRel")
   reported_closing_speed = max(0.0, -v_rel)

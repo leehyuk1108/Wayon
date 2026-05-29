@@ -108,8 +108,14 @@ def test_far_lead_with_small_relative_speed_and_distance_jitter_is_not_closing_r
   )
 
 
-def test_fcw_flag_is_closing_risk():
-  assert lead_closing_risk(v_ego=18.0, lead=lead(fcw=True))
+def test_fcw_flag_without_real_closing_is_not_closing_risk():
+  assert not lead_closing_risk(
+    v_ego=18.0,
+    lead=lead(dRel=24.0, vRel=0.0, vLead=18.0, fcw=True),
+    previous_lead_status=True,
+    previous_lead_d_rel=24.0,
+    lead_history_initialized=True,
+  )
 
 
 def test_far_steady_lead_is_not_any_phone_forward_risk():

@@ -145,7 +145,8 @@ if device_type in ("tici", "tizi"):
   procs.append(NativeProcess("ui", "selfdrive/ui", ["./ui"], always_run, watchdog_max_dt=UI_WATCHDOG_MAX_DT))
 else:
   # C4 (mici) runs the Python raylib UI path.
-  procs.append(PythonProcess("ui", "selfdrive.ui.ui", always_run, watchdog_max_dt=UI_WATCHDOG_MAX_DT))
+  # Its window/layout startup can briefly exceed the native UI watchdog budget on boot or onroad transition.
+  procs.append(PythonProcess("ui", "selfdrive.ui.ui", always_run, watchdog_max_dt=max(UI_WATCHDOG_MAX_DT, 15)))
 
 procs += [
   PythonProcess("device_syncd", "starpilot.system.device_syncd", always_run),

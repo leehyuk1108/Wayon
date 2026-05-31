@@ -546,7 +546,10 @@ class AlertRenderer(Widget):
       bg_height = int(self._rect.height)
 
     solid_height = round(bg_height * 0.2)
-    bg_y = self._alert_y_filter.x
+    # Keep the gradient anchored to the top edge. The alert text still uses the
+    # bounce filter, but moving the background itself can expose a clipped strip
+    # at the top during overshoot.
+    bg_y = self._rect.y
     rl.draw_rectangle(int(self._rect.x), int(bg_y), int(self._rect.width), solid_height, color)
     rl.draw_rectangle_gradient_v(int(self._rect.x), int(bg_y + solid_height), int(self._rect.width),
                                  int(bg_height - solid_height),

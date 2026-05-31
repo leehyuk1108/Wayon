@@ -484,8 +484,17 @@ class AugmentedRoadView(CameraView):
     if not in_reverse and not is_driver_stream:
       self._model_renderer.render(self._content_rect)
 
-    # Fade out bottom of overlays for looks
-    rl.draw_texture_ex(self._fade_texture, rl.Vector2(self._content_rect.x, self._content_rect.y), 0.0, 1.0, rl.WHITE)
+    # Fade out bottom of overlays for looks. The source asset was authored for
+    # the old width that left room for the confidence ball, so stretch it to
+    # the current full road-view rect.
+    rl.draw_texture_pro(
+      self._fade_texture,
+      rl.Rectangle(0, 0, self._fade_texture.width, self._fade_texture.height),
+      self._content_rect,
+      rl.Vector2(0, 0),
+      0.0,
+      rl.WHITE,
+    )
     if not in_reverse and not is_driver_stream:
       self._hud_renderer.render_background()
 

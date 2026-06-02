@@ -114,6 +114,9 @@ IONIQ_6_CARS = (
 KIA_EV6_CARS = (
   HYUNDAI_CAR.KIA_EV6,
 )
+TRAVERSE_RIGHT_TORQUE_SCALE = 0.92
+TRAVERSE_RIGHT_SCALE_ONSET_LAT_ACCEL = 0.15
+TRAVERSE_RIGHT_SCALE_FULL_LAT_ACCEL = 0.60
 
 BOLT_2017_LATERAL_TESTING_GROUND_ID = testing_ground.id_3
 BOLT_2017_STEER_RATIO_TEST_SCALE = 1.045
@@ -508,6 +511,14 @@ def get_bolt_2017_steer_ratio_scale(v_ego: float) -> float:
 def get_bolt_2017_center_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:
   center_window = _bolt_2017_sigmoid((BOLT_2017_CENTER_TAPER_LAT - abs(desired_lateral_accel)) / BOLT_2017_CENTER_TAPER_WIDTH)
   return 1.0 - (BOLT_2017_CENTER_TAPER_GAIN * _bolt_2017_high_speed_factor(v_ego) * center_window)
+
+
+def get_traverse_right_torque_scale(desired_lateral_accel: float) -> float:
+  if desired_lateral_accel >= -TRAVERSE_RIGHT_SCALE_ONSET_LAT_ACCEL:
+    return 1.0
+  return float(np.interp(abs(desired_lateral_accel),
+                         [TRAVERSE_RIGHT_SCALE_ONSET_LAT_ACCEL, TRAVERSE_RIGHT_SCALE_FULL_LAT_ACCEL],
+                         [1.0, TRAVERSE_RIGHT_TORQUE_SCALE]))
 
 
 def _bolt_2017_low_speed_factor(v_ego: float) -> float:
@@ -1144,6 +1155,7 @@ class LatControlTorque(LatControl):
     self.is_civic_bosch_modified = CP.carFingerprint == HONDA_CAR.HONDA_CIVIC_BOSCH and bool(CP.flags & HondaFlags.EPS_MODIFIED)
     self.is_volt_cc = CP.carFingerprint == GM_CAR.CHEVROLET_VOLT_CC
     self.is_silverado = CP.carFingerprint == GM_CAR.CHEVROLET_SILVERADO
+    self.is_traverse = CP.carFingerprint == GM_CAR.CHEVROLET_TRAVERSE
     self.use_bolt_ff_scaling = self.is_bolt_2022_2023 or self.is_bolt_2018_2021 or self.is_bolt_2017
     self.use_bolt_ki_multiplier = self.use_bolt_ff_scaling
     self.torque_ff_scale_pos = 1.0
@@ -1303,6 +1315,8 @@ class LatControlTorque(LatControl):
         output_torque *= get_bolt_2018_2021_dynamic_torque_scale(setpoint, desired_lateral_jerk, CS.vEgo)
       elif volt_standard_test_active:
         output_torque *= volt_standard_center_taper
+      elif self.is_traverse:
+        output_torque *= get_traverse_right_torque_scale(output_lataccel)
       pid_log.active = True
       pid_log.p = float(self.pid.p)
       pid_log.i = float(self.pid.i)

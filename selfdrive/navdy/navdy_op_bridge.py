@@ -29,6 +29,13 @@ INTERACTIVE_ON_TEXT = "mHalInteractiveModeEnabled=true"
 INTERACTIVE_OFF_TEXT = "mHalInteractiveModeEnabled=false"
 KEYEVENT_POWER = "26"
 KEYEVENT_WAKEUP = "224"
+ONROAD_PROCESS_NAMES = (
+  "selfdrive.controls.controlsd",
+  "selfdrive.selfdrived.selfdrived",
+  "selfdrive.car.card",
+  "selfdrive.modeld.modeld",
+  "./camerad",
+)
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -249,14 +256,14 @@ def navdy_display_on(args: argparse.Namespace) -> bool | None:
   if proc.returncode != 0:
     return None
   text = proc.stdout or ""
-  if DISPLAY_ON_TEXT in text:
-    return True
   if DISPLAY_OFF_TEXT in text:
     return False
-  if WAKEFULNESS_AWAKE_TEXT in text or INTERACTIVE_ON_TEXT in text:
-    return True
   if WAKEFULNESS_ASLEEP_TEXT in text or INTERACTIVE_OFF_TEXT in text:
     return False
+  if DISPLAY_ON_TEXT in text:
+    return True
+  if WAKEFULNESS_AWAKE_TEXT in text or INTERACTIVE_ON_TEXT in text:
+    return True
   return None
 
 
@@ -336,8 +343,49 @@ def panda_ignition_started(panda_states: Any) -> bool:
     return False
 
 
-def power_started(sm: Any) -> bool:
-  return bool(getattr(sm["deviceState"], "started", False)) or panda_ignition_started(sm["pandaStates"])
+def service_active(sm: Any, service: str) -> bool:
+  try:
+    return bool(sm.alive[service] or sm.updated[service])
+  except (KeyError, TypeError):
+    return False
+
+
+def openpilot_messages_started(sm: Any) -> bool:
+  return any(service_active(sm, service)
+             for service in ("carState", "selfdriveState", "controlsState"))
+
+
+def onroad_process_started(args: argparse.Namespace, now: float) -> bool:
+  last = bool(getattr(args, "_last_onroad_process_started", False))
+  last_check = float(getattr(args, "_last_onroad_process_check_at", 0.0))
+  if now - last_check < max(args.onroad_process_check_sec, 0.1):
+    return last
+
+  setattr(args, "_last_onroad_process_check_at", now)
+  try:
+    proc = subprocess.run(["ps", "-eo", "cmd"], check=False, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL, text=True, timeout=1.0)
+  except subprocess.TimeoutExpired:
+    return last
+
+  started = False
+  if proc.returncode == 0:
+    started = any(process_name in line
+                  for line in proc.stdout.splitlines()
+                  for process_name in ONROAD_PROCESS_NAMES)
+
+  if args.stdout and started != last:
+    print(f"onroad process fallback started={started}", flush=True)
+  setattr(args, "_last_onroad_process_started", started)
+  return started
+
+
+def power_started(sm: Any, args: argparse.Namespace | None = None, now: float = 0.0) -> bool:
+  if bool(getattr(sm["deviceState"], "started", False)) or panda_ignition_started(sm["pandaStates"]):
+    return True
+  if openpilot_messages_started(sm):
+    return True
+  return bool(args and onroad_process_started(args, now))
 
 
 def live_payload_ready(sm: Any, started: bool) -> bool:
@@ -346,13 +394,21 @@ def live_payload_ready(sm: Any, started: bool) -> bool:
   return bool(sm.alive["carState"] and sm.alive["selfdriveState"])
 
 
+def due_for_power_on_ensure(args: argparse.Namespace, now: float) -> bool:
+  last = float(getattr(args, "_last_power_on_ensure_at", 0.0))
+  if now - last < max(args.power_on_ensure_sec, 0.1):
+    return False
+  setattr(args, "_last_power_on_ensure_at", now)
+  return True
+
+
 def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offroad_since: float | None,
                        last_target_on: bool | None) -> tuple[float | None, bool | None]:
   if not args.manage_navdy_power:
     return offroad_since, last_target_on
 
   if started:
-    if last_target_on is not True:
+    if last_target_on is not True or due_for_power_on_ensure(args, now):
       if set_navdy_display(args, True, "onroad"):
         last_target_on = True
     return None, last_target_on
@@ -381,14 +437,14 @@ def run_live(args: argparse.Namespace) -> None:
   last_power_target_on = None
   while True:
     sm.update(int(period * 1000))
-    has_update = any(sm.updated[service] for service in services)
-    if not has_update and not (args.once and time.monotonic() >= once_deadline):
-      continue
     now = time.monotonic()
-    started = power_started(sm) if args.manage_navdy_power else True
+    has_update = any(sm.updated[service] for service in services)
+    started = power_started(sm, args, now) if args.manage_navdy_power else True
     if args.manage_navdy_power:
       offroad_since, last_power_target_on = manage_navdy_power(
           args, started, now, offroad_since, last_power_target_on)
+    if not has_update and not (args.once and now >= once_deadline):
+      continue
     if not live_payload_ready(sm, started):
       continue
     payload = payload_from_messages(sm["selfdriveState"], sm["carState"], seq,
@@ -444,12 +500,19 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--once-timeout-sec", type=float, default=3.0, help="For --once, emit cached state after this wait.")
   parser.add_argument("--manage-navdy-power", action="store_true", help="Wake Navdy on onroad and sleep it on offroad.")
   parser.add_argument("--power-off-delay-sec", type=float, default=30.0, help="Offroad duration before Navdy display sleep.")
+  parser.add_argument("--power-on-ensure-sec", type=float, default=1.0,
+                      help="Re-check Navdy display state at this interval while onroad.")
+  parser.add_argument("--onroad-process-check-sec", type=float, default=1.0,
+                      help="Minimum interval for onroad process fallback checks.")
   return parser.parse_args()
 
 
 def main() -> int:
   args = parse_args()
   setattr(args, "_last_adb_recover_at", 0.0)
+  setattr(args, "_last_power_on_ensure_at", 0.0)
+  setattr(args, "_last_onroad_process_check_at", 0.0)
+  setattr(args, "_last_onroad_process_started", False)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
   if args.synthetic:

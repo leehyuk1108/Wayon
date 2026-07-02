@@ -79,6 +79,41 @@ def blindspot_text(left: bool, right: bool) -> str:
   return "off"
 
 
+def hold_bool(args: argparse.Namespace, name: str, value: bool, now: float, hold_sec: float) -> bool:
+  attr = f"_hold_{name}_until"
+  if value:
+    setattr(args, attr, now + max(hold_sec, 0.0))
+    return True
+  return now < float(getattr(args, attr, 0.0))
+
+
+def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace, now: float) -> dict[str, Any]:
+  set_speed = finite_float(payload.get("setSpeedKph", 0.0))
+  if set_speed > 0.0:
+    setattr(args, "_last_set_speed_kph", set_speed)
+  elif payload.get("enabled") or payload.get("active") or payload.get("engaged"):
+    last_set_speed = finite_float(getattr(args, "_last_set_speed_kph", 0.0))
+    if last_set_speed > 0.0:
+      payload["setSpeedKph"] = rounded(last_set_speed)
+
+  left_blinker = hold_bool(args, "left_blinker", bool(payload.get("leftBlinker", False)),
+                           now, args.blinker_hold_sec)
+  right_blinker = hold_bool(args, "right_blinker", bool(payload.get("rightBlinker", False)),
+                            now, args.blinker_hold_sec)
+  left_blindspot = hold_bool(args, "left_blindspot", bool(payload.get("leftBlindspot", False)),
+                             now, args.blindspot_hold_sec)
+  right_blindspot = hold_bool(args, "right_blindspot", bool(payload.get("rightBlindspot", False)),
+                              now, args.blindspot_hold_sec)
+
+  payload["leftBlinker"] = left_blinker
+  payload["rightBlinker"] = right_blinker
+  payload["blinkers"] = blinker_text(left_blinker, right_blinker)
+  payload["leftBlindspot"] = left_blindspot
+  payload["rightBlindspot"] = right_blindspot
+  payload["blindspot"] = blindspot_text(left_blindspot, right_blindspot)
+  return payload
+
+
 def gear_text(car_state: Any) -> str:
   return enum_text(getattr(car_state, "gearShifter", "unknown")).lower()
 
@@ -449,6 +484,7 @@ def run_live(args: argparse.Namespace) -> None:
       continue
     payload = payload_from_messages(sm["selfdriveState"], sm["carState"], seq,
                                     sm["controlsState"], sm["starpilotPlan"], sm["longitudinalPlan"])
+    payload = stabilize_display_payload(payload, args, now)
     signature = payload_signature(payload)
     if signature != last_signature or now - last_emit_at >= max(args.heartbeat_sec, 0.1) or args.once:
       emit(payload, args)
@@ -504,6 +540,10 @@ def parse_args() -> argparse.Namespace:
                       help="Re-check Navdy display state at this interval while onroad.")
   parser.add_argument("--onroad-process-check-sec", type=float, default=1.0,
                       help="Minimum interval for onroad process fallback checks.")
+  parser.add_argument("--blinker-hold-sec", type=float, default=1.6,
+                      help="Keep blinker icon visible after a true sample.")
+  parser.add_argument("--blindspot-hold-sec", type=float, default=1.6,
+                      help="Keep blindspot icon visible after a true sample.")
   return parser.parse_args()
 
 
@@ -513,6 +553,7 @@ def main() -> int:
   setattr(args, "_last_power_on_ensure_at", 0.0)
   setattr(args, "_last_onroad_process_check_at", 0.0)
   setattr(args, "_last_onroad_process_started", False)
+  setattr(args, "_last_set_speed_kph", 0.0)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
   if args.synthetic:

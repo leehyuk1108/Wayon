@@ -337,6 +337,11 @@ def _append_ui_watchdog_context(lines: list[str], ui_proc_dir: Path) -> None:
 
 def launcher(proc: str, name: str, nice: int | None = None) -> None:
   try:
+    # Wayland socket lives outside user runtime dir on AGNOS.
+    if name == "ui" and Path("/var/tmp/weston/wayland-0").exists():
+      os.environ["XDG_RUNTIME_DIR"] = "/var/tmp/weston"
+      os.environ["WAYLAND_DISPLAY"] = "wayland-0"
+
     if nice is not None:
       os.nice(nice)
 
@@ -369,6 +374,11 @@ def nativelauncher(pargs: list[str], cwd: str, name: str, nice: int | None = Non
     os.nice(nice)
 
   os.environ['MANAGER_DAEMON'] = name
+
+  # nativelauncher Wayland socket path for native UI variants.
+  if name == "ui" and Path("/var/tmp/weston/wayland-0").exists():
+    os.environ["XDG_RUNTIME_DIR"] = "/var/tmp/weston"
+    os.environ["WAYLAND_DISPLAY"] = "wayland-0"
 
   # exec the process
   os.chdir(cwd)

@@ -462,7 +462,7 @@ def run_live(args: argparse.Namespace) -> None:
   services = ["selfdriveState", "carState", "controlsState", "starpilotPlan", "longitudinalPlan"]
   if args.manage_navdy_power:
     services += ["deviceState", "pandaStates"]
-  sm = messaging.SubMaster(services, poll="pandaStates" if args.manage_navdy_power else "carState")
+  sm = messaging.SubMaster(services, poll="carState")
   seq = 0
   period = 1.0 / max(args.hz, 0.1)
   last_signature = None

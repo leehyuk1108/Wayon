@@ -14,6 +14,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
@@ -229,6 +230,37 @@ def send_adb(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   return run_adb(args, cmd[len(adb_base_cmd(args)):]).returncode == 0
 
 
+def adb_sender_loop(args: argparse.Namespace) -> None:
+  cond = getattr(args, "_adb_sender_cond")
+  while True:
+    with cond:
+      while getattr(args, "_adb_sender_pending", None) is None:
+        cond.wait()
+      payload = getattr(args, "_adb_sender_pending")
+      setattr(args, "_adb_sender_pending", None)
+    send_adb(payload, args)
+
+
+def start_adb_sender(args: argparse.Namespace) -> None:
+  if not args.adb_path or args.once or args.sync_adb:
+    return
+  setattr(args, "_adb_sender_pending", None)
+  setattr(args, "_adb_sender_cond", threading.Condition())
+  thread = threading.Thread(target=adb_sender_loop, args=(args,), daemon=True)
+  setattr(args, "_adb_sender_thread", thread)
+  thread.start()
+
+
+def queue_adb(payload: dict[str, Any], args: argparse.Namespace) -> None:
+  cond = getattr(args, "_adb_sender_cond", None)
+  if cond is None:
+    send_adb(payload, args)
+    return
+  with cond:
+    setattr(args, "_adb_sender_pending", dict(payload))
+    cond.notify()
+
+
 def adb_base_cmd(args: argparse.Namespace) -> list[str]:
   cmd = [args.adb_path]
   if args.adb_server_port > 0:
@@ -329,7 +361,7 @@ def emit(payload: dict[str, Any], args: argparse.Namespace) -> None:
   if args.stdout:
     print(line, flush=True)
   if args.adb_path:
-    send_adb(payload, args)
+    queue_adb(payload, args)
 
 
 def import_messaging():
@@ -530,9 +562,10 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--adb-timeout-sec", type=float, default=4.0, help="ADB command timeout.")
   parser.add_argument("--adb-recover-sec", type=float, default=5.0, help="Minimum interval between adb recovery attempts.")
   parser.add_argument("--adb-wait-device-sec", type=float, default=1.0, help="Short wait-for-device timeout after adb start-server.")
+  parser.add_argument("--sync-adb", action="store_true", help="Send ADB broadcasts on the polling thread.")
   parser.add_argument("--action", default=DEFAULT_ACTION, help="Android broadcast action on Navdy.")
   parser.add_argument("--component", default=DEFAULT_COMPONENT, help="Explicit Android receiver component.")
-  parser.add_argument("--heartbeat-sec", type=float, default=1.0, help="Re-send unchanged live state at this interval.")
+  parser.add_argument("--heartbeat-sec", type=float, default=3.0, help="Re-send unchanged live state at this interval.")
   parser.add_argument("--once-timeout-sec", type=float, default=3.0, help="For --once, emit cached state after this wait.")
   parser.add_argument("--manage-navdy-power", action="store_true", help="Wake Navdy on onroad and sleep it on offroad.")
   parser.add_argument("--power-off-delay-sec", type=float, default=30.0, help="Offroad duration before Navdy display sleep.")
@@ -556,6 +589,7 @@ def main() -> int:
   setattr(args, "_last_set_speed_kph", 0.0)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
+    start_adb_sender(args)
   if args.synthetic:
     run_synthetic(args)
   else:

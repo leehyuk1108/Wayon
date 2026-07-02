@@ -23,6 +23,12 @@ DEFAULT_ACTION = "com.navdy.OPENPILOT_STATE"
 DEFAULT_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateReceiver"
 DISPLAY_ON_TEXT = "Display Power: state=ON"
 DISPLAY_OFF_TEXT = "Display Power: state=OFF"
+WAKEFULNESS_AWAKE_TEXT = "mWakefulness=Awake"
+WAKEFULNESS_ASLEEP_TEXT = "mWakefulness=Asleep"
+INTERACTIVE_ON_TEXT = "mHalInteractiveModeEnabled=true"
+INTERACTIVE_OFF_TEXT = "mHalInteractiveModeEnabled=false"
+KEYEVENT_POWER = "26"
+KEYEVENT_WAKEUP = "224"
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -212,6 +218,12 @@ def adb_shell(args: argparse.Namespace, shell_args: list[str], capture: bool = F
   return run_adb(args, ["shell"] + shell_args, capture=capture)
 
 
+def set_stay_on_while_plugged_in(args: argparse.Namespace, stay_on: bool) -> None:
+  if args.adb_path:
+    value = "1" if stay_on else "0"
+    adb_shell(args, ["settings", "put", "global", "stay_on_while_plugged_in", value])
+
+
 def navdy_display_on(args: argparse.Namespace) -> bool | None:
   if not args.adb_path:
     return None
@@ -222,6 +234,10 @@ def navdy_display_on(args: argparse.Namespace) -> bool | None:
   if DISPLAY_ON_TEXT in text:
     return True
   if DISPLAY_OFF_TEXT in text:
+    return False
+  if WAKEFULNESS_AWAKE_TEXT in text or INTERACTIVE_ON_TEXT in text:
+    return True
+  if WAKEFULNESS_ASLEEP_TEXT in text or INTERACTIVE_OFF_TEXT in text:
     return False
   return None
 
@@ -234,11 +250,18 @@ def set_navdy_display(args: argparse.Namespace, should_be_on: bool, reason: str)
     return True
   if current is None:
     recover_adb(args, f"power-{reason}")
-    return False
-  proc = adb_shell(args, ["input", "keyevent", "POWER"])
+    if not should_be_on:
+      return False
+  keyevent = KEYEVENT_WAKEUP if should_be_on else KEYEVENT_POWER
+  set_stay_on_while_plugged_in(args, should_be_on)
+  proc = adb_shell(args, ["input", "keyevent", keyevent])
   if args.stdout:
     print(f"navdy display {'on' if should_be_on else 'off'} reason={reason}", flush=True)
-  return proc.returncode == 0
+  if proc.returncode != 0:
+    return False
+  time.sleep(0.5 if should_be_on else 2.0)
+  verified = navdy_display_on(args)
+  return proc.returncode == 0 if verified is None else verified is should_be_on
 
 
 def emit(payload: dict[str, Any], args: argparse.Namespace) -> None:

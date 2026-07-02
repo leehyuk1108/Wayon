@@ -309,6 +309,19 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
   )
 
 
+def panda_ignition_started(panda_states: Any) -> bool:
+  try:
+    return any(bool(getattr(panda_state, "ignitionLine", False) or
+                    getattr(panda_state, "ignitionCan", False))
+               for panda_state in panda_states)
+  except TypeError:
+    return False
+
+
+def power_started(sm: Any) -> bool:
+  return bool(getattr(sm["deviceState"], "started", False)) or panda_ignition_started(sm["pandaStates"])
+
+
 def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offroad_since: float | None,
                        last_target_on: bool | None) -> tuple[float | None, bool | None]:
   if not args.manage_navdy_power:
@@ -333,8 +346,8 @@ def run_live(args: argparse.Namespace) -> None:
   messaging = import_messaging()
   services = ["selfdriveState", "carState"]
   if args.manage_navdy_power:
-    services.append("deviceState")
-  sm = messaging.SubMaster(services, poll="deviceState" if args.manage_navdy_power else "carState")
+    services += ["deviceState", "pandaStates"]
+  sm = messaging.SubMaster(services, poll="pandaStates" if args.manage_navdy_power else "carState")
   seq = 0
   period = 1.0 / max(args.hz, 0.1)
   last_signature = None
@@ -349,7 +362,7 @@ def run_live(args: argparse.Namespace) -> None:
       continue
     now = time.monotonic()
     if args.manage_navdy_power:
-      started = bool(getattr(sm["deviceState"], "started", False))
+      started = power_started(sm)
       offroad_since, last_power_target_on = manage_navdy_power(
           args, started, now, offroad_since, last_power_target_on)
     payload = payload_from_messages(sm["selfdriveState"], sm["carState"], seq)

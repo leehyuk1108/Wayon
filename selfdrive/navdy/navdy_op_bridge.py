@@ -12,6 +12,7 @@ import json
 import math
 import os
 import shlex
+import socket
 import subprocess
 import sys
 import threading
@@ -22,6 +23,9 @@ from typing import Any
 KPH_PER_MS = 3.6
 DEFAULT_ACTION = "com.navdy.OPENPILOT_STATE"
 DEFAULT_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateReceiver"
+DEFAULT_SERVICE_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateService"
+DEFAULT_SOCKET_PORT = 18765
+DEFAULT_DEVICE_SOCKET_PORT = 8765
 DISPLAY_ON_TEXT = "Display Power: state=ON"
 DISPLAY_OFF_TEXT = "Display Power: state=OFF"
 WAKEFULNESS_AWAKE_TEXT = "mWakefulness=Awake"
@@ -261,6 +265,69 @@ def queue_adb(payload: dict[str, Any], args: argparse.Namespace) -> None:
     cond.notify()
 
 
+def ensure_socket_forward(args: argparse.Namespace) -> None:
+  if not args.adb_path:
+    return
+  run_adb(args, ["forward", f"tcp:{args.socket_port}", f"tcp:{args.device_socket_port}"])
+  run_adb(args, ["shell", "am", "startservice", "-n", args.service_component])
+
+
+def close_socket(args: argparse.Namespace) -> None:
+  conn = getattr(args, "_socket_conn", None)
+  setattr(args, "_socket_conn", None)
+  if conn is not None:
+    try:
+      conn.close()
+    except OSError:
+      pass
+
+
+def connect_socket(args: argparse.Namespace, force: bool = False) -> bool:
+  if getattr(args, "_socket_conn", None) is not None:
+    return True
+
+  now = time.monotonic()
+  last = float(getattr(args, "_last_socket_connect_at", 0.0))
+  if not force and now - last < max(args.socket_reconnect_sec, 0.1):
+    return False
+  setattr(args, "_last_socket_connect_at", now)
+
+  if args.adb_path:
+    ensure_socket_forward(args)
+  try:
+    conn = socket.create_connection((args.socket_host, args.socket_port),
+                                    timeout=max(args.socket_timeout_sec, 0.05))
+    conn.settimeout(max(args.socket_timeout_sec, 0.05))
+  except OSError:
+    close_socket(args)
+    return False
+  setattr(args, "_socket_conn", conn)
+  return True
+
+
+def start_socket_transport(args: argparse.Namespace) -> None:
+  if args.socket_transport:
+    connect_socket(args, force=True)
+
+
+def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
+  if not args.socket_transport or not connect_socket(args):
+    return False
+  json_payload = json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n"
+  try:
+    getattr(args, "_socket_conn").sendall(json_payload.encode("utf-8"))
+    return True
+  except OSError:
+    close_socket(args)
+    if connect_socket(args, force=True):
+      try:
+        getattr(args, "_socket_conn").sendall(json_payload.encode("utf-8"))
+        return True
+      except OSError:
+        close_socket(args)
+  return False
+
+
 def adb_base_cmd(args: argparse.Namespace) -> list[str]:
   cmd = [args.adb_path]
   if args.adb_server_port > 0:
@@ -360,7 +427,9 @@ def emit(payload: dict[str, Any], args: argparse.Namespace) -> None:
   line = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
   if args.stdout:
     print(line, flush=True)
-  if args.adb_path:
+  if socket_send(payload, args):
+    return
+  if args.adb_path and args.adb_fallback:
     queue_adb(payload, args)
 
 
@@ -563,6 +632,15 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--adb-recover-sec", type=float, default=5.0, help="Minimum interval between adb recovery attempts.")
   parser.add_argument("--adb-wait-device-sec", type=float, default=1.0, help="Short wait-for-device timeout after adb start-server.")
   parser.add_argument("--sync-adb", action="store_true", help="Send ADB broadcasts on the polling thread.")
+  parser.add_argument("--socket-transport", action="store_true", help="Use adb forward + Navdy socket service for low-latency payloads.")
+  parser.add_argument("--socket-host", default="127.0.0.1", help="Host address for forwarded Navdy socket.")
+  parser.add_argument("--socket-port", type=int, default=DEFAULT_SOCKET_PORT, help="Host TCP port forwarded to Navdy.")
+  parser.add_argument("--device-socket-port", type=int, default=DEFAULT_DEVICE_SOCKET_PORT, help="Navdy TCP port for the socket service.")
+  parser.add_argument("--service-component", default=DEFAULT_SERVICE_COMPONENT, help="Android service component for socket transport.")
+  parser.add_argument("--socket-timeout-sec", type=float, default=0.25, help="Socket connect/write timeout.")
+  parser.add_argument("--socket-reconnect-sec", type=float, default=1.0, help="Minimum interval between socket reconnect attempts.")
+  parser.add_argument("--no-adb-fallback", dest="adb_fallback", action="store_false", help="Disable broadcast fallback when socket send fails.")
+  parser.set_defaults(adb_fallback=True)
   parser.add_argument("--action", default=DEFAULT_ACTION, help="Android broadcast action on Navdy.")
   parser.add_argument("--component", default=DEFAULT_COMPONENT, help="Explicit Android receiver component.")
   parser.add_argument("--heartbeat-sec", type=float, default=3.0, help="Re-send unchanged live state at this interval.")
@@ -587,8 +665,12 @@ def main() -> int:
   setattr(args, "_last_onroad_process_check_at", 0.0)
   setattr(args, "_last_onroad_process_started", False)
   setattr(args, "_last_set_speed_kph", 0.0)
+  setattr(args, "_last_socket_connect_at", 0.0)
+  setattr(args, "_socket_conn", None)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
+  start_socket_transport(args)
+  if args.adb_path:
     start_adb_sender(args)
   if args.synthetic:
     run_synthetic(args)

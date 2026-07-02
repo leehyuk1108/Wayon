@@ -76,21 +76,39 @@ def gear_text(car_state: Any) -> str:
   return enum_text(getattr(car_state, "gearShifter", "unknown")).lower()
 
 
-def speed_kph_from_car_state(car_state: Any) -> float:
-  v_cruise_cluster = finite_float(getattr(car_state, "vCruiseCluster", 0.0))
-  if 0.0 < v_cruise_cluster < 255.0:
-    return v_cruise_cluster
+def planner_speed_to_kph(value: Any) -> float:
+  speed = finite_float(value, 0.0)
+  return speed * KPH_PER_MS if 0.0 < speed < 80.0 else 0.0
 
-  v_cruise = finite_float(getattr(car_state, "vCruise", 0.0))
-  if 0.0 < v_cruise < 255.0:
-    return v_cruise
+
+def set_speed_kph(car_state: Any, controls_state: Any = None,
+                  starpilot_plan: Any = None, longitudinal_plan: Any = None) -> float:
+  for holder, names in (
+      (car_state, ("vCruiseCluster", "vCruise")),
+      (controls_state, ("vCruiseClusterDEPRECATED", "vCruiseDEPRECATED")),
+  ):
+    for name in names:
+      speed = finite_float(getattr(holder, name, 0.0))
+      if 0.0 < speed < 255.0:
+        return speed
 
   cruise_state = getattr(car_state, "cruiseState", None)
-  cruise_speed_ms = finite_float(getattr(cruise_state, "speed", 0.0))
-  return cruise_speed_ms * KPH_PER_MS if cruise_speed_ms > 0.0 else 0.0
+  for name in ("speedCluster", "speed"):
+    speed_ms = finite_float(getattr(cruise_state, name, 0.0))
+    if speed_ms > 0.0:
+      return speed_ms * KPH_PER_MS
+
+  for holder, name in ((starpilot_plan, "vCruise"), (longitudinal_plan, "vCruiseDEPRECATED")):
+    speed = planner_speed_to_kph(getattr(holder, name, 0.0))
+    if speed > 0.0:
+      return speed
+
+  return 0.0
 
 
-def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int) -> dict[str, Any]:
+def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
+                          controls_state: Any = None, starpilot_plan: Any = None,
+                          longitudinal_plan: Any = None) -> dict[str, Any]:
   left_blinker = bool(getattr(car_state, "leftBlinker", False))
   right_blinker = bool(getattr(car_state, "rightBlinker", False))
   left_blindspot = bool(getattr(car_state, "leftBlindspot", False))
@@ -112,7 +130,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int) -> dic
     "engaged": active,
     "disengaged": not enabled,
     "engageable": bool(getattr(selfdrive_state, "engageable", False)),
-    "setSpeedKph": rounded(speed_kph_from_car_state(car_state)),
+    "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
     "vEgoKph": rounded(v_ego_kph),
     "gear": gear_text(car_state),
     "leftBlinker": left_blinker,
@@ -322,6 +340,12 @@ def power_started(sm: Any) -> bool:
   return bool(getattr(sm["deviceState"], "started", False)) or panda_ignition_started(sm["pandaStates"])
 
 
+def live_payload_ready(sm: Any, started: bool) -> bool:
+  if not started:
+    return True
+  return bool(sm.alive["carState"] and sm.alive["selfdriveState"])
+
+
 def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offroad_since: float | None,
                        last_target_on: bool | None) -> tuple[float | None, bool | None]:
   if not args.manage_navdy_power:
@@ -344,7 +368,7 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
 def run_live(args: argparse.Namespace) -> None:
   maybe_reexec_openpilot_python(args)
   messaging = import_messaging()
-  services = ["selfdriveState", "carState"]
+  services = ["selfdriveState", "carState", "controlsState", "starpilotPlan", "longitudinalPlan"]
   if args.manage_navdy_power:
     services += ["deviceState", "pandaStates"]
   sm = messaging.SubMaster(services, poll="pandaStates" if args.manage_navdy_power else "carState")
@@ -361,11 +385,14 @@ def run_live(args: argparse.Namespace) -> None:
     if not has_update and not (args.once and time.monotonic() >= once_deadline):
       continue
     now = time.monotonic()
+    started = power_started(sm) if args.manage_navdy_power else True
     if args.manage_navdy_power:
-      started = power_started(sm)
       offroad_since, last_power_target_on = manage_navdy_power(
           args, started, now, offroad_since, last_power_target_on)
-    payload = payload_from_messages(sm["selfdriveState"], sm["carState"], seq)
+    if not live_payload_ready(sm, started):
+      continue
+    payload = payload_from_messages(sm["selfdriveState"], sm["carState"], seq,
+                                    sm["controlsState"], sm["starpilotPlan"], sm["longitudinalPlan"])
     signature = payload_signature(payload)
     if signature != last_signature or now - last_emit_at >= max(args.heartbeat_sec, 0.1) or args.once:
       emit(payload, args)

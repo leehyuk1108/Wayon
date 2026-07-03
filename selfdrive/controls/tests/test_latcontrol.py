@@ -47,6 +47,8 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import (
   get_kia_ev6_ff_scale,
   get_kia_ev6_friction_scale,
   get_kia_ev6_friction_threshold,
+  get_traverse_lat_accel_offset,
+  get_traverse_right_torque_scale,
   get_volt_standard_center_taper_scale,
   get_volt_standard_ff_scale,
   get_volt_standard_friction_scale,
@@ -120,6 +122,11 @@ class TestLatControl:
     assert get_bolt_2017_torque_scale(0.6, 0.6, 8.0) > get_bolt_2017_torque_scale(0.6, 0.0, 8.0) > get_bolt_2017_torque_scale(0.6, -0.6, 8.0)
     assert get_bolt_2017_torque_scale(-0.6, -0.6, 8.0) > get_bolt_2017_torque_scale(-0.6, 0.0, 8.0) > get_bolt_2017_torque_scale(-0.6, 0.6, 8.0)
     assert get_bolt_2017_torque_scale(0.6, 0.6, 8.0) > get_bolt_2017_torque_scale(-0.6, -0.6, 8.0)
+
+  def test_traverse_right_bias(self):
+    assert get_traverse_lat_accel_offset(0.0) == pytest.approx(-0.03)
+    assert get_traverse_right_torque_scale(-0.60) == pytest.approx(0.88)
+    assert get_traverse_right_torque_scale(0.60) == pytest.approx(1.0)
 
   def test_bolt_2018_2021_testing_ground_scale_curve(self):
     assert get_bolt_2018_2021_torque_scale(0.0) == 1.0

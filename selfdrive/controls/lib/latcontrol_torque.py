@@ -114,7 +114,8 @@ IONIQ_6_CARS = (
 KIA_EV6_CARS = (
   HYUNDAI_CAR.KIA_EV6,
 )
-TRAVERSE_RIGHT_TORQUE_SCALE = 0.92
+TRAVERSE_LAT_ACCEL_OFFSET_BIAS = -0.03
+TRAVERSE_RIGHT_TORQUE_SCALE = 0.88
 TRAVERSE_RIGHT_SCALE_ONSET_LAT_ACCEL = 0.15
 TRAVERSE_RIGHT_SCALE_FULL_LAT_ACCEL = 0.60
 
@@ -519,6 +520,10 @@ def get_traverse_right_torque_scale(desired_lateral_accel: float) -> float:
   return float(np.interp(abs(desired_lateral_accel),
                          [TRAVERSE_RIGHT_SCALE_ONSET_LAT_ACCEL, TRAVERSE_RIGHT_SCALE_FULL_LAT_ACCEL],
                          [1.0, TRAVERSE_RIGHT_TORQUE_SCALE]))
+
+
+def get_traverse_lat_accel_offset(lat_accel_offset: float) -> float:
+  return lat_accel_offset + TRAVERSE_LAT_ACCEL_OFFSET_BIAS
 
 
 def _bolt_2017_low_speed_factor(v_ego: float) -> float:
@@ -1179,6 +1184,8 @@ class LatControlTorque(LatControl):
       self.torque_ki_mult = float(kd_scale)
       if self.use_bolt_ki_multiplier and self.torque_ki_mult > 0.0 and self.torque_ki_mult != 1.0:
         self.pid._k_i = [self.pid._k_i[0], [k * self.torque_ki_mult for k in self.pid._k_i[1]]]
+    if self.is_traverse:
+      self.torque_params.latAccelOffset = get_traverse_lat_accel_offset(self.torque_params.latAccelOffset)
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     if self.is_ioniq_6:
@@ -1190,7 +1197,7 @@ class LatControlTorque(LatControl):
       if civic_bosch_modified_lateral_testing_ground_active():
         latAccelFactor *= CIVIC_BOSCH_MODIFIED_B_VARIANT_LAT_ACCEL_FACTOR_MULT
     self.torque_params.latAccelFactor = latAccelFactor
-    self.torque_params.latAccelOffset = latAccelOffset
+    self.torque_params.latAccelOffset = get_traverse_lat_accel_offset(latAccelOffset) if self.is_traverse else latAccelOffset
     self.torque_params.friction = friction
     self.update_limits()
 

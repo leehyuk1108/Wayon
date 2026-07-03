@@ -116,11 +116,19 @@ def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace,
   payload["leftBlindspot"] = left_blindspot
   payload["rightBlindspot"] = right_blindspot
   payload["blindspot"] = blindspot_text(left_blindspot, right_blindspot)
+  payload["opAvailable"] = bool(payload.get("opAvailable",
+                                            payload.get("engageable") or payload.get("enabled") or payload.get("active")))
+  payload["standstill"] = bool(payload.get("standstill", payload.get("cruiseStandstill", False)))
+  payload["cruiseStandstill"] = bool(payload.get("cruiseStandstill", payload.get("standstill", False)))
   return payload
 
 
 def gear_text(car_state: Any) -> str:
   return enum_text(getattr(car_state, "gearShifter", "unknown")).lower()
+
+
+def is_cruise_standstill(car_state: Any) -> bool:
+  return bool(getattr(getattr(car_state, "cruiseState", None), "standstill", False))
 
 
 def planner_speed_to_kph(value: Any) -> float:
@@ -162,6 +170,9 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   right_blindspot = bool(getattr(car_state, "rightBlindspot", False))
   enabled = bool(getattr(selfdrive_state, "enabled", False))
   active = bool(getattr(selfdrive_state, "active", False))
+  engageable = bool(getattr(selfdrive_state, "engageable", False))
+  standstill = bool(getattr(car_state, "standstill", False))
+  cruise_standstill = is_cruise_standstill(car_state)
 
   v_ego_cluster = finite_float(getattr(car_state, "vEgoCluster", 0.0))
   v_ego_ms = finite_float(getattr(car_state, "vEgo", 0.0))
@@ -176,7 +187,10 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "active": active,
     "engaged": active,
     "disengaged": not enabled,
-    "engageable": bool(getattr(selfdrive_state, "engageable", False)),
+    "engageable": engageable,
+    "opAvailable": engageable,
+    "standstill": standstill,
+    "cruiseStandstill": cruise_standstill,
     "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
     "vEgoKph": rounded(v_ego_kph),
     "gear": gear_text(car_state),
@@ -210,6 +224,9 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "engaged": True,
     "disengaged": False,
     "engageable": True,
+    "opAvailable": True,
+    "standstill": args.synthetic_standstill,
+    "cruiseStandstill": args.synthetic_standstill,
     "setSpeedKph": 100.0,
     "vEgoKph": 82.0,
     "gear": args.synthetic_gear,
@@ -226,12 +243,12 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
 
 def send_adb(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   json_payload = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-  cmd = adb_base_cmd(args)
-  cmd += ["shell", "am", "broadcast"]
+  shell_cmd = "am broadcast"
   if args.component:
-    cmd += ["-n", args.component]
-  cmd += ["-a", args.action, "--es", "payload", shlex.quote(json_payload)]
-  return run_adb(args, cmd[len(adb_base_cmd(args)):]).returncode == 0
+    shell_cmd += " -n " + shlex.quote(args.component)
+  shell_cmd += " -a " + shlex.quote(args.action)
+  shell_cmd += " --es payload " + shlex.quote(json_payload)
+  return run_adb(args, ["shell", shell_cmd]).returncode == 0
 
 
 def adb_sender_loop(args: argparse.Namespace) -> None:
@@ -458,6 +475,9 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("enabled"),
     payload.get("active"),
     payload.get("engaged"),
+    payload.get("opAvailable"),
+    payload.get("standstill"),
+    payload.get("cruiseStandstill"),
     payload.get("setSpeedKph"),
     payload.get("vEgoKph"),
     payload.get("gear"),
@@ -621,6 +641,7 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--synthetic", action="store_true", help="Send fake OP data without cereal imports.")
   parser.add_argument("--synthetic-gear", default="drive", help="Gear text for --synthetic payloads.")
   parser.add_argument("--synthetic-started", action="store_true", help="Synthetic onroad flag for power tests.")
+  parser.add_argument("--synthetic-standstill", action="store_true", help="Force standstill true in --synthetic payloads.")
   parser.add_argument("--synthetic-left-blindspot", action="store_true", help="Force left BSM true in --synthetic payloads.")
   parser.add_argument("--synthetic-right-blindspot", action="store_true", help="Force right BSM true in --synthetic payloads.")
   parser.add_argument("--stdout", action="store_true", default=True, help="Print JSON lines.")

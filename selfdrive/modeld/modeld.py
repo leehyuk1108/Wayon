@@ -42,7 +42,7 @@ BUILTIN_MODEL_ALIASES = {BUILTIN_MODEL_KEY, "sc"}
 LAT_SMOOTH_SECONDS = 0.0
 LONG_SMOOTH_SECONDS = 0.3
 MIN_LAT_CONTROL_SPEED = 0.3
-TRAVERSE_CAMERA_CENTER_X_OFFSET_PX = 15.0
+TRAVERSE_CAMERA_YAW_OFFSET_DEG = -5.0
 
 
 def _get_param_str(params: Params, key: str, default: str = "") -> str:
@@ -100,11 +100,10 @@ def _canonical_model_id(model_id: str) -> str:
   return BUILTIN_MODEL_KEY if key in BUILTIN_MODEL_ALIASES else key
 
 
-def _camera_intrinsics_for_car(CP: car.CarParams, intrinsics: np.ndarray) -> np.ndarray:
-  adjusted = intrinsics.copy()
+def _calibrated_euler_for_car(CP: car.CarParams, device_from_calib_euler: np.ndarray) -> np.ndarray:
+  adjusted = device_from_calib_euler.copy()
   if CP.carFingerprint == GM_CAR.CHEVROLET_TRAVERSE:
-    # Positive cx offset shifts the model's perceived path left on this Mici/C4 install.
-    adjusted[0, 2] += TRAVERSE_CAMERA_CENTER_X_OFFSET_PX
+    adjusted[2] += np.deg2rad(TRAVERSE_CAMERA_YAW_OFFSET_DEG)
   return adjusted
 
 
@@ -606,11 +605,10 @@ def main(demo=False):
     lateral_control_params = np.array([v_ego, lat_delay], dtype=np.float32)
     if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
+      device_from_calib_euler = _calibrated_euler_for_car(CP, device_from_calib_euler)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['roadCameraState'].sensor))]
-      main_intrinsics = _camera_intrinsics_for_car(CP, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics)
-      extra_intrinsics = _camera_intrinsics_for_car(CP, dc.ecam.intrinsics)
-      model_transform_main = get_warp_matrix(device_from_calib_euler, main_intrinsics, False).astype(np.float32)
-      model_transform_extra = get_warp_matrix(device_from_calib_euler, extra_intrinsics, True).astype(np.float32)
+      model_transform_main = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics, False).astype(np.float32)
+      model_transform_extra = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics, True).astype(np.float32)
       live_calib_seen = True
 
     traffic_convention = np.zeros(2)

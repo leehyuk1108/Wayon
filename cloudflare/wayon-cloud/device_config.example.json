@@ -1,0 +1,9 @@
+{
+  "endpoint": "https://wayon-cloud.example.workers.dev",
+  "token": "replace-with-WAYON_UPLOAD_TOKEN",
+  "device_id": "wayon-c4",
+  "telemetry_interval_onroad": 15,
+  "telemetry_interval_offroad": 300,
+  "route_interval_onroad": 15,
+  "snapshot_interval_offroad": 3600
+}

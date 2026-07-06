@@ -6,12 +6,20 @@ import pyray as rl
 
 FONT_DIR = Path(__file__).resolve().parent
 SELFDRIVE_DIR = FONT_DIR.parents[1]
+REPO_DIR = SELFDRIVE_DIR.parent
 TRANSLATIONS_DIR = SELFDRIVE_DIR / "ui" / "translations"
 LANGUAGES_FILE = TRANSLATIONS_DIR / "languages.json"
 
 GLYPH_PADDING = 6
-EXTRA_CHARS = "–‑✓×°§•X⚙✕◀▶✔⌫⇧␣○●↳çêüñ–‑✓×°§•€£¥"
+EXTRA_CHARS = "–‑✓×°§•X⚙✕◀▶✔⌫⇧␣○●↳çêüñ–‑✓×°§•€£¥²"
 UNIFONT_LANGUAGES = {"th", "zh-CHT", "zh-CHS", "ko", "ja"}
+CJK_FONT_PREFIXES = ("pretendard",)
+KOREAN_EXTRA_CHARS = "안녕하세요총주행거리시간안전한되세요냉느망명짧찌근"
+KOREAN_SOURCE_PATHS = (
+  SELFDRIVE_DIR / "selfdrived" / "events.py",
+  SELFDRIVE_DIR / "ui" / "mici",
+  REPO_DIR / "system" / "ui",
+)
 
 
 def _languages():
@@ -21,18 +29,49 @@ def _languages():
     return json.load(f)
 
 
+def _normalized_language_code(code: str) -> str:
+  return code.removeprefix("main_")
+
+
+def _text_files(path: Path):
+  if path.is_file():
+    yield path
+  elif path.is_dir():
+    for pattern in ("*.py", "*.json"):
+      yield from path.rglob(pattern)
+
+
+def _korean_source_chars():
+  chars = set()
+  for source_path in KOREAN_SOURCE_PATHS:
+    for path in _text_files(source_path):
+      try:
+        chars.update(path.read_text(encoding="utf-8"))
+      except UnicodeDecodeError:
+        continue
+  return chars
+
+
 def _char_sets():
   base = set(map(chr, range(32, 127))) | set(EXTRA_CHARS)
   unifont = set(base)
+  korean_source_chars = _korean_source_chars()
 
   for language, code in _languages().items():
     unifont.update(language)
-    po_path = TRANSLATIONS_DIR / f"app_{code}.po"
+    language_code = _normalized_language_code(code)
+    po_path = TRANSLATIONS_DIR / f"app_{language_code}.po"
     try:
       chars = set(po_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
       continue
-    (unifont if code in UNIFONT_LANGUAGES else base).update(chars)
+    if language_code in UNIFONT_LANGUAGES:
+      unifont.update(chars)
+      if language_code == "ko":
+        unifont.update(KOREAN_EXTRA_CHARS)
+        unifont.update(korean_source_chars)
+    else:
+      base.update(chars)
 
   return tuple(sorted(ord(c) for c in base)), tuple(sorted(ord(c) for c in unifont))
 
@@ -127,7 +166,8 @@ def main():
   for font in fonts:
     if "emoji" in font.name.lower():
       continue
-    glyphs = unifont_cp if font.stem.lower().startswith("unifont") else base_cp
+    use_unifont_chars = font.stem.lower().startswith(("unifont", *CJK_FONT_PREFIXES))
+    glyphs = unifont_cp if use_unifont_chars else base_cp
     _process_font(font, glyphs)
   return 0
 

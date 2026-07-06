@@ -67,6 +67,7 @@ class UIState(UIStateSP):
     )
 
     self.prime_state = PrimeState()
+    self.params_memory = Params()
 
     # UI Status tracking
     self.status: UIStatus = UIStatus.DISENGAGED
@@ -226,6 +227,7 @@ class Device(DeviceSP):
     self._interactive_timeout_callbacks: list[Callable] = []
     self._prev_timed_out = False
     self._awake: bool = True
+    self._last_offroad_wake_counter = 0
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
@@ -237,6 +239,10 @@ class Device(DeviceSP):
   @property
   def awake(self) -> bool:
     return self._awake
+
+  @property
+  def timed_out(self) -> bool:
+    return time.monotonic() > self._interaction_time
 
   def set_override_interactive_timeout(self, timeout: int | None) -> None:
     # Override the interactive timeout duration temporarily
@@ -260,6 +266,27 @@ class Device(DeviceSP):
   def add_interactive_timeout_callback(self, callback: Callable):
     self._interactive_timeout_callbacks.append(callback)
 
+  def _offroad_wake_counter(self) -> int:
+    value = None
+    try:
+      value = ui_state.params_memory.get("OffroadWakeCounter", return_default=True)
+    except Exception:
+      pass
+
+    if value is None:
+      try:
+        with open(ui_state.params_memory.get_param_path("OffroadWakeCounter"), "rb") as f:
+          value = f.read()
+      except OSError:
+        return 0
+
+    try:
+      if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="ignore")
+      return int(value or 0)
+    except (TypeError, ValueError):
+      return 0
+
   def update(self):
     self._start_brightness_thread()  # start thread after manager forks ui
 
@@ -267,8 +294,8 @@ class Device(DeviceSP):
     if self._interaction_time <= 0:
       self._reset_interactive_timeout()
 
-    self._update_brightness()
     self._update_wakefulness()
+    self._update_brightness()
 
   def _start_brightness_thread(self):
     if self._brightness_thread is None or not self._brightness_thread.is_alive():
@@ -323,13 +350,18 @@ class Device(DeviceSP):
     ignition_just_turned_off = not ui_state.ignition and self._ignition
     self._ignition = ui_state.ignition
 
-    if ignition_just_turned_off or any(ev.left_down for ev in gui_app.mouse_events):
+    if ignition_just_turned_off or any(ev.left_down or ev.left_pressed for ev in gui_app.mouse_events):
       if gui_app.sunnypilot_ui():
         DeviceSP.wake_from_dimmed_onroad_brightness(ui_state, gui_app.mouse_events)
 
       self._reset_interactive_timeout()
 
-    interaction_timeout = time.monotonic() > self._interaction_time
+    offroad_wake_counter = self._offroad_wake_counter()
+    if not ui_state.started and not ui_state.ignition and offroad_wake_counter != self._last_offroad_wake_counter:
+      self._reset_interactive_timeout()
+    self._last_offroad_wake_counter = offroad_wake_counter
+
+    interaction_timeout = self.timed_out
     if interaction_timeout and not self._prev_timed_out:
       for callback in self._interactive_timeout_callbacks:
         callback()

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import json
 import math
 import os
+from pathlib import Path
 
 from cereal import log, car
 import cereal.messaging as messaging
@@ -26,6 +28,7 @@ EventName = log.OnroadEvent.EventName
 
 # get event name from enum
 EVENT_NAME = {v: k for k, v in EventName.schema.enumerants.items()}
+MICI_EVENT_ALERT_OVERRIDES_PATH = Path(__file__).resolve().parents[1] / "ui/mici/mici_event_alert_overrides.json"
 
 
 class Events(EventsBase):
@@ -856,72 +859,322 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 }
 
 
+MICI_EVENT_TYPE_BY_JSON_NAME = {
+  "ENABLE": ET.ENABLE,
+  "PRE_ENABLE": ET.PRE_ENABLE,
+  "OVERRIDE_LATERAL": ET.OVERRIDE_LATERAL,
+  "OVERRIDE_LONGITUDINAL": ET.OVERRIDE_LONGITUDINAL,
+  "NO_ENTRY": ET.NO_ENTRY,
+  "WARNING": ET.WARNING,
+  "USER_DISABLE": ET.USER_DISABLE,
+  "SOFT_DISABLE": ET.SOFT_DISABLE,
+  "IMMEDIATE_DISABLE": ET.IMMEDIATE_DISABLE,
+  "PERMANENT": ET.PERMANENT,
+}
+
+
+class _MiciFormatValues(dict):
+  def __missing__(self, key: str) -> str:
+    return "{" + key + "}"
+
+
+class _MiciStaticSubMaster:
+  data: dict = {}
+
+  def __getitem__(self, key: str):
+    raise KeyError(key)
+
+  def all_checks(self, services) -> bool:
+    return True
+
+
+def _mici_alert_format_values(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster,
+                              metric: bool) -> _MiciFormatValues:
+  values = _MiciFormatValues()
+  values["minSteerSpeed"] = get_display_speed(CP.minSteerSpeed, metric)
+  values["minEnableSpeed"] = get_display_speed(CP.minEnableSpeed, metric)
+  values["MIN_SPEED_FILTER"] = get_display_speed(MIN_SPEED_FILTER, metric)
+
+  try:
+    duration = FEEDBACK_MAX_DURATION - ((sm["audioFeedback"].blockNum + 1) * SAMPLE_BUFFER / SAMPLE_RATE)
+    values["seconds"] = str(round(duration))
+  except Exception:
+    pass
+
+  try:
+    values["calPerc"] = f"{sm['liveCalibration'].calPerc:.0f}"
+    rpy = sm["liveCalibration"].rpyCalib
+    values["yaw"] = f"{math.degrees(rpy[2] if len(rpy) == 3 else math.nan):.1f}"
+    values["pitch"] = f"{math.degrees(rpy[1] if len(rpy) == 3 else math.nan):.1f}"
+  except Exception:
+    pass
+
+  try:
+    all_cams = ("roadCameraState", "driverCameraState", "wideRoadCameraState")
+    bad_cams = [s.replace("State", "") for s in all_cams if s in sm.data.keys() and not sm.all_checks([s, ])]
+    values["bad camera list"] = ", ".join(bad_cams)
+  except Exception:
+    pass
+
+  try:
+    bad_services = [s for s in sm.data.keys() if not sm.all_checks([s, ])]
+    values["service names"] = ", ".join(bad_services[:3])
+  except Exception:
+    pass
+
+  try:
+    values["accel"] = str(round(sm["carControl"].actuators.accel / 4. * 100.))
+    values["steer"] = str(round(sm["carControl"].actuators.torque * 100.))
+  except Exception:
+    pass
+
+  try:
+    values["memoryUsagePercent"] = str(sm["deviceState"].memoryUsagePercent)
+    cpu = max(sm["deviceState"].cpuTempC, default=0.)
+    gpu = max(sm["deviceState"].gpuTempC, default=0.)
+    values["temperature"] = f"{max((cpu, gpu, sm['deviceState'].memoryTempC)):.0f}"
+  except Exception:
+    pass
+
+  try:
+    values["frameDropPerc"] = f"{sm['modelV2'].frameDropPerc:.1f}"
+  except Exception:
+    pass
+
+  try:
+    values["offset"] = f"{sm['liveParameters'].angleOffsetDeg:.1f}"
+  except Exception:
+    pass
+
+  return values
+
+
+def _mici_format_alert_text(text: str, fallback: str, CP: car.CarParams, CS: car.CarState,
+                            sm: messaging.SubMaster, metric: bool) -> str:
+  try:
+    return text.format_map(_mici_alert_format_values(CP, CS, sm, metric))
+  except Exception:
+    return fallback
+
+
+def _mici_apply_alert_text_override(alert: Alert, config: dict, CP: car.CarParams, CS: car.CarState,
+                                    sm: messaging.SubMaster, metric: bool) -> Alert:
+  if "title" in config:
+    alert.alert_text_1 = _mici_format_alert_text(config["title"], alert.alert_text_1, CP, CS, sm, metric)
+  if "subtitle" in config:
+    alert.alert_text_2 = _mici_format_alert_text(config["subtitle"], alert.alert_text_2, CP, CS, sm, metric)
+  if alert.alert_size == AlertSize.small and alert.alert_text_2:
+    alert.alert_size = AlertSize.mid
+  return alert
+
+
+def _mici_static_alert_args() -> tuple[car.CarParams, car.CarState, _MiciStaticSubMaster, bool]:
+  return car.CarParams.new_message(), car.CarState.new_message(), _MiciStaticSubMaster(), True
+
+
+def _mici_wrap_alert_callback(callback: AlertCallbackType, config: dict) -> AlertCallbackType:
+  def wrapped(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool,
+              soft_disable_time: int, personality) -> Alert:
+    alert = callback(CP, CS, sm, metric, soft_disable_time, personality)
+    return _mici_apply_alert_text_override(alert, config, CP, CS, sm, metric)
+  return wrapped
+
+
+MICI_ALERT_TEXT_TRANSLATIONS = {
+  "System Initializing": "시스템 시작 중",
+  "openpilot Unavailable": "오픈파일럿 사용 불가",
+  "Be ready to take over at any time": "언제든지 운전대를 잡을 준비를 하세요",
+  "WARNING: This branch is not tested": "경고: 테스트되지 않은 브랜치입니다",
+  "Dashcam mode": "블랙박스 모드",
+  "Dashcam Mode": "블랙박스 모드",
+  "Dashcam mode for unsupported car": "지원되지 않는 차량: 블랙박스 모드",
+  "Security Key Not Available": "보안 키를 사용할 수 없습니다",
+  "BRAKE!": "브레이크!",
+  "Emergency Braking: Risk of Collision": "긴급 제동: 충돌 위험",
+  "Stock LKAS: Lane Departure Detected": "순정 LKAS: 차선 이탈 감지됨",
+  "DISENGAGE IMMEDIATELY": "즉시 제어하세요",
+  "Driver Distracted": "운전자 부주의 감지됨",
+  "Touch Steering Wheel: No Face Detected": "스티어링 휠을 잡아주세요: 운전자 감지 안됨",
+  "Touch Steering Wheel": "스티어링 휠을 잡아주세요",
+  "Driver Unresponsive": "운전자 응답 없음",
+  "Cancel Pressed": "취소 버튼 눌림",
+  "Press Resume to Exit Brake Hold": "브레이크 홀드를 해제하려면 Resume 버튼을 누르세요",
+  "Parking Brake Engaged": "주차 브레이크 체결됨",
+  "Pedal Pressed": "페달 눌림",
+  "Steering Pressed": "스티어링 조작됨",
+  "Enable Adaptive Cruise to Engage": "활성화하려면 어댑티브 크루즈를 켜세요",
+  "Press Set to Engage": "활성화하려면 SET 버튼을 누르세요",
+  "Adaptive Cruise Disabled": "어댑티브 크루즈 꺼짐",
+  "TAKE CONTROL IMMEDIATELY": "즉시 제어하세요",
+  "Vehicle Steering Time Limit": "차량 조향 시간 제한",
+  "Sensor Data Invalid": "센서 데이터 이상",
+  "Possible Hardware Issue": "하드웨어 문제가 있을 수 있습니다",
+  "openpilot will disengage": "오픈파일럿이 곧 비활성화됩니다",
+  "Gear not D": "기어가 D가 아닙니다",
+  "Seatbelt Unlatched": "안전벨트가 체결되지 않았습니다",
+  "System Lagging": "시스템 지연",
+  "Selfdrive Process Lagging: Reboot Your Device": "selfdrive 지연: 기기를 재부팅하세요",
+  "Process Not Running": "외부 프로그램 비정상",
+  "Radar Error: Restart the Car": "레이더 오류: 차량을 재시동하세요",
+  "Radar Temporarily Unavailable": "레이더 일시 사용 불가",
+  "Posenet Speed Invalid": "포즈넷 속도 이상",
+  "USB Error: Reboot Your Device": "USB 오류: 기기를 재부팅하세요",
+  "Camera Malfunction": "카메라 이상",
+  "Calibration Invalid": "캘리브레이션 오류",
+  "Steering misalignment detected": "조향 정렬 이상 감지됨",
+  "Steer ratio mismatch": "조향비 불일치",
+  "Abnormal tire stiffness": "타이어 강성 이상",
+  "paramsd Temporary Error": "차량 파라미터 일시 오류",
+  "System Overheated": "기기 온도 높음",
+  "Low Memory": "메모리 부족",
+  "High CPU Usage": "CPU 사용량 높음",
+  "Driving Model Lagging": "주행 모델 지연",
+  "Joystick Mode": "조이스틱 모드",
+  "Longitudinal Maneuver Mode": "종방향 테스트 모드",
+  "Lateral Maneuver Mode": "횡방향 테스트 모드",
+  "Ensure road ahead is clear": "전방 도로가 안전한지 확인하세요",
+  "Speed Too High": "속도가 너무 높습니다",
+  "Model uncertain at this speed": "현재 속도에서 모델 예측이 불안정합니다",
+  "Slow down to engage": "속도를 낮추면 활성화할 수 있습니다",
+  "Vehicle Sensors Invalid": "차량 센서 이상",
+  "Vehicle Sensors Calibrating": "차량 센서 캘리브레이션 중",
+  "Drive to Calibrate": "캘리브레이션을 위해 주행하세요",
+  "Bookmark Saved": "북마크 저장됨",
+  "Recording Audio Feedback": "음성 피드백 녹음 중",
+  "Harness Relay Malfunction": "하네스 릴레이 이상",
+  "Check Hardware": "하드웨어 점검 필요",
+  "openpilot Canceled": "오픈파일럿 취소됨",
+  "Speed too low": "속도가 너무 낮습니다",
+}
+
+
+def _mici_translate_text(text: str) -> str:
+  if text.startswith("Driving Personality: "):
+    return "주행 성향: " + text.removeprefix("Driving Personality: ")
+  return MICI_ALERT_TEXT_TRANSLATIONS.get(text, text)
+
+
+def _mici_translate_alert_text(alert: Alert) -> Alert:
+  alert.alert_text_1 = _mici_translate_text(alert.alert_text_1)
+  alert.alert_text_2 = _mici_translate_text(alert.alert_text_2)
+  if alert.alert_size == AlertSize.small and alert.alert_text_2:
+    alert.alert_size = AlertSize.mid
+  return alert
+
+
+def _mici_wrap_alert_translation(callback: AlertCallbackType) -> AlertCallbackType:
+  def wrapped(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool,
+              soft_disable_time: int, personality) -> Alert:
+    return _mici_translate_alert_text(callback(CP, CS, sm, metric, soft_disable_time, personality))
+  return wrapped
+
+
+def _apply_mici_alert_text_translations() -> None:
+  for event_alerts in EVENTS.values():
+    for event_type, alert in list(event_alerts.items()):
+      if isinstance(alert, Alert):
+        _mici_translate_alert_text(alert)
+      else:
+        event_alerts[event_type] = _mici_wrap_alert_translation(alert)
+
+
+def _apply_mici_event_alert_overrides() -> None:
+  if not MICI_EVENT_ALERT_OVERRIDES_PATH.is_file():
+    return
+
+  with open(MICI_EVENT_ALERT_OVERRIDES_PATH, encoding="utf-8") as f:
+    configs = json.load(f).get("events", {})
+
+  static_CP, static_CS, static_sm, static_metric = _mici_static_alert_args()
+
+  for config in configs.values():
+    if config.get("source") != "EVENTS":
+      continue
+
+    event_name = config.get("eventName")
+    event_type = MICI_EVENT_TYPE_BY_JSON_NAME.get(config.get("eventType", ""))
+    if event_name is None or event_type is None:
+      continue
+
+    event_id = EventName.schema.enumerants.get(event_name)
+    if event_id is None or event_id not in EVENTS or event_type not in EVENTS[event_id]:
+      continue
+
+    alert = EVENTS[event_id][event_type]
+    if isinstance(alert, Alert):
+      _mici_apply_alert_text_override(alert, config, static_CP, static_CS, static_sm, static_metric)
+    else:
+      EVENTS[event_id][event_type] = _mici_wrap_alert_callback(alert, config)
+
+
 if HARDWARE.get_device_type() == 'mici':
   EVENTS.update({
     EventName.driverDistracted1: {
       ET.PERMANENT: Alert(
-        "Pay Attention",
+        "운전에 집중하세요",
         "",
         AlertStatus.normal, AlertSize.small,
         Priority.LOW, VisualAlert.none, AudibleAlert.none, 2),
     },
     EventName.driverDistracted2: {
       ET.PERMANENT: Alert(
-        "Pay Attention",
-        "Driver Distracted",
+        "운전에 집중하세요",
+        "운전자 부주의 감지됨",
         AlertStatus.userPrompt, AlertSize.mid,
         Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, 1),
     },
     EventName.resumeRequired: {
       ET.WARNING: Alert(
-        "Press Resume",
+        "Resume 버튼을 누르세요",
         "",
         AlertStatus.userPrompt, AlertSize.small,
         Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
     },
     EventName.preLaneChangeLeft: {
       ET.WARNING: Alert(
-        "Steer Left",
-        "Confirm Lane Change",
+        "왼쪽 조향",
+        "차선 변경 확인",
         AlertStatus.normal, AlertSize.mid,
         Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
     },
     EventName.preLaneChangeRight: {
       ET.WARNING: Alert(
-        "Steer Right",
-        "Confirm Lane Change",
+        "오른쪽 조향",
+        "차선 변경 확인",
         AlertStatus.normal, AlertSize.mid,
         Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
     },
     EventName.laneChangeBlocked: {
       ET.WARNING: Alert(
-        "Car in Blindspot",
+        "사각지대 차량",
         "",
         AlertStatus.userPrompt, AlertSize.small,
         Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .1),
     },
     EventName.steerSaturated: {
       ET.WARNING: Alert(
-        "take control",
-        "turn exceeds limit",
+        "직접 운전하세요",
+        "조향 한계 초과",
         AlertStatus.userPrompt, AlertSize.mid,
         Priority.LOW, VisualAlert.steerRequired, AudibleAlert.promptRepeat, 2.),
     },
     EventName.calibrationIncomplete: {
       ET.PERMANENT: calibration_incomplete_alert,
-      ET.SOFT_DISABLE: soft_disable_alert("Calibration Incomplete"),
-      ET.NO_ENTRY: NoEntryAlert("Calibrating"),
+      ET.SOFT_DISABLE: soft_disable_alert("캘리브레이션이 완료되지 않았습니다"),
+      ET.NO_ENTRY: NoEntryAlert("캘리브레이션 중"),
     },
     EventName.reverseGear: {
       ET.PERMANENT: Alert(
-        "Reverse",
+        "후진",
         "",
         AlertStatus.normal, AlertSize.full,
         Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2, creation_delay=0.5),
-      ET.USER_DISABLE: ImmediateDisableAlert("Reverse"),
-      ET.NO_ENTRY: NoEntryAlert("Reverse"),
+      ET.USER_DISABLE: ImmediateDisableAlert("후진"),
+      ET.NO_ENTRY: NoEntryAlert("후진"),
     },
   })
+  _apply_mici_alert_text_translations()
+  _apply_mici_event_alert_overrides()
 
 
 if __name__ == '__main__':

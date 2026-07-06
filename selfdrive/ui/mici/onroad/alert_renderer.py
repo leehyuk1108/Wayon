@@ -1,5 +1,7 @@
+import json
 import time
 from enum import StrEnum
+from pathlib import Path
 from typing import NamedTuple
 import pyray as rl
 import random
@@ -10,10 +12,16 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
 from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app, FontWeight
+from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitAlertRenderer
+from openpilot.selfdrive.ui.mici.onroad.status_timers import (
+  PARKING_BRAKE_EVENT_NAMES,
+  format_mmss,
+  should_show_parking_brake_timer,
+)
 
 AlertSize = log.SelfdriveState.AlertSize
 AlertStatus = log.SelfdriveState.AlertStatus
@@ -22,9 +30,26 @@ ALERT_MARGIN = 18
 
 ALERT_FONT_SMALL = 66 - 50
 ALERT_FONT_BIG = 88 - 40
+AUTOHOLD_ICON_SIZE = 74
+AUTOHOLD_TIMER_FONT_SIZE = 62
+AUTOHOLD_TIMER_GAP = 18
 
 SELFDRIVE_STATE_TIMEOUT = 5  # Seconds
 SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
+MICI_EVENT_ALERT_OVERRIDES_PATH = Path(__file__).resolve().parents[1] / "mici_event_alert_overrides.json"
+
+EVENT_TYPE_JSON_NAME = {
+  "enable": "ENABLE",
+  "preEnable": "PRE_ENABLE",
+  "overrideLateral": "OVERRIDE_LATERAL",
+  "overrideLongitudinal": "OVERRIDE_LONGITUDINAL",
+  "noEntry": "NO_ENTRY",
+  "warning": "WARNING",
+  "userDisable": "USER_DISABLE",
+  "softDisable": "SOFT_DISABLE",
+  "immediateDisable": "IMMEDIATE_DISABLE",
+  "permanent": "PERMANENT",
+}
 
 # Constants
 ALERT_COLORS = {
@@ -64,6 +89,10 @@ class Alert:
   status: int = 0
   visual_alert: int = car.CarControl.HUDControl.VisualAlert.none
   alert_type: str = ""
+  source: str = "EVENTS"
+  title_font_px: int | None = None
+  subtitle_font_px: int | None = None
+  has_mici_override: bool = False
 
 
 # Pre-defined alert instances
@@ -102,6 +131,9 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     self._prev_alert: Alert | None = None
     self._text_gen_time = 0
     self._alert_text2_gen = ''
+    self._parking_brake_start_time: float | None = None
+    self._parking_brake_timer_visible = False
+    self._last_started_frame = -1
 
     # animation filters
     # TODO: use 0.1 but with proper alert height calculation
@@ -111,14 +143,71 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     self._turn_signal_timer = 0.0
     self._turn_signal_alpha_filter = FirstOrderFilter(0.0, 0.3, 1 / gui_app.target_fps)
     self._last_icon_side: IconSide | None = None
+    self._alert_override_mtime: float | None = None
+    self._alert_overrides: dict[str, dict] = {}
 
     self._load_icons()
+    ui_state.add_offroad_transition_callback(self._reset_timers)
+
+  def _reset_timers(self) -> None:
+    self._parking_brake_start_time = None
+    self._parking_brake_timer_visible = False
+
+  def parking_brake_timer_visible(self) -> bool:
+    return self._parking_brake_timer_visible
 
   def _load_icons(self):
     self._txt_turn_signal_left = gui_app.texture('icons_mici/onroad/turn_signal_left.png', 104, 96)
     self._txt_turn_signal_right = gui_app.texture('icons_mici/onroad/turn_signal_left.png', 104, 96, flip_x=True)
     self._txt_blind_spot_left = gui_app.texture('icons_mici/onroad/blind_spot_left.png', 134, 150)
     self._txt_blind_spot_right = gui_app.texture('icons_mici/onroad/blind_spot_left.png', 134, 150, flip_x=True)
+    self._txt_parking = gui_app.texture("icons/parking.png", AUTOHOLD_ICON_SIZE, AUTOHOLD_ICON_SIZE, keep_aspect_ratio=True)
+
+  @staticmethod
+  def _event_parts(alert: Alert) -> tuple[str, str]:
+    if not alert.alert_type:
+      return "", ""
+    return (alert.alert_type.split("/", 1) + [""])[:2]
+
+  def _load_alert_overrides(self) -> None:
+    try:
+      mtime = MICI_EVENT_ALERT_OVERRIDES_PATH.stat().st_mtime
+    except OSError:
+      self._alert_override_mtime = None
+      self._alert_overrides = {}
+      return
+
+    if self._alert_override_mtime == mtime:
+      return
+
+    try:
+      with open(MICI_EVENT_ALERT_OVERRIDES_PATH, encoding="utf-8") as f:
+        self._alert_overrides = json.load(f).get("events", {})
+      self._alert_override_mtime = mtime
+    except (OSError, json.JSONDecodeError):
+      self._alert_override_mtime = None
+      self._alert_overrides = {}
+
+  @staticmethod
+  def _font_px(value) -> int | None:
+    try:
+      font_px = int(value)
+    except (TypeError, ValueError):
+      return None
+    return font_px if font_px > 0 else None
+
+  def _apply_render_overrides(self, alert: Alert) -> Alert:
+    self._load_alert_overrides()
+    event_name, event_type = self._event_parts(alert)
+    json_event_type = EVENT_TYPE_JSON_NAME.get(event_type, event_type.upper())
+    config = self._alert_overrides.get(f"{alert.source}.{event_name}.{json_event_type}")
+    if config is None:
+      return alert
+
+    alert.has_mici_override = True
+    alert.title_font_px = self._font_px(config.get("titleFontPx"))
+    alert.subtitle_font_px = self._font_px(config.get("subtitleFontPx"))
+    return alert
 
   def get_alert(self, sm: messaging.SubMaster) -> Alert | None:
     """Generate the current alert based on selfdrive state."""
@@ -149,6 +238,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     # Return current alert
     ret = Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,
                 visual_alert=ss.alertHudVisual, alert_type=ss.alertType)
+    ret = self._apply_render_overrides(ret)
     self._prev_alert = ret
     return ret
 
@@ -224,16 +314,45 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     return AlertLayout(text_rect, icon_layout)
 
   def _render(self, rect: rl.Rectangle) -> bool:
+    self._parking_brake_timer_visible = False
+
+    if not ui_state.started:
+      self._reset_timers()
+      self._prev_alert = None
+      self._alert_y_filter.update(self._rect.y - 50)
+      self._alpha_filter.update(0)
+      return False
+
+    if self._last_started_frame != ui_state.started_frame:
+      self._last_started_frame = ui_state.started_frame
+      self._reset_timers()
+
     alert = self.get_alert(ui_state.sm)
+    event_name = alert.alert_type.split('/')[0] if alert is not None and alert.alert_type else ''
+    parking_brake_active = ui_state.sm["carState"].parkingBrake
+    if parking_brake_active and self._parking_brake_start_time is None:
+      self._parking_brake_start_time = time.monotonic()
+    elif not parking_brake_active:
+      self._parking_brake_start_time = None
+    draw_parking_timer = should_show_parking_brake_timer(parking_brake_active=parking_brake_active,
+                                                         alert_event_name=event_name)
+    has_active_indicator = alert is not None or draw_parking_timer
 
     # Animate fade and slide in/out
-    self._alert_y_filter.update(self._rect.y - 50 if alert is None else self._rect.y)
-    self._alpha_filter.update(0 if alert is None else 1)
+    self._alert_y_filter.update(self._rect.y - 50 if not has_active_indicator else self._rect.y)
+    self._alpha_filter.update(0 if not has_active_indicator else 1)
 
     if gui_app.sunnypilot_ui():
       ui_state.onroad_brightness_handle_alerts(ui_state, alert)
 
+    active_alert = alert
     if alert is None:
+      if draw_parking_timer:
+        self._prev_alert = None
+        self._parking_brake_timer_visible = True
+        self._draw_parking_brake_timer(True)
+        return True
+
       # If still animating out, keep the previous alert
       if self._alpha_filter.x > 0.01 and self._prev_alert is not None:
         alert = self._prev_alert
@@ -247,10 +366,51 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     SpeedLimitAlertRenderer.update(self)
 
     alert_layout = self._icon_helper(alert)
+    event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
+    if event_name in PARKING_BRAKE_EVENT_NAMES and parking_brake_active:
+      self._parking_brake_timer_visible = True
+      self._draw_parking_brake_timer(active_alert is not None)
+      return True
+
     self._draw_text(alert, alert_layout)
     self._draw_icons(alert_layout)
 
     return True
+
+  def _draw_parking_brake_timer(self, is_active: bool) -> None:
+    if is_active and self._parking_brake_start_time is None:
+      self._parking_brake_start_time = time.monotonic()
+    elif self._parking_brake_start_time is None:
+      return
+
+    elapsed = time.monotonic() - self._parking_brake_start_time
+    self._draw_center_timer(self._txt_parking, format_mmss(elapsed))
+
+  def _draw_center_timer(self, icon_texture: rl.Texture, timer_text: str) -> None:
+    color = rl.Color(255, 255, 255, int(255 * 0.9 * self._alpha_filter.x))
+    self._alert_text1_label.set_text(timer_text)
+    self._alert_text1_label.set_text_color(color)
+    self._alert_text1_label.set_font_size(AUTOHOLD_TIMER_FONT_SIZE)
+    self._alert_text1_label.set_alignment(rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
+
+    timer_size = measure_text_cached(gui_app.font(FontWeight.DISPLAY), timer_text, AUTOHOLD_TIMER_FONT_SIZE,
+                                     AUTOHOLD_TIMER_FONT_SIZE * -0.02)
+    group_width = icon_texture.width + AUTOHOLD_TIMER_GAP + timer_size.x
+    group_x = self._rect.x + (self._rect.width - group_width) / 2
+    center_y = self._rect.y + self._rect.height / 2 + (self._alert_y_filter.x - self._rect.y)
+
+    icon_x = group_x
+    icon_y = center_y - icon_texture.height / 2
+    rl.draw_texture_ex(icon_texture, rl.Vector2(icon_x, icon_y), 0.0, 1.0,
+                       rl.Color(255, 255, 255, int(255 * self._alpha_filter.x)))
+
+    timer_rect = rl.Rectangle(
+      group_x + icon_texture.width + AUTOHOLD_TIMER_GAP,
+      center_y - timer_size.y / 2,
+      timer_size.x + 2,
+      timer_size.y,
+    )
+    self._alert_text1_label.render(timer_rect)
 
   def _draw_icons(self, alert_layout: AlertLayout) -> None:
     if alert_layout.icon is None:
@@ -306,12 +466,17 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
   def _draw_text(self, alert: Alert, alert_layout: AlertLayout) -> None:
     icon_side = alert_layout.icon.side if alert_layout.icon is not None else None
+    event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
+    preserve_case = event_name == 'reverseGear' or alert.has_mici_override
 
     # TODO: hack
-    alert_text1 = alert.text1.lower().replace('calibrating: ', 'calibrating:\n')
+    alert_text1 = alert.text1 if preserve_case else alert.text1.lower().replace('calibrating: ', 'calibrating:\n')
     can_draw_second_line = False
     # TODO: there should be a common way to determine font size based on text length to maximize rect
-    if len(alert_text1) <= 12:
+    if alert.title_font_px is not None:
+      can_draw_second_line = bool(alert.text2)
+      font_size = alert.title_font_px
+    elif len(alert_text1) <= 12:
       can_draw_second_line = True
       font_size = 92 - 10
     elif len(alert_text1) <= 16:
@@ -320,7 +485,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     else:
       font_size = 64 - 10
 
-    if icon_side is not None:
+    if icon_side is not None and alert.title_font_px is None:
       font_size -= 10
 
     color = rl.Color(255, 255, 255, int(255 * 0.9 * self._alpha_filter.x))
@@ -338,7 +503,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     self._alert_text1_label.set_alignment(rl.GuiTextAlignment.TEXT_ALIGN_LEFT if icon_side != 'left' else rl.GuiTextAlignment.TEXT_ALIGN_RIGHT)
     self._alert_text1_label.render(text_rect1)
 
-    alert_text2 = alert.text2.lower()
+    alert_text2 = alert.text2 if preserve_case else alert.text2.lower()
 
     # randomize chars and length for testing
     if DEBUG:
@@ -350,7 +515,9 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     if can_draw_second_line and alert_text2:
       last_line_h = self._alert_text1_label.rect.y + self._alert_text1_label.get_content_height(int(alert_layout.text_rect.width))
       last_line_h -= 4
-      if len(alert_text2) > 18:
+      if alert.subtitle_font_px is not None:
+        small_font_size = alert.subtitle_font_px
+      elif len(alert_text2) > 18:
         small_font_size = 36
       elif len(alert_text2) > 24:
         small_font_size = 32

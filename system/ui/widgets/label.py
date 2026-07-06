@@ -10,6 +10,7 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.utils import GuiStyleContext
 from openpilot.system.ui.lib.emoji import find_emoji, emoji_tex
+from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.wrap_text import wrap_text
 
 ICON_PADDING = 15
@@ -20,6 +21,11 @@ def _resolve_value(value, default=""):
   if callable(value):
     return value()
   return value if value is not None else default
+
+
+def _display_text(value, default=""):
+  value = _resolve_value(value, default)
+  return tr(value) if isinstance(value, str) else value
 
 
 class ScrollState(IntEnum):
@@ -38,6 +44,7 @@ def gui_label(
   alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
   elide_right: bool = True
 ):
+  text = tr(text)
   font = gui_app.font(font_weight)
   text_size = measure_text_cached(font, text, font_size)
   display_text = text
@@ -86,6 +93,7 @@ def gui_text_box(
   font_weight: FontWeight = FontWeight.NORMAL,
   line_scale: float = 1.0,
 ):
+  text = tr(text)
   styles = [
     (rl.GuiControl.DEFAULT, rl.GuiControlProperty.TEXT_COLOR_NORMAL, rl.color_to_int(color)),
     (rl.GuiControl.DEFAULT, rl.GuiDefaultProperty.TEXT_SIZE, round(font_size * FONT_SCALE)),
@@ -148,7 +156,7 @@ class Label(Widget):
   def _update_text(self, text):
     self._emojis = []
     self._text_size = []
-    text = _resolve_value(text)
+    text = _display_text(text)
 
     if self._elide_right:
       display_text = text
@@ -318,7 +326,7 @@ class UnifiedLabel(Widget):
   @property
   def text(self) -> str:
     """Get the current text content."""
-    return str(_resolve_value(self._text))
+    return str(_display_text(self._text))
 
   @property
   def font_size(self) -> int:

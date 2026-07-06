@@ -74,19 +74,19 @@ msgstr "동의"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Always-On Driver Monitoring"
-msgstr "운전자 모니터링 항상 켜짐"
+msgstr "운전자 모니터링 항상 켜기"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Are you sure you want to power off?"
-msgstr "정말 전원을 끄시겠습니까?"
+msgstr "정말 전원을 끌까요?"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Are you sure you want to reboot?"
-msgstr "정말 재시작하시겠습니까?"
+msgstr "정말 재부팅할까요?"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Are you sure you want to reset calibration?"
-msgstr "정말 보정을 재설정하시겠습니까?"
+msgstr "캘리브레이션을 초기화할까요?"
 
 #: openpilot/selfdrive/ui/layouts/settings/software.py
 msgid "Are you sure you want to uninstall?"
@@ -183,19 +183,19 @@ msgstr "장치"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Disengage on Accelerator Pedal"
-msgstr "가속 페달로 해제"
+msgstr "가속 페달 조작 시 비활성화"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Disengage to Power Off"
-msgstr "해제 후 전원 끄기"
+msgstr "전원을 끄려면 먼저 비활성화하세요"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Disengage to Reboot"
-msgstr "해제 후 재시작"
+msgstr "재부팅하려면 먼저 비활성화하세요"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Disengage to Reset Calibration"
-msgstr "해제 후 캘리브레이션 재설정"
+msgstr "캘리브레이션을 초기화하려면 먼저 비활성화하세요"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Display speed in km/h instead of mph."
@@ -248,7 +248,7 @@ msgstr "ADB 사용"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Enable Lane Departure Warnings"
-msgstr "차선 이탈 경고 사용"
+msgstr "차선 이탈 경고 켜기"
 
 #: system/ui/widgets/network.py
 msgid "Enable Roaming"
@@ -404,7 +404,7 @@ msgstr "학습 데이터 업로드를 최대화하여 openpilot의 주행 모델
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "N/A"
-msgstr "해당 없음"
+msgstr "없음"
 
 #: openpilot/selfdrive/ui/layouts/sidebar.py
 msgid "NO"
@@ -475,7 +475,7 @@ msgstr "장치를 귀하의 comma 계정에 페어링하세요"
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 #: openpilot/selfdrive/ui/widgets/setup.py
 msgid "Pair your device with comma connect (connect.comma.ai) and claim your comma prime offer."
-msgstr "장치를 comma connect(connect.comma.ai)와 페어링하고 comma 프라임 혜택을 받으세요."
+msgstr "장치를 comma connect(connect.comma.ai)에 연결하고 comma prime 혜택을 받으세요."
 
 #: openpilot/selfdrive/ui/widgets/setup.py
 msgid "Please connect to Wi-Fi to complete initial pairing"
@@ -495,7 +495,7 @@ msgstr "종량제 셀룰러 연결 시 대용량 업로드 방지"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Preview the driver facing camera to ensure that driver monitoring has good visibility. (vehicle must be off)"
-msgstr "운전자 모니터링의 가시성을 확인하기 위해 운전자 카메라를 미리 봅니다. (차량은 꺼져 있어야 합니다)"
+msgstr "운전자 모니터링 시야가 잘 확보되는지 운전자 카메라를 미리 봅니다. 차량 전원이 꺼져 있어야 합니다."
 
 #: openpilot/selfdrive/ui/widgets/pairing_dialog.py
 msgid "QR Code Error"
@@ -507,11 +507,11 @@ msgstr "제거"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "RESET"
-msgstr "재설정"
+msgstr "초기화"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "REVIEW"
-msgstr "검토"
+msgstr "보기"
 
 #: system/ui/sunnypilot/widgets/sunnylink_pairing_dialog.py
 msgid "Re-enter the \"sunnylink\" panel to verify sponsorship status"
@@ -519,7 +519,7 @@ msgstr ""
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Reboot"
-msgstr "재시작"
+msgstr "재부팅"
 
 #: openpilot/selfdrive/ui/onroad/alert_renderer.py
 msgid "Reboot Device"
@@ -531,11 +531,11 @@ msgstr "재시작 및 업데이트"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Record and Upload Driver Camera"
-msgstr "운전자 카메라 기록 및 업로드"
+msgstr "운전자 카메라 녹화 및 업로드"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Record and Upload Microphone Audio"
-msgstr "마이크 오디오 기록 및 업로드"
+msgstr "마이크 오디오 녹음 및 업로드"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Record and store microphone audio while driving. The audio will be included in the dashcam video in comma connect."
@@ -547,7 +547,7 @@ msgstr "규제 정보"
 
 #: openpilot/selfdrive/ui/layouts/settings/toggles.py
 msgid "Relaxed"
-msgstr "편안한"
+msgstr "편안함"
 
 #: openpilot/selfdrive/ui/widgets/prime.py
 msgid "Remote access"
@@ -567,11 +567,11 @@ msgstr "재설정"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Reset Calibration"
-msgstr "캘리브레이션 재설정"
+msgstr "캘리브레이션 초기화"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Review Training Guide"
-msgstr "학습 가이드 검토"
+msgstr "사용 가이드 보기"
 
 #: openpilot/selfdrive/ui/layouts/settings/device.py
 msgid "Review the rules, features, and limitations of sunnypilot"
@@ -823,7 +823,7 @@ msgstr "위"
 
 #: openpilot/selfdrive/ui/layouts/settings/software.py
 msgid "up to date, last checked never"
-msgstr "최신입니다. 마지막 확인: 없음"
+msgstr "최신 상태, 아직 확인한 적 없음"
 
 #: openpilot/selfdrive/ui/layouts/settings/software.py
 msgid "up to date, last checked {}"
@@ -866,3 +866,314 @@ msgstr "✓ 구독됨"
 msgid "🔥 Firehose Mode 🔥"
 msgstr "🔥 파이어호스 모드 🔥"
 
+#: openpilot/selfdrive/ui/mici
+msgid "settings"
+msgstr "설정"
+
+#: openpilot/selfdrive/ui/mici
+msgid "device"
+msgstr "장치"
+
+#: openpilot/selfdrive/ui/mici
+msgid "reboot"
+msgstr "재부팅"
+
+#: openpilot/selfdrive/ui/mici
+msgid "start the car to\nuse sunnypilot"
+msgstr "시동을 켜면\nsunnypilot을 사용할 수 있습니다"
+
+#: openpilot/selfdrive/ui/mici
+msgid "system booting"
+msgstr "시스템 부팅 중"
+
+#: openpilot/selfdrive/ui/mici
+msgid "openpilot can't start\ncheck alerts"
+msgstr "openpilot을 시작할 수 없습니다\n알림을 확인하세요"
+
+#: openpilot/selfdrive/ui/mici
+msgid "device ID"
+msgstr "장치 ID"
+
+#: openpilot/selfdrive/ui/mici
+msgid "device id"
+msgstr "장치 ID"
+
+#: openpilot/selfdrive/ui/mici
+msgid "serial"
+msgstr "시리얼"
+
+#: openpilot/selfdrive/ui/mici
+msgid "pair"
+msgstr "페어링"
+
+#: openpilot/selfdrive/ui/mici
+msgid "paired"
+msgstr "페어링됨"
+
+#: openpilot/selfdrive/ui/mici
+msgid "pair with comma connect"
+msgstr "comma connect와 페어링"
+
+#: openpilot/selfdrive/ui/mici
+msgid "pair with sunnylink"
+msgstr "sunnylink와 페어링"
+
+#: openpilot/selfdrive/ui/mici
+msgid "connect.comma.ai"
+msgstr "connect.comma.ai"
+
+#: openpilot/selfdrive/ui/mici
+msgid "subscribed"
+msgstr "구독됨"
+
+#: openpilot/selfdrive/ui/mici
+msgid "upgrade to prime"
+msgstr "prime 업그레이드"
+
+#: openpilot/selfdrive/ui/mici
+msgid "QR Code Error"
+msgstr "QR 코드 오류"
+
+#: openpilot/selfdrive/ui/mici
+msgid "update sunnypilot"
+msgstr "sunnypilot 업데이트"
+
+#: openpilot/selfdrive/ui/mici
+msgid "download update"
+msgstr "업데이트 다운로드"
+
+#: openpilot/selfdrive/ui/mici
+msgid "update now"
+msgstr "지금 업데이트"
+
+#: openpilot/selfdrive/ui/mici
+msgid "failed to update"
+msgstr "업데이트 실패"
+
+#: openpilot/selfdrive/ui/mici
+msgid "checking"
+msgstr "확인 중"
+
+#: openpilot/selfdrive/ui/mici
+msgid "up to date"
+msgstr "최신 상태"
+
+#: openpilot/selfdrive/ui/mici
+msgid "driver\ncamera preview"
+msgstr "운전자\n카메라 미리보기"
+
+#: openpilot/selfdrive/ui/mici
+msgid "review\ntraining guide"
+msgstr "사용 가이드\n보기"
+
+#: openpilot/selfdrive/ui/mici
+msgid "terms of service"
+msgstr "서비스 약관"
+
+#: openpilot/selfdrive/ui/mici
+msgid "regulatory info"
+msgstr "규제 정보"
+
+#: openpilot/selfdrive/ui/mici
+msgid "reset calibration"
+msgstr "캘리브레이션 초기화"
+
+#: openpilot/selfdrive/ui/mici
+msgid "reset"
+msgstr "초기화"
+
+#: openpilot/selfdrive/ui/mici
+msgid "uninstall sunnypilot"
+msgstr "sunnypilot 제거"
+
+#: openpilot/selfdrive/ui/mici
+msgid "uninstall"
+msgstr "제거"
+
+#: openpilot/selfdrive/ui/mici
+msgid "power off"
+msgstr "전원 끄기"
+
+#: openpilot/selfdrive/ui/mici
+msgid "slide to\npower off"
+msgstr "밀어서\n전원 끄기"
+
+#: openpilot/selfdrive/ui/mici
+msgid "slide to\nreboot"
+msgstr "밀어서\n재부팅"
+
+#: openpilot/selfdrive/ui/mici
+msgid "Disengage to power off"
+msgstr "전원을 끄려면 먼저 비활성화하세요"
+
+#: openpilot/selfdrive/ui/mici
+msgid "Disengage to reboot"
+msgstr "재부팅하려면 먼저 비활성화하세요"
+
+#: openpilot/selfdrive/ui/mici
+msgid "Disengage to reset calibration"
+msgstr "캘리브레이션을 초기화하려면 먼저 비활성화하세요"
+
+#: openpilot/selfdrive/ui/mici
+msgid "Please connect to Wi-Fi to complete initial pairing."
+msgstr "초기 페어링을 완료하려면 Wi-Fi에 연결하세요."
+
+#: openpilot/selfdrive/ui/mici
+msgid "Device must be registered with the comma.ai backend to pair."
+msgstr "페어링하려면 장치가 comma.ai 백엔드에 등록되어 있어야 합니다."
+
+#: openpilot/selfdrive/ui/mici
+msgid "Please connect to Wi-Fi to update."
+msgstr "업데이트하려면 Wi-Fi에 연결하세요."
+
+#: openpilot/selfdrive/ui/mici
+msgid "camera starting"
+msgstr "카메라 시작 중"
+
+#: openpilot/selfdrive/ui/mici
+msgid "no alerts"
+msgstr "알림 없음"
+
+#: openpilot/selfdrive/ui/mici
+msgid "active model"
+msgstr "활성 모델"
+
+#: openpilot/selfdrive/ui/mici
+msgid "cache size"
+msgstr "캐시 크기"
+
+#: openpilot/selfdrive/ui/mici
+msgid "select model"
+msgstr "모델 선택"
+
+#: openpilot/selfdrive/ui/mici
+msgid "cancel download"
+msgstr "다운로드 취소"
+
+#: openpilot/selfdrive/ui/mici
+msgid "download failed"
+msgstr "다운로드 실패"
+
+#: openpilot/selfdrive/ui/mici
+msgid "error"
+msgstr "오류"
+
+#: openpilot/selfdrive/ui/mici
+msgid "progress"
+msgstr "진행률"
+
+#: openpilot/selfdrive/ui/mici
+msgid "models"
+msgstr "모델"
+
+#: openpilot/selfdrive/ui/mici
+msgid "sunnylink"
+msgstr "sunnylink"
+
+#: openpilot/selfdrive/ui/mici
+msgid "sponsor tier"
+msgstr "스폰서 등급"
+
+#: openpilot/selfdrive/ui/mici
+msgid "enable sunnylink"
+msgstr "sunnylink 켜기"
+
+#: openpilot/selfdrive/ui/mici
+msgid "backup settings"
+msgstr "설정 백업"
+
+#: openpilot/selfdrive/ui/mici
+msgid "restore settings"
+msgstr "설정 복원"
+
+#: openpilot/selfdrive/ui/mici
+msgid "sunnylink uploader"
+msgstr "sunnylink 업로더"
+
+#: openpilot/selfdrive/ui/mici
+msgid "thanks"
+msgstr "감사합니다"
+
+#: openpilot/selfdrive/ui/mici
+msgid "sponsor"
+msgstr "스폰서"
+
+#: openpilot/selfdrive/ui/mici
+msgid "backup"
+msgstr "백업"
+
+#: openpilot/selfdrive/ui/mici
+msgid "restore"
+msgstr "복원"
+
+#: openpilot/selfdrive/ui/mici
+msgid "backing up"
+msgstr "백업 중"
+
+#: openpilot/selfdrive/ui/mici
+msgid "restoring"
+msgstr "복원 중"
+
+#: openpilot/selfdrive/ui/mici
+msgid "failed"
+msgstr "실패"
+
+#: openpilot/selfdrive/ui/mici
+msgid "settings backed up"
+msgstr "설정 백업 완료"
+
+#: openpilot/selfdrive/ui/mici
+msgid "unable to restore"
+msgstr "복원할 수 없음"
+
+#: openpilot/selfdrive/ui/mici
+msgid "no internet"
+msgstr "인터넷 없음"
+
+#: openpilot/selfdrive/ui/mici
+msgid "please connect to WiFi & try again"
+msgstr "Wi-Fi에 연결한 뒤 다시 시도하세요"
+
+#: openpilot/selfdrive/ui/mici
+msgid "sunnylink dongle id not found"
+msgstr "sunnylink 동글 ID를 찾을 수 없습니다"
+
+#: openpilot/selfdrive/ui/mici
+msgid "please reboot & try again"
+msgstr "재부팅 후 다시 시도하세요"
+
+#: openpilot/selfdrive/ui/mici
+msgid "slide to backup"
+msgstr "밀어서 백업"
+
+#: openpilot/selfdrive/ui/mici
+msgid "slide to restore"
+msgstr "밀어서 복원"
+
+#: openpilot/selfdrive/ui/mici
+msgid "slide to exit always offroad"
+msgstr "밀어서 항상 오프로드 종료"
+
+#: openpilot/selfdrive/ui/mici
+msgid "slide to force offroad"
+msgstr "밀어서 강제 오프로드"
+
+#: openpilot/selfdrive/ui/mici
+msgid "disengage to enable always offroad"
+msgstr "항상 오프로드를 켜려면 먼저 비활성화하세요"
+
+#: openpilot/selfdrive/ui/mici
+msgid "Firehose Mode"
+msgstr "파이어호스 모드"
+
+#: openpilot/selfdrive/ui/mici
+msgid "Frequently Asked Questions"
+msgstr "자주 묻는 질문"
+
+#: openpilot/selfdrive/ui/mici
+msgid "ACTIVE"
+msgstr "활성"
+
+#: openpilot/selfdrive/ui/mici
+msgid "INACTIVE: connect to an unmetered network"
+msgstr "비활성: 비종량제 네트워크에 연결하세요"

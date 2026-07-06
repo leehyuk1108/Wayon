@@ -2,6 +2,7 @@ import copy
 from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.gm.cluster_speed import gm_cluster_cruise_speed_from_raw_ms
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.gm.values import DBC, AccState, CruiseButtons, STEER_THRESHOLD, SDGM_CAR, ALT_ACCS
 
@@ -161,6 +162,11 @@ class CarState(CarStateBase, CarStateExt):
 
     if ret.vEgo < self.CP.minSteerSpeed:
       ret.lowSpeedAlert = True
+
+    if ret.vEgo > 0.0:
+      ret.vEgoCluster = gm_cluster_cruise_speed_from_raw_ms(ret.vEgo)
+    if ret.cruiseState.speed > 0.0:
+      ret.cruiseState.speedCluster = gm_cluster_cruise_speed_from_raw_ms(ret.cruiseState.speed)
 
     CarStateExt.update(self, ret, can_parsers)
 

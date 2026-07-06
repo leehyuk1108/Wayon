@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wayon Cloud</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="screen">
+      <header class="topline">
+        <div class="brand">
+          <strong>WAYON CLOUD</strong>
+          <span>TRAVERSE / LIVE VEHICLE TELEMETRY</span>
+        </div>
+        <form id="tokenForm" class="token-form">
+          <label for="tokenInput">VIEW TOKEN</label>
+          <input id="tokenInput" type="password" autocomplete="current-password" placeholder="Wayon Cloud Key">
+          <button type="submit">SYNC</button>
+        </form>
+        <div id="connectionStatus" class="sync"><i></i> 대기 중</div>
+      </header>
+
+      <section class="grid">
+        <aside class="left-stack">
+          <section>
+            <div class="label-row">
+              <div class="hud-label">RANGE:</div>
+              <div class="hud-label blue">STATE:</div>
+            </div>
+            <div class="headline-row">
+              <div>
+                <div class="big-number"><span id="rangeValue">--</span><small id="rangeUnit">km</small></div>
+                <div id="rangeSubtext" class="subline">주행 가능 거리 데이터 없음</div>
+              </div>
+              <div>
+                <div id="driveState" class="state-word">--</div>
+                <div id="lastGpsTime" class="subline">GPS --</div>
+              </div>
+            </div>
+
+            <div class="range-scale">
+              <div class="range-top">
+                <span id="rangePercent" class="pct">--%</span>
+                <span id="dailyBadge" class="daily">LIVE<br>--</span>
+              </div>
+              <div id="rangeBars" class="range-bars" aria-label="range gauge"></div>
+              <div class="ticks"><span>E</span><span>1/2</span><span>SAFE</span><span>F</span></div>
+            </div>
+          </section>
+
+          <section class="vehicle-block">
+            <h1>TRAVERSE</h1>
+            <p id="vehicleMeta">Wayon linked</p>
+            <div class="stat-line">
+              <div class="stat"><span>IGNITION</span><strong id="ignitionState">--</strong></div>
+              <div class="stat"><span>BATTERY</span><strong id="batteryInfo">--</strong></div>
+              <div class="stat"><span>ODOMETER</span><strong id="odometer">--</strong></div>
+              <div class="stat"><span>VEHICLE DATA</span><strong id="vehicleUpdatedAt">--</strong></div>
+            </div>
+          </section>
+        </aside>
+
+        <section class="map-panel" aria-label="vehicle map">
+          <div id="map" class="map"></div>
+          <div class="crosshair" aria-hidden="true"></div>
+          <div class="map-caption">
+            <div>
+              <strong>CURRENT POSITION</strong>
+              <span id="currentAddress">위치 데이터 대기 중</span>
+            </div>
+            <em id="currentCoords">--</em>
+          </div>
+        </section>
+
+        <aside class="right-stack">
+          <section>
+            <div class="hud-label">LIVE:</div>
+            <div class="speed-panel">
+              <div class="data-box">
+                <span>CLUSTER SPEED</span>
+                <strong><span id="speed">--</span><small> km/h</small></strong>
+              </div>
+              <div class="data-box">
+                <span>ONROAD STATE</span>
+                <strong id="driveGlyph">--</strong>
+              </div>
+              <div class="data-box">
+                <span>FUEL LEVEL</span>
+                <strong><span id="fuelLevel">--</span><small id="fuelUnit"> L</small></strong>
+              </div>
+              <div class="data-box">
+                <span>OIL LIFE</span>
+                <strong><span id="oilLife">--</span><small> %</small></strong>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <div class="section-head">
+              <span class="section-kicker">PARKING SNAPSHOTS</span>
+              <span id="snapshotStatus">--</span>
+            </div>
+            <div id="snapshots" class="snapshots"></div>
+          </section>
+
+          <section class="stat-line compact">
+            <a class="stat link" href="/json.html" target="_blank" rel="noreferrer"><span>JSON VIEW</span><strong>/API/JSON</strong></a>
+            <div class="stat"><span>TRIP ARCHIVE</span><strong id="tripStatus">--</strong></div>
+            <div class="stat"><span>TIRE PRESSURE</span><strong id="tirePressure">--</strong></div>
+            <div class="stat"><span>DTC STATUS</span><strong id="dtcStatus">--</strong></div>
+          </section>
+        </aside>
+
+        <section class="bottom">
+          <section class="chart-wrap">
+            <div class="chart-title">
+              <div>
+                <strong id="monthTotal">-- km</strong>
+                <span>TOTAL FROM LAST 31 DAYS</span>
+              </div>
+              <span id="chartMonth" class="section-kicker">--</span>
+            </div>
+            <div id="monthChart" class="bars-chart" aria-label="last 31 days chart">
+              <div class="axis"><span id="chartMax">--</span><span>1/2</span><span>0</span></div>
+            </div>
+            <div class="chart-foot">
+              <span>AVG: <b id="monthAvg">--</b></span>
+              <span>MAX: <b id="monthMaxSpeed">--</b></span>
+              <span>TIME: <b id="monthTime">--</b></span>
+            </div>
+          </section>
+
+          <section class="trip-list-wrap">
+            <div class="month">RECENT</div>
+            <div id="trips" class="trip-list"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

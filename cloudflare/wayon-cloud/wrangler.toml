@@ -1,0 +1,19 @@
+name = "wayon-cloud"
+main = "src/worker.js"
+compatibility_date = "2026-05-14"
+workers_dev = true
+preview_urls = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wayon_cloud"
+database_id = "c953a6c9-eb7a-4695-b1a4-702c5ede186d"
+
+[[kv_namespaces]]
+binding = "SNAPSHOTS"
+id = "f66d9a8906494da3a3a254e340d205ae"

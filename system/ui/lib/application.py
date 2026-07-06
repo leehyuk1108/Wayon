@@ -101,6 +101,7 @@ class FontWeight(StrEnum):
   MEDIUM = "Inter-Medium.fnt"
   BOLD = "Inter-Bold.fnt"
   SEMI_BOLD = "Inter-SemiBold.fnt"
+  KOREAN = "Pretendard-SemiBold.fnt"
   UNIFONT = "unifont.fnt"
   AUDIOWIDE = "Audiowide-Regular.fnt"
 
@@ -110,10 +111,19 @@ class FontWeight(StrEnum):
   DISPLAY = "Inter-Bold.fnt"
 
 
+def fallback_font_weight() -> FontWeight | None:
+  if multilang.language == "ko":
+    return FontWeight.KOREAN
+  if multilang.requires_unifont():
+    return FontWeight.UNIFONT
+  return None
+
+
 def font_fallback(font: rl.Font) -> rl.Font:
   """Fall back to unifont for languages that require it."""
-  if multilang.requires_unifont():
-    return gui_app.font(FontWeight.UNIFONT)
+  fallback = fallback_font_weight()
+  if fallback is not None:
+    return gui_app.font(fallback)
   return font
 
 
@@ -681,6 +691,9 @@ class GuiApplication(GuiApplicationExt):
       pass
 
   def font(self, font_weight: FontWeight = FontWeight.NORMAL) -> rl.Font:
+    fallback = fallback_font_weight()
+    if fallback is not None and font_weight not in (fallback, FontWeight.UNIFONT, FontWeight.AUDIOWIDE):
+      return self._fonts[fallback]
     return self._fonts[font_weight]
 
   @property
@@ -700,7 +713,7 @@ class GuiApplication(GuiApplicationExt):
           rl.gen_texture_mipmaps(font.texture)
           rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
         self._fonts[font_weight_file] = font
-    rl.gui_set_font(self._fonts[FontWeight.NORMAL])
+    rl.gui_set_font(self._fonts[fallback_font_weight() or FontWeight.NORMAL])
 
   def _set_styles(self):
     rl.gui_set_style(rl.GuiControl.DEFAULT, rl.GuiControlProperty.BORDER_WIDTH, 0)

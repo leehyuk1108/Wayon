@@ -266,7 +266,9 @@ def main():
   SIMULATION = bool(int(os.getenv("SIMULATION", "0")))
 
   pm = messaging.PubMaster(['livePose'])
-  sm = messaging.SubMaster(['carState', 'liveCalibration', 'cameraOdometry'], poll='cameraOdometry')
+  ignore_car_state_freq = ['carState']
+  sm = messaging.SubMaster(['carState', 'liveCalibration', 'cameraOdometry'], poll='cameraOdometry',
+                           ignore_alive=ignore_car_state_freq, ignore_avg_freq=ignore_car_state_freq)
   # separate sensor sockets for efficiency
   sensor_sockets = [messaging.sub_sock(which, timeout=20) for which in ['accelerometer', 'gyroscope']]
   sensor_alive, sensor_valid, sensor_recv_time = defaultdict(bool), defaultdict(bool), defaultdict(float)

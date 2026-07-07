@@ -262,7 +262,9 @@ def main() -> NoReturn:
   config_realtime_process([0, 1, 2, 3], 5)
 
   pm = messaging.PubMaster(['liveCalibration'])
-  sm = messaging.SubMaster(['cameraOdometry', 'carState'], poll='cameraOdometry')
+  ignore_car_state_freq = ['carState']
+  sm = messaging.SubMaster(['cameraOdometry', 'carState'], poll='cameraOdometry',
+                           ignore_alive=ignore_car_state_freq, ignore_avg_freq=ignore_car_state_freq)
 
   params_reader = Params()
   CP = messaging.log_from_bytes(params_reader.get("CarParams", block=True), car.CarParams)

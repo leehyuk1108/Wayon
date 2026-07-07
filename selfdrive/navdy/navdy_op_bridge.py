@@ -507,6 +507,18 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
   )
 
 
+def should_emit_payload(payload: dict[str, Any], args: argparse.Namespace, now: float,
+                        last_signature: tuple[Any, ...] | None, last_emit_at: float) -> tuple[bool, tuple[Any, ...]]:
+  signature = payload_signature(payload)
+  if not args.once and last_emit_at > 0.0 and now - last_emit_at < max(args.min_emit_sec, 0.0):
+    return False, signature
+  return (
+    signature != last_signature or
+    now - last_emit_at >= max(args.heartbeat_sec, 0.1) or
+    args.once
+  ), signature
+
+
 def panda_ignition_started(panda_states: Any) -> bool:
   try:
     return any(bool(getattr(panda_state, "ignitionLine", False) or
@@ -650,8 +662,8 @@ def run_live(args: argparse.Namespace) -> None:
                                     sm_optional(sm, services, "starpilotPlan"),
                                     sm_optional(sm, services, "longitudinalPlan"))
     payload = stabilize_display_payload(payload, args, now)
-    signature = payload_signature(payload)
-    if signature != last_signature or now - last_emit_at >= max(args.heartbeat_sec, 0.1) or args.once:
+    should_emit, signature = should_emit_payload(payload, args, now, last_signature, last_emit_at)
+    if should_emit:
       emit(payload, args)
       last_signature = signature
       last_emit_at = now
@@ -709,6 +721,7 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--action", default=DEFAULT_ACTION, help="Android broadcast action on Navdy.")
   parser.add_argument("--component", default=DEFAULT_COMPONENT, help="Explicit Android receiver component.")
   parser.add_argument("--heartbeat-sec", type=float, default=3.0, help="Re-send unchanged live state at this interval.")
+  parser.add_argument("--min-emit-sec", type=float, default=0.0, help="Minimum interval between live payload sends.")
   parser.add_argument("--once-timeout-sec", type=float, default=3.0, help="For --once, emit cached state after this wait.")
   parser.add_argument("--manage-navdy-power", action="store_true", help="Wake Navdy on onroad and sleep it on offroad.")
   parser.add_argument("--power-off-delay-sec", type=float, default=30.0, help="Offroad duration before Navdy display sleep.")

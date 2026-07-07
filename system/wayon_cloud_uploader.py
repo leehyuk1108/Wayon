@@ -162,7 +162,7 @@ def last_gps_payload(params):
   return payload
 
 
-def gps_payload(sm, params=None):
+def gps_payload(sm, params=None, allow_route_log_fallback=True):
   candidates = []
   for socket in ("gpsLocationExternal", "gpsLocation"):
     try:
@@ -173,9 +173,10 @@ def gps_payload(sm, params=None):
       continue
 
   if not candidates:
-    route_gps = latest_route_gps_payload()
-    if route_gps:
-      return route_gps
+    if allow_route_log_fallback:
+      route_gps = latest_route_gps_payload()
+      if route_gps:
+        return route_gps
     return last_gps_payload(params) if params is not None else {}
 
   _, gps = max(candidates, key=lambda item: item[0])
@@ -226,7 +227,7 @@ def telemetry_payload(sm, params, device_id, started_override=False):
     "thermalStatus": enum_name(device_state.thermalStatus),
     "fanPercent": int(device_state.fanSpeedPercentDesired),
     "screenBrightnessPercent": int(device_state.screenBrightnessPercent),
-    "gps": gps_payload(sm, params),
+    "gps": gps_payload(sm, params, allow_route_log_fallback=not started),
     "vehicleSpeedMps": vehicle_speed.get("speedMps"),
     "vehicleSpeedSource": vehicle_speed.get("source"),
     "dongleId": get_param_str(params, "DongleId"),
@@ -655,6 +656,10 @@ def main():
       if config is None:
         time.sleep(5.0)
         continue
+
+    if not sm.seen["deviceState"]:
+      time.sleep(LOOP_SLEEP_OFFROAD)
+      continue
 
     device_id = str(config.get("device_id") or get_param_str(params, "DongleId") or "unknown")
     started = bool(sm["deviceState"].started)

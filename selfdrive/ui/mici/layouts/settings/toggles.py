@@ -1,7 +1,8 @@
 from cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle
+from openpilot.selfdrive.selfdrived.simulation_mode import raw_simulation_mode_enabled, set_raw_simulation_mode_enabled
+from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigToggle
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -19,6 +20,8 @@ class TogglesLayoutMici(NavScroller):
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled")
     standstill_timer_toggle = BigParamControl("standstill timer", "StandstillTimer")
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM")
+    self._simulation_mode_toggle = BigToggle("시뮬레이션\n모드", initial_state=raw_simulation_mode_enabled(),
+                                             toggle_callback=self._simulation_mode_toggled)
     record_front = BigParamControl("record & upload driver camera", "RecordFront", toggle_callback=restart_needed_callback)
     record_mic = BigParamControl("record & upload mic audio", "RecordAudio", toggle_callback=restart_needed_callback)
     enable_openpilot = BigParamControl("enable sunnypilot", "OpenpilotEnabledToggle", toggle_callback=restart_needed_callback)
@@ -30,6 +33,7 @@ class TogglesLayoutMici(NavScroller):
       ldw_toggle,
       standstill_timer_toggle,
       always_on_dm_toggle,
+      self._simulation_mode_toggle,
       record_front,
       record_mic,
       enable_openpilot,
@@ -48,6 +52,7 @@ class TogglesLayoutMici(NavScroller):
     )
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)
+    self._simulation_mode_toggle.set_enabled(lambda: not ui_state.engaged)
     record_front.set_enabled(False if ui_state.params.get_bool("RecordFrontLock") else (lambda: not ui_state.engaged))
     record_mic.set_enabled(lambda: not ui_state.engaged)
 
@@ -70,6 +75,10 @@ class TogglesLayoutMici(NavScroller):
     super().show_event()
     self._update_toggles()
 
+  def _simulation_mode_toggled(self, enabled: bool):
+    set_raw_simulation_mode_enabled(enabled)
+    restart_needed_callback()
+
   def _update_toggles(self):
     ui_state.update_params()
 
@@ -88,3 +97,4 @@ class TogglesLayoutMici(NavScroller):
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+    self._simulation_mode_toggle.set_checked(raw_simulation_mode_enabled())

@@ -18,6 +18,7 @@ from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
+from openpilot.selfdrive.selfdrived.simulation_mode import simulation_mode_enabled
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 
@@ -50,6 +51,15 @@ MonitoringPolicy = log.DriverMonitoringState.MonitoringPolicy
 TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
+DM_SIMULATION_EVENTS = {
+  EventName.tooDistracted,
+  EventName.driverDistracted1,
+  EventName.driverDistracted2,
+  EventName.driverDistracted3,
+  EventName.driverUnresponsive1,
+  EventName.driverUnresponsive2,
+  EventName.driverUnresponsive3,
+}
 
 
 class SelfdriveD(CruiseHelper):
@@ -225,21 +235,27 @@ class SelfdriveD(CruiseHelper):
 
     # Handle DM
     if not self.CP.notCar:
+      dm_events_enabled = not simulation_mode_enabled()
+
       # Block engaging until ignition cycle after max number or time of distractions
-      if self.sm['driverMonitoringState'].lockout and not self.dm_lockout_set:
+      if dm_events_enabled and self.sm['driverMonitoringState'].lockout and not self.dm_lockout_set:
         self.params.put_bool("DriverTooDistracted", True)
         self.dm_lockout_set = True
       # No entry conditions
-      if self.sm['driverMonitoringState'].lockout or self.sm['driverMonitoringState'].alwaysOnLockout:
+      if dm_events_enabled and (self.sm['driverMonitoringState'].lockout or self.sm['driverMonitoringState'].alwaysOnLockout):
         self.events.add(EventName.tooDistracted)
       # Alerts
       vision_dm = self.sm['driverMonitoringState'].activePolicy == MonitoringPolicy.vision
       if self.sm['driverMonitoringState'].alertLevel == AlertLevel.one:
-        self.events.add(EventName.driverDistracted1 if vision_dm else EventName.driverUnresponsive1)
+        dm_event = EventName.driverDistracted1 if vision_dm else EventName.driverUnresponsive1
       elif self.sm['driverMonitoringState'].alertLevel == AlertLevel.two:
-        self.events.add(EventName.driverDistracted2 if vision_dm else EventName.driverUnresponsive2)
+        dm_event = EventName.driverDistracted2 if vision_dm else EventName.driverUnresponsive2
       elif self.sm['driverMonitoringState'].alertLevel == AlertLevel.three:
-        self.events.add(EventName.driverDistracted3 if vision_dm else EventName.driverUnresponsive3)
+        dm_event = EventName.driverDistracted3 if vision_dm else EventName.driverUnresponsive3
+      else:
+        dm_event = None
+      if dm_event is not None and (dm_events_enabled or dm_event not in DM_SIMULATION_EVENTS):
+        self.events.add(dm_event)
       # Warn consistent DM uncertainty
       if self.sm['driverMonitoringState'].visionPolicyState.uncertainOffroadAlertPercent >= 100 and not self.dm_uncertain_alerted:
         set_offroad_alert("Offroad_DriverMonitoringUncertain", True)

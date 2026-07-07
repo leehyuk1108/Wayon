@@ -4,6 +4,8 @@ from pathlib import Path
 
 
 SIMULATION_MODE_FLAG = Path(os.getenv("SIMULATION_MODE_FLAG", "/data/SimulationMode"))
+BENCH_DRIVER_MONITORING_BYPASS_FLAG = Path(os.getenv("BENCH_DRIVER_MONITORING_BYPASS_FLAG",
+                                                     "/data/AllowBenchDriverMonitoringBypass"))
 TRUE_VALUES = {"1", "true", "on", "yes", "enabled"}
 
 
@@ -23,6 +25,18 @@ def raw_simulation_mode_enabled() -> bool:
   return flag_value in TRUE_VALUES
 
 
+def bench_driver_monitoring_bypass_allowed() -> bool:
+  env_value = os.getenv("BENCH_DRIVER_MONITORING_BYPASS", "").strip().lower()
+  if env_value in TRUE_VALUES:
+    return True
+
+  try:
+    flag_value = BENCH_DRIVER_MONITORING_BYPASS_FLAG.read_text(encoding="utf-8").strip().lower()
+  except OSError:
+    return False
+  return flag_value in TRUE_VALUES
+
+
 def set_raw_simulation_mode_enabled(enabled: bool) -> None:
   if enabled:
     SIMULATION_MODE_FLAG.parent.mkdir(parents=True, exist_ok=True)
@@ -36,4 +50,4 @@ def set_raw_simulation_mode_enabled(enabled: bool) -> None:
 
 
 def simulation_mode_enabled() -> bool:
-  return simulation_runtime() and raw_simulation_mode_enabled()
+  return raw_simulation_mode_enabled() and (simulation_runtime() or bench_driver_monitoring_bypass_allowed())

@@ -585,9 +585,6 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
         last_target_on = True
     return None, last_target_on
 
-  if args.no_navdy_power_off:
-    return None, last_target_on
-
   if offroad_since is None:
     offroad_since = now
   if now - offroad_since >= max(args.power_off_delay_sec, 0.0) and last_target_on is not False:
@@ -689,8 +686,7 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--component", default=DEFAULT_COMPONENT, help="Explicit Android receiver component.")
   parser.add_argument("--heartbeat-sec", type=float, default=3.0, help="Re-send unchanged live state at this interval.")
   parser.add_argument("--once-timeout-sec", type=float, default=3.0, help="For --once, emit cached state after this wait.")
-  parser.add_argument("--manage-navdy-power", action="store_true", help="Wake Navdy on onroad and optionally sleep it on offroad.")
-  parser.add_argument("--no-navdy-power-off", action="store_true", help="Never send Navdy the offroad display sleep command.")
+  parser.add_argument("--manage-navdy-power", action="store_true", help="Wake Navdy on onroad and sleep it on offroad.")
   parser.add_argument("--power-off-delay-sec", type=float, default=30.0, help="Offroad duration before Navdy display sleep.")
   parser.add_argument("--power-on-ensure-sec", type=float, default=1.0,
                       help="Re-check Navdy display state at this interval while onroad.")
@@ -714,8 +710,6 @@ def main() -> int:
   setattr(args, "_socket_conn", None)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
-    if args.no_navdy_power_off:
-      set_stay_on_while_plugged_in(args, True)
   start_socket_transport(args)
   if args.adb_path:
     start_adb_sender(args)

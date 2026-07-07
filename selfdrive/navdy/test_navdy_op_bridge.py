@@ -54,24 +54,7 @@ def test_live_payload_ready_uses_recent_messages_not_alive_flags():
   assert not navdy_op_bridge.live_payload_ready(sm, True, now=11.2)
 
 
-def test_no_navdy_power_off_skips_offroad_sleep_command():
-  calls = []
-  original = navdy_op_bridge.set_navdy_display
-  try:
-    navdy_op_bridge.set_navdy_display = lambda *args: calls.append(args) or True
-    args = SimpleNamespace(manage_navdy_power=True, no_navdy_power_off=True)
-
-    offroad_since, target = navdy_op_bridge.manage_navdy_power(args, False, 12.0, 10.0, True)
-
-    assert offroad_since is None
-    assert target is True
-    assert calls == []
-  finally:
-    navdy_op_bridge.set_navdy_display = original
-
-
 if __name__ == "__main__":
   test_payload_exports_standstill_and_op_available()
   test_available_services_skips_missing_starpilot_plan()
   test_live_payload_ready_uses_recent_messages_not_alive_flags()
-  test_no_navdy_power_off_skips_offroad_sleep_command()

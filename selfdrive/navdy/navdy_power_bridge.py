@@ -13,10 +13,10 @@ DEFAULT_ARGS = [
   "--adb-server-port", "5038",
   "--no-stdout",
   "--manage-navdy-power",
-  "--no-navdy-power-off",
   "--socket-transport",
   "--heartbeat-sec", "3",
   "--power-on-ensure-sec", "5",
+  "--power-off-delay-sec", "30",
 ]
 
 

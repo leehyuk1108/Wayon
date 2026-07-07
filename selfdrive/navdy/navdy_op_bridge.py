@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -125,6 +126,22 @@ def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace,
 
 def gear_text(car_state: Any) -> str:
   return enum_text(getattr(car_state, "gearShifter", "unknown")).lower()
+
+
+def default_car_state() -> Any:
+  return SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=False, speed=0.0, speedCluster=0.0),
+    gearShifter="unknown",
+    leftBlinker=False,
+    rightBlinker=False,
+    leftBlindspot=False,
+    rightBlindspot=False,
+    standstill=False,
+    vCruise=0.0,
+    vCruiseCluster=0.0,
+    vEgo=0.0,
+    vEgoCluster=0.0,
+  )
 
 
 def is_cruise_standstill(car_state: Any) -> bool:
@@ -552,7 +569,7 @@ def live_payload_ready(sm: Any, started: bool, now: float | None = None) -> bool
   if not started:
     return True
   now = time.monotonic() if now is None else now
-  return bool(service_recent(sm, "carState", now) and service_recent(sm, "selfdriveState", now))
+  return bool(service_recent(sm, "selfdriveState", now))
 
 
 def available_services(messaging: Any, requested: list[str]) -> list[str]:
@@ -564,6 +581,11 @@ def available_services(messaging: Any, requested: list[str]) -> list[str]:
 
 def sm_optional(sm: Any, services: list[str], service: str) -> Any:
   return sm[service] if service in services else None
+
+
+def sm_recent_or_default(sm: Any, services: list[str], service: str,
+                         now: float, default: Any) -> Any:
+  return sm[service] if service in services and service_recent(sm, service, now) else default
 
 
 def due_for_power_on_ensure(args: argparse.Namespace, now: float) -> bool:
@@ -621,7 +643,9 @@ def run_live(args: argparse.Namespace) -> None:
       continue
     if not live_payload_ready(sm, started, now):
       continue
-    payload = payload_from_messages(sm["selfdriveState"], sm["carState"], seq,
+    payload = payload_from_messages(sm["selfdriveState"],
+                                    sm_recent_or_default(sm, services, "carState", now, default_car_state()),
+                                    seq,
                                     sm_optional(sm, services, "controlsState"),
                                     sm_optional(sm, services, "starpilotPlan"),
                                     sm_optional(sm, services, "longitudinalPlan"))

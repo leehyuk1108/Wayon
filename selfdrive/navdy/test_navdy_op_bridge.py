@@ -1,7 +1,22 @@
 #!/usr/bin/env python3
+import sys
+import types
+from pathlib import Path
 from types import SimpleNamespace
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import navdy_op_bridge
+
+openpilot_module = types.ModuleType("openpilot")
+openpilot_common_module = types.ModuleType("openpilot.common")
+openpilot_realtime_module = types.ModuleType("openpilot.common.realtime")
+openpilot_realtime_module.set_core_affinity = lambda cores: None
+sys.modules.setdefault("openpilot", openpilot_module)
+sys.modules.setdefault("openpilot.common", openpilot_common_module)
+sys.modules.setdefault("openpilot.common.realtime", openpilot_realtime_module)
+
+import navdy_power_bridge
 
 
 def test_payload_exports_standstill_and_op_available():
@@ -54,7 +69,49 @@ def test_live_payload_ready_uses_recent_messages_not_alive_flags():
   assert not navdy_op_bridge.live_payload_ready(sm, True, now=11.2)
 
 
+def test_live_payload_ready_allows_missing_car_state_when_selfdrive_is_recent():
+  sm = SimpleNamespace(
+    alive={"selfdriveState": False, "carState": False},
+    recv_time={"selfdriveState": 10.0, "carState": 0.0},
+    seen={"selfdriveState": True, "carState": False},
+  )
+
+  assert navdy_op_bridge.live_payload_ready(sm, True, now=10.2)
+
+
+def test_default_car_state_keeps_payload_safe_without_vehicle_sample():
+  selfdrive_state = SimpleNamespace(
+    active=False,
+    alertText1="",
+    alertText2="",
+    enabled=False,
+    engageable=True,
+    state="disabled",
+  )
+  controls_state = SimpleNamespace(vCruiseClusterDEPRECATED=42.0, vCruiseDEPRECATED=0.0)
+
+  payload = navdy_op_bridge.payload_from_messages(
+      selfdrive_state, navdy_op_bridge.default_car_state(), 8, controls_state)
+
+  assert payload["vEgoKph"] == 0.0
+  assert payload["gear"] == "unknown"
+  assert payload["setSpeedKph"] == 42.0
+
+
+def test_manager_defaults_use_adb_broadcast_transport():
+  assert "--socket-transport" not in navdy_power_bridge.DEFAULT_ARGS
+
+
+def test_manager_child_ignores_inherited_manager_argv():
+  assert navdy_power_bridge.should_use_default_args(
+      "navdy_bridge", ["manager.py", "--socket-transport"])
+
+
 if __name__ == "__main__":
   test_payload_exports_standstill_and_op_available()
   test_available_services_skips_missing_starpilot_plan()
   test_live_payload_ready_uses_recent_messages_not_alive_flags()
+  test_live_payload_ready_allows_missing_car_state_when_selfdrive_is_recent()
+  test_default_car_state_keeps_payload_safe_without_vehicle_sample()
+  test_manager_defaults_use_adb_broadcast_transport()
+  test_manager_child_ignores_inherited_manager_argv()

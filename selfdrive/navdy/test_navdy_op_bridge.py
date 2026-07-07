@@ -43,6 +43,18 @@ def test_available_services_skips_missing_starpilot_plan():
       messaging, ["selfdriveState", "carState", "starpilotPlan"]) == ["selfdriveState", "carState"]
 
 
+def test_live_payload_ready_uses_recent_messages_not_alive_flags():
+  sm = SimpleNamespace(
+    alive={"selfdriveState": False, "carState": False},
+    recv_time={"selfdriveState": 10.0, "carState": 10.1},
+    seen={"selfdriveState": True, "carState": True},
+  )
+
+  assert navdy_op_bridge.live_payload_ready(sm, True, now=10.2)
+  assert not navdy_op_bridge.live_payload_ready(sm, True, now=11.2)
+
+
 if __name__ == "__main__":
   test_payload_exports_standstill_and_op_available()
   test_available_services_skips_missing_starpilot_plan()
+  test_live_payload_ready_uses_recent_messages_not_alive_flags()

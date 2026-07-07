@@ -12,6 +12,7 @@ import requests
 
 from cereal import log, messaging
 from openpilot.common.params import Params
+from openpilot.common.realtime import set_core_affinity
 from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 
@@ -633,6 +634,7 @@ def capture_offroad_images():
 
 
 def main():
+  set_core_affinity([0, 1, 2, 3])
   params = Params()
   sm = messaging.SubMaster(STATE_SERVICES)
 

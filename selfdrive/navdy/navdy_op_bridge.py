@@ -544,10 +544,15 @@ def power_started(sm: Any, args: argparse.Namespace | None = None, now: float = 
   return bool(args and onroad_process_started(args, now))
 
 
-def live_payload_ready(sm: Any, started: bool) -> bool:
+def service_recent(sm: Any, service: str, now: float, max_age: float = 1.0) -> bool:
+  return bool(sm.seen[service] and now - sm.recv_time[service] <= max_age)
+
+
+def live_payload_ready(sm: Any, started: bool, now: float | None = None) -> bool:
   if not started:
     return True
-  return bool(sm.alive["carState"] and sm.alive["selfdriveState"])
+  now = time.monotonic() if now is None else now
+  return bool(service_recent(sm, "carState", now) and service_recent(sm, "selfdriveState", now))
 
 
 def available_services(messaging: Any, requested: list[str]) -> list[str]:
@@ -595,7 +600,7 @@ def run_live(args: argparse.Namespace) -> None:
       messaging, ["selfdriveState", "carState", "controlsState", "starpilotPlan", "longitudinalPlan"])
   if args.manage_navdy_power:
     services += available_services(messaging, ["deviceState", "pandaStates"])
-  sm = messaging.SubMaster(services, poll="carState")
+  sm = messaging.SubMaster(services)
   seq = 0
   period = 1.0 / max(args.hz, 0.1)
   last_signature = None
@@ -604,7 +609,8 @@ def run_live(args: argparse.Namespace) -> None:
   offroad_since = None
   last_power_target_on = None
   while True:
-    sm.update(int(period * 1000))
+    time.sleep(period)
+    sm.update(0)
     now = time.monotonic()
     has_update = any(sm.updated[service] for service in services)
     started = power_started(sm, args, now) if args.manage_navdy_power else True
@@ -613,7 +619,7 @@ def run_live(args: argparse.Namespace) -> None:
           args, started, now, offroad_since, last_power_target_on)
     if not has_update and not (args.once and now >= once_deadline):
       continue
-    if not live_payload_ready(sm, started):
+    if not live_payload_ready(sm, started, now):
       continue
     payload = payload_from_messages(sm["selfdriveState"], sm["carState"], seq,
                                     sm_optional(sm, services, "controlsState"),

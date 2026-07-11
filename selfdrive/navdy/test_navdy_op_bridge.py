@@ -51,6 +51,26 @@ def test_payload_exports_standstill_and_op_available():
   assert payload["engaged"] is False
 
 
+def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
+  car_state = SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=True, speed=0.0),
+    gearShifter="drive",
+    standstill=False,
+    vCruise=80.0,
+    vCruiseCluster=80.0,
+    vEgo=0.0,
+    vEgoCluster=0.0,
+  )
+  selfdrive_state = SimpleNamespace(active=False, enabled=False, engageable=True, state="preEnabled")
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 8)
+
+  assert payload["state"] == "preEnabled"
+  assert payload["standstill"] is True
+  assert payload["cruiseStandstill"] is True
+  assert payload["setSpeedKph"] == 80.0
+
+
 def test_available_services_skips_missing_starpilot_plan():
   messaging = SimpleNamespace(SERVICE_LIST={"selfdriveState": object(), "carState": object()})
 

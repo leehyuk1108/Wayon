@@ -188,8 +188,10 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   enabled = bool(getattr(selfdrive_state, "enabled", False))
   active = bool(getattr(selfdrive_state, "active", False))
   engageable = bool(getattr(selfdrive_state, "engageable", False))
-  standstill = bool(getattr(car_state, "standstill", False))
   cruise_standstill = is_cruise_standstill(car_state)
+  # Navdy's stop icon is also used while the vehicle is preEnabled.  On GM
+  # platforms the generic and cruise standstill signals can arrive separately.
+  standstill = bool(getattr(car_state, "standstill", False) or cruise_standstill)
 
   v_ego_cluster = finite_float(getattr(car_state, "vEgoCluster", 0.0))
   v_ego_ms = finite_float(getattr(car_state, "vEgo", 0.0))

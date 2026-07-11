@@ -71,6 +71,21 @@ def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
   assert payload["setSpeedKph"] == 80.0
 
 
+def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
+  selfdrive_state = SimpleNamespace(
+    active=False,
+    enabled=False,
+    engageable=False,
+    state="disabled",
+    alertType="reverseGear/permanent",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(
+      selfdrive_state, navdy_op_bridge.default_car_state(), 9)
+
+  assert payload["gear"] == "reverse"
+
+
 def test_available_services_skips_missing_starpilot_plan():
   messaging = SimpleNamespace(SERVICE_LIST={"selfdriveState": object(), "carState": object()})
 

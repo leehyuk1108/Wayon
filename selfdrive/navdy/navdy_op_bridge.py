@@ -124,7 +124,16 @@ def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace,
   return payload
 
 
-def gear_text(car_state: Any) -> str:
+def reverse_gear_alert_active(selfdrive_state: Any) -> bool:
+  alert_type = str(getattr(selfdrive_state, "alertType", "")).split("/", 1)[0]
+  return alert_type in ("reverseGear", "silentReverseGear")
+
+
+def gear_text(car_state: Any, selfdrive_state: Any = None) -> str:
+  # The car process may stop publishing a gear sample as soon as reverse takes
+  # the system offroad. selfdriveState keeps the structured reverse event alive.
+  if reverse_gear_alert_active(selfdrive_state):
+    return "reverse"
   return enum_text(getattr(car_state, "gearShifter", "unknown")).lower()
 
 
@@ -212,7 +221,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "cruiseStandstill": cruise_standstill,
     "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
     "vEgoKph": rounded(v_ego_kph),
-    "gear": gear_text(car_state),
+    "gear": gear_text(car_state, selfdrive_state),
     "leftBlinker": left_blinker,
     "rightBlinker": right_blinker,
     "blinkers": blinker_text(left_blinker, right_blinker),

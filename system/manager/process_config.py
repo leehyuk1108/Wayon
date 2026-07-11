@@ -122,7 +122,7 @@ procs = [
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
   NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], notcar),
   PythonProcess("logmessaged", "system.logmessaged", always_run),
-  PythonProcess("navdy_bridge", "selfdrive.navdy.navdy_power_bridge", non_driving_helpers_enabled, restart_if_crash=True),
+  PythonProcess("navdy_bridge", "selfdrive.navdy.navdy_power_bridge", always_run, restart_if_crash=True),
 
   NativeProcess("camerad", "system/camerad", ["./camerad"], driverview, enabled=not WEBCAM),
   PythonProcess("webcamerad", "tools.webcam.camerad", driverview, enabled=WEBCAM),

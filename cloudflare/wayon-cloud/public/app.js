@@ -300,7 +300,8 @@ function renderState(state, status = {}) {
   const lat = finiteNumber(state.latitude);
   const lon = finiteNumber(state.longitude);
   const accuracy = finiteNumber(state.gps_accuracy_m);
-  const gpsTime = raw.gps?.timestampMillis ? new Date(Number(raw.gps.timestampMillis)).toISOString() : state.updated_at;
+  const gpsFresh = raw.gps?.fresh === true;
+  const gpsTime = raw.gps?.timestampMillis ? new Date(Number(raw.gps.timestampMillis)).toISOString() : null;
   const fuel = cleanValue(status.fuel);
   const fuelLitersValue = fuelLiters(status);
   const oil = firstNumber(status.oil);
@@ -316,7 +317,7 @@ function renderState(state, status = {}) {
   rangeSubtext.textContent = fuelLitersValue == null ? "Firebase fuel 데이터 없음" : `연료 ${Math.round(fuelLitersValue)}L / 82L`;
   rangePercent.textContent = percent == null ? "--%" : `${Math.round(percent)}%`;
   dailyBadge.innerHTML = percent == null ? "FUEL<br>--" : `FUEL<br>${Math.round(percent)}%`;
-  lastGpsTime.textContent = `GPS ${fmtDate(gpsTime)}`;
+  lastGpsTime.textContent = gpsFresh && gpsTime ? `GPS ${fmtDate(gpsTime)}` : "GPS 위치 없음";
   vehicleMeta.textContent = raw.dongleId ? `Wayon linked · ${raw.dongleId}` : "Wayon linked";
   ignitionState.textContent = ignition ? "ON" : "OFF";
   batteryInfo.textContent = batteryLevel == null && vehicleBattery == null
@@ -334,7 +335,7 @@ function renderState(state, status = {}) {
 
   if (Number.isFinite(lat) && Number.isFinite(lon)) {
     const position = [lat, lon];
-    currentAddress.textContent = onroad ? "차량 위치 실시간 반영 중" : "마지막 차량 위치";
+    currentAddress.textContent = onroad ? "차량 위치 실시간 반영 중" : "현재 차량 위치";
     currentCoords.textContent = fmtCoords(lat, lon, accuracy);
 
     if (!currentMarker) {

@@ -180,6 +180,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"RainbowMode", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RocketFuel", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"ShowAdvancedControls", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"SimulationIgnorePhoneDM", {PERSISTENT | BACKUP, BOOL}},
     {"ShowTurnSignals", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"StandstillTimer", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TrueVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},

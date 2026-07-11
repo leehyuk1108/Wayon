@@ -13,7 +13,6 @@ from openpilot.selfdrive.locationd.calibrationd import MIN_SPEED_FILTER
 from openpilot.system.micd import SAMPLE_RATE, SAMPLE_BUFFER
 from openpilot.selfdrive.ui.feedback.feedbackd import FEEDBACK_MAX_DURATION
 from openpilot.system.hardware import HARDWARE
-from openpilot.selfdrive.selfdrived.simulation_mode import simulation_mode_enabled
 
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
   NoEntryAlert, SoftDisableAlert, UserSoftDisableAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, \
@@ -89,10 +88,6 @@ def below_steer_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.S
     "",
     AlertStatus.userPrompt, AlertSize.small,
     Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 0.4)
-
-
-def simulation_audible_alert(audible_alert: AudibleAlert) -> AudibleAlert:
-  return AudibleAlert.none if simulation_mode_enabled() else audible_alert
 
 
 def calibration_incomplete_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
@@ -359,7 +354,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Pay Attention",
       "Driver Distracted",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.MID, VisualAlert.steerRequired, simulation_audible_alert(AudibleAlert.promptDistracted), .1),
+      Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
   },
 
   EventName.driverDistracted3: {
@@ -367,7 +362,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "DISENGAGE IMMEDIATELY",
       "Driver Distracted",
       AlertStatus.critical, AlertSize.full,
-      Priority.HIGH, VisualAlert.steerRequired, simulation_audible_alert(AudibleAlert.warningImmediate), .1),
+      Priority.HIGH, VisualAlert.steerRequired, AudibleAlert.warningImmediate, .1),
   },
 
   EventName.driverUnresponsive1: {
@@ -383,7 +378,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Touch Steering Wheel",
       "Driver Unresponsive",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.MID, VisualAlert.steerRequired, simulation_audible_alert(AudibleAlert.promptDistracted), .1),
+      Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
   },
 
   EventName.driverUnresponsive3: {
@@ -391,7 +386,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "DISENGAGE IMMEDIATELY",
       "Driver Unresponsive",
       AlertStatus.critical, AlertSize.full,
-      Priority.HIGH, VisualAlert.steerRequired, simulation_audible_alert(AudibleAlert.warningImmediate), .1),
+      Priority.HIGH, VisualAlert.steerRequired, AudibleAlert.warningImmediate, .1),
   },
 
   EventName.manualRestart: {
@@ -1126,7 +1121,7 @@ if HARDWARE.get_device_type() == 'mici':
         "운전에 집중하세요",
         "운전자 부주의 감지됨",
         AlertStatus.userPrompt, AlertSize.mid,
-        Priority.MID, VisualAlert.steerRequired, simulation_audible_alert(AudibleAlert.promptDistracted), 1),
+        Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, 1),
     },
     EventName.resumeRequired: {
       ET.WARNING: Alert(

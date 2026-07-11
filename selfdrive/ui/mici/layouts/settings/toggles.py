@@ -1,7 +1,7 @@
 from cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.selfdrived.simulation_mode import raw_simulation_mode_enabled, set_raw_simulation_mode_enabled
+from openpilot.selfdrive.selfdrived.simulation_mode import get_simulation_ignore_phone_dm, put_simulation_ignore_phone_dm
 from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigToggle
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
@@ -20,7 +20,7 @@ class TogglesLayoutMici(NavScroller):
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled")
     standstill_timer_toggle = BigParamControl("standstill timer", "StandstillTimer")
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM")
-    self._simulation_mode_toggle = BigToggle("시뮬레이션\n모드", initial_state=raw_simulation_mode_enabled(),
+    self._simulation_mode_toggle = BigToggle("시뮬레이션\nphone DM", initial_state=get_simulation_ignore_phone_dm(ui_state.params),
                                              toggle_callback=self._simulation_mode_toggled)
     record_front = BigParamControl("record & upload driver camera", "RecordFront", toggle_callback=restart_needed_callback)
     record_mic = BigParamControl("record & upload mic audio", "RecordAudio", toggle_callback=restart_needed_callback)
@@ -76,8 +76,7 @@ class TogglesLayoutMici(NavScroller):
     self._update_toggles()
 
   def _simulation_mode_toggled(self, enabled: bool):
-    set_raw_simulation_mode_enabled(enabled)
-    restart_needed_callback()
+    put_simulation_ignore_phone_dm(enabled, ui_state.params)
 
   def _update_toggles(self):
     ui_state.update_params()
@@ -97,4 +96,4 @@ class TogglesLayoutMici(NavScroller):
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
-    self._simulation_mode_toggle.set_checked(raw_simulation_mode_enabled())
+    self._simulation_mode_toggle.set_checked(get_simulation_ignore_phone_dm(ui_state.params))

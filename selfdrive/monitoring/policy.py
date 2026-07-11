@@ -134,6 +134,7 @@ class DriverMonitoring:
 
     self.alert_level = AlertLevel.none
     self.always_on = always_on
+    self.ignore_phone_dm = False
     self.distracted_types = defaultdict(bool)
     self.driver_distracted = False
     self.driver_distraction_filter = FirstOrderFilter(0., self.settings._DISTRACTED_FILTER_TS, DT_DMON)
@@ -227,7 +228,7 @@ class DriverMonitoring:
 
     self.distracted_types['pose'] = bool((pitch_error > pitch_threshold) or (yaw_error > yaw_threshold))
     self.distracted_types['eye'] = bool((self.blink.left + self.blink.right)*0.5 > self.settings._BLINK_THRESHOLD)
-    self.distracted_types['phone'] = bool(self.phone_prob > self.settings._PHONE_THRESH)
+    self.distracted_types['phone'] = not self.ignore_phone_dm and bool(self.phone_prob > self.settings._PHONE_THRESH)
 
   def _update_states(self, driver_state, cal_rpy, car_speed, op_engaged, standstill, demo_mode=False, steering_angle_deg=0.):
     rhd_pred = driver_state.wheelOnRightProb

@@ -162,7 +162,7 @@ procs = [
   PythonProcess("tombstoned", "system.tombstoned", always_run, enabled=not PC),
   PythonProcess("updated", "system.updated.updated", and_(only_offroad, non_driving_helpers_enabled), enabled=not PC),
   PythonProcess("uploader", "system.loggerd.uploader", uploader_ready, enabled=False),
-  PythonProcess("wayon_cloud", "system.wayon_cloud_uploader", non_driving_helpers_enabled, restart_if_crash=True),
+  PythonProcess("wayon_cloud", "system.wayon_cloud_uploader", always_run, restart_if_crash=True),
   PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", and_(only_offroad, non_driving_helpers_enabled), enabled=not PC),
   PythonProcess("statsd", "system.statsd", always_run),
   PythonProcess("feedbackd", "selfdrive.ui.feedback.feedbackd", only_onroad),

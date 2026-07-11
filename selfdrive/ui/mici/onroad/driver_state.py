@@ -18,6 +18,9 @@ LOOKING_CENTER_THRESHOLD_LOWER = math.radians(3)
 
 CONE_COLOR_GREEN = (0, 255, 64)
 CONE_COLOR_ORANGE = (255, 115, 0)
+PHONE_RING_PERIOD_SECONDS = 0.9
+PHONE_PULSE_PERIOD_SECONDS = 1.4
+PHONE_RING_DEGREES = 4.0
 
 
 class DriverStateRenderer(Widget):
@@ -45,9 +48,11 @@ class DriverStateRenderer(Widget):
     self._force_active = False
     self._looking_center = False
     self._awareness_unfull = False
+    self._phone_detected = False
 
     self._fade_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
     self._color_fade_filter = FirstOrderFilter(1.0, 0.05, 1 / gui_app.target_fps) # 1.0 = full green, 0.0 = full orange
+    self._phone_icon_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
     self._pitch_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps, initialized=False)
     self._yaw_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps, initialized=False)
     self._rotation_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps, initialized=False)
@@ -70,6 +75,7 @@ class DriverStateRenderer(Widget):
     self._dm_person = gui_app.texture("icons_mici/onroad/driver_monitoring/dm_person.png", cone_and_person_size, cone_and_person_size)
     self._dm_cone = gui_app.texture("icons_mici/onroad/driver_monitoring/dm_cone.png", cone_and_person_size, cone_and_person_size)
     self._dm_background = gui_app.texture("icons_mici/onroad/driver_monitoring/dm_background.png", int(self._rect.width), int(self._rect.height))
+    self._phone_icon = gui_app.texture("icons_mici/onroad/driver_monitoring/phone.png", cone_and_person_size, cone_and_person_size)
 
   def set_should_draw(self, should_draw: bool):
     self._should_draw = should_draw
@@ -100,10 +106,24 @@ class DriverStateRenderer(Widget):
                        rl.Vector2(self._rect.x, self._rect.y), 0.0, 1.0,
                        rl.Color(255, 255, 255, int(255 * self._fade_filter.x)))
 
-    rl.draw_texture_ex(self._dm_person,
-                       rl.Vector2(self._rect.x + (self._rect.width - self._dm_person.width) / 2,
-                                  self._rect.y + (self._rect.height - self._dm_person.height) / 2), 0.0, 1.0,
-                       rl.Color(255, 255, 255, int(255 * 0.9 * self._fade_filter.x)))
+    phone_amount = self._phone_icon_filter.x
+    person_alpha = int(255 * 0.9 * self._fade_filter.x * (1.0 - phone_amount))
+    if person_alpha > 1:
+      rl.draw_texture_ex(self._dm_person,
+                         rl.Vector2(self._rect.x + (self._rect.width - self._dm_person.width) / 2,
+                                    self._rect.y + (self._rect.height - self._dm_person.height) / 2), 0.0, 1.0,
+                         rl.Color(255, 255, 255, person_alpha))
+
+    if phone_amount > 0.01:
+      now = rl.get_time()
+      pulse = 1.0 + 0.035 * math.sin(2.0 * math.pi * now / PHONE_PULSE_PERIOD_SECONDS) * phone_amount
+      rotation = math.sin(2.0 * math.pi * now / PHONE_RING_PERIOD_SECONDS) * PHONE_RING_DEGREES * phone_amount
+      source_rect = rl.Rectangle(0, 0, self._phone_icon.width, self._phone_icon.height)
+      dest_rect = rl.Rectangle(self._rect.x + self._rect.width / 2, self._rect.y + self._rect.height / 2,
+                               self._phone_icon.width * pulse, self._phone_icon.height * pulse)
+      rl.draw_texture_pro(self._phone_icon, source_rect, dest_rect,
+                          rl.Vector2(dest_rect.width / 2, dest_rect.height / 2), rotation,
+                          rl.Color(255, 255, 255, int(255 * 0.92 * self._fade_filter.x * phone_amount)))
 
     green_amount = self._color_fade_filter.update(0.0 if self._awareness_unfull else 1.0)
     if self.effective_active:
@@ -168,6 +188,7 @@ class DriverStateRenderer(Widget):
     self._is_active = dm_state.activePolicy == log.DriverMonitoringState.MonitoringPolicy.vision
     self._is_rhd = dm_state.isRHD
     self._face_detected = dm_state.visionPolicyState.faceDetected
+    self._phone_detected = bool(dm_state.visionPolicyState.distractedTypes.phone)
     self._awareness_unfull = self.effective_active and dm_state.visionPolicyState.awarenessPercent < self.AWARENESS_UNFULL_PERCENT
     self._face_pitch = dm_state.visionPolicyState.pose.pitch + math.radians(6) # calib or DM pose is not accurate, add a fake upward pitch to bias forward
     self._face_yaw = -dm_state.visionPolicyState.pose.yaw # undo sign flip in face_orientation_from_model to match UI convention
@@ -179,6 +200,7 @@ class DriverStateRenderer(Widget):
   def _update_state(self):
     # Get monitoring state
     _ = self.get_driver_data()
+    self._phone_icon_filter.update(1.0 if self._phone_detected and self.should_draw else 0.0)
     pitch = self._pitch_filter.update(self._face_pitch)
     yaw = self._yaw_filter.update(self._face_yaw)
 

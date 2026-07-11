@@ -243,4 +243,20 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       AlertStatus.normal, AlertSize.none,
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
   },
+
+  EventNameSP.phoneLeadClosing: {
+    ET.WARNING: Alert(
+      "전방 주의",
+      "전방 차량과 접근중",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 2.),
+  },
+
+  EventNameSP.phoneLaneIntrusion: {
+    ET.WARNING: Alert(
+      "전방 차량 주의",
+      "전방 차량 차선 침범함",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.MID, VisualAlert.none, AudibleAlert.warningSoft, 2.),
+  },
 }

@@ -19,6 +19,8 @@ from openpilot.system.hardware.hw import Paths
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
 ROUTE_STATE_PATH = Path(os.getenv("WAYON_CLOUD_ROUTE_STATE", str(CONFIG_PATH.with_name("route_state.json"))))
 USER_AGENT = "wayon-cloud-uploader/1.0"
+GPS_SERVICE_MAX_AGE_S = 5.0
+GPS_TIMESTAMP_MAX_AGE_MS = 15_000
 
 DEFAULT_TELEMETRY_INTERVAL_ONROAD = 30.0
 DEFAULT_TELEMETRY_INTERVAL_OFFROAD = 300.0
@@ -162,22 +164,24 @@ def last_gps_payload(params):
   return payload
 
 
-def gps_payload(sm, params=None, allow_route_log_fallback=True):
+def gps_payload(sm):
   candidates = []
+  now_monotonic = time.monotonic()
+  now_millis = int(time.time() * 1000)
   for socket in ("gpsLocationExternal", "gpsLocation"):
     try:
       gps = sm[socket]
-      if gps.hasFix and abs(gps.latitude) > 0.001 and abs(gps.longitude) > 0.001:
+      receive_age = now_monotonic - sm.recv_time.get(socket, 0.0)
+      timestamp_millis = int(gps.unixTimestampMillis)
+      timestamp_fresh = timestamp_millis <= 0 or abs(now_millis - timestamp_millis) <= GPS_TIMESTAMP_MAX_AGE_MS
+      if (sm.seen.get(socket, False) and receive_age <= GPS_SERVICE_MAX_AGE_S and timestamp_fresh and
+          gps.hasFix and abs(gps.latitude) > 0.001 and abs(gps.longitude) > 0.001):
         candidates.append((sm.recv_time.get(socket, 0), gps))
     except Exception:
       continue
 
   if not candidates:
-    if allow_route_log_fallback:
-      route_gps = latest_route_gps_payload()
-      if route_gps:
-        return route_gps
-    return last_gps_payload(params) if params is not None else {}
+    return {"fresh": False, "source": "unavailable"}
 
   _, gps = max(candidates, key=lambda item: item[0])
   return {
@@ -189,13 +193,18 @@ def gps_payload(sm, params=None, allow_route_log_fallback=True):
     "timestampMillis": int(gps.unixTimestampMillis),
     "source": enum_name(gps.source),
     "satellites": int(gps.satelliteCount),
+    "fresh": True,
   }
 
 
-def telemetry_payload(sm, params, device_id, started_override=False):
+def resolve_onroad_state(device_state_started: bool, started_override: bool | None = None) -> bool:
+  return bool(device_state_started) if started_override is None else bool(started_override)
+
+
+def telemetry_payload(sm, params, device_id, started_override: bool | None = None):
   device_state = sm["deviceState"]
   panda_state = first_panda_state(sm["pandaStates"])
-  started = bool(device_state.started) or bool(started_override)
+  started = resolve_onroad_state(device_state.started, started_override)
   vehicle_speed = vehicle_speed_payload(sm, started)
 
   ignition = False
@@ -227,7 +236,7 @@ def telemetry_payload(sm, params, device_id, started_override=False):
     "thermalStatus": enum_name(device_state.thermalStatus),
     "fanPercent": int(device_state.fanSpeedPercentDesired),
     "screenBrightnessPercent": int(device_state.screenBrightnessPercent),
-    "gps": gps_payload(sm, params, allow_route_log_fallback=not started),
+    "gps": gps_payload(sm),
     "vehicleSpeedMps": vehicle_speed.get("speedMps"),
     "vehicleSpeedSource": vehicle_speed.get("source"),
     "dongleId": get_param_str(params, "DongleId"),

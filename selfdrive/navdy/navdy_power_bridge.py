@@ -11,14 +11,14 @@ from selfdrive.navdy import navdy_op_bridge
 
 
 DEFAULT_ARGS = [
-  "--hz", "1",
-  "--min-emit-sec", "1",
+  "--hz", "5",
   "--adb-path", "adb",
   "--adb-server-port", "5038",
   "--no-stdout",
   "--manage-navdy-power",
-  "--heartbeat-sec", "5",
-  "--power-on-ensure-sec", "60",
+  "--socket-transport",
+  "--heartbeat-sec", "3",
+  "--power-on-ensure-sec", "5",
   "--power-off-delay-sec", "30",
 ]
 

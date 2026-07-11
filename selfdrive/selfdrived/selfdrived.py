@@ -18,7 +18,6 @@ from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
-from openpilot.selfdrive.selfdrived.simulation_mode import simulation_mode_enabled
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 
@@ -30,6 +29,7 @@ from openpilot.sunnypilot import get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
+from openpilot.sunnypilot.selfdrive.controls.lib.phone_forward_risk import lead_closing_risk, lead_lane_intrusion_risk
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 REPLAY = "REPLAY" in os.environ
@@ -51,15 +51,7 @@ MonitoringPolicy = log.DriverMonitoringState.MonitoringPolicy
 TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
-DM_SIMULATION_EVENTS = {
-  EventName.tooDistracted,
-  EventName.driverDistracted1,
-  EventName.driverDistracted2,
-  EventName.driverDistracted3,
-  EventName.driverUnresponsive1,
-  EventName.driverUnresponsive2,
-  EventName.driverUnresponsive3,
-}
+PHONE_FORWARD_RISK_COOLDOWN = 4.0
 
 
 class SelfdriveD(CruiseHelper):
@@ -182,6 +174,13 @@ class SelfdriveD(CruiseHelper):
 
     self.events_sp = EventsSP()
     self.events_sp_prev = []
+    self.phone_forward_risk_cooldown = 0.0
+    self.phone_forward_risk_lead_history_initialized = False
+    self.previous_lead_radar_track_id = -1
+    self.previous_lead_d_rel = 0.0
+    self.previous_lead_closing_risk = False
+    self.previous_lead_status = False
+    self.previous_lead_y_rel = 0.0
 
     self.mads = ModularAssistiveDrivingSystem(self)
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
@@ -189,6 +188,49 @@ class SelfdriveD(CruiseHelper):
     self.car_events_sp = CarSpecificEventsSP(self.CP, self.CP_SP)
 
     CruiseHelper.__init__(self, self.CP)
+
+  def _update_phone_forward_risk(self, CS):
+    self.phone_forward_risk_cooldown = max(0.0, self.phone_forward_risk_cooldown - DT_CTRL)
+
+    lead = self.sm['radarState'].leadOne
+    lead_status = bool(getattr(lead, 'status', False))
+    lead_d_rel = float(getattr(lead, 'dRel', 0.0)) if lead_status else 0.0
+    lead_radar_track_id = int(getattr(lead, 'radarTrackId', -1)) if lead_status else -1
+    lead_y_rel = float(getattr(lead, 'yRel', 0.0)) if lead_status else 0.0
+
+    phone_detected = bool(self.sm['driverMonitoringState'].visionPolicyState.distractedTypes.phone)
+    lane_width = float(getattr(self.sm['longitudinalPlan'], 'laneWidth', 0.0))
+    lane_intrusion = False
+    lead_closing = False
+    if phone_detected:
+      lane_intrusion = lead_lane_intrusion_risk(
+        max(CS.vEgo, 0.0), lead,
+        previous_lead_status=self.previous_lead_status,
+        previous_lead_y_rel=self.previous_lead_y_rel,
+        previous_radar_track_id=self.previous_lead_radar_track_id,
+        lane_width=lane_width,
+        lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
+      )
+      lead_closing = lead_closing_risk(
+        max(CS.vEgo, 0.0), lead,
+        previous_lead_status=self.previous_lead_status,
+        previous_lead_d_rel=self.previous_lead_d_rel,
+        lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
+        dt=DT_CTRL,
+      )
+      if self.phone_forward_risk_cooldown <= 0.0 and lane_intrusion:
+        self.events_sp.add(custom.OnroadEventSP.EventName.phoneLaneIntrusion)
+        self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
+      elif self.phone_forward_risk_cooldown <= 0.0 and lead_closing and not self.previous_lead_closing_risk:
+        self.events_sp.add(custom.OnroadEventSP.EventName.phoneLeadClosing)
+        self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
+
+    self.previous_lead_status = lead_status
+    self.previous_lead_radar_track_id = lead_radar_track_id
+    self.previous_lead_d_rel = lead_d_rel
+    self.previous_lead_y_rel = lead_y_rel
+    self.previous_lead_closing_risk = lead_closing
+    self.phone_forward_risk_lead_history_initialized = True
 
   def update_events(self, CS):
     """Compute onroadEvents from carState"""
@@ -235,14 +277,12 @@ class SelfdriveD(CruiseHelper):
 
     # Handle DM
     if not self.CP.notCar:
-      dm_events_enabled = not simulation_mode_enabled()
-
       # Block engaging until ignition cycle after max number or time of distractions
-      if dm_events_enabled and self.sm['driverMonitoringState'].lockout and not self.dm_lockout_set:
+      if self.sm['driverMonitoringState'].lockout and not self.dm_lockout_set:
         self.params.put_bool("DriverTooDistracted", True)
         self.dm_lockout_set = True
       # No entry conditions
-      if dm_events_enabled and (self.sm['driverMonitoringState'].lockout or self.sm['driverMonitoringState'].alwaysOnLockout):
+      if self.sm['driverMonitoringState'].lockout or self.sm['driverMonitoringState'].alwaysOnLockout:
         self.events.add(EventName.tooDistracted)
       # Alerts
       vision_dm = self.sm['driverMonitoringState'].activePolicy == MonitoringPolicy.vision
@@ -254,13 +294,14 @@ class SelfdriveD(CruiseHelper):
         dm_event = EventName.driverDistracted3 if vision_dm else EventName.driverUnresponsive3
       else:
         dm_event = None
-      if dm_event is not None and (dm_events_enabled or dm_event not in DM_SIMULATION_EVENTS):
+      if dm_event is not None:
         self.events.add(dm_event)
       # Warn consistent DM uncertainty
       if self.sm['driverMonitoringState'].visionPolicyState.uncertainOffroadAlertPercent >= 100 and not self.dm_uncertain_alerted:
         set_offroad_alert("Offroad_DriverMonitoringUncertain", True)
         self.dm_uncertain_alerted = True
       self.events_sp.add_from_msg(self.sm['longitudinalPlanSP'].events)
+      self._update_phone_forward_risk(CS)
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:

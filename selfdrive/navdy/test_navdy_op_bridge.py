@@ -98,14 +98,14 @@ def test_default_car_state_keeps_payload_safe_without_vehicle_sample():
   assert payload["setSpeedKph"] == 42.0
 
 
-def test_manager_defaults_use_adb_broadcast_transport():
-  assert "--socket-transport" not in navdy_power_bridge.DEFAULT_ARGS
+def test_manager_defaults_use_starpilot_socket_transport():
+  assert "--socket-transport" in navdy_power_bridge.DEFAULT_ARGS
 
 
-def test_manager_defaults_throttle_adb_broadcasts():
-  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1] == "1"
-  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--min-emit-sec") + 1] == "1"
-  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--power-on-ensure-sec") + 1] == "60"
+def test_manager_defaults_match_starpilot_responsiveness():
+  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1] == "5"
+  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--heartbeat-sec") + 1] == "3"
+  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--power-on-ensure-sec") + 1] == "5"
 
 
 def test_should_emit_payload_respects_min_emit_interval():
@@ -132,7 +132,7 @@ if __name__ == "__main__":
   test_live_payload_ready_uses_recent_messages_not_alive_flags()
   test_live_payload_ready_allows_missing_car_state_when_selfdrive_is_recent()
   test_default_car_state_keeps_payload_safe_without_vehicle_sample()
-  test_manager_defaults_use_adb_broadcast_transport()
-  test_manager_defaults_throttle_adb_broadcasts()
+  test_manager_defaults_use_starpilot_socket_transport()
+  test_manager_defaults_match_starpilot_responsiveness()
   test_should_emit_payload_respects_min_emit_interval()
   test_manager_child_ignores_inherited_manager_argv()

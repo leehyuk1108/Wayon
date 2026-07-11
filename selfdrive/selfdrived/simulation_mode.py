@@ -1,66 +1,76 @@
 #!/usr/bin/env python3
-import hashlib
 import os
 from pathlib import Path
+from typing import Any
 
 
-SIMULATION_MODE_FLAG = Path(os.getenv("SIMULATION_MODE_FLAG", "/data/SimulationMode"))
-TRUE_VALUES = {"1", "true", "on", "yes", "enabled"}
-DEVICE_ONLY_RUNTIME_HASHES = {
-  # comma 10.234.104.173 / serial db5ce68d
-  "e6b2fee68627fc38d60c768f91ef165f8d299dc545f4665cd5525c4e88c7dc3e",
-}
+SIMULATION_IGNORE_PHONE_DM = "SimulationIgnorePhoneDM"
+DEFAULT_FALLBACK_ROOT = Path("/data/sunnypilot/params")
+LEGACY_SIMULATION_MODE_FLAG = Path("/data/SimulationMode")
 
 
-def simulation_runtime() -> bool:
-  return "SIMULATION" in os.environ or "REPLAY" in os.environ
-
-
-def raw_simulation_mode_enabled() -> bool:
-  env_value = os.getenv("SIMULATION_MODE", "").strip().lower()
-  if env_value in TRUE_VALUES:
-    return True
-
+def _param_known(params: Any, key: str) -> bool:
   try:
-    flag_value = SIMULATION_MODE_FLAG.read_text(encoding="utf-8").strip().lower()
+    params.check_key(key)
+    return True
+  except Exception:
+    return False
+
+
+def _fallback_root(params: Any | None, root: Path | None) -> Path:
+  if root is not None:
+    return root
+  if params is not None:
+    try:
+      return Path(params.get_param_path()).parent / "sunnypilot_fallback"
+    except Exception:
+      pass
+  return DEFAULT_FALLBACK_ROOT
+
+
+def _fallback_path(params: Any | None, root: Path | None) -> Path:
+  return _fallback_root(params, root) / SIMULATION_IGNORE_PHONE_DM
+
+
+def _read_bool(path: Path) -> bool:
+  try:
+    return path.read_text(encoding="utf-8").strip().lower() in {"1", "true", "on", "yes"}
   except OSError:
     return False
-  return flag_value in TRUE_VALUES
 
 
-def _value_hash(value: str | None) -> str:
-  return hashlib.sha256((value or "").strip().encode("utf-8")).hexdigest()
+def get_simulation_ignore_phone_dm(params: Any | None = None, root: Path | None = None) -> bool:
+  if params is not None and _param_known(params, SIMULATION_IGNORE_PHONE_DM):
+    try:
+      return bool(params.get_bool(SIMULATION_IGNORE_PHONE_DM))
+    except Exception:
+      pass
+
+  fallback_path = _fallback_path(params, root)
+  if fallback_path.exists():
+    return _read_bool(fallback_path)
+
+  # Preserve the existing device setting while narrowing its behavior to phone DM.
+  return _read_bool(LEGACY_SIMULATION_MODE_FLAG)
 
 
-def current_device_allowed() -> bool:
-  device_ids: list[str | None] = []
+def put_simulation_ignore_phone_dm(enabled: bool, params: Any | None = None, root: Path | None = None) -> None:
+  if params is not None and _param_known(params, SIMULATION_IGNORE_PHONE_DM):
+    try:
+      params.put_bool(SIMULATION_IGNORE_PHONE_DM, enabled)
+      return
+    except Exception:
+      pass
+
+  path = _fallback_path(params, root)
+  tmp_path = path.with_name(f".tmp_{SIMULATION_IGNORE_PHONE_DM}_{os.getpid()}")
   try:
-    from openpilot.system.hardware import HARDWARE
-    device_ids.append(HARDWARE.get_serial())
-  except Exception:
-    pass
-
-  try:
-    from openpilot.common.params import Params
-    params = Params()
-    device_ids.append(params.get("HardwareSerial"))
-  except Exception:
-    pass
-
-  return any(_value_hash(device_id) in DEVICE_ONLY_RUNTIME_HASHES for device_id in device_ids)
-
-
-def set_raw_simulation_mode_enabled(enabled: bool) -> None:
-  if enabled:
-    SIMULATION_MODE_FLAG.parent.mkdir(parents=True, exist_ok=True)
-    SIMULATION_MODE_FLAG.write_text("1\n", encoding="utf-8")
-    return
-
-  try:
-    SIMULATION_MODE_FLAG.unlink()
-  except FileNotFoundError:
-    pass
-
-
-def simulation_mode_enabled() -> bool:
-  return raw_simulation_mode_enabled() and (simulation_runtime() or current_device_allowed())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path.write_text("1" if enabled else "0", encoding="utf-8")
+    os.replace(tmp_path, path)
+  finally:
+    if not enabled:
+      try:
+        LEGACY_SIMULATION_MODE_FLAG.unlink()
+      except FileNotFoundError:
+        pass

@@ -107,6 +107,29 @@ def test_payload_shows_stop_icon_while_engaged_at_standstill():
   assert payload["cruiseStandstill"] is True
 
 
+def test_payload_exports_alert_metadata_for_navdy_banner():
+  selfdrive_state = SimpleNamespace(
+    active=True,
+    enabled=True,
+    engageable=True,
+    state="enabled",
+    alertText1="즉시 운전대를 잡으세요",
+    alertText2="조향 제어가 종료됩니다",
+    alertType="steerUnavailable/immediateDisable",
+    alertStatus="critical",
+    alertSize="full",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(
+      selfdrive_state, navdy_op_bridge.default_car_state(), 11)
+
+  assert payload["alertText1"] == "즉시 운전대를 잡으세요"
+  assert payload["alertText2"] == "조향 제어가 종료됩니다"
+  assert payload["alertType"] == "steerUnavailable/immediateDisable"
+  assert payload["alertStatus"] == "critical"
+  assert payload["alertSize"] == "full"
+
+
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
   selfdrive_state = SimpleNamespace(
     active=False,

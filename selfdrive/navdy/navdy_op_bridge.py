@@ -303,6 +303,9 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "blindspot": blindspot_text(left_blindspot, right_blindspot),
     "alertText1": str(getattr(selfdrive_state, "alertText1", "")),
     "alertText2": str(getattr(selfdrive_state, "alertText2", "")),
+    "alertType": str(getattr(selfdrive_state, "alertType", "")),
+    "alertStatus": enum_text(getattr(selfdrive_state, "alertStatus", "normal")),
+    "alertSize": enum_text(getattr(selfdrive_state, "alertSize", "none")),
   }
   if active:
     payload.update(navdy_model_geometry(model_v2))
@@ -342,6 +345,9 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "blindspot": blindspot_text(left_blindspot, right_blindspot),
     "alertText1": "",
     "alertText2": "",
+    "alertType": "",
+    "alertStatus": "normal",
+    "alertSize": "none",
   }
 
 
@@ -591,6 +597,9 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("rightBlindspot"),
     payload.get("alertText1"),
     payload.get("alertText2"),
+    payload.get("alertType"),
+    payload.get("alertStatus"),
+    payload.get("alertSize"),
     tuple(payload.get("navPathLeft", [])),
     tuple(payload.get("navPathRight", [])),
     tuple(payload.get("navLaneLeft", [])),

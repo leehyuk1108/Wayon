@@ -160,6 +160,42 @@ def test_navdy_bridge_avoids_saturated_car_state_service():
   assert navdy_op_bridge.NAVDY_CAR_STATE_SERVICE == "carStateSP"
 
 
+def test_navdy_model_geometry_projects_path_and_middle_lane_lines():
+  path = SimpleNamespace(x=[0.0, 40.0, 80.0], y=[0.0, 0.5, 1.0])
+  lane_lines = [
+    SimpleNamespace(x=[], y=[]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[1.8, 2.1, 2.5]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-1.8, -1.4, -1.0]),
+  ]
+  model = SimpleNamespace(position=path, laneLines=lane_lines, laneLineProbs=[0.0, 0.8, 0.7])
+
+  geometry = navdy_op_bridge.navdy_model_geometry(model)
+
+  assert len(geometry["navPathLeft"]) == 6
+  assert len(geometry["navLaneLeft"]) == 6
+  assert geometry["navPathLeft"][1] > geometry["navPathLeft"][-1]
+  assert geometry["navLaneLeft"][0] < geometry["navLaneRight"][0]
+  assert geometry["navLaneLeftProb"] == 0.8
+
+
+def test_payload_only_exports_model_geometry_while_active():
+  model = SimpleNamespace(
+    position=SimpleNamespace(x=[0.0, 80.0], y=[0.0, 0.0]),
+    laneLines=[
+      SimpleNamespace(x=[], y=[]),
+      SimpleNamespace(x=[0.0, 80.0], y=[1.8, 1.8]),
+      SimpleNamespace(x=[0.0, 80.0], y=[-1.8, -1.8]),
+    ],
+    laneLineProbs=[0.0, 1.0, 1.0],
+  )
+  car_state = navdy_op_bridge.default_car_state()
+  engaged = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+  disengaged = SimpleNamespace(active=False, enabled=False, engageable=True, state="disabled")
+
+  assert "navPathLeft" in navdy_op_bridge.payload_from_messages(engaged, car_state, 1, model_v2=model)
+  assert "navPathLeft" not in navdy_op_bridge.payload_from_messages(disengaged, car_state, 2, model_v2=model)
+
+
 def test_live_payload_ready_uses_recent_messages_not_alive_flags():
   sm = SimpleNamespace(
     alive={"selfdriveState": False, "carStateSP": False},

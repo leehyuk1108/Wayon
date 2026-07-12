@@ -208,9 +208,59 @@ def set_speed_kph(car_state: Any, controls_state: Any = None,
   return 0.0
 
 
+def navdy_model_line(x_values: Any, y_values: Any, lateral_offset: float = 0.0) -> list[float]:
+  points = []
+  x_values = x_values if x_values is not None else []
+  y_values = y_values if y_values is not None else []
+  for x_raw, y_raw in zip(x_values, y_values):
+    x = finite_float(x_raw, -1.0)
+    y = finite_float(y_raw, 0.0) + lateral_offset
+    if 0.0 <= x <= 80.0:
+      points.append((x, y))
+
+  if len(points) > 17:
+    last = len(points) - 1
+    points = [points[round(i * last / 16)] for i in range(17)]
+
+  projected = []
+  for x, y in points:
+    distance = min(x / 80.0, 1.0) ** 0.65
+    lateral_scale = 44.0 * (1.0 - distance) + 8.0 * distance
+    projected.extend((rounded(160.0 - y * lateral_scale), rounded(96.0 - 88.0 * distance)))
+  return projected
+
+
+def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
+  if model_v2 is None:
+    return {}
+
+  position = getattr(model_v2, "position", None)
+  lane_lines = list(getattr(model_v2, "laneLines", []))
+  if position is None or len(lane_lines) < 3:
+    return {}
+
+  path_x = getattr(position, "x", [])
+  path_y = getattr(position, "y", [])
+  lane_left = lane_lines[1]
+  lane_right = lane_lines[2]
+  geometry = {
+    "navPathLeft": navdy_model_line(path_x, path_y, 1.0),
+    "navPathRight": navdy_model_line(path_x, path_y, -1.0),
+    "navLaneLeft": navdy_model_line(getattr(lane_left, "x", []), getattr(lane_left, "y", [])),
+    "navLaneRight": navdy_model_line(getattr(lane_right, "x", []), getattr(lane_right, "y", [])),
+  }
+  if not all(len(points) >= 4 for points in geometry.values()):
+    return {}
+
+  lane_probs = list(getattr(model_v2, "laneLineProbs", []))
+  geometry["navLaneLeftProb"] = rounded(lane_probs[1] if len(lane_probs) > 1 else 0.0, 2)
+  geometry["navLaneRightProb"] = rounded(lane_probs[2] if len(lane_probs) > 2 else 0.0, 2)
+  return geometry
+
+
 def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
                           controls_state: Any = None, starpilot_plan: Any = None,
-                          longitudinal_plan: Any = None) -> dict[str, Any]:
+                          longitudinal_plan: Any = None, model_v2: Any = None) -> dict[str, Any]:
   left_blinker = bool(getattr(car_state, "leftBlinker", False))
   right_blinker = bool(getattr(car_state, "rightBlinker", False))
   left_blindspot = bool(getattr(car_state, "leftBlindspot", False))
@@ -229,7 +279,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   v_ego_ms = finite_float(getattr(car_state, "vEgo", 0.0))
   v_ego_kph = (v_ego_cluster if v_ego_cluster > 0.0 else v_ego_ms) * KPH_PER_MS
 
-  return {
+  payload = {
     "schema": "navdy.openpilot.v1",
     "seq": seq,
     "ts": round(time.time(), 3),
@@ -254,6 +304,9 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "alertText1": str(getattr(selfdrive_state, "alertText1", "")),
     "alertText2": str(getattr(selfdrive_state, "alertText2", "")),
   }
+  if active:
+    payload.update(navdy_model_geometry(model_v2))
+  return payload
 
 
 def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
@@ -538,6 +591,10 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("rightBlindspot"),
     payload.get("alertText1"),
     payload.get("alertText2"),
+    tuple(payload.get("navPathLeft", [])),
+    tuple(payload.get("navPathRight", [])),
+    tuple(payload.get("navLaneLeft", [])),
+    tuple(payload.get("navLaneRight", [])),
   )
 
 
@@ -660,7 +717,7 @@ def run_live(args: argparse.Namespace) -> None:
   maybe_reexec_openpilot_python(args)
   messaging = import_messaging()
   services = available_services(
-      messaging, ["selfdriveState", NAVDY_CAR_STATE_SERVICE, "controlsState", "starpilotPlan", "longitudinalPlan"])
+      messaging, ["selfdriveState", NAVDY_CAR_STATE_SERVICE, "controlsState", "starpilotPlan", "longitudinalPlan", "modelV2"])
   if args.manage_navdy_power:
     services += available_services(messaging, ["deviceState", "pandaStates"])
   sm = messaging.SubMaster(services)
@@ -688,12 +745,14 @@ def run_live(args: argparse.Namespace) -> None:
       car_state = car_state_from_sp(sm[NAVDY_CAR_STATE_SERVICE])
     else:
       car_state = default_car_state()
+    model_v2 = sm["modelV2"] if "modelV2" in services and service_recent(sm, "modelV2", now) else None
     payload = payload_from_messages(sm["selfdriveState"],
                                     car_state,
                                     seq,
                                     sm_optional(sm, services, "controlsState"),
                                     sm_optional(sm, services, "starpilotPlan"),
-                                    sm_optional(sm, services, "longitudinalPlan"))
+                                    sm_optional(sm, services, "longitudinalPlan"),
+                                    model_v2)
     payload = stabilize_display_payload(payload, args, now)
     should_emit, signature = should_emit_payload(payload, args, now, last_signature, last_emit_at)
     if should_emit:

@@ -130,6 +130,18 @@ def test_payload_exports_alert_metadata_for_navdy_banner():
   assert payload["alertSize"] == "full"
 
 
+def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
+  receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+             "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
+  smali = receiver.read_text()
+
+  assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in smali
+  assert "cmpl-double v4, v16, v2" in smali
+  assert ":cond_navdy_camera_speed_white" in smali
+  assert "const/high16 v1, -0x10000" in smali
+  assert "const/4 v1, -0x1" in smali
+
+
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
   selfdrive_state = SimpleNamespace(
     active=False,

@@ -1566,6 +1566,28 @@
 
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 
+    invoke-static {}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I
+
+    move-result v1
+
+    if-lez v1, :cond_navdy_camera_speed_white
+
+    int-to-double v2, v1
+
+    cmpl-double v4, v16, v2
+
+    if-lez v4, :cond_navdy_camera_speed_white
+
+    const/high16 v1, -0x10000
+
+    goto :goto_navdy_camera_speed_color
+
+    :cond_navdy_camera_speed_white
+    const/4 v1, -0x1
+
+    :goto_navdy_camera_speed_color
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setTextColor(I)V
+
     const/16 v1, 0x8
 
     if-eqz v5, :cond_6

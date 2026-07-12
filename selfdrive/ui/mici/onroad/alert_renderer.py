@@ -33,6 +33,8 @@ ALERT_FONT_BIG = 88 - 40
 AUTOHOLD_ICON_SIZE = 74
 AUTOHOLD_TIMER_FONT_SIZE = 62
 AUTOHOLD_TIMER_GAP = 18
+AUTOHOLD_TIMER_BG_HEIGHT = 150
+AUTOHOLD_TIMER_BG_ALPHA = 170
 
 SELFDRIVE_STATE_TIMEOUT = 5  # Seconds
 SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
@@ -131,6 +133,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     self._prev_alert: Alert | None = None
     self._text_gen_time = 0
     self._alert_text2_gen = ''
+    self._resume_required_start_time: float | None = None
     self._parking_brake_start_time: float | None = None
     self._parking_brake_timer_visible = False
     self._last_started_frame = -1
@@ -150,6 +153,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     ui_state.add_offroad_transition_callback(self._reset_timers)
 
   def _reset_timers(self) -> None:
+    self._resume_required_start_time = None
     self._parking_brake_start_time = None
     self._parking_brake_timer_visible = False
 
@@ -161,6 +165,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     self._txt_turn_signal_right = gui_app.texture('icons_mici/onroad/turn_signal_left.png', 104, 96, flip_x=True)
     self._txt_blind_spot_left = gui_app.texture('icons_mici/onroad/blind_spot_left.png', 134, 150)
     self._txt_blind_spot_right = gui_app.texture('icons_mici/onroad/blind_spot_left.png', 134, 150, flip_x=True)
+    self._txt_autohold = gui_app.texture("icons/autohold.png", AUTOHOLD_ICON_SIZE, AUTOHOLD_ICON_SIZE, keep_aspect_ratio=True)
     self._txt_parking = gui_app.texture("icons/parking.png", AUTOHOLD_ICON_SIZE, AUTOHOLD_ICON_SIZE, keep_aspect_ratio=True)
 
   @staticmethod
@@ -349,6 +354,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     if alert is None:
       if draw_parking_timer:
         self._prev_alert = None
+        self._resume_required_start_time = None
         self._parking_brake_timer_visible = True
         self._draw_parking_brake_timer(True)
         return True
@@ -358,6 +364,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
         alert = self._prev_alert
       else:
         self._prev_alert = None
+        self._resume_required_start_time = None
         return False
 
     self._draw_background(alert)
@@ -367,15 +374,29 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
     alert_layout = self._icon_helper(alert)
     event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
+    if event_name == 'resumeRequired':
+      self._draw_resume_required(active_alert is not None)
+      return True
     if event_name in PARKING_BRAKE_EVENT_NAMES and parking_brake_active:
+      self._resume_required_start_time = None
       self._parking_brake_timer_visible = True
       self._draw_parking_brake_timer(active_alert is not None)
       return True
 
+    self._resume_required_start_time = None
     self._draw_text(alert, alert_layout)
     self._draw_icons(alert_layout)
 
     return True
+
+  def _draw_resume_required(self, is_active: bool) -> None:
+    if is_active and self._resume_required_start_time is None:
+      self._resume_required_start_time = time.monotonic()
+    elif self._resume_required_start_time is None:
+      return
+
+    elapsed = time.monotonic() - self._resume_required_start_time
+    self._draw_center_timer(self._txt_autohold, format_mmss(elapsed), draw_gradient=True)
 
   def _draw_parking_brake_timer(self, is_active: bool) -> None:
     if is_active and self._parking_brake_start_time is None:
@@ -386,7 +407,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     elapsed = time.monotonic() - self._parking_brake_start_time
     self._draw_center_timer(self._txt_parking, format_mmss(elapsed))
 
-  def _draw_center_timer(self, icon_texture: rl.Texture, timer_text: str) -> None:
+  def _draw_center_timer(self, icon_texture: rl.Texture, timer_text: str, draw_gradient: bool = False) -> None:
     color = rl.Color(255, 255, 255, int(255 * 0.9 * self._alpha_filter.x))
     self._alert_text1_label.set_text(timer_text)
     self._alert_text1_label.set_text_color(color)
@@ -398,6 +419,9 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     group_width = icon_texture.width + AUTOHOLD_TIMER_GAP + timer_size.x
     group_x = self._rect.x + (self._rect.width - group_width) / 2
     center_y = self._rect.y + self._rect.height / 2 + (self._alert_y_filter.x - self._rect.y)
+
+    if draw_gradient:
+      self._draw_center_timer_gradient(center_y)
 
     icon_x = group_x
     icon_y = center_y - icon_texture.height / 2
@@ -411,6 +435,18 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
       timer_size.y,
     )
     self._alert_text1_label.render(timer_rect)
+
+  def _draw_center_timer_gradient(self, center_y: float) -> None:
+    bg_alpha = int(AUTOHOLD_TIMER_BG_ALPHA * self._alpha_filter.x)
+    center_color = rl.Color(0, 0, 0, bg_alpha)
+    transparent = rl.Color(0, 0, 0, 0)
+    half_height = AUTOHOLD_TIMER_BG_HEIGHT / 2
+    bg_y = center_y - half_height
+
+    rl.draw_rectangle_gradient_v(int(self._rect.x), int(bg_y), int(self._rect.width), int(half_height),
+                                 transparent, center_color)
+    rl.draw_rectangle_gradient_v(int(self._rect.x), int(bg_y + half_height), int(self._rect.width), int(half_height),
+                                 center_color, transparent)
 
   def _draw_icons(self, alert_layout: AlertLayout) -> None:
     if alert_layout.icon is None:
@@ -437,6 +473,10 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
   def _draw_background(self, alert: Alert) -> None:
     # draw top gradient for alert text at top
+    event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
+    if event_name == 'resumeRequired' or event_name in PARKING_BRAKE_EVENT_NAMES:
+      return
+
     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])
     color = rl.Color(color.r, color.g, color.b, int(255 * 0.90 * self._alpha_filter.x))
     translucent_color = rl.Color(color.r, color.g, color.b, int(0 * self._alpha_filter.x))
@@ -445,8 +485,6 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     medium_alert_height = round(self._rect.height * 0.833) # 200px at mici height
 
     # alert_type format is "EventName/eventType" (e.g., "preLaneChangeLeft/warning")
-    event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
-
     if event_name == 'preLaneChangeLeft':
       bg_height = small_alert_height
     elif event_name == 'preLaneChangeRight':

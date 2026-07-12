@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 import pyray as rl
 from cereal import car, log
@@ -12,7 +10,6 @@ from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.mici.onroad.model_renderer import ModelRenderer
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
 from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
-from openpilot.selfdrive.ui.mici.onroad.status_timers import format_duration_words, should_show_standstill_timer
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets import Widget
@@ -29,7 +26,6 @@ OpState = log.SelfdriveState.OpenpilotState
 CALIBRATED = log.LiveCalibrationData.Status.calibrated
 ROAD_CAM = VisionStreamType.VISION_STREAM_ROAD
 WIDE_CAM = VisionStreamType.VISION_STREAM_WIDE_ROAD
-DRIVER_CAM = VisionStreamType.VISION_STREAM_DRIVER
 DEFAULT_DEVICE_CAMERA = DEVICE_CAMERAS["tici", "ar0231"]
 
 
@@ -42,11 +38,6 @@ WIDE_CAM_MAX_SPEED = 5.0  # m/s (10 mph)
 ROAD_CAM_MIN_SPEED = 10  # m/s (25 mph)
 
 CAM_Y_OFFSET = 20
-STANDSTILL_ENGAGED_COLOR = rl.Color(0x80, 0xd8, 0xa6, 0xff)
-STANDSTILL_EXPERIMENTAL_COLOR = rl.Color(255, 175, 3, 255)
-STANDSTILL_TRAFFIC_COLOR = rl.Color(255, 95, 50, 255)
-
-
 class BookmarkIcon(Widget):
   PEEK_THRESHOLD = 50  # If icon peeks out this much, snap it fully visible
   FULL_VISIBLE_OFFSET = 200  # How far onscreen when fully visible
@@ -139,105 +130,6 @@ class BookmarkIcon(Widget):
       rl.draw_texture_ex(self._icon, rl.Vector2(icon_x, icon_y), 0.0, 1.0, rl.WHITE)
 
 
-class StandstillTimerOverlay:
-  def __init__(self):
-    self._last_started_frame = -1
-    self._standstill_duration = 0
-    self._standstill_started_at: float | None = None
-    self._font_bold = gui_app.font(FontWeight.BOLD)
-    self._font_medium = gui_app.font(FontWeight.MEDIUM)
-
-  def _reset(self):
-    self._standstill_duration = 0
-    self._standstill_started_at = None
-
-  @staticmethod
-  def _blend_colors(start: rl.Color, end: rl.Color, transition: float) -> rl.Color:
-    transition = float(np.clip(transition, 0.0, 1.0))
-    return rl.Color(
-      int(start.r + transition * (end.r - start.r)),
-      int(start.g + transition * (end.g - start.g)),
-      int(start.b + transition * (end.b - start.b)),
-      255,
-    )
-
-  def _get_duration_color(self) -> rl.Color:
-    if self._standstill_duration < 60:
-      return STANDSTILL_ENGAGED_COLOR
-    if self._standstill_duration < 150:
-      transition = (self._standstill_duration - 60) / 90.0
-      return self._blend_colors(STANDSTILL_ENGAGED_COLOR, STANDSTILL_EXPERIMENTAL_COLOR, transition)
-    if self._standstill_duration < 300:
-      transition = (self._standstill_duration - 150) / 150.0
-      return self._blend_colors(STANDSTILL_EXPERIMENTAL_COLOR, STANDSTILL_TRAFFIC_COLOR, transition)
-    return STANDSTILL_TRAFFIC_COLOR
-
-  def _update_state(self, in_reverse: bool, is_driver_stream: bool) -> bool:
-    if not ui_state.started:
-      self._last_started_frame = -1
-      self._reset()
-      return False
-
-    if ui_state.started_frame != self._last_started_frame:
-      self._last_started_frame = ui_state.started_frame
-      self._reset()
-
-    if ui_state.sm.recv_frame["carState"] < ui_state.started_frame:
-      self._reset()
-      return False
-
-    car_state = ui_state.sm["carState"]
-    if in_reverse or is_driver_stream or not ui_state.standstill_timer or not car_state.standstill:
-      self._reset()
-      return False
-
-    now = time.monotonic()
-    if self._standstill_started_at is None:
-      self._standstill_started_at = now
-      self._standstill_duration = 0
-    else:
-      self._standstill_duration = int(now - self._standstill_started_at)
-
-    return should_show_standstill_timer(
-      enabled=ui_state.standstill_timer,
-      started=ui_state.started,
-      in_reverse=in_reverse,
-      is_driver_stream=is_driver_stream,
-      standstill=car_state.standstill,
-      seconds_since_started=now - ui_state.started_time,
-      standstill_duration=self._standstill_duration,
-    )
-
-  @staticmethod
-  def _fit_font_size(font: rl.Font, text: str, initial_size: int, max_width: float, minimum_size: int) -> int:
-    font_size = max(initial_size, minimum_size)
-    while font_size > minimum_size and rl.measure_text_ex(font, text, font_size, 0).x > max_width:
-      font_size -= 2
-    return font_size
-
-  def _draw_centered_text(self, rect: rl.Rectangle, text: str, y: float, font: rl.Font, font_size: int,
-                          color: rl.Color) -> None:
-    text_size = rl.measure_text_ex(font, text, font_size, 0)
-    text_pos = rl.Vector2(rect.x + rect.width / 2 - text_size.x / 2, rect.y + y - text_size.y / 2)
-    rl.draw_text_ex(font, text, rl.Vector2(text_pos.x + 2, text_pos.y + 2), font_size, 0, rl.Color(0, 0, 0, 170))
-    rl.draw_text_ex(font, text, text_pos, font_size, 0, color)
-
-  def render(self, rect: rl.Rectangle, in_reverse: bool, is_driver_stream: bool) -> bool:
-    if not self._update_state(in_reverse, is_driver_stream):
-      return False
-
-    minute_text, second_text = format_duration_words(self._standstill_duration)
-    duration_color = self._get_duration_color()
-    max_text_width = max(rect.width - 36, 120)
-    minute_font_size = self._fit_font_size(self._font_bold, minute_text, int(rect.height * 0.34), max_text_width, 28)
-    second_font_size = self._fit_font_size(self._font_medium, second_text, int(rect.height * 0.15), max_text_width, 16)
-
-    self._draw_centered_text(rect, minute_text, rect.height * 0.42, self._font_bold, minute_font_size, duration_color)
-    self._draw_centered_text(rect, second_text, rect.height * 0.62, self._font_medium, second_font_size,
-                             rl.Color(255, 255, 255, 242))
-    return True
-
-
 class AugmentedRoadView(CameraView):
   def __init__(self, bookmark_callback=None, stream_type: VisionStreamType = VisionStreamType.VISION_STREAM_ROAD):
     super().__init__("camerad", stream_type)
@@ -261,7 +153,6 @@ class AugmentedRoadView(CameraView):
     self._alert_renderer = AlertRenderer()
     self._driver_state_renderer = DriverStateRenderer()
     self._confidence_ball = ConfidenceBall()
-    self._standstill_timer = StandstillTimerOverlay()
     self._offroad_label = UnifiedLabel("start the car to\nuse sunnypilot", 54, FontWeight.DISPLAY,
                                        text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                        alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
@@ -341,10 +232,6 @@ class AugmentedRoadView(CameraView):
                                                alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired)
     self._alert_renderer.render(self._content_rect)
     self._hud_renderer.render(self._content_rect)
-    parking_brake_timer_visible = self._alert_renderer.parking_brake_timer_visible()
-    if not parking_brake_timer_visible:
-      self._standstill_timer.render(self._content_rect, self._is_in_reverse(), self.stream_type == DRIVER_CAM)
-
     # Draw fake rounded border
     rl.draw_rectangle_rounded_lines_ex(self._content_rect, 0.2 * 1.02, 10, 50, rl.BLACK)
 

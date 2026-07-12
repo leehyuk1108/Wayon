@@ -91,15 +91,8 @@ function storedGps(rawJson, state) {
 }
 
 async function resolveTelemetryGps(env, deviceId, gps) {
-  if (hasLocation(gps)) return gps;
-
-  const currentState = await env.DB.prepare(`
-    SELECT latitude, longitude, bearing_deg, gps_accuracy_m, raw_json
-    FROM latest_state WHERE device_id = ?
-  `).bind(deviceId).first();
-  if (currentState && validCoordinate(currentState.latitude) && validCoordinate(currentState.longitude)) {
-    return storedGps(currentState.raw_json, currentState);
-  }
+  const gpsHasLocation = hasLocation(gps);
+  if (gpsHasLocation && gps.fresh === true) return gps;
 
   const latestTrip = await env.DB.prepare(`
     SELECT end_lat, end_lon, ended_at
@@ -108,14 +101,24 @@ async function resolveTelemetryGps(env, deviceId, gps) {
     ORDER BY ended_at DESC LIMIT 1
   `).bind(deviceId).first();
   if (latestTrip && validCoordinate(latestTrip.end_lat) && validCoordinate(latestTrip.end_lon)) {
-    const timestampMillis = Date.parse(latestTrip.ended_at || "");
+    const tripTimestampMillis = Date.parse(latestTrip.ended_at || "");
     return {
       latitude: nullableNumber(latestTrip.end_lat),
       longitude: nullableNumber(latestTrip.end_lon),
-      timestampMillis: Number.isFinite(timestampMillis) ? timestampMillis : null,
+      timestampMillis: Number.isFinite(tripTimestampMillis) ? tripTimestampMillis : null,
       fresh: false,
       source: "latestTrip",
     };
+  }
+
+  if (gpsHasLocation) return gps;
+
+  const currentState = await env.DB.prepare(`
+    SELECT latitude, longitude, bearing_deg, gps_accuracy_m, raw_json
+    FROM latest_state WHERE device_id = ?
+  `).bind(deviceId).first();
+  if (currentState && validCoordinate(currentState.latitude) && validCoordinate(currentState.longitude)) {
+    return storedGps(currentState.raw_json, currentState);
   }
 
   return gps;

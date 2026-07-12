@@ -218,10 +218,12 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   enabled = bool(getattr(selfdrive_state, "enabled", False))
   active = bool(getattr(selfdrive_state, "active", False))
   engageable = bool(getattr(selfdrive_state, "engageable", False))
+  state = enum_text(getattr(selfdrive_state, "state", "unknown"))
   cruise_standstill = is_cruise_standstill(car_state)
-  # Navdy's stop icon is also used while the vehicle is preEnabled.  On GM
-  # platforms the generic and cruise standstill signals can arrive separately.
-  standstill = bool(getattr(car_state, "standstill", False) or cruise_standstill)
+  vehicle_standstill = bool(getattr(car_state, "standstill", False) or cruise_standstill)
+  # preEnabled is the stopped engagement-wait state. Otherwise show the stop
+  # icon only while openpilot is engaged and the vehicle is stationary.
+  show_stop_icon = state == "preEnabled" or ((enabled or active) and vehicle_standstill)
 
   v_ego_cluster = finite_float(getattr(car_state, "vEgoCluster", 0.0))
   v_ego_ms = finite_float(getattr(car_state, "vEgo", 0.0))
@@ -231,15 +233,15 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "schema": "navdy.openpilot.v1",
     "seq": seq,
     "ts": round(time.time(), 3),
-    "state": enum_text(getattr(selfdrive_state, "state", "unknown")),
+    "state": state,
     "enabled": enabled,
     "active": active,
     "engaged": active,
     "disengaged": not enabled,
     "engageable": engageable,
     "opAvailable": engageable,
-    "standstill": standstill,
-    "cruiseStandstill": cruise_standstill,
+    "standstill": show_stop_icon,
+    "cruiseStandstill": show_stop_icon,
     "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
     "vEgoKph": rounded(v_ego_kph),
     "gear": gear_text(car_state, selfdrive_state),

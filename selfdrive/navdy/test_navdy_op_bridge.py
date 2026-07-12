@@ -71,6 +71,42 @@ def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
   assert payload["setSpeedKph"] == 80.0
 
 
+def test_payload_hides_stop_icon_while_disengaged_at_standstill():
+  car_state = SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=True, speed=0.0),
+    gearShifter="drive",
+    standstill=True,
+    vCruise=80.0,
+    vCruiseCluster=80.0,
+    vEgo=0.0,
+    vEgoCluster=0.0,
+  )
+  selfdrive_state = SimpleNamespace(active=False, enabled=False, engageable=True, state="disabled")
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 9)
+
+  assert payload["standstill"] is False
+  assert payload["cruiseStandstill"] is False
+
+
+def test_payload_shows_stop_icon_while_engaged_at_standstill():
+  car_state = SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=False, speed=0.0),
+    gearShifter="drive",
+    standstill=True,
+    vCruise=80.0,
+    vCruiseCluster=80.0,
+    vEgo=0.0,
+    vEgoCluster=0.0,
+  )
+  selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 10)
+
+  assert payload["standstill"] is True
+  assert payload["cruiseStandstill"] is True
+
+
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
   selfdrive_state = SimpleNamespace(
     active=False,

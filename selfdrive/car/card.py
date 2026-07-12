@@ -264,6 +264,19 @@ class Car:
     cs_sp_send = messaging.new_message('carStateSP')
     cs_sp_send.valid = CS.canValid
     cs_sp_send.carStateSP = CS_SP
+    cs_sp_send.carStateSP.navdyVCruise = CS.vCruise
+    cs_sp_send.carStateSP.navdyVCruiseCluster = CS.vCruiseCluster
+    cs_sp_send.carStateSP.navdyVEgo = CS.vEgo
+    cs_sp_send.carStateSP.navdyVEgoCluster = CS.vEgoCluster
+    cs_sp_send.carStateSP.navdyCruiseSpeed = CS.cruiseState.speed
+    cs_sp_send.carStateSP.navdyCruiseSpeedCluster = CS.cruiseState.speedCluster
+    cs_sp_send.carStateSP.navdyStandstill = CS.standstill
+    cs_sp_send.carStateSP.navdyCruiseStandstill = CS.cruiseState.standstill
+    cs_sp_send.carStateSP.navdyGearShifter = str(CS.gearShifter).split(".")[-1].lower()
+    cs_sp_send.carStateSP.navdyLeftBlinker = CS.leftBlinker
+    cs_sp_send.carStateSP.navdyRightBlinker = CS.rightBlinker
+    cs_sp_send.carStateSP.navdyLeftBlindspot = CS.leftBlindspot
+    cs_sp_send.carStateSP.navdyRightBlindspot = CS.rightBlindspot
     self.pm.send('carStateSP', cs_sp_send)
 
   def controls_update(self, CS: car.CarState, CC: car.CarControl, CC_SP: custom.CarControlSP):

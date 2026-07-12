@@ -87,17 +87,48 @@ def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable()
 
 
 def test_available_services_skips_missing_starpilot_plan():
-  messaging = SimpleNamespace(SERVICE_LIST={"selfdriveState": object(), "carState": object()})
+  messaging = SimpleNamespace(SERVICE_LIST={"selfdriveState": object(), "carStateSP": object()})
 
   assert navdy_op_bridge.available_services(
-      messaging, ["selfdriveState", "carState", "starpilotPlan"]) == ["selfdriveState", "carState"]
+      messaging, ["selfdriveState", "carStateSP", "starpilotPlan"]) == ["selfdriveState", "carStateSP"]
+
+
+def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
+  car_state_sp = SimpleNamespace(
+    navdyCruiseStandstill=True,
+    navdyCruiseSpeed=27.7,
+    navdyCruiseSpeedCluster=28.0,
+    navdyGearShifter="drive",
+    navdyLeftBlinker=True,
+    navdyRightBlinker=False,
+    navdyLeftBlindspot=True,
+    navdyRightBlindspot=False,
+    navdyStandstill=True,
+    navdyVCruise=99.0,
+    navdyVCruiseCluster=100.0,
+    navdyVEgo=10.0,
+    navdyVEgoCluster=10.5,
+  )
+
+  car_state = navdy_op_bridge.car_state_from_sp(car_state_sp)
+
+  assert car_state.gearShifter == "drive"
+  assert car_state.vCruiseCluster == 100.0
+  assert car_state.standstill is True
+  assert car_state.cruiseState.standstill is True
+  assert car_state.leftBlinker is True
+  assert car_state.leftBlindspot is True
+
+
+def test_navdy_bridge_avoids_saturated_car_state_service():
+  assert navdy_op_bridge.NAVDY_CAR_STATE_SERVICE == "carStateSP"
 
 
 def test_live_payload_ready_uses_recent_messages_not_alive_flags():
   sm = SimpleNamespace(
-    alive={"selfdriveState": False, "carState": False},
-    recv_time={"selfdriveState": 10.0, "carState": 10.1},
-    seen={"selfdriveState": True, "carState": True},
+    alive={"selfdriveState": False, "carStateSP": False},
+    recv_time={"selfdriveState": 10.0, "carStateSP": 10.1},
+    seen={"selfdriveState": True, "carStateSP": True},
   )
 
   assert navdy_op_bridge.live_payload_ready(sm, True, now=10.2)
@@ -106,9 +137,9 @@ def test_live_payload_ready_uses_recent_messages_not_alive_flags():
 
 def test_live_payload_ready_allows_missing_car_state_when_selfdrive_is_recent():
   sm = SimpleNamespace(
-    alive={"selfdriveState": False, "carState": False},
-    recv_time={"selfdriveState": 10.0, "carState": 0.0},
-    seen={"selfdriveState": True, "carState": False},
+    alive={"selfdriveState": False, "carStateSP": False},
+    recv_time={"selfdriveState": 10.0, "carStateSP": 0.0},
+    seen={"selfdriveState": True, "carStateSP": False},
   )
 
   assert navdy_op_bridge.live_payload_ready(sm, True, now=10.2)

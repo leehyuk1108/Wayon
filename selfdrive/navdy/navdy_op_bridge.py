@@ -42,6 +42,7 @@ ONROAD_PROCESS_NAMES = (
   "selfdrive.modeld.modeld",
   "./camerad",
 )
+NAVDY_CAR_STATE_SERVICE = "carStateSP"
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -153,6 +154,26 @@ def default_car_state() -> Any:
   )
 
 
+def car_state_from_sp(car_state_sp: Any) -> Any:
+  return SimpleNamespace(
+    cruiseState=SimpleNamespace(
+      standstill=bool(getattr(car_state_sp, "navdyCruiseStandstill", False)),
+      speed=finite_float(getattr(car_state_sp, "navdyCruiseSpeed", 0.0)),
+      speedCluster=finite_float(getattr(car_state_sp, "navdyCruiseSpeedCluster", 0.0)),
+    ),
+    gearShifter=str(getattr(car_state_sp, "navdyGearShifter", "unknown")),
+    leftBlinker=bool(getattr(car_state_sp, "navdyLeftBlinker", False)),
+    rightBlinker=bool(getattr(car_state_sp, "navdyRightBlinker", False)),
+    leftBlindspot=bool(getattr(car_state_sp, "navdyLeftBlindspot", False)),
+    rightBlindspot=bool(getattr(car_state_sp, "navdyRightBlindspot", False)),
+    standstill=bool(getattr(car_state_sp, "navdyStandstill", False)),
+    vCruise=finite_float(getattr(car_state_sp, "navdyVCruise", 0.0)),
+    vCruiseCluster=finite_float(getattr(car_state_sp, "navdyVCruiseCluster", 0.0)),
+    vEgo=finite_float(getattr(car_state_sp, "navdyVEgo", 0.0)),
+    vEgoCluster=finite_float(getattr(car_state_sp, "navdyVEgoCluster", 0.0)),
+  )
+
+
 def is_cruise_standstill(car_state: Any) -> bool:
   return bool(getattr(getattr(car_state, "cruiseState", None), "standstill", False))
 
@@ -204,7 +225,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
 
   v_ego_cluster = finite_float(getattr(car_state, "vEgoCluster", 0.0))
   v_ego_ms = finite_float(getattr(car_state, "vEgo", 0.0))
-  v_ego_kph = v_ego_cluster if v_ego_cluster > 0.0 else v_ego_ms * KPH_PER_MS
+  v_ego_kph = (v_ego_cluster if v_ego_cluster > 0.0 else v_ego_ms) * KPH_PER_MS
 
   return {
     "schema": "navdy.openpilot.v1",
@@ -548,7 +569,7 @@ def service_active(sm: Any, service: str) -> bool:
 
 def openpilot_messages_started(sm: Any) -> bool:
   return any(service_active(sm, service)
-             for service in ("carState", "selfdriveState", "controlsState"))
+             for service in (NAVDY_CAR_STATE_SERVICE, "selfdriveState", "controlsState"))
 
 
 def onroad_process_started(args: argparse.Namespace, now: float) -> bool:
@@ -606,11 +627,6 @@ def sm_optional(sm: Any, services: list[str], service: str) -> Any:
   return sm[service] if service in services else None
 
 
-def sm_recent_or_default(sm: Any, services: list[str], service: str,
-                         now: float, default: Any) -> Any:
-  return sm[service] if service in services and service_recent(sm, service, now) else default
-
-
 def due_for_power_on_ensure(args: argparse.Namespace, now: float) -> bool:
   last = float(getattr(args, "_last_power_on_ensure_at", 0.0))
   if now - last < max(args.power_on_ensure_sec, 0.1):
@@ -642,7 +658,7 @@ def run_live(args: argparse.Namespace) -> None:
   maybe_reexec_openpilot_python(args)
   messaging = import_messaging()
   services = available_services(
-      messaging, ["selfdriveState", "carState", "controlsState", "starpilotPlan", "longitudinalPlan"])
+      messaging, ["selfdriveState", NAVDY_CAR_STATE_SERVICE, "controlsState", "starpilotPlan", "longitudinalPlan"])
   if args.manage_navdy_power:
     services += available_services(messaging, ["deviceState", "pandaStates"])
   sm = messaging.SubMaster(services)
@@ -666,8 +682,12 @@ def run_live(args: argparse.Namespace) -> None:
       continue
     if not live_payload_ready(sm, started, now):
       continue
+    if service_recent(sm, NAVDY_CAR_STATE_SERVICE, now):
+      car_state = car_state_from_sp(sm[NAVDY_CAR_STATE_SERVICE])
+    else:
+      car_state = default_car_state()
     payload = payload_from_messages(sm["selfdriveState"],
-                                    sm_recent_or_default(sm, services, "carState", now, default_car_state()),
+                                    car_state,
                                     seq,
                                     sm_optional(sm, services, "controlsState"),
                                     sm_optional(sm, services, "starpilotPlan"),

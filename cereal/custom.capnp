@@ -437,6 +437,19 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
+  navdyVCruise @1 :Float32;
+  navdyVCruiseCluster @2 :Float32;
+  navdyVEgo @3 :Float32;
+  navdyVEgoCluster @4 :Float32;
+  navdyCruiseSpeed @5 :Float32;
+  navdyCruiseSpeedCluster @6 :Float32;
+  navdyStandstill @7 :Bool;
+  navdyCruiseStandstill @8 :Bool;
+  navdyGearShifter @9 :Text;
+  navdyLeftBlinker @10 :Bool;
+  navdyRightBlinker @11 :Bool;
+  navdyLeftBlindspot @12 :Bool;
+  navdyRightBlindspot @13 :Bool;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

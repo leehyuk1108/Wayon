@@ -329,16 +329,16 @@
       "title": "운전자 개입 요구됨",
       "subtitle": "도어 열림 감지됨"
     },
-    "EVENTS.driverDistracted.PERMANENT": {
-      "eventName": "driverDistracted",
+    "EVENTS.driverDistracted3.PERMANENT": {
+      "eventName": "driverDistracted3",
       "eventType": "PERMANENT",
       "source": "EVENTS",
       "title": "운전 보조 비활성화",
       "subtitle": "운전자 부주의 감지됨",
       "titleFontPx": 59
     },
-    "EVENTS.driverUnresponsive.PERMANENT": {
-      "eventName": "driverUnresponsive",
+    "EVENTS.driverUnresponsive3.PERMANENT": {
+      "eventName": "driverUnresponsive3",
       "eventType": "PERMANENT",
       "source": "EVENTS",
       "title": "운전 보조 비활성화",
@@ -650,8 +650,8 @@
       "title": "운전자 개입 요구됨",
       "subtitle": "일시적 차량 파라미터 오류"
     },
-    "EVENTS.preDriverUnresponsive.PERMANENT": {
-      "eventName": "preDriverUnresponsive",
+    "EVENTS.driverUnresponsive1.PERMANENT": {
+      "eventName": "driverUnresponsive1",
       "eventType": "PERMANENT",
       "source": "EVENTS",
       "title": "운전자 감지 안됨",
@@ -824,15 +824,15 @@
       "titleFontPx": 79,
       "subtitleFontPx": 36
     },
-    "EVENTS.preDriverDistracted.PERMANENT": {
-      "eventName": "preDriverDistracted",
+    "EVENTS.driverDistracted1.PERMANENT": {
+      "eventName": "driverDistracted1",
       "eventType": "PERMANENT",
       "source": "EVENTS",
       "title": "운전에 집중하세요",
       "subtitle": ""
     },
-    "EVENTS.promptDriverDistracted.PERMANENT": {
-      "eventName": "promptDriverDistracted",
+    "EVENTS.driverDistracted2.PERMANENT": {
+      "eventName": "driverDistracted2",
       "eventType": "PERMANENT",
       "source": "EVENTS",
       "title": "운전에 집중하세요",

@@ -222,13 +222,6 @@ class StandstillTimerOverlay:
     rl.draw_text_ex(font, text, rl.Vector2(text_pos.x + 2, text_pos.y + 2), font_size, 0, rl.Color(0, 0, 0, 170))
     rl.draw_text_ex(font, text, text_pos, font_size, 0, color)
 
-  def _draw_stop_icon(self, rect: rl.Rectangle, y: float, color: rl.Color) -> None:
-    center = rl.Vector2(rect.x + rect.width / 2, rect.y + y)
-    rl.draw_circle_v(center, 43, rl.Color(0, 0, 0, 150))
-    rl.draw_ring(center, 34, 43, 0, 360, 0, color)
-    self._draw_centered_text(rl.Rectangle(center.x - 72, center.y - 24, 144, 48), "STOP", 24,
-                             self._font_bold, 34, rl.Color(255, 255, 255, 245))
-
   def render(self, rect: rl.Rectangle, in_reverse: bool, is_driver_stream: bool) -> bool:
     if not self._update_state(in_reverse, is_driver_stream):
       return False
@@ -236,12 +229,11 @@ class StandstillTimerOverlay:
     minute_text, second_text = format_duration_words(self._standstill_duration)
     duration_color = self._get_duration_color()
     max_text_width = max(rect.width - 36, 120)
-    minute_font_size = self._fit_font_size(self._font_bold, minute_text, int(rect.height * 0.29), max_text_width, 28)
-    second_font_size = self._fit_font_size(self._font_medium, second_text, int(rect.height * 0.13), max_text_width, 16)
+    minute_font_size = self._fit_font_size(self._font_bold, minute_text, int(rect.height * 0.34), max_text_width, 28)
+    second_font_size = self._fit_font_size(self._font_medium, second_text, int(rect.height * 0.15), max_text_width, 16)
 
-    self._draw_stop_icon(rect, rect.height * 0.24, duration_color)
-    self._draw_centered_text(rect, minute_text, rect.height * 0.45, self._font_bold, minute_font_size, duration_color)
-    self._draw_centered_text(rect, second_text, rect.height * 0.63, self._font_medium, second_font_size,
+    self._draw_centered_text(rect, minute_text, rect.height * 0.42, self._font_bold, minute_font_size, duration_color)
+    self._draw_centered_text(rect, second_text, rect.height * 0.62, self._font_medium, second_font_size,
                              rl.Color(255, 255, 255, 242))
     return True
 

@@ -62,6 +62,65 @@ function nullableNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function validCoordinate(value) {
+  const coordinate = nullableNumber(value);
+  return coordinate != null && Math.abs(coordinate) > 0.001;
+}
+
+function hasLocation(gps) {
+  return validCoordinate(gps?.latitude) && validCoordinate(gps?.longitude);
+}
+
+function storedGps(rawJson, state) {
+  let previousGps = {};
+  try {
+    previousGps = JSON.parse(rawJson || "{}").gps || {};
+  } catch {
+    previousGps = {};
+  }
+
+  return {
+    ...previousGps,
+    latitude: nullableNumber(state.latitude),
+    longitude: nullableNumber(state.longitude),
+    bearingDeg: nullableNumber(state.bearing_deg) ?? previousGps.bearingDeg,
+    accuracyM: nullableNumber(state.gps_accuracy_m) ?? previousGps.accuracyM,
+    fresh: false,
+    source: "lastKnown",
+  };
+}
+
+async function resolveTelemetryGps(env, deviceId, gps) {
+  if (hasLocation(gps)) return gps;
+
+  const currentState = await env.DB.prepare(`
+    SELECT latitude, longitude, bearing_deg, gps_accuracy_m, raw_json
+    FROM latest_state WHERE device_id = ?
+  `).bind(deviceId).first();
+  if (currentState && validCoordinate(currentState.latitude) && validCoordinate(currentState.longitude)) {
+    return storedGps(currentState.raw_json, currentState);
+  }
+
+  const latestTrip = await env.DB.prepare(`
+    SELECT end_lat, end_lon, ended_at
+    FROM trips
+    WHERE device_id = ? AND end_lat IS NOT NULL AND end_lon IS NOT NULL
+    ORDER BY ended_at DESC LIMIT 1
+  `).bind(deviceId).first();
+  if (latestTrip && validCoordinate(latestTrip.end_lat) && validCoordinate(latestTrip.end_lon)) {
+    const timestampMillis = Date.parse(latestTrip.ended_at || "");
+    return {
+      latitude: nullableNumber(latestTrip.end_lat),
+      longitude: nullableNumber(latestTrip.end_lon),
+      timestampMillis: Number.isFinite(timestampMillis) ? timestampMillis : null,
+      fresh: false,
+      source: "latestTrip",
+    };
+  }
+
+  return gps;
+}
+
 function boundedLimit(value, fallback = 100, max = 1000) {
   const parsed = Number.parseInt(value || "", 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -106,7 +165,8 @@ async function handleTelemetry(request, env) {
   const payload = await request.json();
   const deviceId = String(payload.deviceId || "unknown");
   const updatedAt = payload.updatedAt || nowIso();
-  const gps = payload.gps || {};
+  const gps = await resolveTelemetryGps(env, deviceId, payload.gps || {});
+  payload.gps = gps;
   const speedMps = payload.vehicleSpeedMps ?? payload.speedMps ?? gps.speedMps;
 
   await env.DB.prepare(`

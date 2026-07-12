@@ -21,6 +21,7 @@ ROUTE_STATE_PATH = Path(os.getenv("WAYON_CLOUD_ROUTE_STATE", str(CONFIG_PATH.wit
 USER_AGENT = "wayon-cloud-uploader/1.0"
 GPS_SERVICE_MAX_AGE_S = 5.0
 GPS_TIMESTAMP_MAX_AGE_MS = 15_000
+LAST_GPS_POSITION_MAX_AGE_MS = 120_000
 
 DEFAULT_TELEMETRY_INTERVAL_ONROAD = 30.0
 DEFAULT_TELEMETRY_INTERVAL_OFFROAD = 300.0
@@ -164,7 +165,7 @@ def last_gps_payload(params):
   return payload
 
 
-def gps_payload(sm):
+def gps_payload(sm, params):
   candidates = []
   now_monotonic = time.monotonic()
   now_millis = int(time.time() * 1000)
@@ -181,6 +182,11 @@ def gps_payload(sm):
       continue
 
   if not candidates:
+    fallback = last_gps_payload(params)
+    if fallback:
+      timestamp_millis = fallback.get("timestampMillis", 0)
+      fallback["fresh"] = bool(timestamp_millis and abs(now_millis - timestamp_millis) <= LAST_GPS_POSITION_MAX_AGE_MS)
+      return fallback
     return {"fresh": False, "source": "unavailable"}
 
   _, gps = max(candidates, key=lambda item: item[0])
@@ -236,7 +242,7 @@ def telemetry_payload(sm, params, device_id, started_override: bool | None = Non
     "thermalStatus": enum_name(device_state.thermalStatus),
     "fanPercent": int(device_state.fanSpeedPercentDesired),
     "screenBrightnessPercent": int(device_state.screenBrightnessPercent),
-    "gps": gps_payload(sm),
+    "gps": gps_payload(sm, params),
     "vehicleSpeedMps": vehicle_speed.get("speedMps"),
     "vehicleSpeedSource": vehicle_speed.get("source"),
     "dongleId": get_param_str(params, "DongleId"),

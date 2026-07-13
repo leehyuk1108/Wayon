@@ -297,6 +297,17 @@ def test_navdy_model_geometry_projects_path_and_middle_lane_lines():
   assert geometry["navLaneLeftProb"] == 0.8
 
 
+def test_navdy_model_line_caps_geometry_at_ten_points():
+  points = navdy_op_bridge.navdy_model_line(
+      [index * 2.5 for index in range(33)],
+      [0.0] * 33,
+  )
+
+  assert len(points) == 20
+  assert points[:2] == [160.0, 96.0]
+  assert points[-2:] == [160.0, 8.0]
+
+
 def test_payload_only_exports_model_geometry_while_active():
   model = SimpleNamespace(
     position=SimpleNamespace(x=[0.0, 80.0], y=[0.0, 0.0]),

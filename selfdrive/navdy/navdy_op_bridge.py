@@ -226,9 +226,9 @@ def navdy_model_line(x_values: Any, y_values: Any, lateral_offset: float = 0.0) 
     if 0.0 <= x <= 80.0:
       points.append((x, y))
 
-  if len(points) > 17:
+  if len(points) > 10:
     last = len(points) - 1
-    points = [points[round(i * last / 16)] for i in range(17)]
+    points = [points[round(i * last / 9)] for i in range(10)]
 
   projected = []
   for x, y in points:

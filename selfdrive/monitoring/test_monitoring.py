@@ -14,7 +14,7 @@ DISTRACTED_SECONDS_TO_RED = dm_settings._VISION_POLICY_ALERT_3_TIMEOUT + 1
 INVISIBLE_SECONDS_TO_ORANGE = dm_settings._WHEELTOUCH_POLICY_ALERT_2_TIMEOUT + 1
 INVISIBLE_SECONDS_TO_RED = dm_settings._WHEELTOUCH_POLICY_ALERT_3_TIMEOUT + 1
 
-def make_msg(face_detected, distracted=False, model_uncertain=False):
+def make_msg(face_detected, distracted=False, model_uncertain=False, phone=False):
   ds = log.DriverStateV2.new_message()
   ds.leftDriverData.faceOrientation = [0., 0., 0.]
   ds.leftDriverData.facePosition = [0., 0.]
@@ -26,7 +26,7 @@ def make_msg(face_detected, distracted=False, model_uncertain=False):
   ds.leftDriverData.faceOrientationStd = [1.*model_uncertain, 1.*model_uncertain, 1.*model_uncertain]
   ds.leftDriverData.facePositionStd = [1.*model_uncertain, 1.*model_uncertain]
   # TODO: test both separately when e2e is used
-  ds.leftDriverData.phoneProb = 0.
+  ds.leftDriverData.phoneProb = 1. * phone
   return ds
 
 
@@ -82,6 +82,19 @@ class TestMonitoring:
     assert alert_lvls[int((s._VISION_POLICY_ALERT_3_TIMEOUT + \
                     (TEST_TIMESPAN - 10 - s._VISION_POLICY_ALERT_3_TIMEOUT) / 2) / DT_DMON)] == 3
     assert isinstance(d_status.awareness, float)
+
+  @pytest.mark.parametrize("ignore_phone_dm, expected_distracted", [
+    (False, True),
+    (True, False),
+  ])
+  def test_ignore_phone_dm_preserves_phone_detection(self, ignore_phone_dm, expected_distracted):
+    dm = DriverMonitoring()
+    dm.ignore_phone_dm = ignore_phone_dm
+    dm._update_states(make_msg(True, phone=True), [0, 0, 0], 10, True, False)
+
+    state = dm.get_state_packet().driverMonitoringState.visionPolicyState
+    assert state.distractedTypes.phone
+    assert state.isDistracted == expected_distracted
 
   # engaged, no face detected the whole time, no action
   def test_fully_invisible_driver(self):

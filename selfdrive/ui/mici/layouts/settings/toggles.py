@@ -10,6 +10,18 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
 
+class SimulationIgnorePhoneDMControl(BigToggle):
+  def __init__(self):
+    super().__init__("simulation: ignore phone DM", "", initial_state=get_simulation_ignore_phone_dm(ui_state.params))
+
+  def _handle_mouse_release(self, mouse_pos):
+    super()._handle_mouse_release(mouse_pos)
+    put_simulation_ignore_phone_dm(self._checked, ui_state.params)
+
+  def refresh(self):
+    self.set_checked(get_simulation_ignore_phone_dm(ui_state.params))
+
+
 class TogglesLayoutMici(NavScroller):
   def __init__(self):
     super().__init__()
@@ -20,8 +32,7 @@ class TogglesLayoutMici(NavScroller):
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled")
     standstill_timer_toggle = BigParamControl("standstill timer", "StandstillTimer")
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM")
-    self._simulation_mode_toggle = BigToggle("시뮬레이션\nphone DM", initial_state=get_simulation_ignore_phone_dm(ui_state.params),
-                                             toggle_callback=self._simulation_mode_toggled)
+    simulation_ignore_phone_dm_toggle = SimulationIgnorePhoneDMControl()
     record_front = BigParamControl("record & upload driver camera", "RecordFront", toggle_callback=restart_needed_callback)
     record_mic = BigParamControl("record & upload mic audio", "RecordAudio", toggle_callback=restart_needed_callback)
     enable_openpilot = BigParamControl("enable sunnypilot", "OpenpilotEnabledToggle", toggle_callback=restart_needed_callback)
@@ -33,7 +44,7 @@ class TogglesLayoutMici(NavScroller):
       ldw_toggle,
       standstill_timer_toggle,
       always_on_dm_toggle,
-      self._simulation_mode_toggle,
+      simulation_ignore_phone_dm_toggle,
       record_front,
       record_mic,
       enable_openpilot,
@@ -46,13 +57,13 @@ class TogglesLayoutMici(NavScroller):
       ("IsLdwEnabled", ldw_toggle),
       ("StandstillTimer", standstill_timer_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
+      ("SimulationIgnorePhoneDM", simulation_ignore_phone_dm_toggle),
       ("RecordFront", record_front),
       ("RecordAudio", record_mic),
       ("OpenpilotEnabledToggle", enable_openpilot),
     )
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)
-    self._simulation_mode_toggle.set_enabled(lambda: not ui_state.engaged)
     record_front.set_enabled(False if ui_state.params.get_bool("RecordFrontLock") else (lambda: not ui_state.engaged))
     record_mic.set_enabled(lambda: not ui_state.engaged)
 
@@ -75,9 +86,6 @@ class TogglesLayoutMici(NavScroller):
     super().show_event()
     self._update_toggles()
 
-  def _simulation_mode_toggled(self, enabled: bool):
-    put_simulation_ignore_phone_dm(enabled, ui_state.params)
-
   def _update_toggles(self):
     ui_state.update_params()
 
@@ -94,6 +102,5 @@ class TogglesLayoutMici(NavScroller):
         ui_state.params.remove("ExperimentalMode")
 
     # Refresh toggles from params to mirror external changes
-    for key, item in self._refresh_toggles:
-      item.set_checked(ui_state.params.get_bool(key))
-    self._simulation_mode_toggle.set_checked(get_simulation_ignore_phone_dm(ui_state.params))
+    for _, item in self._refresh_toggles:
+      item.refresh()

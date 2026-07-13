@@ -228,7 +228,7 @@ class DriverMonitoring:
 
     self.distracted_types['pose'] = bool((pitch_error > pitch_threshold) or (yaw_error > yaw_threshold))
     self.distracted_types['eye'] = bool((self.blink.left + self.blink.right)*0.5 > self.settings._BLINK_THRESHOLD)
-    self.distracted_types['phone'] = not self.ignore_phone_dm and bool(self.phone_prob > self.settings._PHONE_THRESH)
+    self.distracted_types['phone'] = bool(self.phone_prob > self.settings._PHONE_THRESH)
 
   def _update_states(self, driver_state, cal_rpy, car_speed, op_engaged, standstill, demo_mode=False, steering_angle_deg=0.):
     rhd_pred = driver_state.wheelOnRightProb
@@ -268,7 +268,9 @@ class DriverMonitoring:
     self.phone_prob = driver_data.phoneProb
 
     self._get_distracted_types()
-    self.driver_distracted = any(self.distracted_types.values()) and driver_data.faceProb > self.settings._FACE_THRESHOLD and self.pose.low_std
+    phone_distracted = self.distracted_types['phone'] and not self.ignore_phone_dm
+    self.driver_distracted = (phone_distracted or self.distracted_types['pose'] or self.distracted_types['eye']) \
+                             and driver_data.faceProb > self.settings._FACE_THRESHOLD and self.pose.low_std
     self.driver_distraction_filter.update(self.driver_distracted)
 
     # only update offsetter when driver is actively driving the car above a certain speed

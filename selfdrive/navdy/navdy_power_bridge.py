@@ -12,7 +12,7 @@ from selfdrive.navdy import navdy_op_bridge
 
 DEFAULT_ARGS = [
   "--hz", "5",
-  "--path-update-sec", "1",
+  "--path-update-sec", "0.2",
   "--adb-path", "adb",
   "--adb-server-port", "5038",
   "--no-stdout",

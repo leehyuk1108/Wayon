@@ -88,6 +88,8 @@
 
 .field private static sLastLeftBlinker:Z
 
+.field private static sLastOutsideTempUpdateMs:J
+
 .field private static sLastRightBlindspot:Z
 
 .field private static sLastRightBlinker:Z
@@ -174,6 +176,20 @@
 
     .line 28
     invoke-direct {p0}, Landroid/content/BroadcastReceiver;-><init>()V
+
+    return-void
+.end method
+
+.method public static bindOutsideTempView(Landroid/widget/TextView;)V
+    .locals 2
+
+    sput-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOutsideTempTextView:Landroid/widget/TextView;
+
+    const-wide/16 v0, 0x0
+
+    sput-wide v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOutsideTempUpdateMs:J
+
+    invoke-static {}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateOutsideTemp()V
 
     return-void
 .end method
@@ -712,10 +728,6 @@
     move-result-object p0
 
     sput-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedRow:Landroid/widget/LinearLayout;
-
-    const/4 p0, 0x0
-
-    sput-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOutsideTempTextView:Landroid/widget/TextView;
 
     .line 309
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftBsmView:Landroid/widget/ImageView;
@@ -2521,7 +2533,7 @@
 .end method
 
 .method private static updateOutsideTemp()V
-    .locals 7
+    .locals 9
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOutsideTempTextView:Landroid/widget/TextView;
 
@@ -2530,6 +2542,22 @@
     return-void
 
     :cond_0
+    invoke-static {}, Landroid/os/SystemClock;->elapsedRealtime()J
+
+    move-result-wide v7
+
+    sget-wide v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOutsideTempUpdateMs:J
+
+    sub-long v2, v7, v2
+
+    const-wide/16 v4, 0x1388
+
+    cmp-long v6, v2, v4
+
+    if-gez v6, :cond_temp_throttled
+
+    sput-wide v7, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOutsideTempUpdateMs:J
+
     const-string v1, "--\u00b0C"
 
     :try_start_0
@@ -2609,6 +2637,9 @@
     move-exception v2
 
     goto :goto_0
+
+    :cond_temp_throttled
+    return-void
 .end method
 
 

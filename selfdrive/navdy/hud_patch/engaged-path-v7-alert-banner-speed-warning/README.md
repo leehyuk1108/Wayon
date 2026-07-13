@@ -1,22 +1,23 @@
-# Engaged Path v12 Matching Dashboard Speed Font
+# Engaged Path v13 Outside Temperature
 
-Base APK: `build_outputs/Hud-engaged-path-v11-disengaged-icons-signed.apk`
+Base APK: `build_outputs/Hud-engaged-path-v12-matching-speed-font-signed.apk`
 
 Base SHA-256:
 
-`337126b46210dee8be081ba6fcf8622b942a979f55d6bd06af214f74c667af57`
+`800a3caefe96f52033879daed1b91239e55d44fa4a1484968781d8d4c8ccaa0d`
 
-Output APK: `build_outputs/Hud-engaged-path-v12-matching-speed-font-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v13-outside-temp-signed.apk`
 
 Output SHA-256:
 
-`800a3caefe96f52033879daed1b91239e55d44fa4a1484968781d8d4c8ccaa0d`
+`70a0e49d4af1cd2e9e2527d2ab73db3ef2f43013aba4aa06408126e21b7b78ea`
 
-The `src` directory contains the Java source for the alert banner. The `smali`
-directory contains the complete replacement classes used in the APK, including
-the receiver integration. The `res` directory contains the replacement dashboard
-layout. Replace these files in the apktool-decoded base APK, then rebuild,
-zipalign, and sign with `build_keys/navdy-test.jks`.
+The `src` directory contains Java sources for the alert banner and outside
+temperature view. The `smali` directory contains the complete replacement
+classes used in the APK, including the receiver integration. The `res` directory
+contains the replacement dashboard layout. Replace these files in the
+apktool-decoded base APK, then rebuild, zipalign, and sign with
+`build_keys/navdy-test.jks`.
 
 Behavior:
 
@@ -24,6 +25,8 @@ Behavior:
   set speed, openpilot status, turn-signal, and BSM icons in dashboard positions.
 - Uses the same Android system typeface for the center speed while disengaged as
   the custom engaged speed, while retaining the stock 66sp size and layout.
+- Binds the dashboard temperature view when the layout is inflated and refreshes
+  standard OBD ambient-air-temperature PID `0x46` every five seconds.
 - Moves status icons to the engaged layout and shows the custom path, lanes,
   current speed, and music only while openpilot is actively engaged.
 - Keeps the alert banner independent so no-entry and disengagement alerts can

@@ -34,6 +34,24 @@ def test_navdy_disengaged_speed_uses_engaged_system_typeface():
   assert f"{navdy}fontFile" not in speed_view.attrib
 
 
+def test_navdy_outside_temperature_view_binds_and_throttles_obd_pid():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  root = ET.parse(patch / "res/layout/screen_home_smartdash.xml").getroot()
+  android = "{http://schemas.android.com/apk/res/android}"
+  temp_view = next(view for view in root.iter()
+                   if view.attrib.get(f"{android}id") == "@id/si_temperature")
+  receiver = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+  temp_class = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotOutsideTempView.smali").read_text()
+  overlay_builder = receiver.split(".method private static buildOverlayView", 1)[1].split(".end method", 1)[0]
+  temp_updater = receiver.split(".method private static updateOutsideTemp()V", 1)[1].split(".end method", 1)[0]
+
+  assert temp_view.tag == "com.navdy.hud.app.openpilot.OpenpilotOutsideTempView"
+  assert "->bindOutsideTempView(Landroid/widget/TextView;)V" in temp_class
+  assert "sOutsideTempTextView" not in overlay_builder
+  assert "const/16 v5, 0x46" in temp_updater
+  assert "const-wide/16 v4, 0x1388" in temp_updater
+
+
 def test_payload_exports_standstill_and_op_available():
   cruise_state = SimpleNamespace(standstill=True, speed=27.7)
   car_state = SimpleNamespace(

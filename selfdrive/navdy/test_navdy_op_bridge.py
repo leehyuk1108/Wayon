@@ -346,8 +346,11 @@ def test_manager_defaults_use_starpilot_socket_transport():
 
 
 def test_manager_defaults_keep_fast_state_and_throttle_path():
-  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1] == "5"
-  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--path-update-sec") + 1] == "0.2"
+  hz = float(navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1])
+  path_update_sec = float(navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--path-update-sec") + 1])
+  assert hz == 5.0
+  assert path_update_sec == 0.1
+  assert path_update_sec < 1.0 / hz
   assert "--min-emit-sec" not in navdy_power_bridge.DEFAULT_ARGS
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--heartbeat-sec") + 1] == "5"
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--power-on-ensure-sec") + 1] == "60"

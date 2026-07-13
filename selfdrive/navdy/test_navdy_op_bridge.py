@@ -136,10 +136,28 @@ def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
   smali = receiver.read_text()
 
   assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in smali
-  assert "cmpl-double v4, v16, v2" in smali
+  assert "cmpl-double v4, v16, v8" in smali
   assert ":cond_navdy_camera_speed_white" in smali
   assert "const/high16 v1, -0x10000" in smali
   assert "const/4 v1, -0x1" in smali
+
+
+def test_navdy_hud_patch_hides_engaged_layout_while_disengaged():
+  receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+             "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
+  smali = receiver.read_text()
+  hide_method = smali.split(".method private static hideEngagedOverlay()V", 1)[1].split(".end method", 1)[0]
+  update_method = smali.split(".method private static updateOpenpilotOverlay", 1)[1].split(".end method", 1)[0]
+
+  for field in (
+      "sEngagedTopMask", "sEngagedBodyMask", "sPathView", "sCurrentSpeedTextView", "sMusicTextView",
+      "sLeftBsmView", "sRightBsmView", "sStandstillView", "sOpReadyView", "sSetSpeedRow",
+  ):
+    assert f"->{field}:" in hide_method
+  assert "->setTurnBlinkers(ZZ)V" in hide_method
+  assert "if-nez p1, :cond_navdy_engaged" in update_method
+  assert "->hideEngagedOverlay()V" in update_method
+  assert update_method.index("->hideEngagedOverlay()V") < update_method.index("\n    :cond_navdy_engaged")
 
 
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():

@@ -1,4 +1,4 @@
-# Engaged Path v7 Alert Banner and Camera Speed Warning
+# Engaged Path v9 Active Layout, Music, Alerts, and Speed Warning
 
 Base APK: `build_outputs/Hud-engaged-path-v5-signed.apk`
 
@@ -6,11 +6,11 @@ Base SHA-256:
 
 `21c714a8fa48149d000d1c98b4e6b4b0d67668dd43bbb147d9eddb2105a66dd8`
 
-Output APK: `build_outputs/Hud-engaged-path-v8-alert-banner-camera-speed-red-verifier-fix-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v9-active-layout-music-signed.apk`
 
 Output SHA-256:
 
-`d8371becc0889e710066244f9d390bd9696e203a40b79ea763e5b229c990eb9f`
+`84c4dcbf66a610b38e2438d78989481b871a524e8153b3fe1f2160de20fe9c8c`
 
 The `src` directory contains the Java source for the alert banner. The `smali`
 directory contains the complete replacement classes used in the APK, including
@@ -19,6 +19,11 @@ then rebuild, zipalign, and sign with `build_keys/navdy-test.jks`.
 
 Behavior:
 
+- Keeps the stock driving HUD untouched while openpilot is disengaged.
+- Shows the custom path, lanes, speed, set speed, music, and status icons only
+  while openpilot is actively engaged.
+- Keeps the alert banner independent so no-entry and disengagement alerts can
+  still appear over the stock HUD.
 - Reads `alertText1`, `alertText2`, `alertType`, `alertStatus`, and `alertSize`.
 - Slides a 640x100 banner down at y=120 over the driving HUD.
 - Uses black, orange, or red based on alert status.

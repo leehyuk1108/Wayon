@@ -2187,6 +2187,58 @@
     return-void
 .end method
 
+.method private static hideEngagedOverlay()V
+    .locals 2
+
+    const/16 v1, 0x8
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sEngagedTopMask:Landroid/view/View;
+
+    invoke-virtual {v0, v1}, Landroid/view/View;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sEngagedBodyMask:Landroid/view/View;
+
+    invoke-virtual {v0, v1}, Landroid/view/View;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sPathView:Lcom/navdy/hud/app/openpilot/OpenpilotPathView;
+
+    invoke-virtual {v0, v1}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCurrentSpeedTextView:Landroid/widget/TextView;
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sMusicTextView:Landroid/widget/TextView;
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftBsmView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sRightBsmView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sStandstillView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOpReadyView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedRow:Landroid/widget/LinearLayout;
+
+    invoke-virtual {v0, v1}, Landroid/widget/LinearLayout;->setVisibility(I)V
+
+    const/4 v0, 0x0
+
+    invoke-static {v0, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->setTurnBlinkers(ZZ)V
+
+    return-void
+.end method
+
 .method private static updateOpenpilotOverlay(Landroid/content/Context;ZZZDZZZZ)V
     .locals 1
 
@@ -2202,9 +2254,22 @@
 
     .line 224
     :cond_0
+    if-nez p1, :cond_navdy_engaged
+
+    invoke-static {}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->hideEngagedOverlay()V
+
+    return-void
+
+    :cond_navdy_engaged
     invoke-static {}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateOutsideTemp()V
 
     invoke-static {p6, p7}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->setTurnBlinkers(ZZ)V
+
+    sget-object p6, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sPathView:Lcom/navdy/hud/app/openpilot/OpenpilotPathView;
+
+    const/4 p7, 0x0
+
+    invoke-virtual {p6, p7}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->setVisibility(I)V
 
     sget-object p6, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sEngagedTopMask:Landroid/view/View;
 

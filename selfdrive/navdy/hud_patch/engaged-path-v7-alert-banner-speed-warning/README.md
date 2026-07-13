@@ -1,22 +1,23 @@
-# Engaged Path v13 Outside Temperature
+# Engaged Path v14 Music Metadata
 
-Base APK: `build_outputs/Hud-engaged-path-v12-matching-speed-font-signed.apk`
+Base APK: `build_outputs/Hud-engaged-path-v13-outside-temp-signed.apk`
 
 Base SHA-256:
 
-`800a3caefe96f52033879daed1b91239e55d44fa4a1484968781d8d4c8ccaa0d`
+`70a0e49d4af1cd2e9e2527d2ab73db3ef2f43013aba4aa06408126e21b7b78ea`
 
-Output APK: `build_outputs/Hud-engaged-path-v13-outside-temp-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v14-music-metadata-signed.apk`
 
 Output SHA-256:
 
-`70a0e49d4af1cd2e9e2527d2ab73db3ef2f43013aba4aa06408126e21b7b78ea`
+`ddb225baa5510140003423778dfac9b0d06a0762d8455c373d41f24708f5e4e9`
 
 The `src` directory contains Java sources for the alert banner and outside
 temperature view. The `smali` directory contains the complete replacement
 classes used in the APK, including the receiver integration. The `res` directory
 contains the replacement dashboard layout. Replace these files in the
-apktool-decoded base APK, then rebuild, zipalign, and sign with
+apktool-decoded base APK, apply `SmartDashView.music-metadata.patch` from the
+decoded APK root, then rebuild, zipalign, and sign with
 `build_keys/navdy-test.jks`.
 
 Behavior:
@@ -29,6 +30,8 @@ Behavior:
   standard OBD ambient-air-temperature PID `0x46` every five seconds.
 - Moves status icons to the engaged layout and shows the custom path, lanes,
   current speed, and music only while openpilot is actively engaged.
+- Shows music as `artist - title` in both stock and engaged layouts, and restores
+  the current track whenever the dashboard view is recreated.
 - Keeps the alert banner independent so no-entry and disengagement alerts can
   still appear over the stock HUD.
 - Reads `alertText1`, `alertText2`, `alertType`, `alertStatus`, and `alertSize`.

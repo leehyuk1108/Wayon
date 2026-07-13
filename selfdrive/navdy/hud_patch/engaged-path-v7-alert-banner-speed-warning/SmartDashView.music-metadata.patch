@@ -1,0 +1,76 @@
+--- a/smali/com/navdy/hud/app/ui/component/homescreen/SmartDashView.smali
++++ b/smali/com/navdy/hud/app/ui/component/homescreen/SmartDashView.smali
+@@ -2292,4 +2291,0 @@
+-    iget-object v0, p0, Lcom/navdy/hud/app/ui/component/homescreen/SmartDashView;->navdyDashMusicListener:Lcom/navdy/hud/app/ui/component/homescreen/SmartDashView$NavdyDashMusicListener;
+-
+-    if-nez v0, :cond_1
+-
+@@ -2303,0 +2300,4 @@
++    iget-object v1, p0, Lcom/navdy/hud/app/ui/component/homescreen/SmartDashView;->navdyDashMusicListener:Lcom/navdy/hud/app/ui/component/homescreen/SmartDashView$NavdyDashMusicListener;
++
++    if-nez v1, :cond_navdy_music_refresh
++
+@@ -2311,0 +2312,2 @@
++    :cond_navdy_music_refresh
++
+@@ -3336 +3338 @@
+-    if-eqz p1, :cond_1
++    if-eqz p1, :cond_navdy_music_ready
+@@ -3342 +3344 @@
+-    if-eq v2, v3, :cond_1
++    if-eq v2, v3, :cond_navdy_music_ready
+@@ -3345,0 +3348,2 @@
++    iget-object v4, p1, Lcom/navdy/service/library/events/audio/MusicTrackInfo;->author:Ljava/lang/String;
++
+@@ -3350,3 +3354 @@
+-    if-nez v3, :cond_0
+-
+-    move-object v1, v2
++    if-nez v3, :cond_navdy_music_no_title
+@@ -3354 +3356 @@
+-    goto :goto_0
++    invoke-static {v4}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
+@@ -3356,2 +3358 @@
+-    :cond_0
+-    iget-object v2, p1, Lcom/navdy/service/library/events/audio/MusicTrackInfo;->author:Ljava/lang/String;
++    move-result v3
+@@ -3359 +3360 @@
+-    invoke-static {v2}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
++    if-nez v3, :cond_navdy_music_title_only
+@@ -3361 +3362,5 @@
+-    move-result v3
++    new-instance v3, Ljava/lang/StringBuilder;
++
++    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
++
++    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+@@ -3363 +3368 @@
+-    if-nez v3, :cond_1
++    const-string v4, " - "
+@@ -3364,0 +3370,12 @@
++    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++
++    invoke-virtual {v3, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++
++    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
++
++    move-result-object v1
++
++    goto :cond_navdy_music_ready
++
++    :cond_navdy_music_title_only
++
+@@ -3367 +3384,12 @@
+-    :cond_1
++    goto :cond_navdy_music_ready
++
++    :cond_navdy_music_no_title
++    invoke-static {v4}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
++
++    move-result v3
++
++    if-nez v3, :cond_navdy_music_ready
++
++    move-object v1, v4
++
++    :cond_navdy_music_ready

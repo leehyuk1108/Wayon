@@ -52,6 +52,20 @@ def test_navdy_outside_temperature_view_binds_and_throttles_obd_pid():
   assert "const-wide/16 v4, 0x1388" in temp_updater
 
 
+def test_navdy_music_uses_artist_title_and_refreshes_recreated_dash():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+          "SmartDashView.music-metadata.patch"
+  smali_patch = patch.read_text()
+  refresh_hunks = smali_patch.split("@@ -3336", 1)[0]
+
+  assert "MusicTrackInfo;->author:Ljava/lang/String;" in smali_patch
+  assert "StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;" in smali_patch
+  assert "invoke-virtual {v3, v2}" in smali_patch
+  assert 'const-string v4, " - "' in smali_patch
+  assert "+    :cond_navdy_music_refresh" in refresh_hunks
+  assert "-    if-nez v0, :cond_1" in refresh_hunks
+
+
 def test_payload_exports_standstill_and_op_available():
   cruise_state = SimpleNamespace(standstill=True, speed=27.7)
   car_state = SimpleNamespace(

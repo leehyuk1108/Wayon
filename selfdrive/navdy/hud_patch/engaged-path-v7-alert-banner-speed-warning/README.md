@@ -1,23 +1,22 @@
-# Engaged Path v14 Music Metadata
+# Engaged Path v15 Road Edges
 
-Base APK: `build_outputs/Hud-engaged-path-v13-outside-temp-signed.apk`
+Base APK: `build_outputs/Hud-engaged-path-v14-music-metadata-signed.apk`
 
 Base SHA-256:
 
-`70a0e49d4af1cd2e9e2527d2ab73db3ef2f43013aba4aa06408126e21b7b78ea`
+`ddb225baa5510140003423778dfac9b0d06a0762d8455c373d41f24708f5e4e9`
 
-Output APK: `build_outputs/Hud-engaged-path-v14-music-metadata-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v15-road-edges-signed.apk`
 
 Output SHA-256:
 
-`ddb225baa5510140003423778dfac9b0d06a0762d8455c373d41f24708f5e4e9`
+`6f7581a3287fbd5ba7402dad3f3cf68344a928845537d7882295d36336b3576c`
 
 The `src` directory contains Java sources for the alert banner and outside
 temperature view. The `smali` directory contains the complete replacement
 classes used in the APK, including the receiver integration. The `res` directory
 contains the replacement dashboard layout. Replace these files in the
-apktool-decoded base APK, apply `SmartDashView.music-metadata.patch` from the
-decoded APK root, then rebuild, zipalign, and sign with
+apktool-decoded base APK, then rebuild, zipalign, and sign with
 `build_keys/navdy-test.jks`.
 
 Behavior:
@@ -32,6 +31,8 @@ Behavior:
   current speed, and music only while openpilot is actively engaged.
 - Shows music as `artist - title` in both stock and engaged layouts, and restores
   the current track whenever the dashboard view is recreated.
+- Draws the left and right `modelV2.roadEdges` as dim boundary lines while
+  engaged. Every path, lane, and road-edge line is capped at 10 projected points.
 - Keeps the alert banner independent so no-entry and disengagement alerts can
   still appear over the stock HUD.
 - Reads `alertText1`, `alertText2`, `alertType`, `alertStatus`, and `alertSize`.

@@ -26,6 +26,10 @@
 
 .field private pathRight:[F
 
+.field private roadEdgeLeft:[F
+
+.field private roadEdgeRight:[F
+
 
 # direct methods
 .method public constructor <init>(Landroid/content/Context;)V
@@ -68,6 +72,14 @@
     new-array v0, p1, [F
 
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->laneRight:[F
+
+    new-array v0, p1, [F
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeLeft:[F
+
+    new-array v0, p1, [F
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeRight:[F
 
     .line 23
     new-array v0, p1, [F
@@ -192,6 +204,14 @@
     new-array v1, v0, [F
 
     iput-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->laneLeft:[F
+
+    new-array v1, v0, [F
+
+    iput-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeLeft:[F
+
+    new-array v1, v0, [F
+
+    iput-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeRight:[F
 
     .line 107
     new-array v0, v0, [F
@@ -451,6 +471,51 @@
 
     invoke-virtual {p1, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V
 
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->lanePaint:Landroid/graphics/Paint;
+
+    const/16 v1, 0x46
+
+    invoke-virtual {v0, v1}, Landroid/graphics/Paint;->setAlpha(I)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeLeft:[F
+
+    invoke-static {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->validLine([F)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_navdy_road_edge_right
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeLeft:[F
+
+    invoke-static {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+
+    move-result-object v0
+
+    iget-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->lanePaint:Landroid/graphics/Paint;
+
+    invoke-virtual {p1, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V
+
+    :cond_navdy_road_edge_right
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeRight:[F
+
+    invoke-static {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->validLine([F)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_navdy_road_edges_done
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeRight:[F
+
+    invoke-static {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+
+    move-result-object v0
+
+    iget-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->lanePaint:Landroid/graphics/Paint;
+
+    invoke-virtual {p1, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V
+
+    :cond_navdy_road_edges_done
+
     .line 97
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->lanePaint:Landroid/graphics/Paint;
 
@@ -565,7 +630,7 @@
 .end method
 
 .method public updatePayload(Ljava/lang/String;Z)V
-    .locals 4
+    .locals 6
 
     .line 42
     if-eqz p2, :cond_3
@@ -637,6 +702,26 @@
 
     move-result-object v2
 
+    const-string v3, "navRoadEdgeLeft"
+
+    invoke-virtual {p2, v3}, Lorg/json/JSONObject;->optJSONArray(Ljava/lang/String;)Lorg/json/JSONArray;
+
+    move-result-object v3
+
+    invoke-static {v3}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->readPoints(Lorg/json/JSONArray;)[F
+
+    move-result-object v4
+
+    const-string v3, "navRoadEdgeRight"
+
+    invoke-virtual {p2, v3}, Lorg/json/JSONObject;->optJSONArray(Ljava/lang/String;)Lorg/json/JSONArray;
+
+    move-result-object v3
+
+    invoke-static {v3}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->readPoints(Lorg/json/JSONArray;)[F
+
+    move-result-object v5
+
     .line 53
     invoke-static {p1}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->validLine([F)Z
 
@@ -677,6 +762,10 @@
 
     .line 62
     iput-object v2, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->laneRight:[F
+
+    iput-object v4, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeLeft:[F
+
+    iput-object v5, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgeRight:[F
 
     .line 63
     const-string p1, "navLaneLeftProb"

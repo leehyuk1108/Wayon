@@ -225,6 +225,20 @@ def test_navdy_path_view_retains_geometry_during_fast_state_updates():
   assert update_method.index("return-void") < update_method.index("\n    :cond_navdy_path_payload_present")
 
 
+def test_navdy_path_view_reads_and_draws_road_edges():
+  path_view = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+              "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali"
+  smali = path_view.read_text()
+  update_method = smali.split(".method public updatePayload", 1)[1].split(".end method", 1)[0]
+  draw_method = smali.split(".method protected onDraw", 1)[1].split(".end method", 1)[0]
+
+  for side in ("Left", "Right"):
+    assert f'const-string v3, "navRoadEdge{side}"' in update_method
+    assert f"->roadEdge{side}:[F" in update_method
+    assert f"->roadEdge{side}:[F" in draw_method
+  assert "const/16 v1, 0x46" in draw_method
+
+
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
   selfdrive_state = SimpleNamespace(
     active=False,
@@ -286,7 +300,11 @@ def test_navdy_model_geometry_projects_path_and_middle_lane_lines():
     SimpleNamespace(x=[0.0, 40.0, 80.0], y=[1.8, 2.1, 2.5]),
     SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-1.8, -1.4, -1.0]),
   ]
-  model = SimpleNamespace(position=path, laneLines=lane_lines, laneLineProbs=[0.0, 0.8, 0.7])
+  road_edges = [
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[5.5, 5.8, 6.0]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-5.5, -5.2, -5.0]),
+  ]
+  model = SimpleNamespace(position=path, laneLines=lane_lines, laneLineProbs=[0.0, 0.8, 0.7], roadEdges=road_edges)
 
   geometry = navdy_op_bridge.navdy_model_geometry(model)
 
@@ -294,6 +312,9 @@ def test_navdy_model_geometry_projects_path_and_middle_lane_lines():
   assert len(geometry["navLaneLeft"]) == 6
   assert geometry["navPathLeft"][1] > geometry["navPathLeft"][-1]
   assert geometry["navLaneLeft"][0] < geometry["navLaneRight"][0]
+  assert len(geometry["navRoadEdgeLeft"]) == 6
+  assert geometry["navRoadEdgeLeft"][0] < geometry["navLaneLeft"][0]
+  assert geometry["navRoadEdgeRight"][0] > geometry["navLaneRight"][0]
   assert geometry["navLaneLeftProb"] == 0.8
 
 
@@ -323,6 +344,7 @@ def test_payload_only_exports_model_geometry_while_active():
   disengaged = SimpleNamespace(active=False, enabled=False, engageable=True, state="disabled")
 
   assert "navPathLeft" in navdy_op_bridge.payload_from_messages(engaged, car_state, 1, model_v2=model)
+  assert "navRoadEdgeLeft" not in navdy_op_bridge.payload_from_messages(engaged, car_state, 1, model_v2=model)
   assert "navPathLeft" not in navdy_op_bridge.payload_from_messages(disengaged, car_state, 2, model_v2=model)
 
 

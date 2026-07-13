@@ -244,6 +244,7 @@ def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
 
   position = getattr(model_v2, "position", None)
   lane_lines = list(getattr(model_v2, "laneLines", []))
+  road_edges = list(getattr(model_v2, "roadEdges", []))
   if position is None or len(lane_lines) < 3:
     return {}
 
@@ -259,6 +260,14 @@ def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
   }
   if not all(len(points) >= 4 for points in geometry.values()):
     return {}
+
+  if len(road_edges) >= 2:
+    road_geometry = {
+      "navRoadEdgeLeft": navdy_model_line(getattr(road_edges[0], "x", []), getattr(road_edges[0], "y", [])),
+      "navRoadEdgeRight": navdy_model_line(getattr(road_edges[1], "x", []), getattr(road_edges[1], "y", [])),
+    }
+    if all(len(points) >= 4 for points in road_geometry.values()):
+      geometry.update(road_geometry)
 
   lane_probs = list(getattr(model_v2, "laneLineProbs", []))
   geometry["navLaneLeftProb"] = rounded(lane_probs[1] if len(lane_probs) > 1 else 0.0, 2)

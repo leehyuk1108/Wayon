@@ -160,6 +160,17 @@ def test_navdy_hud_patch_hides_engaged_layout_while_disengaged():
   assert update_method.index("->hideEngagedOverlay()V") < update_method.index("\n    :cond_navdy_engaged")
 
 
+def test_navdy_path_view_retains_geometry_during_fast_state_updates():
+  path_view = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+              "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali"
+  smali = path_view.read_text()
+  update_method = smali.split(".method public updatePayload", 1)[1].split(".end method", 1)[0]
+
+  assert "JSONObject;->has(Ljava/lang/String;)Z" in update_method
+  assert "if-nez p1, :cond_navdy_path_payload_present" in update_method
+  assert update_method.index("return-void") < update_method.index("\n    :cond_navdy_path_payload_present")
+
+
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
   selfdrive_state = SimpleNamespace(
     active=False,
@@ -211,6 +222,7 @@ def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
 
 def test_navdy_bridge_avoids_saturated_car_state_service():
   assert navdy_op_bridge.NAVDY_CAR_STATE_SERVICE == "carStateSP"
+  assert navdy_op_bridge.NAVDY_MODEL_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES
 
 
 def test_navdy_model_geometry_projects_path_and_middle_lane_lines():
@@ -293,11 +305,19 @@ def test_manager_defaults_use_starpilot_socket_transport():
   assert "--socket-transport" in navdy_power_bridge.DEFAULT_ARGS
 
 
-def test_manager_defaults_limit_onroad_bridge_traffic():
-  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1] == "1"
-  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--min-emit-sec") + 1] == "1"
+def test_manager_defaults_keep_fast_state_and_throttle_path():
+  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1] == "5"
+  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--path-update-sec") + 1] == "1"
+  assert "--min-emit-sec" not in navdy_power_bridge.DEFAULT_ARGS
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--heartbeat-sec") + 1] == "5"
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--power-on-ensure-sec") + 1] == "60"
+
+
+def test_navdy_path_update_is_independent_from_fast_state_rate():
+  assert navdy_op_bridge.navdy_path_update_due(True, 10.0, 0.0, 1.0)
+  assert not navdy_op_bridge.navdy_path_update_due(True, 10.5, 10.0, 1.0)
+  assert navdy_op_bridge.navdy_path_update_due(True, 11.0, 10.0, 1.0)
+  assert not navdy_op_bridge.navdy_path_update_due(False, 11.0, 0.0, 1.0)
 
 
 def test_should_emit_payload_respects_min_emit_interval():
@@ -313,6 +333,17 @@ def test_should_emit_payload_respects_min_emit_interval():
   assert should_emit
 
 
+def test_fast_state_change_emits_before_next_path_update():
+  args = SimpleNamespace(once=False, min_emit_sec=0.0, heartbeat_sec=5.0)
+  payload = {"state": "enabled", "leftBlinker": False}
+  changed_payload = {"state": "enabled", "leftBlinker": True}
+
+  should_emit, _ = navdy_op_bridge.should_emit_payload(
+      changed_payload, args, 10.2, navdy_op_bridge.payload_signature(payload), 10.0)
+
+  assert should_emit
+
+
 def test_manager_child_ignores_inherited_manager_argv():
   assert navdy_power_bridge.should_use_default_args(
       "navdy_bridge", ["manager.py", "--socket-transport"])
@@ -324,7 +355,10 @@ if __name__ == "__main__":
   test_live_payload_ready_uses_recent_messages_not_alive_flags()
   test_live_payload_ready_allows_missing_car_state_when_selfdrive_is_recent()
   test_default_car_state_keeps_payload_safe_without_vehicle_sample()
+  test_navdy_path_view_retains_geometry_during_fast_state_updates()
   test_manager_defaults_use_starpilot_socket_transport()
-  test_manager_defaults_limit_onroad_bridge_traffic()
+  test_manager_defaults_keep_fast_state_and_throttle_path()
+  test_navdy_path_update_is_independent_from_fast_state_rate()
   test_should_emit_payload_respects_min_emit_interval()
+  test_fast_state_change_emits_before_next_path_update()
   test_manager_child_ignores_inherited_manager_argv()

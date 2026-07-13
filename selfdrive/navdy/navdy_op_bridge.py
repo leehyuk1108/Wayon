@@ -43,6 +43,14 @@ ONROAD_PROCESS_NAMES = (
   "./camerad",
 )
 NAVDY_CAR_STATE_SERVICE = "carStateSP"
+NAVDY_FAST_SERVICES = (
+  "selfdriveState",
+  NAVDY_CAR_STATE_SERVICE,
+  "controlsState",
+  "starpilotPlan",
+  "longitudinalPlan",
+)
+NAVDY_MODEL_SERVICE = "modelV2"
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -684,6 +692,12 @@ def live_payload_ready(sm: Any, started: bool, now: float | None = None) -> bool
   return bool(service_recent(sm, "selfdriveState", now))
 
 
+def navdy_path_update_due(active: bool, now: float, last_update_at: float,
+                          update_sec: float) -> bool:
+  return bool(active and (last_update_at <= 0.0 or
+                          now - last_update_at >= max(update_sec, 0.1)))
+
+
 def available_services(messaging: Any, requested: list[str]) -> list[str]:
   service_list = getattr(messaging, "SERVICE_LIST", None)
   if service_list is None:
@@ -725,15 +739,17 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
 def run_live(args: argparse.Namespace) -> None:
   maybe_reexec_openpilot_python(args)
   messaging = import_messaging()
-  services = available_services(
-      messaging, ["selfdriveState", NAVDY_CAR_STATE_SERVICE, "controlsState", "starpilotPlan", "longitudinalPlan", "modelV2"])
+  services = available_services(messaging, list(NAVDY_FAST_SERVICES))
+  model_services = available_services(messaging, [NAVDY_MODEL_SERVICE])
   if args.manage_navdy_power:
     services += available_services(messaging, ["deviceState", "pandaStates"])
   sm = messaging.SubMaster(services)
+  model_sm = messaging.SubMaster(model_services) if model_services else None
   seq = 0
   period = 1.0 / max(args.hz, 0.1)
   last_signature = None
   last_emit_at = 0.0
+  last_path_update_at = 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
   offroad_since = None
   last_power_target_on = None
@@ -754,14 +770,23 @@ def run_live(args: argparse.Namespace) -> None:
       car_state = car_state_from_sp(sm[NAVDY_CAR_STATE_SERVICE])
     else:
       car_state = default_car_state()
-    model_v2 = sm["modelV2"] if "modelV2" in services and service_recent(sm, "modelV2", now) else None
+    active = bool(getattr(sm["selfdriveState"], "active", False))
+    path_geometry = {}
+    if navdy_path_update_due(active, now, last_path_update_at, args.path_update_sec):
+      last_path_update_at = now
+      if model_sm is not None:
+        model_sm.update(0)
+        if service_recent(model_sm, NAVDY_MODEL_SERVICE, now):
+          path_geometry = navdy_model_geometry(model_sm[NAVDY_MODEL_SERVICE])
+    elif not active:
+      last_path_update_at = 0.0
     payload = payload_from_messages(sm["selfdriveState"],
                                     car_state,
                                     seq,
                                     sm_optional(sm, services, "controlsState"),
                                     sm_optional(sm, services, "starpilotPlan"),
-                                    sm_optional(sm, services, "longitudinalPlan"),
-                                    model_v2)
+                                    sm_optional(sm, services, "longitudinalPlan"))
+    payload.update(path_geometry)
     payload = stabilize_display_payload(payload, args, now)
     should_emit, signature = should_emit_payload(payload, args, now, last_signature, last_emit_at)
     if should_emit:
@@ -794,6 +819,8 @@ def run_synthetic(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--hz", type=float, default=5.0, help="Update rate for bridge output.")
+  parser.add_argument("--path-update-sec", type=float, default=1.0,
+                      help="Minimum interval between model path samples.")
   parser.add_argument("--once", action="store_true", help="Send one payload and exit.")
   parser.add_argument("--synthetic", action="store_true", help="Send fake OP data without cereal imports.")
   parser.add_argument("--synthetic-gear", default="drive", help="Gear text for --synthetic payloads.")

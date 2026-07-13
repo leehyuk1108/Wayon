@@ -1,16 +1,16 @@
-# Engaged Path v9 Active Layout, Music, Alerts, and Speed Warning
+# Engaged Path v10 Split-Rate State and Path
 
-Base APK: `build_outputs/Hud-engaged-path-v5-signed.apk`
+Base APK: `build_outputs/Hud-engaged-path-v9-active-layout-music-signed.apk`
 
 Base SHA-256:
 
-`21c714a8fa48149d000d1c98b4e6b4b0d67668dd43bbb147d9eddb2105a66dd8`
+`84c4dcbf66a610b38e2438d78989481b871a524e8153b3fe1f2160de20fe9c8c`
 
-Output APK: `build_outputs/Hud-engaged-path-v9-active-layout-music-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v10-split-rate-signed.apk`
 
 Output SHA-256:
 
-`84c4dcbf66a610b38e2438d78989481b871a524e8153b3fe1f2160de20fe9c8c`
+`e683b1b40ce0691d5ca9e48ebd2bc3b507d10bab485be0acd3f61aefc9242ad9`
 
 The `src` directory contains the Java source for the alert banner. The `smali`
 directory contains the complete replacement classes used in the APK, including
@@ -34,3 +34,5 @@ Behavior:
   greater than the camera speed limit, then restores white immediately.
 - Keeps the camera-speed comparison double in `v8/v9` so Android 5 verifies
   `OpenpilotStateReceiver` without clobbering the log tag in `v3`.
+- Retains the last valid path while fast state-only payloads update icons,
+  speed, set speed, alerts, and music independently.

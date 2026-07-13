@@ -11,9 +11,8 @@ from selfdrive.navdy import navdy_op_bridge
 
 
 DEFAULT_ARGS = [
-  # Bound modelV2 reads and USB traffic to the cadence used by the stable bridge.
-  "--hz", "1",
-  "--min-emit-sec", "1",
+  "--hz", "5",
+  "--path-update-sec", "1",
   "--adb-path", "adb",
   "--adb-server-port", "5038",
   "--no-stdout",

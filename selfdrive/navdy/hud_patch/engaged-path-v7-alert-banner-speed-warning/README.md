@@ -6,11 +6,11 @@ Base SHA-256:
 
 `21c714a8fa48149d000d1c98b4e6b4b0d67668dd43bbb147d9eddb2105a66dd8`
 
-Output APK: `build_outputs/Hud-engaged-path-v7-alert-banner-camera-speed-red-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v8-alert-banner-camera-speed-red-verifier-fix-signed.apk`
 
 Output SHA-256:
 
-`a1234985b170f9e9e4de34876d35720486238dc13a227e2021dde4db3fe9ef28`
+`d8371becc0889e710066244f9d390bd9696e203a40b79ea763e5b229c990eb9f`
 
 The `src` directory contains the Java source for the alert banner. The `smali`
 directory contains the complete replacement classes used in the APK, including
@@ -27,3 +27,5 @@ Behavior:
 - Uses the same camera speed limit as the ambient-light overspeed warning.
 - Changes the openpilot current-speed value to red only while current speed is
   greater than the camera speed limit, then restores white immediately.
+- Keeps the camera-speed comparison double in `v8/v9` so Android 5 verifies
+  `OpenpilotStateReceiver` without clobbering the log tag in `v3`.

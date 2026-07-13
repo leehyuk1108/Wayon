@@ -1572,9 +1572,9 @@
 
     if-lez v1, :cond_navdy_camera_speed_white
 
-    int-to-double v2, v1
+    int-to-double v8, v1
 
-    cmpl-double v4, v16, v2
+    cmpl-double v4, v16, v8
 
     if-lez v4, :cond_navdy_camera_speed_white
 

@@ -142,22 +142,29 @@ def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
   assert "const/4 v1, -0x1" in smali
 
 
-def test_navdy_hud_patch_hides_engaged_layout_while_disengaged():
+def test_navdy_hud_patch_keeps_status_icons_while_disengaged():
   receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
              "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
   smali = receiver.read_text()
-  hide_method = smali.split(".method private static hideEngagedOverlay()V", 1)[1].split(".end method", 1)[0]
+  layout_method = smali.split(".method private static applyStatusLayout(Z)V", 1)[1].split(".end method", 1)[0]
   update_method = smali.split(".method private static updateOpenpilotOverlay", 1)[1].split(".end method", 1)[0]
 
-  for field in (
-      "sEngagedTopMask", "sEngagedBodyMask", "sPathView", "sCurrentSpeedTextView", "sMusicTextView",
-      "sLeftBsmView", "sRightBsmView", "sStandstillView", "sOpReadyView", "sSetSpeedRow",
-  ):
-    assert f"->{field}:" in hide_method
-  assert "->setTurnBlinkers(ZZ)V" in hide_method
-  assert "if-nez p1, :cond_navdy_engaged" in update_method
-  assert "->hideEngagedOverlay()V" in update_method
-  assert update_method.index("->hideEngagedOverlay()V") < update_method.index("\n    :cond_navdy_engaged")
+  for field in ("sLeftTurnView", "sRightTurnView", "sLeftBsmView", "sRightBsmView",
+                "sStandstillView", "sOpReadyView", "sSetSpeedRow"):
+    assert f"->{field}:" in layout_method
+  assert "cond_standstill_disengaged" in layout_method
+  assert "const/16 v3, 0xeb" in layout_method
+  assert "const/16 v3, 0x112" in layout_method
+  assert "cond_set_speed_disengaged" in layout_method
+  assert "const/16 v3, 0x12f" in layout_method
+  assert "const/16 v3, 0x128" in layout_method
+  assert "->applyStatusLayout(Z)V" in update_method
+  assert "->setTurnBlinkers(ZZ)V" in update_method
+  assert "->sLeftBsmView:" in update_method
+  assert "->sRightBsmView:" in update_method
+  assert "->setOpenpilotIconState(ZZ)V" in update_method
+  assert "->sSetSpeedRow:" in update_method
+  assert "->hideEngagedOverlay()V" not in smali
 
 
 def test_navdy_path_view_retains_geometry_during_fast_state_updates():

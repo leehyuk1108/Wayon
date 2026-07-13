@@ -2187,54 +2187,180 @@
     return-void
 .end method
 
-.method private static hideEngagedOverlay()V
-    .locals 2
+.method private static applyStatusLayout(Z)V
+    .locals 4
 
-    const/16 v1, 0x8
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftTurnView:Landroid/widget/ImageView;
 
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sEngagedTopMask:Landroid/view/View;
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
 
-    invoke-virtual {v0, v1}, Landroid/view/View;->setVisibility(I)V
+    move-result-object v1
 
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sEngagedBodyMask:Landroid/view/View;
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
 
-    invoke-virtual {v0, v1}, Landroid/view/View;->setVisibility(I)V
+    if-eqz p0, :cond_left_turn_disengaged
 
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sPathView:Lcom/navdy/hud/app/openpilot/OpenpilotPathView;
+    const/16 v2, 0x80
 
-    invoke-virtual {v0, v1}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->setVisibility(I)V
+    const/16 v3, 0xf2
 
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCurrentSpeedTextView:Landroid/widget/TextView;
+    goto :goto_left_turn
 
-    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+    :cond_left_turn_disengaged
+    const/16 v2, 0x86
 
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sMusicTextView:Landroid/widget/TextView;
+    const/16 v3, 0xf0
 
-    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+    :goto_left_turn
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sRightTurnView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_right_turn_disengaged
+
+    const/16 v2, 0x1e8
+
+    const/16 v3, 0xf2
+
+    goto :goto_right_turn
+
+    :cond_right_turn_disengaged
+    const/16 v2, 0x1e2
+
+    const/16 v3, 0xf0
+
+    :goto_right_turn
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftBsmView:Landroid/widget/ImageView;
 
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_left_bsm_disengaged
+
+    const/16 v2, 0xa7
+
+    goto :goto_left_bsm
+
+    :cond_left_bsm_disengaged
+    const/16 v2, 0xad
+
+    :goto_left_bsm
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sRightBsmView:Landroid/widget/ImageView;
 
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_right_bsm_disengaged
+
+    const/16 v2, 0x1b7
+
+    goto :goto_right_bsm
+
+    :cond_right_bsm_disengaged
+    const/16 v2, 0x1b1
+
+    :goto_right_bsm
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sStandstillView:Landroid/widget/ImageView;
 
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_standstill_disengaged
+
+    const/16 v2, 0xe2
+
+    const/16 v3, 0x112
+
+    goto :goto_standstill
+
+    :cond_standstill_disengaged
+    const/16 v2, 0xe4
+
+    const/16 v3, 0xeb
+
+    :goto_standstill
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOpReadyView:Landroid/widget/ImageView;
 
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setVisibility(I)V
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_op_ready_disengaged
+
+    const/16 v3, 0x113
+
+    goto :goto_op_ready
+
+    :cond_op_ready_disengaged
+    const/16 v3, 0xf0
+
+    :goto_op_ready
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedRow:Landroid/widget/LinearLayout;
 
-    invoke-virtual {v0, v1}, Landroid/widget/LinearLayout;->setVisibility(I)V
+    invoke-virtual {v0}, Landroid/widget/LinearLayout;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
 
-    const/4 v0, 0x0
+    move-result-object v1
 
-    invoke-static {v0, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->setTurnBlinkers(ZZ)V
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_set_speed_disengaged
+
+    const/16 v3, 0x128
+
+    goto :goto_set_speed
+
+    :cond_set_speed_disengaged
+    const/16 v3, 0x12f
+
+    :goto_set_speed
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/LinearLayout;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
 
     return-void
 .end method
@@ -2254,22 +2380,11 @@
 
     .line 224
     :cond_0
-    if-nez p1, :cond_navdy_engaged
+    invoke-static {p1}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->applyStatusLayout(Z)V
 
-    invoke-static {}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->hideEngagedOverlay()V
-
-    return-void
-
-    :cond_navdy_engaged
     invoke-static {}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateOutsideTemp()V
 
     invoke-static {p6, p7}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->setTurnBlinkers(ZZ)V
-
-    sget-object p6, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sPathView:Lcom/navdy/hud/app/openpilot/OpenpilotPathView;
-
-    const/4 p7, 0x0
-
-    invoke-virtual {p6, p7}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->setVisibility(I)V
 
     sget-object p6, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sEngagedTopMask:Landroid/view/View;
 

@@ -1,16 +1,16 @@
-# Engaged Path v10 Split-Rate State and Path
+# Engaged Path v11 Disengaged Status Icons
 
-Base APK: `build_outputs/Hud-engaged-path-v9-active-layout-music-signed.apk`
+Base APK: `build_outputs/Hud-engaged-path-v10-split-rate-signed.apk`
 
 Base SHA-256:
 
-`84c4dcbf66a610b38e2438d78989481b871a524e8153b3fe1f2160de20fe9c8c`
+`e683b1b40ce0691d5ca9e48ebd2bc3b507d10bab485be0acd3f61aefc9242ad9`
 
-Output APK: `build_outputs/Hud-engaged-path-v10-split-rate-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v11-disengaged-icons-signed.apk`
 
 Output SHA-256:
 
-`e683b1b40ce0691d5ca9e48ebd2bc3b507d10bab485be0acd3f61aefc9242ad9`
+`337126b46210dee8be081ba6fcf8622b942a979f55d6bd06af214f74c667af57`
 
 The `src` directory contains the Java source for the alert banner. The `smali`
 directory contains the complete replacement classes used in the APK, including
@@ -19,9 +19,10 @@ then rebuild, zipalign, and sign with `build_keys/navdy-test.jks`.
 
 Behavior:
 
-- Keeps the stock driving HUD untouched while openpilot is disengaged.
-- Shows the custom path, lanes, speed, set speed, music, and status icons only
-  while openpilot is actively engaged.
+- Keeps the stock driving HUD visible while openpilot is disengaged and shows
+  set speed, openpilot status, turn-signal, and BSM icons in dashboard positions.
+- Moves status icons to the engaged layout and shows the custom path, lanes,
+  current speed, and music only while openpilot is actively engaged.
 - Keeps the alert banner independent so no-entry and disengagement alerts can
   still appear over the stock HUD.
 - Reads `alertText1`, `alertText2`, `alertType`, `alertStatus`, and `alertSize`.

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import types
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +18,20 @@ sys.modules.setdefault("openpilot.common", openpilot_common_module)
 sys.modules.setdefault("openpilot.common.realtime", openpilot_realtime_module)
 
 import navdy_power_bridge
+
+
+def test_navdy_disengaged_speed_uses_engaged_system_typeface():
+  layout = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+           "res/layout/screen_home_smartdash.xml"
+  root = ET.parse(layout).getroot()
+  android = "{http://schemas.android.com/apk/res/android}"
+  navdy = "{http://schemas.android.com/apk/res-auto}"
+  speed_view = next(view for view in root.iter()
+                    if view.attrib.get(f"{android}id") == "@id/speedView")
+
+  assert speed_view.tag == "com.navdy.hud.app.view.FontTextView"
+  assert speed_view.attrib[f"{android}textSize"] == "66.0sp"
+  assert f"{navdy}fontFile" not in speed_view.attrib
 
 
 def test_payload_exports_standstill_and_op_available():

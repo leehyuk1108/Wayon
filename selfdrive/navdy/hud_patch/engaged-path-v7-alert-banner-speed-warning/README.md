@@ -1,26 +1,29 @@
-# Engaged Path v11 Disengaged Status Icons
+# Engaged Path v12 Matching Dashboard Speed Font
 
-Base APK: `build_outputs/Hud-engaged-path-v10-split-rate-signed.apk`
+Base APK: `build_outputs/Hud-engaged-path-v11-disengaged-icons-signed.apk`
 
 Base SHA-256:
 
-`e683b1b40ce0691d5ca9e48ebd2bc3b507d10bab485be0acd3f61aefc9242ad9`
+`337126b46210dee8be081ba6fcf8622b942a979f55d6bd06af214f74c667af57`
 
-Output APK: `build_outputs/Hud-engaged-path-v11-disengaged-icons-signed.apk`
+Output APK: `build_outputs/Hud-engaged-path-v12-matching-speed-font-signed.apk`
 
 Output SHA-256:
 
-`337126b46210dee8be081ba6fcf8622b942a979f55d6bd06af214f74c667af57`
+`800a3caefe96f52033879daed1b91239e55d44fa4a1484968781d8d4c8ccaa0d`
 
 The `src` directory contains the Java source for the alert banner. The `smali`
 directory contains the complete replacement classes used in the APK, including
-the receiver integration. Replace these files in the apktool-decoded base APK,
-then rebuild, zipalign, and sign with `build_keys/navdy-test.jks`.
+the receiver integration. The `res` directory contains the replacement dashboard
+layout. Replace these files in the apktool-decoded base APK, then rebuild,
+zipalign, and sign with `build_keys/navdy-test.jks`.
 
 Behavior:
 
 - Keeps the stock driving HUD visible while openpilot is disengaged and shows
   set speed, openpilot status, turn-signal, and BSM icons in dashboard positions.
+- Uses the same Android system typeface for the center speed while disengaged as
+  the custom engaged speed, while retaining the stock 66sp size and layout.
 - Moves status icons to the engaged layout and shows the custom path, lanes,
   current speed, and music only while openpilot is actively engaged.
 - Keeps the alert banner independent so no-entry and disengagement alerts can

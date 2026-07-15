@@ -33,8 +33,10 @@ class CircularAlertsRenderer:
     self._green_light_alert = lp_sp.e2eAlerts.greenLightAlert
     self._lead_depart_alert = lp_sp.e2eAlerts.leadDepartAlert
 
-    self._allow_e2e_alerts = sm['selfdriveState'].alertSize == log.SelfdriveState.AlertSize.none and \
-                             sm.recv_frame['driverStateV2'] > ui_state.started_frame
+    alert_type = str(sm['selfdriveState'].alertType).split('/', 1)[0]
+    no_blocking_alert = sm['selfdriveState'].alertSize == log.SelfdriveState.AlertSize.none or \
+                        alert_type == "resumeRequired"
+    self._allow_e2e_alerts = no_blocking_alert and sm.recv_frame['driverStateV2'] > ui_state.started_frame
 
     if self._green_light_alert or self._lead_depart_alert:
       self._e2e_alert_display_timer = 3 * gui_app.target_fps
@@ -46,10 +48,10 @@ class CircularAlertsRenderer:
       self._e2e_alert_display_timer -= 1
 
       if self._green_light_alert:
-        self._alert_text = "GREEN\nLIGHT"
+        self._alert_text = "신호\n변경됨"
         self._alert_img = self._green_light_alert_img
       elif self._lead_depart_alert:
-        self._alert_text = "LEAD VEHICLE\nDEPARTING"
+        self._alert_text = "전방 차량\n출발"
         self._alert_img = self._lead_depart_alert_img
 
     else:

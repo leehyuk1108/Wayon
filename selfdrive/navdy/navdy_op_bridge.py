@@ -49,8 +49,10 @@ NAVDY_FAST_SERVICES = (
   "controlsState",
   "starpilotPlan",
   "longitudinalPlan",
+  "longitudinalPlanSP",
 )
 NAVDY_MODEL_SERVICE = "modelV2"
+NAVDY_E2E_ALERT_HOLD_SEC = 3.0
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -102,6 +104,35 @@ def hold_bool(args: argparse.Namespace, name: str, value: bool, now: float, hold
   return now < float(getattr(args, attr, 0.0))
 
 
+def apply_navdy_e2e_alert(payload: dict[str, Any], args: argparse.Namespace, now: float) -> None:
+  alert_name = ""
+  if payload.get("greenLightAlert"):
+    alert_name = "greenLight"
+  elif payload.get("leadDepartAlert"):
+    alert_name = "leadDeparting"
+  if alert_name:
+    setattr(args, "_navdy_e2e_alert_name", alert_name)
+    setattr(args, "_navdy_e2e_alert_until", now + NAVDY_E2E_ALERT_HOLD_SEC)
+
+  if now >= float(getattr(args, "_navdy_e2e_alert_until", 0.0)):
+    return
+  if str(payload.get("alertSize", "none")) != "none":
+    return
+
+  held_name = str(getattr(args, "_navdy_e2e_alert_name", ""))
+  if held_name == "greenLight":
+    payload["alertText1"] = "신호 변경됨"
+    payload["alertText2"] = "전방 신호 변경 감지됨"
+  elif held_name == "leadDeparting":
+    payload["alertText1"] = "전방 차량 출발"
+    payload["alertText2"] = "전방 차량이 출발했습니다"
+  else:
+    return
+  payload["alertType"] = f"{held_name}/permanent"
+  payload["alertStatus"] = "normal"
+  payload["alertSize"] = "mid"
+
+
 def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace, now: float) -> dict[str, Any]:
   set_speed = finite_float(payload.get("setSpeedKph", 0.0))
   if set_speed > 0.0:
@@ -130,6 +161,7 @@ def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace,
                                             payload.get("engageable") or payload.get("enabled") or payload.get("active")))
   payload["standstill"] = bool(payload.get("standstill", payload.get("cruiseStandstill", False)))
   payload["cruiseStandstill"] = bool(payload.get("cruiseStandstill", payload.get("standstill", False)))
+  apply_navdy_e2e_alert(payload, args, now)
   return payload
 
 
@@ -277,7 +309,8 @@ def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
 
 def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
                           controls_state: Any = None, starpilot_plan: Any = None,
-                          longitudinal_plan: Any = None, model_v2: Any = None) -> dict[str, Any]:
+                          longitudinal_plan: Any = None, model_v2: Any = None,
+                          longitudinal_plan_sp: Any = None) -> dict[str, Any]:
   left_blinker = bool(getattr(car_state, "leftBlinker", False))
   right_blinker = bool(getattr(car_state, "rightBlinker", False))
   left_blindspot = bool(getattr(car_state, "leftBlindspot", False))
@@ -295,6 +328,20 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   v_ego_cluster = finite_float(getattr(car_state, "vEgoCluster", 0.0))
   v_ego_ms = finite_float(getattr(car_state, "vEgo", 0.0))
   v_ego_kph = (v_ego_cluster if v_ego_cluster > 0.0 else v_ego_ms) * KPH_PER_MS
+  alert_text_1 = str(getattr(selfdrive_state, "alertText1", ""))
+  alert_text_2 = str(getattr(selfdrive_state, "alertText2", ""))
+  alert_type = str(getattr(selfdrive_state, "alertType", ""))
+  alert_status = enum_text(getattr(selfdrive_state, "alertStatus", "normal"))
+  alert_size = enum_text(getattr(selfdrive_state, "alertSize", "none"))
+  if alert_type.split("/", 1)[0] == "resumeRequired":
+    alert_text_1 = ""
+    alert_text_2 = ""
+    alert_type = ""
+    alert_status = "normal"
+    alert_size = "none"
+  e2e_alerts = getattr(longitudinal_plan_sp, "e2eAlerts", None)
+  green_light_alert = bool(getattr(e2e_alerts, "greenLightAlert", False))
+  lead_depart_alert = bool(getattr(e2e_alerts, "leadDepartAlert", False))
 
   payload = {
     "schema": "navdy.openpilot.v1",
@@ -318,11 +365,13 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "leftBlindspot": left_blindspot,
     "rightBlindspot": right_blindspot,
     "blindspot": blindspot_text(left_blindspot, right_blindspot),
-    "alertText1": str(getattr(selfdrive_state, "alertText1", "")),
-    "alertText2": str(getattr(selfdrive_state, "alertText2", "")),
-    "alertType": str(getattr(selfdrive_state, "alertType", "")),
-    "alertStatus": enum_text(getattr(selfdrive_state, "alertStatus", "normal")),
-    "alertSize": enum_text(getattr(selfdrive_state, "alertSize", "none")),
+    "alertText1": alert_text_1,
+    "alertText2": alert_text_2,
+    "alertType": alert_type,
+    "alertStatus": alert_status,
+    "alertSize": alert_size,
+    "greenLightAlert": green_light_alert,
+    "leadDepartAlert": lead_depart_alert,
   }
   if active:
     payload.update(navdy_model_geometry(model_v2))
@@ -365,6 +414,8 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "alertType": "",
     "alertStatus": "normal",
     "alertSize": "none",
+    "greenLightAlert": False,
+    "leadDepartAlert": False,
   }
 
 
@@ -617,6 +668,8 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("alertType"),
     payload.get("alertStatus"),
     payload.get("alertSize"),
+    payload.get("greenLightAlert"),
+    payload.get("leadDepartAlert"),
     tuple(payload.get("navPathLeft", [])),
     tuple(payload.get("navPathRight", [])),
     tuple(payload.get("navLaneLeft", [])),
@@ -794,7 +847,8 @@ def run_live(args: argparse.Namespace) -> None:
                                     seq,
                                     sm_optional(sm, services, "controlsState"),
                                     sm_optional(sm, services, "starpilotPlan"),
-                                    sm_optional(sm, services, "longitudinalPlan"))
+                                    sm_optional(sm, services, "longitudinalPlan"),
+                                    longitudinal_plan_sp=sm_optional(sm, services, "longitudinalPlanSP"))
     payload.update(path_geometry)
     payload = stabilize_display_payload(payload, args, now)
     should_emit, signature = should_emit_payload(payload, args, now, last_signature, last_emit_at)

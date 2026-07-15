@@ -177,6 +177,149 @@ def test_payload_exports_alert_metadata_for_navdy_banner():
   assert payload["alertSize"] == "full"
 
 
+def test_payload_hides_resume_required_banner_during_autohold_standstill():
+  car_state = SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=True, speed=0.0),
+    gearShifter="drive",
+    standstill=True,
+    vCruise=80.0,
+    vCruiseCluster=80.0,
+    vEgo=0.0,
+    vEgoCluster=0.0,
+  )
+  selfdrive_state = SimpleNamespace(
+    active=True,
+    enabled=True,
+    engageable=True,
+    state="enabled",
+    alertText1="Resume 버튼을 누르세요",
+    alertText2="",
+    alertType="resumeRequired/warning",
+    alertStatus="userPrompt",
+    alertSize="small",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 12)
+
+  assert payload["standstill"] is True
+  assert payload["alertText1"] == ""
+  assert payload["alertText2"] == ""
+  assert payload["alertType"] == ""
+  assert payload["alertStatus"] == "normal"
+  assert payload["alertSize"] == "none"
+
+
+def test_payload_hides_resume_required_banner_even_when_vehicle_state_is_stale():
+  car_state = SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=False, speed=20.0),
+    gearShifter="drive",
+    standstill=False,
+    vCruise=80.0,
+    vCruiseCluster=80.0,
+    vEgo=5.0,
+    vEgoCluster=5.0,
+  )
+  selfdrive_state = SimpleNamespace(
+    active=True,
+    enabled=True,
+    engageable=True,
+    state="enabled",
+    alertText1="Resume 버튼을 누르세요",
+    alertText2="",
+    alertType="resumeRequired/warning",
+    alertStatus="userPrompt",
+    alertSize="small",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 13)
+
+  assert payload["alertText1"] == ""
+  assert payload["alertText2"] == ""
+  assert payload["alertType"] == ""
+  assert payload["alertStatus"] == "normal"
+  assert payload["alertSize"] == "none"
+
+
+def test_payload_exports_sunnypilot_e2e_alert_flags():
+  selfdrive_state = SimpleNamespace(
+    active=True,
+    enabled=True,
+    engageable=True,
+    state="enabled",
+  )
+  longitudinal_plan_sp = SimpleNamespace(e2eAlerts=SimpleNamespace(
+    greenLightAlert=True,
+    leadDepartAlert=False,
+  ))
+
+  payload = navdy_op_bridge.payload_from_messages(
+      selfdrive_state, navdy_op_bridge.default_car_state(), 14,
+      longitudinal_plan_sp=longitudinal_plan_sp)
+
+  assert payload["greenLightAlert"] is True
+  assert payload["leadDepartAlert"] is False
+
+
+def test_navdy_e2e_alerts_become_held_korean_banners():
+  args = SimpleNamespace()
+  green = {
+    "alertSize": "none",
+    "greenLightAlert": True,
+    "leadDepartAlert": False,
+  }
+  navdy_op_bridge.apply_navdy_e2e_alert(green, args, 10.0)
+
+  assert green["alertText1"] == "신호 변경됨"
+  assert green["alertText2"] == "전방 신호 변경 감지됨"
+  assert green["alertType"] == "greenLight/permanent"
+  assert green["alertSize"] == "mid"
+
+  held = {
+    "alertSize": "none",
+    "greenLightAlert": False,
+    "leadDepartAlert": False,
+  }
+  navdy_op_bridge.apply_navdy_e2e_alert(held, args, 12.9)
+  assert held["alertText1"] == "신호 변경됨"
+
+  expired = {
+    "alertSize": "none",
+    "greenLightAlert": False,
+    "leadDepartAlert": False,
+  }
+  navdy_op_bridge.apply_navdy_e2e_alert(expired, args, 13.1)
+  assert "alertText1" not in expired
+
+
+def test_navdy_lead_depart_alert_does_not_replace_critical_alert():
+  args = SimpleNamespace()
+  critical = {
+    "alertText1": "즉시 운전대를 잡으세요",
+    "alertType": "steerUnavailable/immediateDisable",
+    "alertSize": "full",
+    "greenLightAlert": False,
+    "leadDepartAlert": True,
+  }
+
+  navdy_op_bridge.apply_navdy_e2e_alert(critical, args, 20.0)
+
+  assert critical["alertText1"] == "즉시 운전대를 잡으세요"
+  assert critical["alertType"] == "steerUnavailable/immediateDisable"
+
+
+def test_mici_hud_renders_green_light_and_lead_depart_alerts():
+  ui_root = Path(__file__).parents[1] / "ui" / "sunnypilot"
+  hud = (ui_root / "mici/onroad/hud_renderer.py").read_text()
+  circular = (ui_root / "onroad/circular_alerts.py").read_text()
+
+  assert "self.circular_alerts_renderer = CircularAlertsRenderer()" in hud
+  assert "self.circular_alerts_renderer.update()" in hud
+  assert "self.circular_alerts_renderer.render(rect)" in hud
+  assert 'alert_type == "resumeRequired"' in circular
+  assert 'self._alert_text = "신호\\n변경됨"' in circular
+  assert 'self._alert_text = "전방 차량\\n출발"' in circular
+
+
 def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
   receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
              "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"

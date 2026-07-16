@@ -1,7 +1,6 @@
 PHONE_DISTRACTED_TYPE = 1 << 2
 
 MIN_FORWARD_RISK_SPEED = 5.0
-INTRUSION_DISTANCE = 45.0
 FAST_CLOSING_DISTANCE = 40.0
 FAST_CLOSING_SPEED = 5.0
 FAST_CLOSING_TTC = 4.0
@@ -9,7 +8,6 @@ FAST_CLOSING_DT = 0.05
 OBSERVED_CLOSING_DISTANCE = 30.0
 OBSERVED_CLOSING_MIN_DREL_DROP = 0.5
 OBSERVED_CLOSING_MIN_REPORTED_SPEED = 4.0
-DEFAULT_LANE_WIDTH = 3.6
 
 
 def phone_detected_from_distracted_type(phone_detected: bool) -> bool:
@@ -43,18 +41,3 @@ def lead_closing_risk(v_ego, lead, previous_lead_status=False, previous_lead_d_r
                         reported_closing_speed >= OBSERVED_CLOSING_MIN_REPORTED_SPEED)
   fast_closing = d_rel < FAST_CLOSING_DISTANCE and reported_closing_speed >= FAST_CLOSING_SPEED
   return (fast_closing or observed_closing) and d_rel / max(reported_closing_speed, 0.1) <= FAST_CLOSING_TTC
-
-
-def lead_lane_intrusion_risk(v_ego, lead, previous_lead_status=False, previous_lead_y_rel=0.0,
-                             previous_radar_track_id=-1, lane_width=0.0,
-                             lead_history_initialized=True):
-  if not _lead_active(v_ego, lead):
-    return False
-  d_rel = _lead_value(lead, "dRel")
-  y_rel = _lead_value(lead, "yRel")
-  effective_lane_width = lane_width if lane_width > 0.0 else DEFAULT_LANE_WIDTH
-  lane_half_width = max(1.25, min(2.0, effective_lane_width / 2.0))
-  entering_lane = previous_lead_status and abs(previous_lead_y_rel) > lane_half_width + 0.35
-  entering_lane &= abs(y_rel) <= lane_half_width
-  entering_lane &= d_rel < INTRUSION_DISTANCE
-  return entering_lane

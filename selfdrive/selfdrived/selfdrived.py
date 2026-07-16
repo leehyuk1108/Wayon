@@ -29,7 +29,8 @@ from openpilot.sunnypilot import get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
-from openpilot.sunnypilot.selfdrive.controls.lib.phone_forward_risk import lead_closing_risk, lead_lane_intrusion_risk
+from openpilot.sunnypilot.selfdrive.controls.lib.phone_forward_risk import lead_closing_risk
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lane_intrusion import RadarLaneIntrusionDetector
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 REPLAY = "REPLAY" in os.environ
@@ -52,6 +53,7 @@ TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 PHONE_FORWARD_RISK_COOLDOWN = 4.0
+LANE_INTRUSION_COOLDOWN = 4.0
 
 
 class SelfdriveD(CruiseHelper):
@@ -93,7 +95,7 @@ class SelfdriveD(CruiseHelper):
     # TODO: de-couple selfdrived with card/conflate on carState without introducing controls mismatches
     self.car_state_sock = messaging.sub_sock('carState', timeout=20)
 
-    ignore = self.sensor_packets + self.gps_packets + ['alertDebug', 'lateralManeuverPlan'] + ['modelDataV2SP']
+    ignore = self.sensor_packets + self.gps_packets + ['alertDebug', 'lateralManeuverPlan', 'modelDataV2SP', 'liveTracks']
     ignore_valid = ignore + ['liveDelay', 'liveParameters', 'liveTorqueParameters']
     if SIMULATION:
       ignore += ['driverCameraState', 'managerState']
@@ -105,7 +107,7 @@ class SelfdriveD(CruiseHelper):
     self.sm = messaging.SubMaster(['deviceState', 'pandaStates', 'peripheralState', 'modelV2', 'liveCalibration',
                                    'carOutput', 'driverMonitoringState', 'longitudinalPlan', 'livePose', 'liveDelay',
                                    'managerState', 'liveParameters', 'radarState', 'liveTorqueParameters',
-                                   'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback',
+                                   'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback', 'liveTracks',
                                    'lateralManeuverPlan', 'modelDataV2SP', 'longitudinalPlanSP'] + \
                                    self.camera_packets + self.sensor_packets + self.gps_packets,
                                   ignore_alive=ignore, ignore_avg_freq=ignore,
@@ -176,11 +178,11 @@ class SelfdriveD(CruiseHelper):
     self.events_sp_prev = []
     self.phone_forward_risk_cooldown = 0.0
     self.phone_forward_risk_lead_history_initialized = False
-    self.previous_lead_radar_track_id = -1
     self.previous_lead_d_rel = 0.0
     self.previous_lead_closing_risk = False
     self.previous_lead_status = False
-    self.previous_lead_y_rel = 0.0
+    self.radar_lane_intrusion_detector = RadarLaneIntrusionDetector()
+    self.radar_lane_intrusion_cooldown = 0.0
 
     self.mads = ModularAssistiveDrivingSystem(self)
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
@@ -195,22 +197,10 @@ class SelfdriveD(CruiseHelper):
     lead = self.sm['radarState'].leadOne
     lead_status = bool(getattr(lead, 'status', False))
     lead_d_rel = float(getattr(lead, 'dRel', 0.0)) if lead_status else 0.0
-    lead_radar_track_id = int(getattr(lead, 'radarTrackId', -1)) if lead_status else -1
-    lead_y_rel = float(getattr(lead, 'yRel', 0.0)) if lead_status else 0.0
 
     phone_detected = bool(self.sm['driverMonitoringState'].visionPolicyState.distractedTypes.phone)
-    lane_width = float(getattr(self.sm['longitudinalPlan'], 'laneWidth', 0.0))
-    lane_intrusion = False
     lead_closing = False
     if phone_detected:
-      lane_intrusion = lead_lane_intrusion_risk(
-        max(CS.vEgo, 0.0), lead,
-        previous_lead_status=self.previous_lead_status,
-        previous_lead_y_rel=self.previous_lead_y_rel,
-        previous_radar_track_id=self.previous_lead_radar_track_id,
-        lane_width=lane_width,
-        lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
-      )
       lead_closing = lead_closing_risk(
         max(CS.vEgo, 0.0), lead,
         previous_lead_status=self.previous_lead_status,
@@ -218,19 +208,38 @@ class SelfdriveD(CruiseHelper):
         lead_history_initialized=self.phone_forward_risk_lead_history_initialized,
         dt=DT_CTRL,
       )
-      if self.phone_forward_risk_cooldown <= 0.0 and lane_intrusion:
-        self.events_sp.add(custom.OnroadEventSP.EventName.phoneLaneIntrusion)
-        self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
-      elif self.phone_forward_risk_cooldown <= 0.0 and lead_closing and not self.previous_lead_closing_risk:
+      if self.phone_forward_risk_cooldown <= 0.0 and lead_closing and not self.previous_lead_closing_risk:
         self.events_sp.add(custom.OnroadEventSP.EventName.phoneLeadClosing)
         self.phone_forward_risk_cooldown = PHONE_FORWARD_RISK_COOLDOWN
 
     self.previous_lead_status = lead_status
-    self.previous_lead_radar_track_id = lead_radar_track_id
     self.previous_lead_d_rel = lead_d_rel
-    self.previous_lead_y_rel = lead_y_rel
     self.previous_lead_closing_risk = lead_closing
     self.phone_forward_risk_lead_history_initialized = True
+
+  def _update_radar_lane_intrusion(self, CS):
+    self.radar_lane_intrusion_cooldown = max(0.0, self.radar_lane_intrusion_cooldown - DT_CTRL)
+    if not self.sm.updated['liveTracks']:
+      return
+
+    model_v2 = self.sm['modelV2']
+    lane_change_active = model_v2.meta.laneChangeState != LaneChangeState.off
+    intrusion = self.radar_lane_intrusion_detector.update(
+      max(CS.vEgo, 0.0), list(self.sm['liveTracks'].points), model_v2,
+      self.sm.logMonoTime['liveTracks'] * 1e-9,
+      lane_change_active=lane_change_active,
+    )
+    if intrusion is not None and self.radar_lane_intrusion_cooldown <= 0.0:
+      self.events_sp.add(custom.OnroadEventSP.EventName.radarLaneIntrusion)
+      self.radar_lane_intrusion_cooldown = LANE_INTRUSION_COOLDOWN
+      cloudlog.event(
+        "radarLaneIntrusion",
+        trackId=intrusion.track_id,
+        side=intrusion.side,
+        distance=intrusion.distance_m,
+        lateral=intrusion.lateral_m,
+        inwardSpeed=intrusion.inward_speed_mps,
+      )
 
   def update_events(self, CS):
     """Compute onroadEvents from carState"""
@@ -302,6 +311,7 @@ class SelfdriveD(CruiseHelper):
         self.dm_uncertain_alerted = True
       self.events_sp.add_from_msg(self.sm['longitudinalPlanSP'].events)
       self._update_phone_forward_risk(CS)
+      self._update_radar_lane_intrusion(CS)
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:

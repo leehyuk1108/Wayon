@@ -442,6 +442,7 @@ CONFIGS = [
       "driverCameraState", "roadCameraState", "wideRoadCameraState", "managerState", "liveTorqueParameters",
       "accelerometer", "gyroscope", "carOutput", "gpsLocationExternal", "gpsLocation", "controlsState",
       "carControl", "driverAssistance", "alertDebug", "audioFeedback",
+      "liveTracks",
     ],
     subs=["selfdriveState", "onroadEvents"],
     ignore=["logMonoTime"],

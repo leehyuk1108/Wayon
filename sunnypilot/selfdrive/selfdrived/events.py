@@ -252,7 +252,7 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 2.),
   },
 
-  EventNameSP.phoneLaneIntrusion: {
+  EventNameSP.radarLaneIntrusion: {
     ET.WARNING: Alert(
       "전방 차량 주의",
       "전방 차량 차선 침범함",

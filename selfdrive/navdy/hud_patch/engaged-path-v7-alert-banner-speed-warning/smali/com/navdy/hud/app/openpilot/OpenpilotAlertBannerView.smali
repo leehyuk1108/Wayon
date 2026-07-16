@@ -25,7 +25,7 @@
 
 # direct methods
 .method public constructor <init>(Landroid/content/Context;)V
-    .registers 9
+    .locals 7
 
     .line 29
     invoke-direct {p0, p1}, Landroid/widget/FrameLayout;-><init>(Landroid/content/Context;)V
@@ -63,7 +63,7 @@
     .line 36
     iget-object v2, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->background:Landroid/graphics/drawable/GradientDrawable;
 
-    const/16 v3, 0xe6
+    const/16 v3, 0xa0
 
     invoke-static {v3, v0, v0, v0}, Landroid/graphics/Color;->argb(IIII)I
 
@@ -231,7 +231,7 @@
 .end method
 
 .method static synthetic access$000(Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;)Z
-    .registers 1
+    .locals 0
 
     .line 17
     iget-boolean p0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->showing:Z
@@ -240,7 +240,7 @@
 .end method
 
 .method private static backgroundColor(Ljava/lang/String;)I
-    .registers 5
+    .locals 3
 
     .line 105
     const-string v0, "critical"
@@ -251,45 +251,47 @@
 
     const/16 v1, 0xff
 
-    const/16 v2, 0xee
+    const/4 v2, 0x0
 
-    const/4 v3, 0x0
-
-    if-eqz v0, :cond_14
+    if-eqz v0, :cond_0
 
     .line 106
-    const/16 p0, 0x15
+    const/16 p0, 0xb4
 
-    invoke-static {v2, v1, v3, p0}, Landroid/graphics/Color;->argb(IIII)I
+    const/16 v0, 0x15
+
+    invoke-static {p0, v1, v2, v0}, Landroid/graphics/Color;->argb(IIII)I
 
     move-result p0
 
     return p0
 
     .line 108
-    :cond_14
+    :cond_0
     const-string v0, "userPrompt"
 
     invoke-virtual {v0, p0}, Ljava/lang/String;->equalsIgnoreCase(Ljava/lang/String;)Z
 
     move-result p0
 
-    if-eqz p0, :cond_23
+    if-eqz p0, :cond_1
 
     .line 109
-    const/16 p0, 0x73
+    const/16 p0, 0xaa
 
-    invoke-static {v2, v1, p0, v3}, Landroid/graphics/Color;->argb(IIII)I
+    const/16 v0, 0x73
+
+    invoke-static {p0, v1, v0, v2}, Landroid/graphics/Color;->argb(IIII)I
 
     move-result p0
 
     return p0
 
     .line 111
-    :cond_23
-    const/16 p0, 0xe6
+    :cond_1
+    const/16 p0, 0xa0
 
-    invoke-static {p0, v3, v3, v3}, Landroid/graphics/Color;->argb(IIII)I
+    invoke-static {p0, v2, v2, v2}, Landroid/graphics/Color;->argb(IIII)I
 
     move-result p0
 
@@ -297,24 +299,24 @@
 .end method
 
 .method private hideBanner()V
-    .registers 4
+    .locals 3
 
     .line 129
     iget-boolean v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->showing:Z
 
-    if-nez v0, :cond_b
+    if-nez v0, :cond_0
 
     invoke-virtual {p0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->getVisibility()I
 
     move-result v0
 
-    if-eqz v0, :cond_b
+    if-eqz v0, :cond_0
 
     .line 130
     return-void
 
     .line 132
-    :cond_b
+    :cond_0
     const/4 v0, 0x0
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->showing:Z
@@ -365,7 +367,7 @@
 .end method
 
 .method private showBanner()V
-    .registers 4
+    .locals 3
 
     .line 115
     iget-boolean v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->showing:Z
@@ -374,23 +376,23 @@
 
     const/4 v2, 0x0
 
-    if-eqz v0, :cond_e
+    if-eqz v0, :cond_0
 
     invoke-virtual {p0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->getVisibility()I
 
     move-result v0
 
-    if-nez v0, :cond_e
+    if-nez v0, :cond_0
 
     const/4 v0, 0x1
 
-    goto :goto_f
+    goto :goto_0
 
-    :cond_e
+    :cond_0
     const/4 v0, 0x0
 
     .line 116
-    :goto_f
+    :goto_0
     iput-boolean v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->showing:Z
 
     .line 117
@@ -411,7 +413,7 @@
     .line 120
     const/4 v1, 0x0
 
-    if-eqz v0, :cond_27
+    if-eqz v0, :cond_1
 
     .line 121
     invoke-virtual {p0, v1}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->setTranslationY(F)V
@@ -420,7 +422,7 @@
     return-void
 
     .line 124
-    :cond_27
+    :cond_1
     const/high16 v0, -0x3d380000    # -100.0f
 
     invoke-virtual {p0, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->setTranslationY(F)V
@@ -455,14 +457,14 @@
 
 # virtual methods
 .method public updatePayload(Ljava/lang/String;)V
-    .registers 9
+    .locals 7
 
     .line 70
     const-string v0, "none"
 
     const-string v1, ""
 
-    if-nez p1, :cond_a
+    if-nez p1, :cond_0
 
     .line 71
     invoke-direct {p0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->hideBanner()V
@@ -471,8 +473,8 @@
     return-void
 
     .line 76
-    :cond_a
-    :try_start_a
+    :cond_0
+    :try_start_0
     new-instance v2, Lorg/json/JSONObject;
 
     invoke-direct {v2, p1}, Lorg/json/JSONObject;-><init>(Ljava/lang/String;)V
@@ -549,30 +551,30 @@
 
     move-result v6
 
-    if-nez v6, :cond_43
+    if-nez v6, :cond_1
 
     invoke-virtual {v3}, Ljava/lang/String;->length()I
 
     move-result v6
 
-    if-eqz v6, :cond_49
+    if-eqz v6, :cond_2
 
-    :cond_43
+    :cond_1
     invoke-virtual {v0, v2}, Ljava/lang/String;->equalsIgnoreCase(Ljava/lang/String;)Z
 
     move-result v0
 
-    if-eqz v0, :cond_4d
+    if-eqz v0, :cond_3
 
     .line 84
-    :cond_49
+    :cond_2
     invoke-direct {p0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->hideBanner()V
 
     .line 85
     return-void
 
     .line 88
-    :cond_4d
+    :cond_3
     new-instance v0, Ljava/lang/StringBuilder;
 
     invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
@@ -614,7 +616,7 @@
     .line 89
     iget-boolean v2, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->showing:Z
 
-    if-eqz v2, :cond_81
+    if-eqz v2, :cond_4
 
     iget-object v2, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->currentKey:Ljava/lang/String;
 
@@ -622,13 +624,13 @@
 
     move-result v2
 
-    if-eqz v2, :cond_81
+    if-eqz v2, :cond_4
 
     .line 90
     return-void
 
     .line 93
-    :cond_81
+    :cond_4
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->currentKey:Ljava/lang/String;
 
     .line 94
@@ -638,16 +640,16 @@
 
     move-result v2
 
-    if-lez v2, :cond_8d
+    if-lez v2, :cond_5
 
     move-object v2, p1
 
-    goto :goto_8e
+    goto :goto_0
 
-    :cond_8d
+    :cond_5
     move-object v2, v3
 
-    :goto_8e
+    :goto_0
     invoke-virtual {v0, v2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 
     .line 95
@@ -657,11 +659,11 @@
 
     move-result v2
 
-    if-lez v2, :cond_9a
+    if-lez v2, :cond_6
 
     move-object v1, v3
 
-    :cond_9a
+    :cond_6
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 
     .line 96
@@ -671,22 +673,22 @@
 
     move-result p1
 
-    if-lez p1, :cond_ad
+    if-lez p1, :cond_7
 
     invoke-virtual {v3}, Ljava/lang/String;->length()I
 
     move-result p1
 
-    if-lez p1, :cond_ad
+    if-lez p1, :cond_7
 
     const/4 p1, 0x0
 
-    goto :goto_af
+    goto :goto_1
 
-    :cond_ad
+    :cond_7
     const/16 p1, 0x8
 
-    :goto_af
+    :goto_1
     invoke-virtual {v0, p1}, Landroid/widget/TextView;->setVisibility(I)V
 
     .line 97
@@ -700,20 +702,20 @@
 
     .line 98
     invoke-direct {p0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->showBanner()V
-    :try_end_be
-    .catch Ljava/lang/Exception; {:try_start_a .. :try_end_be} :catch_bf
+    :try_end_0
+    .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
 
     .line 101
-    goto :goto_c3
+    goto :goto_2
 
     .line 99
-    :catch_bf
+    :catch_0
     move-exception p1
 
     .line 100
     invoke-direct {p0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->hideBanner()V
 
     .line 102
-    :goto_c3
+    :goto_2
     return-void
 .end method

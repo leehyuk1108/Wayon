@@ -50,6 +50,8 @@ def test_navdy_outside_temperature_view_binds_and_throttles_obd_pid():
   assert "sOutsideTempTextView" not in overlay_builder
   assert "const/16 v5, 0x46" in temp_updater
   assert "const-wide/16 v4, 0x1388" in temp_updater
+  assert "if-ltz v6, :cond_temp_throttled" in temp_updater
+  assert "if-gez v6, :cond_temp_throttled" not in temp_updater
 
 
 def test_navdy_music_uses_artist_title_and_refreshes_recreated_dash():
@@ -64,6 +66,20 @@ def test_navdy_music_uses_artist_title_and_refreshes_recreated_dash():
   assert 'const-string v4, " - "' in smali_patch
   assert "+    :cond_navdy_music_refresh" in refresh_hunks
   assert "-    if-nez v0, :cond_1" in refresh_hunks
+
+
+def test_navdy_disengaged_music_sits_above_current_speed():
+  layout = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+           "res/layout/screen_home_smartdash.xml"
+  root = ET.parse(layout).getroot()
+  android = "{http://schemas.android.com/apk/res/android}"
+  music_view = next(view for view in root.iter()
+                    if view.attrib.get(f"{android}id") == "@id/music_track_info")
+  music_row = next(parent for parent in root.iter() if music_view in list(parent))
+
+  assert music_row.attrib[f"{android}layout_marginTop"] == "77.0dip"
+  assert music_row.attrib[f"{android}layout_height"] == "26.0dip"
+  assert music_view.attrib[f"{android}textSize"] == "16.0sp"
 
 
 def test_payload_exports_standstill_and_op_available():
@@ -320,17 +336,6 @@ def test_mici_hud_renders_green_light_and_lead_depart_alerts():
   assert 'self._alert_text = "전방 차량\\n출발"' in circular
 
 
-def test_navdy_alert_banner_suppresses_resume_required():
-  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
-  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.java").read_text()
-  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.smali").read_text()
-
-  assert 'type.startsWith("resumeRequired")' in java
-  assert 'title.startsWith("Resume 버튼")' in java
-  assert 'const-string v6, "resumeRequired"' in smali
-  assert ":cond_navdy_hide_resume_required" in smali
-
-
 def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
   receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
              "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
@@ -341,6 +346,39 @@ def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
   assert ":cond_navdy_camera_speed_white" in smali
   assert "const/high16 v1, -0x10000" in smali
   assert "const/4 v1, -0x1" in smali
+
+
+def test_navdy_hud_patch_colors_disengaged_speed_for_camera_overspeed():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+          "SmartDashView.disengaged-speed-color.patch"
+  smali_patch = patch.read_text()
+
+  assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in smali_patch
+  assert "if-le p1, v1, :cond_navdy_stock_speed_white" in smali_patch
+  assert "const/high16 v1, -0x10000" in smali_patch
+  assert "const/4 v1, -0x1" in smali_patch
+  assert "TextView;->setTextColor(I)V" in smali_patch
+
+
+def test_navdy_alert_backgrounds_keep_hud_visible():
+  source = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+           "src/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.java"
+  java = source.read_text()
+
+  assert "Color.argb(160, 0, 0, 0)" in java
+  assert "Color.argb(170, 255, 115, 0)" in java
+  assert "Color.argb(180, 255, 0, 21)" in java
+
+
+def test_navdy_alert_banner_suppresses_resume_required():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.java").read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.smali").read_text()
+
+  assert 'type.startsWith("resumeRequired")' in java
+  assert 'title.startsWith("Resume 버튼")' in java
+  assert 'const-string v6, "resumeRequired"' in smali
+  assert ":cond_navdy_hide_resume_required" in smali
 
 
 def test_navdy_hud_patch_keeps_status_icons_while_disengaged():
@@ -370,27 +408,25 @@ def test_navdy_hud_patch_keeps_status_icons_while_disengaged():
 
 def test_navdy_path_view_retains_geometry_during_fast_state_updates():
   path_view = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
-              "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali"
-  smali = path_view.read_text()
-  update_method = smali.split(".method public updatePayload", 1)[1].split(".end method", 1)[0]
+              "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
+  java = path_view.read_text()
+  state_only = java.split('if (!json.has("navPathLeft")) {', 1)[1].split("\n      }", 1)[0]
 
-  assert "JSONObject;->has(Ljava/lang/String;)Z" in update_method
-  assert "if-nez p1, :cond_navdy_path_payload_present" in update_method
-  assert update_method.index("return-void") < update_method.index("\n    :cond_navdy_path_payload_present")
+  assert "invalidate();" in state_only
+  assert "return;" in state_only
+  assert "clearGeometry();" not in state_only
 
 
 def test_navdy_path_view_reads_and_draws_road_edges():
   path_view = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
-              "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali"
-  smali = path_view.read_text()
-  update_method = smali.split(".method public updatePayload", 1)[1].split(".end method", 1)[0]
-  draw_method = smali.split(".method protected onDraw", 1)[1].split(".end method", 1)[0]
+              "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
+  java = path_view.read_text()
 
   for side in ("Left", "Right"):
-    assert f'const-string v3, "navRoadEdge{side}"' in update_method
-    assert f"->roadEdge{side}:[F" in update_method
-    assert f"->roadEdge{side}:[F" in draw_method
-  assert "const/16 v1, 0x46" in draw_method
+    assert f'json.optJSONArray("navRoadEdge{side}")' in java
+    assert f"drawRoadEdge(canvas, roadEdge{side}, roadEdge{side}Prob)" in java
+  assert "roadEdgePaint.setStyle(Paint.Style.STROKE)" in java
+  assert "confidence < ROAD_EDGE_MIN_CONFIDENCE" in java
 
 
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
@@ -447,29 +483,380 @@ def test_navdy_bridge_avoids_saturated_car_state_service():
   assert navdy_op_bridge.NAVDY_MODEL_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES
 
 
-def test_navdy_model_geometry_projects_path_and_middle_lane_lines():
+def test_navdy_model_geometry_projects_path_and_all_lane_lines():
   path = SimpleNamespace(x=[0.0, 40.0, 80.0], y=[0.0, 0.5, 1.0])
   lane_lines = [
-    SimpleNamespace(x=[], y=[]),
-    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[1.8, 2.1, 2.5]),
-    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-1.8, -1.4, -1.0]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-5.0, -5.2, -5.5]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-1.8, -2.1, -2.5]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[1.8, 1.4, 1.0]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[5.0, 4.8, 4.5]),
   ]
   road_edges = [
-    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[5.5, 5.8, 6.0]),
-    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-5.5, -5.2, -5.0]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-5.5, -5.8, -6.0]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[5.5, 5.2, 5.0]),
   ]
-  model = SimpleNamespace(position=path, laneLines=lane_lines, laneLineProbs=[0.0, 0.8, 0.7], roadEdges=road_edges)
+  model = SimpleNamespace(
+    position=path,
+    laneLines=lane_lines,
+    laneLineProbs=[0.6, 0.8, 0.7, 0.5],
+    roadEdges=road_edges,
+    roadEdgeStds=[0.2, 0.3],
+  )
 
   geometry = navdy_op_bridge.navdy_model_geometry(model)
 
   assert len(geometry["navPathLeft"]) == 6
   assert len(geometry["navLaneLeft"]) == 6
   assert geometry["navPathLeft"][1] > geometry["navPathLeft"][-1]
+  assert geometry["navPathLeft"][0] < geometry["navPathRight"][0]
   assert geometry["navLaneLeft"][0] < geometry["navLaneRight"][0]
+  assert geometry["navLaneFarLeft"][0] < geometry["navLaneLeft"][0]
+  assert geometry["navLaneFarRight"][0] > geometry["navLaneRight"][0]
   assert len(geometry["navRoadEdgeLeft"]) == 6
-  assert geometry["navRoadEdgeLeft"][0] < geometry["navLaneLeft"][0]
-  assert geometry["navRoadEdgeRight"][0] > geometry["navLaneRight"][0]
+  assert geometry["navRoadEdgeLeft"][0] < geometry["navLaneFarLeft"][0]
+  assert geometry["navRoadEdgeRight"][0] > geometry["navLaneFarRight"][0]
+  assert geometry["navRoadEdgeLeftProb"] == 0.8
   assert geometry["navLaneLeftProb"] == 0.8
+
+
+def test_navdy_model_geometry_hides_uncertain_road_edges():
+  path = SimpleNamespace(x=[0.0, 80.0], y=[0.0, 0.0])
+  lane_lines = [
+    SimpleNamespace(x=[0.0, 80.0], y=[-5.0, -5.0]),
+    SimpleNamespace(x=[0.0, 80.0], y=[-1.8, -1.8]),
+    SimpleNamespace(x=[0.0, 80.0], y=[1.8, 1.8]),
+    SimpleNamespace(x=[0.0, 80.0], y=[5.0, 5.0]),
+  ]
+  road_edges = [
+    SimpleNamespace(x=[0.0, 80.0], y=[-6.0, -6.0]),
+    SimpleNamespace(x=[0.0, 80.0], y=[6.0, 6.0]),
+  ]
+  model = SimpleNamespace(
+    position=path,
+    laneLines=lane_lines,
+    laneLineProbs=[0.5, 0.9, 0.9, 0.5],
+    roadEdges=road_edges,
+    roadEdgeStds=[1.108, 0.679],
+  )
+
+  geometry = navdy_op_bridge.navdy_model_geometry(model)
+
+  assert "navRoadEdgeLeft" not in geometry
+  assert "navRoadEdgeRight" not in geometry
+
+
+def test_navdy_model_line_keeps_modelv2_left_right_orientation():
+  left = navdy_op_bridge.navdy_model_line([0.0, 80.0], [-1.0, -1.0])
+  right = navdy_op_bridge.navdy_model_line([0.0, 80.0], [1.0, 1.0])
+
+  assert left[0] < 160.0 < right[0]
+
+
+def navdy_vehicle_test_model():
+  lane_lines = [
+    SimpleNamespace(x=[0.0, 80.0], y=[-5.2, -5.2]),
+    SimpleNamespace(x=[0.0, 80.0], y=[-1.8, -1.8]),
+    SimpleNamespace(x=[0.0, 80.0], y=[1.8, 1.8]),
+    SimpleNamespace(x=[0.0, 80.0], y=[5.2, 5.2]),
+  ]
+  leads = [
+    SimpleNamespace(prob=0.92, x=[31.52], y=[0.2], yStd=[0.3], v=[15.0]),
+    SimpleNamespace(prob=0.1, x=[50.0], y=[0.0], yStd=[1.0], v=[20.0]),
+  ]
+  return SimpleNamespace(
+    position=SimpleNamespace(x=[0.0, 80.0], y=[0.0, 0.0]),
+    laneLines=lane_lines,
+    laneLineProbs=[0.8, 0.95, 0.95, 0.8],
+    leadsV3=leads,
+    velocity=SimpleNamespace(x=[20.0]),
+  )
+
+
+def test_navdy_vehicle_geometry_fuses_camera_lead_and_classifies_adjacent_lanes():
+  radar_points = [
+    {"trackId": 10, "dRel": 30.0, "yRel": -0.2, "vRel": -5.0},
+    {"trackId": 11, "dRel": 26.0, "yRel": 3.0, "vRel": 0.5},
+    {"trackId": 12, "dRel": 24.0, "yRel": -3.0, "vRel": -1.0},
+    {"trackId": 13, "dRel": 20.0, "yRel": 8.0, "vRel": 0.0},
+  ]
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(navdy_vehicle_test_model(), radar_points)["navVehicles"]
+  by_id = {vehicle["trackId"]: vehicle for vehicle in vehicles}
+
+  assert set(by_id) == {10, 11, 12}
+  assert by_id[10]["source"] == "fused"
+  assert by_id[10]["lane"] == "center"
+  assert by_id[10]["lateralM"] == 0.2
+  assert by_id[11]["lane"] == "left"
+  assert by_id[11]["screenX"] < 160.0
+  assert by_id[11]["yawDeg"] < 0.0
+  assert by_id[12]["lane"] == "right"
+  assert by_id[12]["screenX"] > 160.0
+  assert by_id[12]["yawDeg"] > 0.0
+  assert by_id[10]["yawDeg"] == 0.0
+
+
+def test_navdy_radar_width_recovers_continuous_vehicle_center():
+  left = {"yRel": 3.0, "widthM": 1.75}
+  right = {"yRel": -3.0, "widthM": 1.75}
+  center = {"yRel": 0.2, "widthM": 1.75}
+
+  assert navdy_op_bridge.navdy_radar_center_model_y(left) == -3.875
+  assert navdy_op_bridge.navdy_radar_center_model_y(right) == 2.125
+  assert navdy_op_bridge.navdy_radar_center_model_y(center) == -1.075
+
+
+def test_navdy_vehicle_geometry_exports_raw_edge_width_and_corrected_center():
+  model = navdy_vehicle_test_model()
+  model.leadsV3 = []
+  radar_points = [
+    {"trackId": 40, "dRel": 30.0, "yRel": 3.0, "vRel": -2.0, "widthM": 1.75},
+    {"trackId": 41, "dRel": 30.0, "yRel": -3.0, "vRel": -1.0, "widthM": 1.75},
+  ]
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(model, radar_points)["navVehicles"]
+  by_id = {vehicle["trackId"]: vehicle for vehicle in vehicles}
+
+  assert by_id[40]["lane"] == "left"
+  assert by_id[40]["lateralM"] == -3.88
+  assert by_id[40]["rawRadarLateralM"] == -3.0
+  assert by_id[40]["widthM"] == 1.75
+  assert by_id[40]["widthCenterApplied"] is True
+  assert by_id[41]["lane"] == "right"
+  assert by_id[41]["lateralM"] == 3.0
+  assert by_id[41]["widthCenterApplied"] is False
+  assert by_id[40]["screenX"] < navdy_op_bridge.navdy_project_point(30.0, -3.0)[0]
+  assert by_id[41]["screenX"] == navdy_op_bridge.navdy_project_point(30.0, 3.0)[0]
+  assert all(not vehicle["widthCenterApplied"] or vehicle["lane"] == "left" for vehicle in vehicles)
+
+
+def test_navdy_vehicle_yaw_follows_local_lane_curve():
+  model = navdy_vehicle_test_model()
+  model.position = SimpleNamespace(x=[0.0, 40.0, 80.0], y=[0.0, 6.0, 20.0])
+  model.laneLines = [
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-5.2, 0.8, 14.8]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-1.8, 4.2, 18.2]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[1.8, 7.8, 21.8]),
+    SimpleNamespace(x=[0.0, 40.0, 80.0], y=[5.2, 11.2, 25.2]),
+  ]
+
+  straight = navdy_op_bridge.navdy_vehicle_yaw_deg(navdy_vehicle_test_model(), "center", 30.0, 160.0)
+  center = navdy_op_bridge.navdy_vehicle_yaw_deg(model, "center", 30.0, 160.0)
+  left = navdy_op_bridge.navdy_vehicle_yaw_deg(model, "left", 30.0, 70.0)
+  right = navdy_op_bridge.navdy_vehicle_yaw_deg(model, "right", 30.0, 250.0)
+
+  assert straight == 0.0
+  assert center < -5.0
+  assert left < -12.0
+  assert right < 12.0
+
+
+def test_navdy_vehicle_perspective_yaw_turns_adjacent_lanes_more_aggressively():
+  assert navdy_op_bridge.navdy_vehicle_perspective_yaw_deg("left", 132.0) == -8.0
+  assert navdy_op_bridge.navdy_vehicle_perspective_yaw_deg("right", 218.0) == 12.0
+  assert navdy_op_bridge.navdy_vehicle_perspective_yaw_deg("right", 280.0) == 24.0
+  assert navdy_op_bridge.navdy_vehicle_perspective_yaw_deg("center", 280.0) == 0.0
+
+
+def test_navdy_payload_signature_tracks_vehicle_yaw_changes():
+  straight = {"navVehicles": [{"trackId": 1, "yawDeg": 0.0}]}
+  curved = {"navVehicles": [{"trackId": 1, "yawDeg": 8.0}]}
+
+  assert navdy_op_bridge.payload_signature(straight) != navdy_op_bridge.payload_signature(curved)
+
+
+def test_navdy_vehicle_geometry_keeps_unmatched_camera_lead():
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(navdy_vehicle_test_model(), [])["navVehicles"]
+
+  assert len(vehicles) == 1
+  assert vehicles[0]["source"] == "vision"
+  assert vehicles[0]["lane"] == "center"
+
+
+def test_navdy_vehicle_geometry_merges_overlapping_secondary_camera_hypothesis():
+  model = navdy_vehicle_test_model()
+  model.leadsV3[1] = SimpleNamespace(
+    prob=0.88, x=[26.32], y=[0.0], yStd=[0.4], v=[15.5])
+  radar_points = [
+    {"trackId": 30, "dRel": 30.0, "yRel": -0.2, "vRel": -5.0},
+  ]
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(model, radar_points)["navVehicles"]
+
+  assert len(vehicles) == 1
+  assert vehicles[0]["trackId"] == 30
+  assert vehicles[0]["source"] == "fused"
+
+
+def test_navdy_vehicle_geometry_uses_screen_overlap_for_large_distance_delta():
+  model = navdy_vehicle_test_model()
+  model.leadsV3 = [
+    SimpleNamespace(prob=0.9, x=[22.52], y=[0.0], yStd=[0.3], v=[16.0]),
+  ]
+  radar_points = [
+    {"trackId": 31, "dRel": 30.0, "yRel": 0.0, "vRel": -4.0},
+  ]
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(model, radar_points)["navVehicles"]
+
+  assert len(vehicles) == 1
+  assert vehicles[0]["trackId"] == 31
+  assert vehicles[0]["source"] == "fused"
+
+
+def test_navdy_vehicle_geometry_preserves_separated_camera_and_radar_targets():
+  model = navdy_vehicle_test_model()
+  model.leadsV3 = [
+    SimpleNamespace(prob=0.9, x=[21.52], y=[0.0], yStd=[0.3], v=[16.0]),
+  ]
+  radar_points = [
+    {"trackId": 32, "dRel": 60.0, "yRel": 0.0, "vRel": -4.0},
+  ]
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(model, radar_points)["navVehicles"]
+
+  assert len(vehicles) == 2
+  assert {vehicle["source"] for vehicle in vehicles} == {"radar", "vision"}
+
+
+def test_navdy_vehicle_geometry_uses_path_when_lane_markings_are_missing():
+  model = navdy_vehicle_test_model()
+  model.position = SimpleNamespace(x=[0.0, 80.0], y=[0.0, 0.0])
+  model.laneLineProbs = [0.01, 0.04, 0.05, 0.01]
+  radar_points = [
+    {"trackId": 20, "dRel": 30.0, "yRel": -0.2, "vRel": -2.0},
+    {"trackId": 21, "dRel": 24.0, "yRel": 3.0, "vRel": 0.0},
+  ]
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(model, radar_points)["navVehicles"]
+  by_id = {vehicle["trackId"]: vehicle for vehicle in vehicles}
+
+  assert by_id[20]["source"] == "fused"
+  assert by_id[20]["lane"] == "center"
+  assert by_id[21]["lane"] == "left"
+
+
+def test_navdy_camera_lead_uses_path_without_lane_line_geometry():
+  model = navdy_vehicle_test_model()
+  model.position = SimpleNamespace(x=[0.0, 80.0], y=[0.0, 0.0])
+  model.laneLines = []
+  model.laneLineProbs = []
+
+  leads = navdy_op_bridge.navdy_camera_leads(model)
+
+  assert len(leads) == 1
+  assert leads[0]["lane"] == "center"
+
+
+def test_navdy_radar_reader_converts_raw_can_before_parser_update():
+  converted = [(123, [(0x500, b"\x01", 1)])]
+
+  class FakeRadarInterface:
+    def __init__(self):
+      self.received = None
+
+    def update(self, can_list):
+      self.received = can_list
+      return "radar-data"
+
+  reader = object.__new__(navdy_op_bridge.NavdyRadarReader)
+  reader._radar_interface = FakeRadarInterface()
+  reader._can_capnp_to_list = lambda raw: converted if raw == [b"raw-can"] else []
+
+  assert reader._radar_update([b"raw-can"]) == "radar-data"
+  assert reader._radar_interface.received == converted
+
+
+def test_navdy_radar_reader_extracts_track_widths_from_raw_parser():
+  reader = object.__new__(navdy_op_bridge.NavdyRadarReader)
+  reader._radar_interface = SimpleNamespace(rcp=SimpleNamespace(vl={
+    1120: {"FLRRNumValidTargets": 1},
+    1121: {"TrkObjectID": 23, "TrkWidth": 1.75},
+    1122: {"TrkObjectID": 24, "TrkWidth": 0.0},
+  }))
+
+  assert reader._radar_track_widths() == {23: 1.75}
+
+
+def test_navdy_radar_reader_falls_back_to_persistent_car_params():
+  class FakeParams:
+    def __init__(self):
+      self.keys = []
+
+    def get(self, key):
+      self.keys.append(key)
+      return b"persistent" if key == "CarParamsPersistent" else None
+
+  params = FakeParams()
+
+  assert navdy_op_bridge.navdy_car_params_bytes(params) == b"persistent"
+  assert params.keys == ["CarParams", "CarParamsPersistent"]
+
+
+def test_navdy_path_renderer_animates_dashed_lanes_and_keeps_road_edges_solid():
+  source = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+           "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
+  java = source.read_text()
+
+  assert "LANE_DASH_PATTERN = {56.0f, 24.0f}" in java
+  assert "LANE_DASH_CYCLE = 80.0f" in java
+  assert "new DashPathEffect(LANE_DASH_PATTERN, dashPhase)" in java
+  assert "Math.min(80.0f, Math.max(18.0f, vehicleSpeedKph * 0.8f))" in java
+  for lane in ("laneFarLeft", "laneLeft", "laneRight", "laneFarRight"):
+    assert f"drawLane(canvas, {lane}, {lane}Prob)" in java
+  assert "canvas.drawPath(linePath(points), roadEdgePaint)" in java
+  assert "canvas.drawPath(linePath(points), lanePaint)" in java
+  assert "vehicleSpeedKph > 1.0f" in java
+  assert "postInvalidateDelayed(DASH_FRAME_MS)" in java
+  assert java.index("drawRoadEdge(canvas, roadEdgeLeft") < java.index("lanePaint.setPathEffect")
+
+
+def test_navdy_vehicle_markers_remain_visible_at_long_range():
+  source = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+           "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
+  java = source.read_text()
+
+  assert "float width = 12.0f + nearScale * 46.5f" in java
+  assert "float height = width * 1.55f" in java
+
+
+def test_navdy_path_renderer_draws_fused_camera_and_radar_vehicles():
+  patch_root = Path(__file__).parent / "hud_patch" / \
+               "engaged-path-v7-alert-banner-speed-warning"
+  source = patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
+  marker = patch_root / "res/drawable-nodpi/navdy_vehicle_marker.png"
+  java = source.read_text()
+  png = marker.read_bytes()
+
+  assert 'json.has("navVehicles")' in java
+  assert 'vehicle.optDouble("screenX", 160.0)' in java
+  assert "drawVehicles(canvas);" in java
+  assert "COLOR_VEHICLE_RADAR" in java
+  assert "COLOR_VEHICLE_VISION" in java
+  assert "COLOR_VEHICLE_FUSED" in java
+  assert "BitmapFactory.decodeResource" in java
+  assert "new LightingColorFilter" in java
+  assert "canvas.drawBitmap(marker, null, destination, vehicleBitmapPaint)" in java
+  assert png[:8] == b"\x89PNG\r\n\x1a\n"
+  assert int.from_bytes(png[16:20], "big") == 256
+  assert int.from_bytes(png[20:24], "big") == 256
+
+
+def test_navdy_vehicle_markers_follow_bridge_yaw_with_legacy_fallback():
+  patch_root = Path(__file__).parent / "hud_patch" / \
+               "engaged-path-v7-alert-banner-speed-warning"
+  source = patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
+  java = source.read_text()
+
+  assert 'vehicle.optDouble("yawDeg", 0.0)' in java
+  assert "Float.isNaN(yawDeg)" in java
+  assert "Math.round(absoluteYaw / 4.0f) - 1" in java
+  for side in ("left", "right"):
+    for angle in (4, 8, 12, 16, 20, 24):
+      name = f"navdy_vehicle_marker_{side}_{angle}"
+      marker = patch_root / f"res/drawable-nodpi/{name}.png"
+      assert f'loadVehicleMarker(context, "{name}")' in java
+      assert marker.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_navdy_model_line_caps_geometry_at_ten_points():
@@ -488,8 +875,8 @@ def test_payload_only_exports_model_geometry_while_active():
     position=SimpleNamespace(x=[0.0, 80.0], y=[0.0, 0.0]),
     laneLines=[
       SimpleNamespace(x=[], y=[]),
-      SimpleNamespace(x=[0.0, 80.0], y=[1.8, 1.8]),
       SimpleNamespace(x=[0.0, 80.0], y=[-1.8, -1.8]),
+      SimpleNamespace(x=[0.0, 80.0], y=[1.8, 1.8]),
     ],
     laneLineProbs=[0.0, 1.0, 1.0],
   )
@@ -544,6 +931,7 @@ def test_default_car_state_keeps_payload_safe_without_vehicle_sample():
 
 def test_manager_defaults_use_starpilot_socket_transport():
   assert "--socket-transport" in navdy_power_bridge.DEFAULT_ARGS
+  assert "--radar-overlay" in navdy_power_bridge.DEFAULT_ARGS
 
 
 def test_manager_defaults_keep_fast_state_and_throttle_path():

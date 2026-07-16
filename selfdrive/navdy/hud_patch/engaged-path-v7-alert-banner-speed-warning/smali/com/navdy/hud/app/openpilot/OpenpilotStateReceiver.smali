@@ -2554,7 +2554,7 @@
 
     cmp-long v6, v2, v4
 
-    if-gez v6, :cond_temp_throttled
+    if-ltz v6, :cond_temp_throttled
 
     sput-wide v7, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOutsideTempUpdateMs:J
 

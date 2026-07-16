@@ -1,0 +1,28 @@
+--- a/smali/com/navdy/hud/app/ui/component/homescreen/SmartDashView.smali
++++ b/smali/com/navdy/hud/app/ui/component/homescreen/SmartDashView.smali
+@@ -3447,6 +3447,24 @@
+     check-cast v0, Landroid/widget/TextView;
+ 
+     if-eqz v0, :cond_0
+ 
++    invoke-static {}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I
++
++    move-result v1
++
++    if-lez v1, :cond_navdy_stock_speed_white
++
++    if-le p1, v1, :cond_navdy_stock_speed_white
++
++    const/high16 v1, -0x10000
++
++    goto :goto_navdy_stock_speed_color
++
++    :cond_navdy_stock_speed_white
++    const/4 v1, -0x1
++
++    :goto_navdy_stock_speed_color
++    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setTextColor(I)V
++
+     invoke-static {p1}, Ljava/lang/String;->valueOf(I)Ljava/lang/String;
+ 
+     move-result-object v1

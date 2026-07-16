@@ -52,7 +52,21 @@ NAVDY_FAST_SERVICES = (
   "longitudinalPlanSP",
 )
 NAVDY_MODEL_SERVICE = "modelV2"
+NAVDY_RADAR_TO_CAMERA_M = 1.52
+NAVDY_VEHICLE_MAX_DISTANCE_M = 80.0
+NAVDY_VEHICLE_MAX_COUNT = 8
+NAVDY_RADAR_STALE_SEC = 0.35
+NAVDY_RADAR_RETRY_SEC = 5.0
+NAVDY_RADAR_MAX_TRACK_WIDTH_M = 4.0
 NAVDY_E2E_ALERT_HOLD_SEC = 3.0
+NAVDY_FALLBACK_LANE_WIDTH_M = 3.6
+NAVDY_MIN_LANE_WIDTH_M = 2.4
+NAVDY_MAX_LANE_WIDTH_M = 4.8
+NAVDY_VEHICLE_YAW_SAMPLE_M = 4.0
+NAVDY_VEHICLE_MAX_YAW_DEG = 24.0
+NAVDY_VEHICLE_NEAR_WIDTH_PX = 58.5
+NAVDY_VEHICLE_FAR_WIDTH_PX = 12.0
+NAVDY_VEHICLE_DUPLICATE_IOU = 0.25
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -264,10 +278,365 @@ def navdy_model_line(x_values: Any, y_values: Any, lateral_offset: float = 0.0) 
 
   projected = []
   for x, y in points:
-    distance = min(x / 80.0, 1.0) ** 0.65
-    lateral_scale = 44.0 * (1.0 - distance) + 8.0 * distance
-    projected.extend((rounded(160.0 - y * lateral_scale), rounded(96.0 - 88.0 * distance)))
+    projected.extend(navdy_project_point(x, y))
   return projected
+
+
+def navdy_project_point(x_value: Any, y_value: Any) -> list[float]:
+  x = finite_float(x_value, -1.0)
+  y = finite_float(y_value, 0.0)
+  if not 0.0 <= x <= NAVDY_VEHICLE_MAX_DISTANCE_M:
+    return []
+  distance = min(x / NAVDY_VEHICLE_MAX_DISTANCE_M, 1.0) ** 0.65
+  lateral_scale = 44.0 * (1.0 - distance) + 8.0 * distance
+  return [
+    rounded(160.0 + y * lateral_scale),
+    rounded(96.0 - 88.0 * distance),
+  ]
+
+
+def model_line_y_at(line: Any, distance_m: float) -> float | None:
+  x_values = list(getattr(line, "x", []))
+  y_values = list(getattr(line, "y", []))
+  points = [(finite_float(x, -1.0), finite_float(y, 0.0)) for x, y in zip(x_values, y_values)]
+  points = [(x, y) for x, y in points if x >= 0.0]
+  if len(points) < 2 or distance_m < points[0][0] or distance_m > points[-1][0]:
+    return None
+  for (x0, y0), (x1, y1) in zip(points, points[1:]):
+    if x0 <= distance_m <= x1:
+      if x1 <= x0:
+        return y1
+      ratio = (distance_m - x0) / (x1 - x0)
+      return y0 + (y1 - y0) * ratio
+  return None
+
+
+def navdy_path_lane_for_model_point(model_v2: Any, distance_m: float, model_y: float,
+                                    left: float | None = None, right: float | None = None) -> str:
+  path_y = model_line_y_at(getattr(model_v2, "position", None), distance_m)
+  if path_y is None:
+    return ""
+
+  lane_width = NAVDY_FALLBACK_LANE_WIDTH_M
+  if left is not None and right is not None:
+    measured_width = right - left
+    if NAVDY_MIN_LANE_WIDTH_M <= measured_width <= NAVDY_MAX_LANE_WIDTH_M:
+      lane_width = measured_width
+
+  offset = model_y - path_y
+  if -0.5 * lane_width <= offset <= 0.5 * lane_width:
+    return "center"
+  if -1.5 * lane_width <= offset < -0.5 * lane_width:
+    return "left"
+  if 0.5 * lane_width < offset <= 1.5 * lane_width:
+    return "right"
+  return ""
+
+
+def navdy_lane_for_model_point(model_v2: Any, distance_m: float, model_y: float) -> str:
+  lane_lines = list(getattr(model_v2, "laneLines", []))
+  lane_probs = list(getattr(model_v2, "laneLineProbs", []))
+  if len(lane_lines) < 3:
+    return navdy_path_lane_for_model_point(model_v2, distance_m, model_y)
+
+  def probability(index: int) -> float:
+    return finite_float(lane_probs[index], 0.0) if index < len(lane_probs) else 0.0
+
+  left = model_line_y_at(lane_lines[1], distance_m)
+  right = model_line_y_at(lane_lines[2], distance_m)
+  if left is None or right is None or left >= right:
+    return navdy_path_lane_for_model_point(model_v2, distance_m, model_y)
+  inner_confidence = min(probability(1), probability(2))
+  if left <= model_y <= right and inner_confidence >= 0.3:
+    return "center"
+
+  if len(lane_lines) < 4:
+    return navdy_path_lane_for_model_point(model_v2, distance_m, model_y, left, right)
+  far_left = model_line_y_at(lane_lines[0], distance_m)
+  far_right = model_line_y_at(lane_lines[3], distance_m)
+  left_confidence = min(probability(0), probability(1))
+  right_confidence = min(probability(2), probability(3))
+  if far_left is not None and far_left <= model_y < left and left_confidence >= 0.2:
+    return "left"
+  if far_right is not None and right < model_y <= far_right and right_confidence >= 0.2:
+    return "right"
+  if inner_confidence >= 0.3:
+    if model_y < left and far_left is not None and left_confidence >= 0.2:
+      return ""
+    if model_y > right and far_right is not None and right_confidence >= 0.2:
+      return ""
+  return navdy_path_lane_for_model_point(model_v2, distance_m, model_y, left, right)
+
+
+def navdy_lane_center_y_at(model_v2: Any, lane: str, distance_m: float) -> float | None:
+  lane_lines = list(getattr(model_v2, "laneLines", []))
+  lane_probs = list(getattr(model_v2, "laneLineProbs", []))
+  path_y = model_line_y_at(getattr(model_v2, "position", None), distance_m)
+
+  def probability(index: int) -> float:
+    return finite_float(lane_probs[index], 0.0) if index < len(lane_probs) else 0.0
+
+  def lane_midpoint(first: int, second: int, min_probability: float) -> float | None:
+    if len(lane_lines) <= max(first, second):
+      return None
+    if min(probability(first), probability(second)) < min_probability:
+      return None
+    first_y = model_line_y_at(lane_lines[first], distance_m)
+    second_y = model_line_y_at(lane_lines[second], distance_m)
+    if first_y is None or second_y is None:
+      return None
+    return 0.5 * (first_y + second_y)
+
+  if lane == "center":
+    if path_y is not None:
+      return path_y
+    return lane_midpoint(1, 2, 0.3)
+
+  if lane == "left":
+    lane_y = lane_midpoint(0, 1, 0.2)
+    lateral_sign = -1.0
+  elif lane == "right":
+    lane_y = lane_midpoint(2, 3, 0.2)
+    lateral_sign = 1.0
+  else:
+    return None
+  if lane_y is not None:
+    return lane_y
+  if path_y is None:
+    return None
+
+  lane_width = NAVDY_FALLBACK_LANE_WIDTH_M
+  if len(lane_lines) >= 3:
+    left = model_line_y_at(lane_lines[1], distance_m)
+    right = model_line_y_at(lane_lines[2], distance_m)
+    if left is not None and right is not None:
+      measured_width = right - left
+      if NAVDY_MIN_LANE_WIDTH_M <= measured_width <= NAVDY_MAX_LANE_WIDTH_M:
+        lane_width = measured_width
+  return path_y + lateral_sign * lane_width
+
+
+def navdy_vehicle_perspective_yaw_deg(lane: str, screen_x: float) -> float:
+  offset = abs(finite_float(screen_x, 160.0) - 160.0)
+  if offset < 24.0:
+    angle = 0.0
+  elif offset < 48.0:
+    angle = 8.0
+  elif offset < 72.0:
+    angle = 12.0
+  elif offset < 104.0:
+    angle = 16.0
+  else:
+    angle = 24.0
+  if lane == "left":
+    return -angle
+  if lane == "right":
+    return angle
+  return 0.0
+
+
+def navdy_vehicle_yaw_deg(model_v2: Any, lane: str, distance_m: float, screen_x: float) -> float:
+  yaw_deg = navdy_vehicle_perspective_yaw_deg(lane, screen_x)
+  near_distance = max(0.0, distance_m - NAVDY_VEHICLE_YAW_SAMPLE_M)
+  far_distance = min(NAVDY_VEHICLE_MAX_DISTANCE_M, distance_m + NAVDY_VEHICLE_YAW_SAMPLE_M)
+  if far_distance - near_distance < 1.0:
+    return rounded(yaw_deg)
+
+  near_y = navdy_lane_center_y_at(model_v2, lane, near_distance)
+  far_y = navdy_lane_center_y_at(model_v2, lane, far_distance)
+  if near_y is None or far_y is None:
+    return rounded(yaw_deg)
+
+  # modelV2 y grows to vehicle-right. The HUD sprite yaw sign is the inverse.
+  lane_heading_deg = math.degrees(math.atan2(far_y - near_y, far_distance - near_distance))
+  yaw_deg -= lane_heading_deg
+  return rounded(max(-NAVDY_VEHICLE_MAX_YAW_DEG, min(NAVDY_VEHICLE_MAX_YAW_DEG, yaw_deg)))
+
+
+def navdy_vehicle_marker_rect(vehicle: dict[str, Any]) -> tuple[float, float, float, float] | None:
+  distance_m = max(0.0, min(NAVDY_VEHICLE_MAX_DISTANCE_M,
+                            finite_float(vehicle.get("distanceM", 0.0))))
+  screen = navdy_project_point(distance_m, vehicle.get("modelY", 0.0))
+  if len(screen) != 2:
+    return None
+  near_scale = 1.0 - distance_m / NAVDY_VEHICLE_MAX_DISTANCE_M
+  width = NAVDY_VEHICLE_FAR_WIDTH_PX + near_scale * (
+    NAVDY_VEHICLE_NEAR_WIDTH_PX - NAVDY_VEHICLE_FAR_WIDTH_PX)
+  height = width * 1.55
+  return (
+    screen[0] - width * 0.82,
+    screen[1] - height * 0.55,
+    screen[0] + width * 0.82,
+    screen[1] + height * 0.45,
+  )
+
+
+def navdy_vehicle_overlap_iou(first: dict[str, Any], second: dict[str, Any]) -> float:
+  if first.get("lane") != second.get("lane"):
+    return 0.0
+  first_rect = navdy_vehicle_marker_rect(first)
+  second_rect = navdy_vehicle_marker_rect(second)
+  if first_rect is None or second_rect is None:
+    return 0.0
+
+  left = max(first_rect[0], second_rect[0])
+  top = max(first_rect[1], second_rect[1])
+  right = min(first_rect[2], second_rect[2])
+  bottom = min(first_rect[3], second_rect[3])
+  if right <= left or bottom <= top:
+    return 0.0
+  intersection = (right - left) * (bottom - top)
+  first_area = (first_rect[2] - first_rect[0]) * (first_rect[3] - first_rect[1])
+  second_area = (second_rect[2] - second_rect[0]) * (second_rect[3] - second_rect[1])
+  return intersection / max(first_area + second_area - intersection, 1.0)
+
+
+def navdy_radar_track_width_m(point: dict[str, Any]) -> float:
+  return max(0.0, min(
+    NAVDY_RADAR_MAX_TRACK_WIDTH_M, finite_float(point.get("widthM", 0.0), 0.0)))
+
+
+def navdy_radar_center_model_y(point: dict[str, Any]) -> float:
+  radar_y = finite_float(point.get("yRel", 0.0), 0.0)
+  width_m = navdy_radar_track_width_m(point)
+  return -radar_y - 0.5 * width_m
+
+
+def navdy_camera_leads(model_v2: Any) -> list[dict[str, Any]]:
+  leads = list(getattr(model_v2, "leadsV3", []))
+  velocity = getattr(model_v2, "velocity", None)
+  model_v_ego = finite_float(next(iter(getattr(velocity, "x", [])), 0.0), 0.0)
+  candidates = []
+  for index, lead in enumerate(leads[:2]):
+    probability = finite_float(getattr(lead, "prob", 0.0), 0.0)
+    x_values = list(getattr(lead, "x", []))
+    y_values = list(getattr(lead, "y", []))
+    if probability < 0.5 or not x_values or not y_values:
+      continue
+    distance_m = finite_float(x_values[0], 0.0) - NAVDY_RADAR_TO_CAMERA_M
+    model_y = finite_float(y_values[0], 0.0)
+    if not 2.0 <= distance_m <= NAVDY_VEHICLE_MAX_DISTANCE_M:
+      continue
+    lane = navdy_lane_for_model_point(model_v2, distance_m, model_y)
+    if not lane:
+      continue
+    v_values = list(getattr(lead, "v", []))
+    y_stds = list(getattr(lead, "yStd", []))
+    candidates.append({
+      "trackId": -100 - index,
+      "distanceM": distance_m,
+      "modelY": model_y,
+      "relativeSpeedMps": finite_float(v_values[0], model_v_ego) - model_v_ego if v_values else 0.0,
+      "lane": lane,
+      "source": "vision",
+      "confidence": probability,
+      "yStd": finite_float(y_stds[0], 1.0) if y_stds else 1.0,
+    })
+  return candidates
+
+
+def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]]) -> dict[str, Any]:
+  if model_v2 is None:
+    return {"navVehicles": []}
+
+  vehicles = []
+  for point in radar_points:
+    distance_m = finite_float(point.get("dRel", 0.0), 0.0)
+    radar_y = finite_float(point.get("yRel", 0.0), 0.0)
+    if not 2.0 <= distance_m <= NAVDY_VEHICLE_MAX_DISTANCE_M:
+      continue
+    # GM radar yRel is positive left; modelV2 y is positive right.
+    raw_model_y = -radar_y
+    width_m = navdy_radar_track_width_m(point)
+    center_model_y = navdy_radar_center_model_y(point)
+    raw_lane = navdy_lane_for_model_point(model_v2, distance_m, raw_model_y)
+    center_lane = navdy_lane_for_model_point(model_v2, distance_m, center_model_y)
+    width_center_applied = center_lane == "left"
+    model_y = center_model_y if width_center_applied else raw_model_y
+    lane = center_lane if width_center_applied else raw_lane
+    if not lane:
+      continue
+    vehicles.append({
+      "trackId": int(point.get("trackId", -1)),
+      "distanceM": distance_m,
+      "modelY": model_y,
+      "rawModelY": raw_model_y,
+      "widthM": width_m,
+      "widthCenterApplied": width_center_applied,
+      "relativeSpeedMps": finite_float(point.get("vRel", 0.0), 0.0),
+      "lane": lane,
+      "source": "radar",
+      "confidence": 0.65,
+    })
+
+  used_radar = set()
+  unmatched_vision = []
+  for vision in sorted(navdy_camera_leads(model_v2), key=lambda item: item["confidence"], reverse=True):
+    best_index = -1
+    best_key = (2, float("inf"))
+    distance_tolerance = max(5.0, vision["distanceM"] * 0.25)
+    lateral_tolerance = max(1.5, vision["yStd"] * 2.0)
+    for index, radar in enumerate(vehicles):
+      if index in used_radar:
+        continue
+      distance_delta = abs(radar["distanceM"] - vision["distanceM"])
+      lateral_delta = abs(radar["modelY"] - vision["modelY"])
+      coordinate_match = distance_delta <= distance_tolerance and lateral_delta <= lateral_tolerance
+      overlap_iou = navdy_vehicle_overlap_iou(radar, vision)
+      if not coordinate_match and overlap_iou < NAVDY_VEHICLE_DUPLICATE_IOU:
+        continue
+      match_key = (
+        (0, distance_delta / distance_tolerance + lateral_delta / lateral_tolerance)
+        if coordinate_match else (1, -overlap_iou)
+      )
+      if match_key < best_key:
+        best_index = index
+        best_key = match_key
+    if best_index >= 0:
+      used_radar.add(best_index)
+      vehicles[best_index]["source"] = "fused"
+      vehicles[best_index]["confidence"] = rounded(max(0.75, vision["confidence"]), 2)
+      vehicles[best_index]["modelY"] = vision["modelY"]
+      continue
+
+    overlapping_radar = max(
+      ((navdy_vehicle_overlap_iou(radar, vision), index) for index, radar in enumerate(vehicles)),
+      default=(0.0, -1),
+    )
+    if overlapping_radar[0] >= NAVDY_VEHICLE_DUPLICATE_IOU:
+      index = overlapping_radar[1]
+      used_radar.add(index)
+      vehicles[index]["source"] = "fused"
+      vehicles[index]["confidence"] = rounded(max(0.75, vision["confidence"]), 2)
+      vehicles[index]["modelY"] = vision["modelY"]
+    elif not any(navdy_vehicle_overlap_iou(other, vision) >= NAVDY_VEHICLE_DUPLICATE_IOU
+                 for other in unmatched_vision):
+      unmatched_vision.append(vision)
+
+  vehicles.extend(unmatched_vision)
+  priority = {"fused": 0, "vision": 1, "radar": 2}
+  selected = sorted(vehicles, key=lambda item: (priority[item["source"]], item["distanceM"]))[:NAVDY_VEHICLE_MAX_COUNT]
+  output = []
+  for vehicle in sorted(selected, key=lambda item: item["distanceM"], reverse=True):
+    screen = navdy_project_point(vehicle["distanceM"], vehicle["modelY"])
+    if len(screen) != 2:
+      continue
+    output.append({
+      "trackId": vehicle["trackId"],
+      "screenX": rounded(max(4.0, min(316.0, screen[0]))),
+      "screenY": screen[1],
+      "yawDeg": navdy_vehicle_yaw_deg(model_v2, vehicle["lane"], vehicle["distanceM"], screen[0]),
+      "distanceM": rounded(vehicle["distanceM"]),
+      "relativeSpeedMps": rounded(vehicle["relativeSpeedMps"]),
+      "lateralM": rounded(vehicle["modelY"], 2),
+      "rawRadarLateralM": rounded(vehicle.get("rawModelY", vehicle["modelY"]), 2),
+      "widthM": rounded(vehicle.get("widthM", 0.0), 2),
+      "widthCenterApplied": bool(vehicle.get("widthCenterApplied", False)),
+      "lane": vehicle["lane"],
+      "source": vehicle["source"],
+      "confidence": rounded(vehicle["confidence"], 2),
+    })
+  return {"navVehicles": output}
 
 
 def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
@@ -285,26 +654,195 @@ def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
   lane_left = lane_lines[1]
   lane_right = lane_lines[2]
   geometry = {
-    "navPathLeft": navdy_model_line(path_x, path_y, 1.0),
-    "navPathRight": navdy_model_line(path_x, path_y, -1.0),
+    "navPathLeft": navdy_model_line(path_x, path_y, -1.0),
+    "navPathRight": navdy_model_line(path_x, path_y, 1.0),
     "navLaneLeft": navdy_model_line(getattr(lane_left, "x", []), getattr(lane_left, "y", [])),
     "navLaneRight": navdy_model_line(getattr(lane_right, "x", []), getattr(lane_right, "y", [])),
   }
   if not all(len(points) >= 4 for points in geometry.values()):
     return {}
 
-  if len(road_edges) >= 2:
-    road_geometry = {
-      "navRoadEdgeLeft": navdy_model_line(getattr(road_edges[0], "x", []), getattr(road_edges[0], "y", [])),
-      "navRoadEdgeRight": navdy_model_line(getattr(road_edges[1], "x", []), getattr(road_edges[1], "y", [])),
-    }
-    if all(len(points) >= 4 for points in road_geometry.values()):
-      geometry.update(road_geometry)
-
   lane_probs = list(getattr(model_v2, "laneLineProbs", []))
+  if len(lane_lines) >= 4:
+    geometry["navLaneFarLeft"] = navdy_model_line(
+      getattr(lane_lines[0], "x", []), getattr(lane_lines[0], "y", []))
+    geometry["navLaneFarRight"] = navdy_model_line(
+      getattr(lane_lines[3], "x", []), getattr(lane_lines[3], "y", []))
+
+  geometry["navLaneFarLeftProb"] = rounded(lane_probs[0] if len(lane_probs) > 0 else 0.0, 2)
   geometry["navLaneLeftProb"] = rounded(lane_probs[1] if len(lane_probs) > 1 else 0.0, 2)
   geometry["navLaneRightProb"] = rounded(lane_probs[2] if len(lane_probs) > 2 else 0.0, 2)
+  geometry["navLaneFarRightProb"] = rounded(lane_probs[3] if len(lane_probs) > 3 else 0.0, 2)
+
+  road_edge_stds = list(getattr(model_v2, "roadEdgeStds", []))
+  for index, side in enumerate(("Left", "Right")):
+    if index >= len(road_edges) or index >= len(road_edge_stds):
+      continue
+    confidence = max(0.0, min(1.0, 1.0 - finite_float(road_edge_stds[index], 1.0)))
+    if confidence < 0.5:
+      continue
+    points = navdy_model_line(getattr(road_edges[index], "x", []), getattr(road_edges[index], "y", []))
+    if len(points) >= 4:
+      geometry[f"navRoadEdge{side}"] = points
+      geometry[f"navRoadEdge{side}Prob"] = rounded(confidence, 2)
   return geometry
+
+
+class NavdyRadarReader:
+  def __init__(self, messaging: Any, car_fingerprint: str):
+    from opendbc.car import structs
+    from opendbc.car.gm.radar_interface import RadarInterface
+    from openpilot.common.swaglog import cloudlog
+    from openpilot.selfdrive.pandad import can_capnp_to_list
+
+    cp = structs.CarParams(carFingerprint=car_fingerprint, radarUnavailable=False)
+    self._radar_interface = RadarInterface(cp, structs.CarParamsSP())
+    self._can_capnp_to_list = can_capnp_to_list
+    self._cloudlog = cloudlog
+    self._messaging = messaging
+    self._can_sock = messaging.sub_sock("can", conflate=False, timeout=100)
+    self._lock = threading.Lock()
+    self._active = False
+    self._tracks: dict[int, dict[str, Any]] = {}
+    self._last_error = ""
+    self._thread = threading.Thread(target=self._run, name="navdy_radar_reader", daemon=True)
+    self._thread.start()
+
+  def set_active(self, active: bool) -> None:
+    with self._lock:
+      if self._active == active:
+        return
+      self._active = active
+      self._tracks.clear()
+
+  def is_alive(self) -> bool:
+    return self._thread.is_alive()
+
+  def snapshot(self, now: float | None = None) -> list[dict[str, Any]]:
+    now = time.monotonic() if now is None else now
+    with self._lock:
+      if not self._active:
+        return []
+      return [
+        {
+          "trackId": track_id,
+          "dRel": track["dRel"],
+          "yRel": track["yRel"],
+          "vRel": track["vRel"],
+          "widthM": track["widthM"],
+        }
+        for track_id, track in self._tracks.items()
+        if track["samples"] >= 2 and now - track["updatedAt"] <= NAVDY_RADAR_STALE_SEC
+      ]
+
+  def _radar_update(self, can_strings: list[bytes]) -> Any:
+    return self._radar_interface.update(self._can_capnp_to_list(can_strings))
+
+  def _radar_track_widths(self) -> dict[int, float]:
+    parser = getattr(self._radar_interface, "rcp", None)
+    widths = {}
+    for values in getattr(parser, "vl", {}).values():
+      if "TrkObjectID" not in values or "TrkWidth" not in values:
+        continue
+      track_id = int(values["TrkObjectID"])
+      width_m = navdy_radar_track_width_m({"widthM": values["TrkWidth"]})
+      if width_m > 0.0:
+        widths[track_id] = width_m
+    return widths
+
+  def _run(self) -> None:
+    while True:
+      try:
+        can_strings = self._messaging.drain_sock_raw(self._can_sock, wait_for_one=True)
+        with self._lock:
+          active = self._active
+        if not active or not can_strings:
+          continue
+        radar_data = self._radar_update(can_strings)
+        if radar_data is None:
+          continue
+        errors = getattr(radar_data, "errors", None)
+        if errors is not None and (bool(getattr(errors, "canError", False)) or
+                                   bool(getattr(errors, "radarFault", False))):
+          with self._lock:
+            self._tracks.clear()
+          continue
+        self._update_tracks(
+          list(getattr(radar_data, "points", [])), self._radar_track_widths())
+        with self._lock:
+          self._last_error = ""
+      except Exception as error:
+        error_text = str(error)
+        with self._lock:
+          self._tracks.clear()
+          should_log = error_text != self._last_error
+          self._last_error = error_text
+        if should_log:
+          self._cloudlog.exception(f"navdy radar reader failed: {error_text}")
+        time.sleep(0.1)
+
+  def _update_tracks(self, points: list[Any], widths: dict[int, float] | None = None) -> None:
+    now = time.monotonic()
+    widths = widths or {}
+    with self._lock:
+      for point in points:
+        track_id = int(getattr(point, "trackId", -1))
+        distance_m = finite_float(getattr(point, "dRel", 0.0), 0.0)
+        lateral_m = finite_float(getattr(point, "yRel", 0.0), 0.0)
+        relative_speed = finite_float(getattr(point, "vRel", 0.0), 0.0)
+        width_m = navdy_radar_track_width_m({"widthM": widths.get(track_id, 0.0)})
+        if track_id < 0 or not 0.0 < distance_m < 255.875:
+          continue
+
+        previous = self._tracks.get(track_id)
+        jump_limit = max(8.0, distance_m * 0.35)
+        if previous is None or abs(previous["dRel"] - distance_m) > jump_limit:
+          self._tracks[track_id] = {
+            "dRel": distance_m,
+            "yRel": lateral_m,
+            "vRel": relative_speed,
+            "widthM": width_m,
+            "samples": 1,
+            "updatedAt": now,
+          }
+          continue
+
+        alpha = 0.55
+        previous["dRel"] += alpha * (distance_m - previous["dRel"])
+        previous["yRel"] += alpha * (lateral_m - previous["yRel"])
+        previous["vRel"] += alpha * (relative_speed - previous["vRel"])
+        if width_m > 0.0:
+          previous["widthM"] += alpha * (width_m - previous["widthM"])
+        previous["samples"] += 1
+        previous["updatedAt"] = now
+
+      for track_id in list(self._tracks):
+        if now - self._tracks[track_id]["updatedAt"] > NAVDY_RADAR_STALE_SEC:
+          del self._tracks[track_id]
+
+
+def navdy_car_params_bytes(params: Any) -> bytes | None:
+  return params.get("CarParams") or params.get("CarParamsPersistent")
+
+
+def create_navdy_radar_reader(messaging: Any, stdout: bool = False) -> NavdyRadarReader | None:
+  try:
+    from cereal import car
+    from openpilot.common.params import Params
+    from opendbc.car.gm.values import DBC
+
+    car_params_raw = navdy_car_params_bytes(Params())
+    if not car_params_raw:
+      return None
+    car_params = messaging.log_from_bytes(car_params_raw, car.CarParams)
+    car_fingerprint = str(getattr(car_params, "carFingerprint", ""))
+    if car_fingerprint not in DBC:
+      return None
+    return NavdyRadarReader(messaging, car_fingerprint)
+  except Exception as error:
+    if stdout:
+      print(f"navdy radar reader unavailable: {error}", flush=True)
+    return None
 
 
 def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
@@ -672,8 +1210,31 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("leadDepartAlert"),
     tuple(payload.get("navPathLeft", [])),
     tuple(payload.get("navPathRight", [])),
+    tuple(payload.get("navLaneFarLeft", [])),
     tuple(payload.get("navLaneLeft", [])),
     tuple(payload.get("navLaneRight", [])),
+    tuple(payload.get("navLaneFarRight", [])),
+    payload.get("navLaneFarLeftProb"),
+    payload.get("navLaneLeftProb"),
+    payload.get("navLaneRightProb"),
+    payload.get("navLaneFarRightProb"),
+    tuple(payload.get("navRoadEdgeLeft", [])),
+    tuple(payload.get("navRoadEdgeRight", [])),
+    payload.get("navRoadEdgeLeftProb"),
+    payload.get("navRoadEdgeRightProb"),
+    tuple(
+      (
+        vehicle.get("trackId"),
+        vehicle.get("screenX"),
+        vehicle.get("screenY"),
+        vehicle.get("yawDeg"),
+        vehicle.get("distanceM"),
+        vehicle.get("relativeSpeedMps"),
+        vehicle.get("lane"),
+        vehicle.get("source"),
+      )
+      for vehicle in payload.get("navVehicles", [])
+    ),
   )
 
 
@@ -812,6 +1373,8 @@ def run_live(args: argparse.Namespace) -> None:
   last_signature = None
   last_emit_at = 0.0
   last_path_update_at = 0.0
+  radar_reader = create_navdy_radar_reader(messaging, args.stdout) if args.radar_overlay else None
+  last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
   offroad_since = None
   last_power_target_on = None
@@ -833,13 +1396,24 @@ def run_live(args: argparse.Namespace) -> None:
     else:
       car_state = default_car_state()
     active = bool(getattr(sm["selfdriveState"], "active", False))
+    if radar_reader is not None and not radar_reader.is_alive():
+      radar_reader = None
+    if args.radar_overlay and radar_reader is None and \
+       (last_radar_reader_attempt_at <= 0.0 or now - last_radar_reader_attempt_at >= NAVDY_RADAR_RETRY_SEC):
+      last_radar_reader_attempt_at = now
+      radar_reader = create_navdy_radar_reader(messaging, args.stdout)
+    if radar_reader is not None:
+      radar_reader.set_active(active)
     path_geometry = {}
     if navdy_path_update_due(active, now, last_path_update_at, args.path_update_sec):
       last_path_update_at = now
       if model_sm is not None:
         model_sm.update(0)
         if service_recent(model_sm, NAVDY_MODEL_SERVICE, now):
-          path_geometry = navdy_model_geometry(model_sm[NAVDY_MODEL_SERVICE])
+          model_v2 = model_sm[NAVDY_MODEL_SERVICE]
+          path_geometry = navdy_model_geometry(model_v2)
+          radar_points = radar_reader.snapshot(now) if radar_reader is not None else []
+          path_geometry.update(navdy_vehicle_geometry(model_v2, radar_points))
     elif not active:
       last_path_update_at = 0.0
     payload = payload_from_messages(sm["selfdriveState"],
@@ -884,6 +1458,10 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--hz", type=float, default=5.0, help="Update rate for bridge output.")
   parser.add_argument("--path-update-sec", type=float, default=1.0,
                       help="Minimum interval between model path samples.")
+  parser.add_argument("--radar-overlay", dest="radar_overlay", action="store_true", default=True,
+                      help="Fuse passive raw GM radar targets into the Navdy path overlay (default).")
+  parser.add_argument("--no-radar-overlay", dest="radar_overlay", action="store_false",
+                      help="Disable passive raw radar targets in the Navdy path overlay.")
   parser.add_argument("--once", action="store_true", help="Send one payload and exit.")
   parser.add_argument("--synthetic", action="store_true", help="Send fake OP data without cereal imports.")
   parser.add_argument("--synthetic-gear", default="drive", help="Gear text for --synthetic payloads.")

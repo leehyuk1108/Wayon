@@ -33,7 +33,7 @@ public final class OpenpilotAlertBannerView extends FrameLayout {
     setTranslationY(-BANNER_HEIGHT);
 
     background = new GradientDrawable();
-    background.setColor(Color.argb(230, 0, 0, 0));
+    background.setColor(Color.argb(160, 0, 0, 0));
     setBackground(background);
 
     LinearLayout textContainer = new LinearLayout(context);
@@ -108,12 +108,12 @@ public final class OpenpilotAlertBannerView extends FrameLayout {
 
   private static int backgroundColor(String status) {
     if ("critical".equalsIgnoreCase(status)) {
-      return Color.argb(238, 255, 0, 21);
+      return Color.argb(180, 255, 0, 21);
     }
     if ("userPrompt".equalsIgnoreCase(status)) {
-      return Color.argb(238, 255, 115, 0);
+      return Color.argb(170, 255, 115, 0);
     }
-    return Color.argb(230, 0, 0, 0);
+    return Color.argb(160, 0, 0, 0);
   }
 
   private void showBanner() {

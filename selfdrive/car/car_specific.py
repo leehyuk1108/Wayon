@@ -77,6 +77,8 @@ class CarSpecificEvents:
                                                    self.CP.networkLocation == NetworkLocation.fwdCamera):
         events.add(EventName.belowEngageSpeed)
       if CS.cruiseState.standstill:
+        # Standstill is an expected low-speed steering lockout; keep the autohold timer visible.
+        events.remove(EventName.belowSteerSpeed)
         events.add(EventName.resumeRequired)
 
     elif self.CP.brand == 'volkswagen':

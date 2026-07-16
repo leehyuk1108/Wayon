@@ -12,6 +12,12 @@ const JSON_HEADERS = {
 };
 
 const FIREBASE_CAR_STATUS_URL = "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json";
+const REMOTE_BOOTSTRAP_PATH = "/api/remote/bootstrap";
+const REMOTE_SESSION_PATH = "/api/remote/session";
+const REMOTE_SSH_PATH = "/api/remote/ssh";
+const REMOTE_SSH_PROTOCOL_PREFIX = "wayon-ssh-v1";
+const REMOTE_SSH_MAX_AGE_SECONDS = 60;
+const REMOTE_SSH_TARGET = "127.0.0.1:22";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -36,6 +42,205 @@ function constantTimeEqual(a, b) {
     diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
+}
+
+function hexToBytes(value) {
+  if (!/^[0-9a-f]+$/i.test(value) || value.length % 2 !== 0) return null;
+  const bytes = new Uint8Array(value.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function importHmacKey(secret, usage) {
+  return crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    [usage],
+  );
+}
+
+export async function issueRemoteSshProtocol(
+  sessionSecret,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  const nonceBytes = new Uint8Array(16);
+  crypto.getRandomValues(nonceBytes);
+  const nonce = bytesToHex(nonceBytes);
+  const key = await importHmacKey(sessionSecret, "sign");
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${nowSeconds}:${nonce}`),
+  );
+  return `${REMOTE_SSH_PROTOCOL_PREFIX}.${nowSeconds}.${nonce}.${bytesToHex(new Uint8Array(signature))}`;
+}
+
+export async function verifyRemoteSshProtocol(
+  header,
+  sessionSecret,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  if (!header || !sessionSecret) return "";
+
+  const protocol = header.split(",").map((value) => value.trim())
+    .find((value) => value.startsWith(`${REMOTE_SSH_PROTOCOL_PREFIX}.`));
+  if (!protocol) return "";
+
+  const parts = protocol.split(".");
+  if (parts.length !== 4 || parts[0] !== REMOTE_SSH_PROTOCOL_PREFIX) return "";
+  const timestamp = Number.parseInt(parts[1], 10);
+  const nonce = parts[2];
+  const signature = hexToBytes(parts[3]);
+  if (!Number.isFinite(timestamp) || Math.abs(nowSeconds - timestamp) > REMOTE_SSH_MAX_AGE_SECONDS) return "";
+  if (!/^[0-9a-f]{32}$/i.test(nonce) || !signature || signature.length !== 32) return "";
+
+  const encoder = new TextEncoder();
+  const key = await importHmacKey(sessionSecret, "verify");
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    signature,
+    encoder.encode(`${timestamp}:${nonce}`),
+  );
+  return valid ? protocol : "";
+}
+
+function basicCredentials(request) {
+  const header = request.headers.get("authorization") || "";
+  if (!header.toLowerCase().startsWith("basic ")) return null;
+
+  try {
+    const decoded = atob(header.slice(6).trim());
+    const separator = decoded.indexOf(":");
+    if (separator < 1) return null;
+    return {
+      username: decoded.slice(0, separator),
+      password: decoded.slice(separator + 1),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function handleRemoteSession(request, env) {
+  if (!env.WAYON_SSH_USERNAME || !env.WAYON_SSH_PASSWORD || !env.WAYON_SSH_SESSION_SECRET) {
+    return json({ error: "remote_access_unavailable" }, 503);
+  }
+
+  const credentials = basicCredentials(request);
+  if (!credentials
+      || !constantTimeEqual(credentials.username, env.WAYON_SSH_USERNAME)
+      || !constantTimeEqual(credentials.password, env.WAYON_SSH_PASSWORD)) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: {
+        ...JSON_HEADERS,
+        "www-authenticate": "Basic realm=\"Wayon Remote SSH\", charset=\"UTF-8\"",
+      },
+    });
+  }
+
+  const issuedAt = Math.floor(Date.now() / 1000);
+  return json({
+    protocol: await issueRemoteSshProtocol(env.WAYON_SSH_SESSION_SECRET, issuedAt),
+    expiresAt: issuedAt + REMOTE_SSH_MAX_AGE_SECONDS,
+  });
+}
+
+function handleRemoteBootstrap(request, env) {
+  if (!authorize(request, env, true)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+  if (!env.WAYON_TUNNEL_TOKEN) {
+    return json({ error: "remote_access_unavailable" }, 503);
+  }
+
+  return json({ tunnelToken: env.WAYON_TUNNEL_TOKEN });
+}
+
+function websocketBytes(data) {
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  if (typeof data === "string") return new TextEncoder().encode(data);
+  return null;
+}
+
+async function handleRemoteSsh(request, env, ctx) {
+  if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
+    return json({ error: "websocket_required" }, 426);
+  }
+  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET) {
+    return json({ error: "remote_access_unavailable" }, 503);
+  }
+
+  const protocol = await verifyRemoteSshProtocol(
+    request.headers.get("sec-websocket-protocol") || "",
+    env.WAYON_SSH_SESSION_SECRET,
+  );
+  if (!protocol) return json({ error: "unauthorized" }, 401);
+
+  let socket;
+  try {
+    socket = await env.COMMA_NETWORK.connect(REMOTE_SSH_TARGET);
+  } catch {
+    return json({ error: "comma_offline" }, 503);
+  }
+
+  const pair = new WebSocketPair();
+  const [client, server] = Object.values(pair);
+  server.accept();
+
+  const writer = socket.writable.getWriter();
+  let writeQueue = Promise.resolve();
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    try { socket.close(); } catch {}
+    try { server.close(1000, "closed"); } catch {}
+  };
+
+  server.addEventListener("message", (event) => {
+    const bytes = websocketBytes(event.data);
+    if (!bytes) {
+      close();
+      return;
+    }
+    writeQueue = writeQueue.then(() => writer.write(bytes)).catch(close);
+    ctx.waitUntil(writeQueue);
+  });
+  server.addEventListener("close", close);
+  server.addEventListener("error", close);
+
+  ctx.waitUntil((async () => {
+    const reader = socket.readable.getReader();
+    try {
+      while (!closed) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (server.readyState === 1) server.send(value);
+      }
+    } catch {
+      // The SSH client will report the closed transport.
+    } finally {
+      try { reader.releaseLock(); } catch {}
+      close();
+    }
+  })());
+
+  return new Response(null, {
+    status: 101,
+    webSocket: client,
+    headers: { "Sec-WebSocket-Protocol": protocol },
+  });
 }
 
 function authorize(request, env, write = false) {
@@ -468,7 +673,7 @@ async function handleSnapshotImage(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
@@ -479,6 +684,16 @@ export default {
 
     const url = new URL(request.url);
     const { pathname } = url;
+
+    if (request.method === "GET" && pathname === REMOTE_BOOTSTRAP_PATH) {
+      return handleRemoteBootstrap(request, env);
+    }
+    if (request.method === "POST" && pathname === REMOTE_SESSION_PATH) {
+      return handleRemoteSession(request, env);
+    }
+    if (request.method === "GET" && pathname === REMOTE_SSH_PATH) {
+      return handleRemoteSsh(request, env, ctx);
+    }
 
     if (request.method === "POST" && pathname === "/api/telemetry") {
       return handleTelemetry(request, env);

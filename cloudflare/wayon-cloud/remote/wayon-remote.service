@@ -1,0 +1,22 @@
+[Unit]
+Description=Wayon offroad remote maintenance tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=comma
+Group=comma
+ExecStart=/data/wayon-remote/wayon_remote_supervisor.sh
+Restart=always
+RestartSec=5
+Nice=15
+Environment=GOMAXPROCS=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/data/wayon-remote
+
+[Install]
+WantedBy=multi-user.target

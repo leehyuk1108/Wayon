@@ -8,6 +8,7 @@ preview_urls = true
 directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"
@@ -17,3 +18,8 @@ database_id = "c953a6c9-eb7a-4695-b1a4-702c5ede186d"
 [[kv_namespaces]]
 binding = "SNAPSHOTS"
 id = "f66d9a8906494da3a3a254e340d205ae"
+
+[[vpc_networks]]
+binding = "COMMA_NETWORK"
+tunnel_id = "449bf488-e41f-4d08-908e-7db6f3d32a28"
+remote = true

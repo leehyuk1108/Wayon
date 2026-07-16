@@ -80,6 +80,11 @@ public final class OpenpilotAlertBannerView extends FrameLayout {
       String status = json.optString("alertStatus", "normal");
       String size = json.optString("alertSize", "none");
 
+      if (type.startsWith("resumeRequired") || title.startsWith("Resume 버튼")) {
+        hideBanner();
+        return;
+      }
+
       if ((title.length() == 0 && subtitle.length() == 0) || "none".equalsIgnoreCase(size)) {
         hideBanner();
         return;

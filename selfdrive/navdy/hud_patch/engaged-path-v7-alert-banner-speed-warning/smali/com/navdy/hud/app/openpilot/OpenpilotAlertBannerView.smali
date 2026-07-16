@@ -522,6 +522,28 @@
 
     move-result-object v2
 
+    const-string v6, "resumeRequired"
+
+    invoke-virtual {v4, v6}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+
+    move-result v6
+
+    if-nez v6, :cond_navdy_hide_resume_required
+
+    const-string v6, "Resume 버튼"
+
+    invoke-virtual {p1, v6}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+
+    move-result v6
+
+    if-eqz v6, :cond_navdy_check_empty_alert
+
+    :cond_navdy_hide_resume_required
+    invoke-direct {p0}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->hideBanner()V
+
+    return-void
+
+    :cond_navdy_check_empty_alert
     .line 83
     invoke-virtual {p1}, Ljava/lang/String;->length()I
 

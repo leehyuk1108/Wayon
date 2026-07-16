@@ -320,6 +320,17 @@ def test_mici_hud_renders_green_light_and_lead_depart_alerts():
   assert 'self._alert_text = "전방 차량\\n출발"' in circular
 
 
+def test_navdy_alert_banner_suppresses_resume_required():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.java").read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.smali").read_text()
+
+  assert 'type.startsWith("resumeRequired")' in java
+  assert 'title.startsWith("Resume 버튼")' in java
+  assert 'const-string v6, "resumeRequired"' in smali
+  assert ":cond_navdy_hide_resume_required" in smali
+
+
 def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
   receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
              "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"

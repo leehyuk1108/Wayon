@@ -19,12 +19,15 @@ import org.json.JSONObject;
 
 public final class OpenpilotPathView extends View {
   private static final int COLOR_GREEN = 0xff00e646;
+  private static final int COLOR_LANE_CLEAR = 0xffffffff;
+  private static final int COLOR_LANE_DANGER = 0xffff2028;
   private static final int COLOR_VEHICLE_RADAR = 0xddffffff;
   private static final int COLOR_VEHICLE_VISION = 0xff00e646;
   private static final int COLOR_VEHICLE_FUSED = 0xff00e5ff;
   private static final float[] LANE_DASH_PATTERN = {56.0f, 24.0f};
   private static final float LANE_DASH_CYCLE = 80.0f;
   private static final float ROAD_EDGE_MIN_CONFIDENCE = 0.5f;
+  private static final int LANE_RISK_FILTER_STEPS = 10;
   private static final long DASH_FRAME_MS = 66L;
 
   private final Paint lanePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -34,6 +37,8 @@ public final class OpenpilotPathView extends View {
   private final Paint vehicleFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint vehicleBitmapPaint = new Paint(
       Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+  private final LightingColorFilter[] laneRiskFilters =
+      new LightingColorFilter[LANE_RISK_FILTER_STEPS + 1];
   private final LightingColorFilter vehicleRadarFilter = new LightingColorFilter(0xffffffff, 0);
   private final LightingColorFilter vehicleVisionFilter = new LightingColorFilter(
       COLOR_VEHICLE_VISION, 0);
@@ -46,8 +51,10 @@ public final class OpenpilotPathView extends View {
   private float laneFarLeftProb;
   private float[] laneLeft = new float[0];
   private float laneLeftProb;
+  private float laneRiskLeft;
   private float[] laneRight = new float[0];
   private float laneRightProb;
+  private float laneRiskRight;
   private float[] laneFarRight = new float[0];
   private float laneFarRightProb;
   private float[] pathLeft = new float[0];
@@ -68,6 +75,11 @@ public final class OpenpilotPathView extends View {
     lanePaint.setStrokeCap(Paint.Cap.ROUND);
     lanePaint.setStrokeJoin(Paint.Join.ROUND);
     lanePaint.setStrokeWidth(2.5f);
+    for (int index = 0; index <= LANE_RISK_FILTER_STEPS; index++) {
+      float risk = index / (float) LANE_RISK_FILTER_STEPS;
+      laneRiskFilters[index] = new LightingColorFilter(blendColor(
+          COLOR_LANE_CLEAR, COLOR_LANE_DANGER, risk), 0);
+    }
 
     roadEdgePaint.setStyle(Paint.Style.STROKE);
     roadEdgePaint.setStrokeCap(Paint.Cap.ROUND);
@@ -121,6 +133,12 @@ public final class OpenpilotPathView extends View {
       vehicleSpeedKph = Math.max(0.0f, (float) json.optDouble("vEgoKph", 0.0));
       if (json.has("navVehicles")) {
         vehicles = readVehicles(json.optJSONArray("navVehicles"));
+      }
+      if (json.has("navLaneRiskLeft")) {
+        laneRiskLeft = clamp01((float) json.optDouble("navLaneRiskLeft", 0.0));
+      }
+      if (json.has("navLaneRiskRight")) {
+        laneRiskRight = clamp01((float) json.optDouble("navLaneRiskRight", 0.0));
       }
       if (!json.has("navPathLeft")) {
         if (getVisibility() == View.VISIBLE) {
@@ -197,10 +215,10 @@ public final class OpenpilotPathView extends View {
 
     updateDashPhase();
     lanePaint.setPathEffect(new DashPathEffect(LANE_DASH_PATTERN, dashPhase));
-    drawLane(canvas, laneFarLeft, laneFarLeftProb);
-    drawLane(canvas, laneLeft, laneLeftProb);
-    drawLane(canvas, laneRight, laneRightProb);
-    drawLane(canvas, laneFarRight, laneFarRightProb);
+    drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f);
+    drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft);
+    drawLane(canvas, laneRight, laneRightProb, laneRiskRight);
+    drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f);
     drawVehicles(canvas);
 
     if (vehicleSpeedKph > 1.0f) {
@@ -208,10 +226,13 @@ public final class OpenpilotPathView extends View {
     }
   }
 
-  private void drawLane(Canvas canvas, float[] points, float probability) {
+  private void drawLane(Canvas canvas, float[] points, float probability, float risk) {
     if (!validLine(points) || probability < 0.05f) {
       return;
     }
+    int filterIndex = Math.min(LANE_RISK_FILTER_STEPS,
+        Math.max(0, Math.round(clamp01(risk) * LANE_RISK_FILTER_STEPS)));
+    lanePaint.setColorFilter(laneRiskFilters[filterIndex]);
     lanePaint.setAlpha((int) (probability * 225.0f + 30.0f));
     canvas.drawPath(linePath(points), lanePaint);
   }
@@ -324,7 +345,9 @@ public final class OpenpilotPathView extends View {
     vehicles = new float[0];
     laneFarLeftProb = 0.0f;
     laneLeftProb = 0.0f;
+    laneRiskLeft = 0.0f;
     laneRightProb = 0.0f;
+    laneRiskRight = 0.0f;
     laneFarRightProb = 0.0f;
     roadEdgeLeftProb = 0.0f;
     roadEdgeRightProb = 0.0f;
@@ -336,6 +359,16 @@ public final class OpenpilotPathView extends View {
 
   private static float clamp01(float value) {
     return Math.max(0.0f, Math.min(1.0f, value));
+  }
+
+  private static int blendColor(int from, int to, float amount) {
+    float ratio = clamp01(amount);
+    int red = Math.round(((from >> 16) & 0xff) * (1.0f - ratio)
+        + ((to >> 16) & 0xff) * ratio);
+    int green = Math.round(((from >> 8) & 0xff) * (1.0f - ratio)
+        + ((to >> 8) & 0xff) * ratio);
+    int blue = Math.round((from & 0xff) * (1.0f - ratio) + (to & 0xff) * ratio);
+    return 0xff000000 | (red << 16) | (green << 8) | blue;
   }
 
   private static Path linePath(float[] points) {

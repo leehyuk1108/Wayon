@@ -665,6 +665,34 @@ def test_navdy_payload_signature_tracks_vehicle_yaw_changes():
   assert navdy_op_bridge.payload_signature(straight) != navdy_op_bridge.payload_signature(curved)
 
 
+def test_navdy_payload_signature_tracks_lane_risk_changes():
+  clear = {"navLaneRiskLeft": 0.0, "navLaneRiskRight": 0.0}
+  danger = {"navLaneRiskLeft": 0.65, "navLaneRiskRight": 0.0}
+
+  assert navdy_op_bridge.payload_signature(clear) != navdy_op_bridge.payload_signature(danger)
+
+
+def test_navdy_lane_risk_payload_forwards_detector_sides():
+  class FakeDetector:
+    def __init__(self):
+      self.lane_risks = {"left": 0.37, "right": 0.82}
+      self.args = None
+
+    def update(self, *args, **kwargs):
+      self.args = (args, kwargs)
+
+  detector = FakeDetector()
+  model_v2 = SimpleNamespace(meta=SimpleNamespace(laneChangeState="off"))
+  radar_points = [{"trackId": 9, "dRel": 20.0, "yRel": 3.0}]
+
+  payload = navdy_op_bridge.update_navdy_lane_risk(
+    detector, model_v2, radar_points, 18.0, 10.0)
+
+  assert payload == {"navLaneRiskLeft": 0.37, "navLaneRiskRight": 0.82}
+  assert detector.args[0] == (18.0, radar_points, model_v2, 10.0)
+  assert detector.args[1] == {"lane_change_active": False}
+
+
 def test_navdy_vehicle_geometry_keeps_unmatched_camera_lead():
   vehicles = navdy_op_bridge.navdy_vehicle_geometry(navdy_vehicle_test_model(), [])["navVehicles"]
 
@@ -802,13 +830,31 @@ def test_navdy_path_renderer_animates_dashed_lanes_and_keeps_road_edges_solid():
   assert "LANE_DASH_CYCLE = 80.0f" in java
   assert "new DashPathEffect(LANE_DASH_PATTERN, dashPhase)" in java
   assert "Math.min(80.0f, Math.max(18.0f, vehicleSpeedKph * 0.8f))" in java
-  for lane in ("laneFarLeft", "laneLeft", "laneRight", "laneFarRight"):
-    assert f"drawLane(canvas, {lane}, {lane}Prob)" in java
+  assert "drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f)" in java
+  assert "drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft)" in java
+  assert "drawLane(canvas, laneRight, laneRightProb, laneRiskRight)" in java
+  assert "drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f)" in java
   assert "canvas.drawPath(linePath(points), roadEdgePaint)" in java
   assert "canvas.drawPath(linePath(points), lanePaint)" in java
   assert "vehicleSpeedKph > 1.0f" in java
   assert "postInvalidateDelayed(DASH_FRAME_MS)" in java
   assert java.index("drawRoadEdge(canvas, roadEdgeLeft") < java.index("lanePaint.setPathEffect")
+
+
+def test_navdy_path_renderer_blends_inner_lanes_toward_red_by_risk():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  source = patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
+  java = source.read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
+
+  assert "COLOR_LANE_DANGER = 0xffff2028" in java
+  assert 'json.optDouble("navLaneRiskLeft", 0.0)' in java
+  assert 'json.optDouble("navLaneRiskRight", 0.0)' in java
+  assert "lanePaint.setColorFilter(laneRiskFilters[filterIndex])" in java
+  assert "new LightingColorFilter[LANE_RISK_FILTER_STEPS + 1]" in java
+  assert 'const-string v2, "navLaneRiskLeft"' in smali
+  assert 'const-string v1, "navLaneRiskRight"' in smali
+  assert ".method private drawLane(Landroid/graphics/Canvas;[FFF)V" in smali
 
 
 def test_navdy_vehicle_markers_remain_visible_at_long_range():

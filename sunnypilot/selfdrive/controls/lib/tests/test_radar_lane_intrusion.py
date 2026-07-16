@@ -57,6 +57,34 @@ def test_right_adjacent_vehicle_crossing_lane_boundary_alerts():
 def test_stable_adjacent_vehicle_does_not_alert():
   detector = RadarLaneIntrusionDetector()
   assert all(update(detector, index * 0.05, -3.1) is None for index in range(20))
+  assert detector.lane_risks == {"left": 0.0, "right": 0.0}
+
+
+def test_left_lane_risk_grows_as_vehicle_approaches_boundary():
+  detector = RadarLaneIntrusionDetector()
+  samples = [-3.5, -3.5, -3.5, -3.3, -3.0, -2.7, -2.6]
+  risks = []
+  for index, lateral in enumerate(samples):
+    update(detector, index * 0.05, lateral)
+    risks.append(detector.lane_risks["left"])
+
+  assert risks[:3] == [0.0, 0.0, 0.0]
+  assert 0.0 < risks[3] < risks[4] < risks[5] < risks[6]
+  assert risks[6] > 0.99
+  assert detector.lane_risks["right"] == 0.0
+
+
+def test_lane_risk_accepts_navdy_radar_dicts_and_fades():
+  detector = RadarLaneIntrusionDetector()
+  for index, lateral in enumerate([-3.5, -3.5, -3.5, -3.0]):
+    detector.update(20.0, [{"trackId": 8, "dRel": 30.0, "yRel": -lateral}],
+                    model(), index * 0.05)
+  initial_risk = detector.lane_risks["left"]
+
+  detector.update(20.0, [], model(), 0.25)
+
+  assert initial_risk > 0.0
+  assert 0.0 < detector.lane_risks["left"] < initial_risk
 
 
 def test_new_track_already_inside_lane_does_not_alert():

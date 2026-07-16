@@ -85,6 +85,32 @@ def rounded(value: float, digits: int = 1) -> float:
   return round(finite_float(value), digits)
 
 
+def create_navdy_lane_risk_detector() -> Any:
+  try:
+    from openpilot.sunnypilot.selfdrive.controls.lib.radar_lane_intrusion import RadarLaneIntrusionDetector
+    return RadarLaneIntrusionDetector()
+  except ImportError:
+    return None
+
+
+def navdy_lane_risk_values(detector: Any) -> dict[str, float]:
+  risks = getattr(detector, "lane_risks", {}) if detector is not None else {}
+  return {
+    "navLaneRiskLeft": rounded(risks.get("left", 0.0), 2),
+    "navLaneRiskRight": rounded(risks.get("right", 0.0), 2),
+  }
+
+
+def update_navdy_lane_risk(detector: Any, model_v2: Any, radar_points: list[dict[str, Any]],
+                           v_ego: float, now: float) -> dict[str, float]:
+  if detector is None or model_v2 is None:
+    return navdy_lane_risk_values(detector)
+  meta = getattr(model_v2, "meta", None)
+  lane_change_active = enum_text(getattr(meta, "laneChangeState", "off")) != "off"
+  detector.update(v_ego, radar_points, model_v2, now, lane_change_active=lane_change_active)
+  return navdy_lane_risk_values(detector)
+
+
 def enum_text(value: Any) -> str:
   text = str(value)
   return text.split(".")[-1]
@@ -1218,6 +1244,8 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("navLaneLeftProb"),
     payload.get("navLaneRightProb"),
     payload.get("navLaneFarRightProb"),
+    payload.get("navLaneRiskLeft"),
+    payload.get("navLaneRiskRight"),
     tuple(payload.get("navRoadEdgeLeft", [])),
     tuple(payload.get("navRoadEdgeRight", [])),
     payload.get("navRoadEdgeLeftProb"),
@@ -1374,6 +1402,7 @@ def run_live(args: argparse.Namespace) -> None:
   last_emit_at = 0.0
   last_path_update_at = 0.0
   radar_reader = create_navdy_radar_reader(messaging, args.stdout) if args.radar_overlay else None
+  lane_risk_detector = create_navdy_lane_risk_detector()
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
   offroad_since = None
@@ -1414,8 +1443,14 @@ def run_live(args: argparse.Namespace) -> None:
           path_geometry = navdy_model_geometry(model_v2)
           radar_points = radar_reader.snapshot(now) if radar_reader is not None else []
           path_geometry.update(navdy_vehicle_geometry(model_v2, radar_points))
+          path_geometry.update(update_navdy_lane_risk(
+            lane_risk_detector, model_v2, radar_points,
+            finite_float(getattr(car_state, "vEgo", 0.0)), now))
     elif not active:
       last_path_update_at = 0.0
+      if lane_risk_detector is not None:
+        lane_risk_detector.reset()
+    path_geometry.update(navdy_lane_risk_values(lane_risk_detector))
     payload = payload_from_messages(sm["selfdriveState"],
                                     car_state,
                                     seq,

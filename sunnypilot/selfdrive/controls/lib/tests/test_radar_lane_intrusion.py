@@ -87,6 +87,15 @@ def test_lane_risk_accepts_navdy_radar_dicts_and_fades():
   assert 0.0 < detector.lane_risks["left"] < initial_risk
 
 
+def test_five_hz_navdy_samples_keep_track_history():
+  detector = RadarLaneIntrusionDetector()
+  samples = [-3.5, -3.4, -3.3, -3.0, -2.7, -2.4, -2.2, -2.0]
+  results = [update(detector, index * 0.21, lateral) for index, lateral in enumerate(samples)]
+
+  assert detector.lane_risks["left"] > 0.0
+  assert any(result is not None for result in results)
+
+
 def test_new_track_already_inside_lane_does_not_alert():
   detector = RadarLaneIntrusionDetector()
   assert all(update(detector, index * 0.05, -0.5) is None for index in range(10))

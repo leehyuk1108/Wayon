@@ -471,7 +471,21 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   }
 }
 
-struct CustomReserved10 @0xcb9fd56c7057593a {
+struct RadarLaneIntrusionSP @0xcb9fd56c7057593a {
+  detected @0 :Bool;
+  trackId @1 :Int32;
+  side @2 :Side;
+  distance @3 :Float32;
+  lateral @4 :Float32;
+  inwardSpeed @5 :Float32;
+  leftRisk @6 :Float32;
+  rightRisk @7 :Float32;
+
+  enum Side {
+    none @0;
+    left @1;
+    right @2;
+  }
 }
 
 struct CustomReserved11 @0xc2243c65e0340384 {

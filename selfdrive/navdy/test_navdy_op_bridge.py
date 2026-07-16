@@ -693,6 +693,35 @@ def test_navdy_lane_risk_payload_forwards_detector_sides():
   assert detector.args[1] == {"lane_change_active": False}
 
 
+def test_navdy_lane_intrusion_message_forwards_detection_details():
+  class FakeMessaging:
+    @staticmethod
+    def new_message(service):
+      assert service == "radarLaneIntrusionSP"
+      return SimpleNamespace(valid=False, radarLaneIntrusionSP=SimpleNamespace())
+
+  class FakePubMaster:
+    def send(self, service, msg):
+      self.sent = (service, msg)
+
+  intrusion = SimpleNamespace(
+    track_id=18, side="right", distance_m=24.5, lateral_m=2.1, inward_speed_mps=0.8)
+  pm = FakePubMaster()
+
+  navdy_op_bridge.publish_radar_lane_intrusion(
+    FakeMessaging, pm, intrusion,
+    {"navLaneRiskLeft": 0.2, "navLaneRiskRight": 0.9})
+
+  service, msg = pm.sent
+  state = msg.radarLaneIntrusionSP
+  assert service == "radarLaneIntrusionSP"
+  assert msg.valid
+  assert state.detected
+  assert (state.trackId, state.side) == (18, "right")
+  assert (state.distance, state.lateral, state.inwardSpeed) == (24.5, 2.1, 0.8)
+  assert (state.leftRisk, state.rightRisk) == (0.2, 0.9)
+
+
 def test_navdy_vehicle_geometry_keeps_unmatched_camera_lead():
   vehicles = navdy_op_bridge.navdy_vehicle_geometry(navdy_vehicle_test_model(), [])["navVehicles"]
 

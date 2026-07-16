@@ -101,14 +101,37 @@ def navdy_lane_risk_values(detector: Any) -> dict[str, float]:
   }
 
 
-def update_navdy_lane_risk(detector: Any, model_v2: Any, radar_points: list[dict[str, Any]],
-                           v_ego: float, now: float) -> dict[str, float]:
+def evaluate_navdy_lane_risk(detector: Any, model_v2: Any, radar_points: list[dict[str, Any]],
+                             v_ego: float, now: float) -> tuple[dict[str, float], Any]:
   if detector is None or model_v2 is None:
-    return navdy_lane_risk_values(detector)
+    return navdy_lane_risk_values(detector), None
   meta = getattr(model_v2, "meta", None)
   lane_change_active = enum_text(getattr(meta, "laneChangeState", "off")) != "off"
-  detector.update(v_ego, radar_points, model_v2, now, lane_change_active=lane_change_active)
-  return navdy_lane_risk_values(detector)
+  intrusion = detector.update(
+    v_ego, radar_points, model_v2, now, lane_change_active=lane_change_active)
+  return navdy_lane_risk_values(detector), intrusion
+
+
+def update_navdy_lane_risk(detector: Any, model_v2: Any, radar_points: list[dict[str, Any]],
+                           v_ego: float, now: float) -> dict[str, float]:
+  return evaluate_navdy_lane_risk(detector, model_v2, radar_points, v_ego, now)[0]
+
+
+def publish_radar_lane_intrusion(messaging: Any, pm: Any, intrusion: Any,
+                                 risks: dict[str, float]) -> None:
+  msg = messaging.new_message("radarLaneIntrusionSP")
+  msg.valid = True
+  state = msg.radarLaneIntrusionSP
+  state.detected = intrusion is not None
+  state.trackId = int(getattr(intrusion, "track_id", -1))
+  side = str(getattr(intrusion, "side", "none"))
+  state.side = side if side in ("left", "right") else "none"
+  state.distance = finite_float(getattr(intrusion, "distance_m", 0.0))
+  state.lateral = finite_float(getattr(intrusion, "lateral_m", 0.0))
+  state.inwardSpeed = finite_float(getattr(intrusion, "inward_speed_mps", 0.0))
+  state.leftRisk = finite_float(risks.get("navLaneRiskLeft", 0.0))
+  state.rightRisk = finite_float(risks.get("navLaneRiskRight", 0.0))
+  pm.send("radarLaneIntrusionSP", msg)
 
 
 def enum_text(value: Any) -> str:
@@ -1396,6 +1419,7 @@ def run_live(args: argparse.Namespace) -> None:
     services += available_services(messaging, ["deviceState", "pandaStates"])
   sm = messaging.SubMaster(services)
   model_sm = messaging.SubMaster(model_services) if model_services else None
+  lane_intrusion_pm = messaging.PubMaster(["radarLaneIntrusionSP"])
   seq = 0
   period = 1.0 / max(args.hz, 0.1)
   last_signature = None
@@ -1443,9 +1467,11 @@ def run_live(args: argparse.Namespace) -> None:
           path_geometry = navdy_model_geometry(model_v2)
           radar_points = radar_reader.snapshot(now) if radar_reader is not None else []
           path_geometry.update(navdy_vehicle_geometry(model_v2, radar_points))
-          path_geometry.update(update_navdy_lane_risk(
+          lane_risks, intrusion = evaluate_navdy_lane_risk(
             lane_risk_detector, model_v2, radar_points,
-            finite_float(getattr(car_state, "vEgo", 0.0)), now))
+            finite_float(getattr(car_state, "vEgo", 0.0)), now)
+          path_geometry.update(lane_risks)
+          publish_radar_lane_intrusion(messaging, lane_intrusion_pm, intrusion, lane_risks)
     elif not active:
       last_path_update_at = 0.0
       if lane_risk_detector is not None:

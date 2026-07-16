@@ -5,9 +5,14 @@ import { join } from "node:path";
 
 const endpoint = process.env.WAYON_SSH_URL
   || "wss://wayon-cloud.leehyuk1108-comma.workers.dev/api/remote/ssh";
-const connectTimeoutMs = Number.parseInt(process.env.WAYON_SSH_CONNECT_TIMEOUT_MS || "15000", 10);
+const connectTimeoutMs = Number.parseInt(process.env.WAYON_SSH_CONNECT_TIMEOUT_MS || "30000", 10);
 const credentialsPath = process.env.WAYON_SSH_CREDENTIALS_FILE
   || join(homedir(), ".config", "wayon", "ssh.credentials.json");
+const debug = process.env.WAYON_SSH_DEBUG === "1";
+
+function debugLog(message) {
+  if (debug) process.stderr.write(`wayon ssh debug ${new Date().toISOString()}: ${message}\n`);
+}
 
 function exitWithError(message) {
   process.stderr.write(`wayon ssh: ${message}\n`);
@@ -53,6 +58,8 @@ const websocket = new WebSocket(endpoint, session.protocol);
 websocket.binaryType = "arraybuffer";
 process.stdin.pause();
 let stdinEnded = false;
+let remoteReady = false;
+const pendingInput = [];
 const connectTimeout = setTimeout(() => exitWithError("connection timed out"), connectTimeoutMs);
 
 function fail(message) {
@@ -60,16 +67,29 @@ function fail(message) {
   exitWithError(message);
 }
 
+function sendInput(chunk) {
+  const bytes = Uint8Array.from(chunk);
+  websocket.send(bytes.buffer);
+  debugLog(`sent ${bytes.byteLength} bytes; buffered=${websocket.bufferedAmount}`);
+  if (debug) setTimeout(() => debugLog(`buffered after send=${websocket.bufferedAmount}`), 100);
+}
+
 websocket.addEventListener("open", () => {
-  clearTimeout(connectTimeout);
+  debugLog("websocket open");
   if (stdinEnded) websocket.close(1000, "stdin closed");
-  else process.stdin.resume();
 });
 websocket.addEventListener("message", (event) => {
   const bytes = event.data instanceof ArrayBuffer
     ? Buffer.from(event.data)
     : Buffer.from(event.data);
   process.stdout.write(bytes);
+  if (!remoteReady) {
+    debugLog(`origin ready; flushing ${pendingInput.length} chunks`);
+    remoteReady = true;
+    clearTimeout(connectTimeout);
+    for (const chunk of pendingInput.splice(0)) sendInput(chunk);
+    if (!stdinEnded) process.stdin.resume();
+  }
 });
 websocket.addEventListener("error", () => fail("remote tunnel unavailable"));
 websocket.addEventListener("close", (event) => {
@@ -79,7 +99,9 @@ websocket.addEventListener("close", (event) => {
 });
 
 process.stdin.on("data", (chunk) => {
-  if (websocket.readyState === 1) websocket.send(chunk);
+  debugLog(`stdin ${chunk.length} bytes; ready=${remoteReady}`);
+  if (remoteReady && websocket.readyState === 1) sendInput(chunk);
+  else pendingInput.push(Buffer.from(chunk));
 });
 process.stdin.on("end", () => {
   stdinEnded = true;

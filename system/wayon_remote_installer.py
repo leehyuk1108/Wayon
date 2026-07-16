@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import time
 from pathlib import Path
 
@@ -16,7 +15,6 @@ BIN_DIR = INSTALL_ROOT / "bin"
 CLOUDFLARED_PATH = BIN_DIR / "cloudflared"
 TOKEN_PATH = INSTALL_ROOT / "tunnel.token"
 SUPERVISOR_PATH = INSTALL_ROOT / "wayon_remote_supervisor.sh"
-SERVICE_PATH = Path("/etc/systemd/system/wayon-remote.service")
 PARAM_ONROAD = Path("/data/params/d/IsOnroad")
 
 CLOUDFLARED_VERSION = "2026.7.2"
@@ -28,7 +26,6 @@ USER_AGENT = "wayon-remote-installer/1.0"
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "cloudflare/wayon-cloud/remote"
 SUPERVISOR_SOURCE = SOURCE_ROOT / "wayon_remote_supervisor.sh"
-SERVICE_SOURCE = SOURCE_ROOT / "wayon-remote.service"
 
 
 def file_sha256(path: Path) -> str:
@@ -68,10 +65,10 @@ def fetch_tunnel_token(config: dict) -> str:
 
 
 def ensure_directories() -> None:
-  subprocess.run([
-    "sudo", "install", "-d", "-o", "comma", "-g", "comma", "-m", "0750",
-    str(INSTALL_ROOT), str(BIN_DIR),
-  ], check=True)
+  INSTALL_ROOT.mkdir(parents=True, exist_ok=True)
+  BIN_DIR.mkdir(parents=True, exist_ok=True)
+  os.chmod(INSTALL_ROOT, 0o750)
+  os.chmod(BIN_DIR, 0o750)
 
 
 def install_cloudflared() -> bool:
@@ -116,27 +113,19 @@ def write_token(token: str) -> bool:
   return True
 
 
-def install_service() -> bool:
-  changed = not SERVICE_PATH.is_file() or SERVICE_SOURCE.read_bytes() != SERVICE_PATH.read_bytes()
-  if changed:
-    subprocess.run(["sudo", "install", "-m", "0644", str(SERVICE_SOURCE), str(SERVICE_PATH)], check=True)
-    subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
-  subprocess.run(["sudo", "systemctl", "enable", "wayon-remote.service"], check=True)
-  return changed
-
-
 def install() -> None:
   config = read_config()
   token = fetch_tunnel_token(config)
   ensure_directories()
 
-  changed = install_cloudflared()
-  changed |= copy_if_changed(SUPERVISOR_SOURCE, SUPERVISOR_PATH, 0o755)
-  changed |= write_token(token)
-  changed |= install_service()
+  install_cloudflared()
+  copy_if_changed(SUPERVISOR_SOURCE, SUPERVISOR_PATH, 0o755)
+  write_token(token)
 
-  action = "restart" if changed else "start"
-  subprocess.run(["sudo", "systemctl", action, "wayon-remote.service"], check=True)
+
+def run_supervisor() -> None:
+  supervisor = str(SUPERVISOR_PATH)
+  os.execv(supervisor, [supervisor])
 
 
 def is_offroad() -> bool:
@@ -152,8 +141,8 @@ def main() -> None:
       return
     try:
       install()
-      print("Wayon remote: installed and started")
-      return
+      print("Wayon remote: installed; starting supervisor", flush=True)
+      run_supervisor()
     except Exception as exc:
       print(f"Wayon remote: install attempt {attempt + 1} failed: {exc}")
       if attempt < 4:

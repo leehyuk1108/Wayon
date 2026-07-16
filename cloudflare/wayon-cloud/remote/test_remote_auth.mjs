@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import worker, { issueRemoteSshProtocol, verifyRemoteSshProtocol } from "../src/worker.js";
+import worker, { issueRemoteSshProtocol, verifyRemoteSshProtocol, websocketBytes } from "../src/worker.js";
 
 const secret = randomBytes(32).toString("hex");
 const now = 1_800_000_000;
@@ -11,6 +11,7 @@ assert.equal(await verifyRemoteSshProtocol(protocol, secret, now), protocol);
 assert.equal(await verifyRemoteSshProtocol(protocol, secret, now + 61), "");
 assert.equal(await verifyRemoteSshProtocol(tampered, secret, now), "");
 assert.equal(await verifyRemoteSshProtocol("not-wayon", secret, now), "");
+assert.deepEqual([...await websocketBytes(new Blob([Uint8Array.from([0, 127, 255])]))], [0, 127, 255]);
 
 const env = {
   DB: {},

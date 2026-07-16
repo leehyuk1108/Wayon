@@ -17,7 +17,7 @@ const REMOTE_SESSION_PATH = "/api/remote/session";
 const REMOTE_SSH_PATH = "/api/remote/ssh";
 const REMOTE_SSH_PROTOCOL_PREFIX = "wayon-ssh-v1";
 const REMOTE_SSH_MAX_AGE_SECONDS = 60;
-const REMOTE_SSH_TARGET = "127.0.0.1:22";
+const REMOTE_SSH_TARGET = "172.31.255.254:22";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -166,9 +166,12 @@ function handleRemoteBootstrap(request, env) {
   return json({ tunnelToken: env.WAYON_TUNNEL_TOKEN });
 }
 
-function websocketBytes(data) {
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+export async function websocketBytes(data) {
+  if (data instanceof ArrayBuffer) return new Uint8Array(data.slice(0));
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+  }
+  if (data instanceof Blob) return new Uint8Array(await data.arrayBuffer());
   if (typeof data === "string") return new TextEncoder().encode(data);
   return null;
 }
@@ -189,8 +192,11 @@ async function handleRemoteSsh(request, env, ctx) {
 
   let socket;
   try {
-    socket = await env.COMMA_NETWORK.connect(REMOTE_SSH_TARGET);
-  } catch {
+    socket = env.COMMA_NETWORK.connect(REMOTE_SSH_TARGET);
+    await socket.opened;
+  } catch (error) {
+    console.error("Wayon remote SSH origin connection failed", error);
+    try { socket?.close(); } catch {}
     return json({ error: "comma_offline" }, 503);
   }
 
@@ -199,7 +205,7 @@ async function handleRemoteSsh(request, env, ctx) {
   server.accept();
 
   const writer = socket.writable.getWriter();
-  let writeQueue = Promise.resolve();
+  let clientWriteQueue = Promise.resolve();
   let closed = false;
   const close = () => {
     if (closed) return;
@@ -209,13 +215,15 @@ async function handleRemoteSsh(request, env, ctx) {
   };
 
   server.addEventListener("message", (event) => {
-    const bytes = websocketBytes(event.data);
-    if (!bytes) {
+    if (closed) return;
+    clientWriteQueue = clientWriteQueue.then(async () => {
+      const bytes = await websocketBytes(event.data);
+      if (!bytes) throw new TypeError("unsupported WebSocket message");
+      await writer.write(bytes);
+    }).catch((error) => {
+      console.error("Wayon remote SSH client write failed", error);
       close();
-      return;
-    }
-    writeQueue = writeQueue.then(() => writer.write(bytes)).catch(close);
-    ctx.waitUntil(writeQueue);
+    });
   });
   server.addEventListener("close", close);
   server.addEventListener("error", close);

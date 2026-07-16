@@ -7,6 +7,7 @@ TOKEN_FILE="$ROOT/tunnel.token"
 PID_FILE="$ROOT/cloudflared.pid"
 LOG_FILE="$ROOT/cloudflared.log"
 PARAM_ONROAD=/data/params/d/IsOnroad
+SSH_ALIAS=172.31.255.254
 POLL_SECONDS=2
 OFFROAD_SAMPLES_TO_START=3
 
@@ -54,6 +55,10 @@ start_tunnel() {
 trap 'stop_tunnel; exit 0' INT TERM EXIT
 mkdir -p "$ROOT"
 log "supervisor started"
+if ! sudo -n ip address replace "$SSH_ALIAS/32" dev lo; then
+  log "failed to configure SSH loopback alias"
+  exit 1
+fi
 
 while :; do
   onroad="$(tr -d '\r\n ' < "$PARAM_ONROAD" 2>/dev/null || true)"

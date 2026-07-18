@@ -168,6 +168,11 @@ def hold_bool(args: argparse.Namespace, name: str, value: bool, now: float, hold
 
 
 def apply_navdy_e2e_alert(payload: dict[str, Any], args: argparse.Namespace, now: float) -> None:
+  if str(payload.get("gear", "unknown")).lower() in ("neutral", "park", "reverse", "unknown"):
+    setattr(args, "_navdy_e2e_alert_name", "")
+    setattr(args, "_navdy_e2e_alert_until", 0.0)
+    return
+
   alert_name = ""
   if payload.get("greenLightAlert"):
     alert_name = "greenLight"
@@ -1088,8 +1093,16 @@ def connect_socket(args: argparse.Namespace, force: bool = False) -> bool:
 
 
 def start_socket_transport(args: argparse.Namespace) -> None:
-  if args.socket_transport:
+  if not args.socket_transport:
+    return
+  if args.once:
     connect_socket(args, force=True)
+    return
+  setattr(args, "_socket_sender_pending", None)
+  setattr(args, "_socket_sender_cond", threading.Condition())
+  thread = threading.Thread(target=socket_sender_loop, args=(args,), daemon=True)
+  setattr(args, "_socket_sender_thread", thread)
+  thread.start()
 
 
 def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
@@ -1101,13 +1114,37 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
     return True
   except OSError:
     close_socket(args)
-    if connect_socket(args, force=True):
-      try:
-        getattr(args, "_socket_conn").sendall(json_payload.encode("utf-8"))
-        return True
-      except OSError:
-        close_socket(args)
   return False
+
+
+def socket_sender_loop(args: argparse.Namespace) -> None:
+  cond = getattr(args, "_socket_sender_cond")
+  while True:
+    with cond:
+      while getattr(args, "_socket_sender_pending", None) is None:
+        cond.wait()
+      payload = getattr(args, "_socket_sender_pending")
+      setattr(args, "_socket_sender_pending", None)
+    connected = connect_socket(args)
+    if connected:
+      with cond:
+        latest = getattr(args, "_socket_sender_pending", None)
+        if latest is not None:
+          payload = latest
+          setattr(args, "_socket_sender_pending", None)
+    if (not connected or not socket_send(payload, args)) and args.adb_path and args.adb_fallback:
+      queue_adb(payload, args)
+
+
+def queue_socket(payload: dict[str, Any], args: argparse.Namespace) -> None:
+  cond = getattr(args, "_socket_sender_cond", None)
+  if cond is None:
+    if not socket_send(payload, args) and args.adb_path and args.adb_fallback:
+      queue_adb(payload, args)
+    return
+  with cond:
+    setattr(args, "_socket_sender_pending", dict(payload))
+    cond.notify()
 
 
 def adb_base_cmd(args: argparse.Namespace) -> list[str]:
@@ -1209,7 +1246,8 @@ def emit(payload: dict[str, Any], args: argparse.Namespace) -> None:
   line = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
   if args.stdout:
     print(line, flush=True)
-  if socket_send(payload, args):
+  if args.socket_transport:
+    queue_socket(payload, args)
     return
   if args.adb_path and args.adb_fallback:
     queue_adb(payload, args)
@@ -1410,6 +1448,46 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
   return offroad_since, last_target_on
 
 
+def power_manager_loop(args: argparse.Namespace) -> None:
+  cond = getattr(args, "_power_manager_cond")
+  offroad_since = None
+  last_target_on = None
+  while True:
+    with cond:
+      while getattr(args, "_power_started", None) is None:
+        cond.wait()
+      started = bool(getattr(args, "_power_started"))
+    offroad_since, last_target_on = manage_navdy_power(
+        args, started, time.monotonic(), offroad_since, last_target_on)
+    with cond:
+      cond.wait(timeout=0.5)
+
+
+def start_power_manager(args: argparse.Namespace) -> None:
+  if not args.manage_navdy_power or args.once:
+    return
+  setattr(args, "_power_started", None)
+  setattr(args, "_power_manager_cond", threading.Condition())
+  thread = threading.Thread(target=power_manager_loop, args=(args,), daemon=True)
+  setattr(args, "_power_manager_thread", thread)
+  thread.start()
+
+
+def update_navdy_power(args: argparse.Namespace, started: bool, now: float) -> None:
+  cond = getattr(args, "_power_manager_cond", None)
+  if cond is None:
+    offroad_since = getattr(args, "_power_offroad_since", None)
+    last_target_on = getattr(args, "_power_last_target_on", None)
+    offroad_since, last_target_on = manage_navdy_power(
+        args, started, now, offroad_since, last_target_on)
+    setattr(args, "_power_offroad_since", offroad_since)
+    setattr(args, "_power_last_target_on", last_target_on)
+    return
+  with cond:
+    setattr(args, "_power_started", bool(started))
+    cond.notify()
+
+
 def run_live(args: argparse.Namespace) -> None:
   maybe_reexec_openpilot_python(args)
   messaging = import_messaging()
@@ -1429,8 +1507,6 @@ def run_live(args: argparse.Namespace) -> None:
   lane_risk_detector = create_navdy_lane_risk_detector()
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
-  offroad_since = None
-  last_power_target_on = None
   while True:
     time.sleep(period)
     sm.update(0)
@@ -1438,8 +1514,7 @@ def run_live(args: argparse.Namespace) -> None:
     has_update = any(sm.updated[service] for service in services)
     started = power_started(sm, args, now) if args.manage_navdy_power else True
     if args.manage_navdy_power:
-      offroad_since, last_power_target_on = manage_navdy_power(
-          args, started, now, offroad_since, last_power_target_on)
+      update_navdy_power(args, started, now)
     if not has_update and not (args.once and now >= once_deadline):
       continue
     if not live_payload_ready(sm, started, now):
@@ -1501,12 +1576,9 @@ def run_live(args: argparse.Namespace) -> None:
 def run_synthetic(args: argparse.Namespace) -> None:
   seq = 0
   period = 1.0 / max(args.hz, 0.1)
-  offroad_since = None
-  last_power_target_on = None
   while True:
     now = time.monotonic()
-    offroad_since, last_power_target_on = manage_navdy_power(
-        args, args.synthetic_started, now, offroad_since, last_power_target_on)
+    update_navdy_power(args, args.synthetic_started, now)
     emit(synthetic_payload(args, seq), args)
     seq += 1
     if args.once:
@@ -1577,9 +1649,10 @@ def main() -> int:
   setattr(args, "_socket_conn", None)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
-  start_socket_transport(args)
   if args.adb_path:
     start_adb_sender(args)
+  start_socket_transport(args)
+  start_power_manager(args)
   if args.synthetic:
     run_synthetic(args)
   else:

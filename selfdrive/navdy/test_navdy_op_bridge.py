@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import threading
 import types
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -66,6 +67,18 @@ def test_navdy_music_uses_artist_title_and_refreshes_recreated_dash():
   assert 'const-string v4, " - "' in smali_patch
   assert "+    :cond_navdy_music_refresh" in refresh_hunks
   assert "-    if-nez v0, :cond_1" in refresh_hunks
+
+
+def test_navdy_socket_receiver_coalesces_frames_and_skips_payload_logs():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  service = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateService$ClientRunnable.smali").read_text()
+  receiver = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+
+  assert "->removeCallbacksAndMessages(Ljava/lang/Object;)V" in service
+  assert "->postAtTime(Ljava/lang/Runnable;Ljava/lang/Object;J)Z" in service
+  assert "socket payload=" not in service
+  assert "openpilot payload=" not in receiver
+  assert "state active=" not in receiver
 
 
 def test_navdy_disengaged_music_sits_above_current_speed():
@@ -279,6 +292,7 @@ def test_payload_exports_sunnypilot_e2e_alert_flags():
 def test_navdy_e2e_alerts_become_held_korean_banners():
   args = SimpleNamespace()
   green = {
+    "gear": "drive",
     "alertSize": "none",
     "greenLightAlert": True,
     "leadDepartAlert": False,
@@ -291,6 +305,7 @@ def test_navdy_e2e_alerts_become_held_korean_banners():
   assert green["alertSize"] == "mid"
 
   held = {
+    "gear": "drive",
     "alertSize": "none",
     "greenLightAlert": False,
     "leadDepartAlert": False,
@@ -299,12 +314,36 @@ def test_navdy_e2e_alerts_become_held_korean_banners():
   assert held["alertText1"] == "신호 변경됨"
 
   expired = {
+    "gear": "drive",
     "alertSize": "none",
     "greenLightAlert": False,
     "leadDepartAlert": False,
   }
   navdy_op_bridge.apply_navdy_e2e_alert(expired, args, 13.1)
   assert "alertText1" not in expired
+
+
+def test_navdy_reverse_clears_held_e2e_banner():
+  args = SimpleNamespace()
+  drive = {
+    "gear": "drive",
+    "alertSize": "none",
+    "greenLightAlert": True,
+    "leadDepartAlert": False,
+  }
+  navdy_op_bridge.apply_navdy_e2e_alert(drive, args, 10.0)
+
+  reverse = {
+    "gear": "reverse",
+    "alertSize": "none",
+    "greenLightAlert": False,
+    "leadDepartAlert": False,
+  }
+  navdy_op_bridge.apply_navdy_e2e_alert(reverse, args, 10.1)
+
+  assert "alertText1" not in reverse
+  assert args._navdy_e2e_alert_name == ""
+  assert args._navdy_e2e_alert_until == 0.0
 
 
 def test_navdy_lead_depart_alert_does_not_replace_critical_alert():
@@ -323,17 +362,18 @@ def test_navdy_lead_depart_alert_does_not_replace_critical_alert():
   assert critical["alertType"] == "steerUnavailable/immediateDisable"
 
 
-def test_mici_hud_renders_green_light_and_lead_depart_alerts():
+def test_comma_uses_standard_renderer_for_green_light_and_lead_depart_alerts():
   ui_root = Path(__file__).parents[1] / "ui" / "sunnypilot"
-  hud = (ui_root / "mici/onroad/hud_renderer.py").read_text()
-  circular = (ui_root / "onroad/circular_alerts.py").read_text()
+  mici_hud = (ui_root / "mici/onroad/hud_renderer.py").read_text()
+  large_hud = (ui_root / "onroad/hud_renderer.py").read_text()
+  mici_alert = (Path(__file__).parents[1] / "ui/mici/onroad/alert_renderer.py").read_text()
+  large_alert = (ui_root / "onroad/alert_renderer.py").read_text()
 
-  assert "self.circular_alerts_renderer = CircularAlertsRenderer()" in hud
-  assert "self.circular_alerts_renderer.update()" in hud
-  assert "self.circular_alerts_renderer.render(rect)" in hud
-  assert 'alert_type == "resumeRequired"' in circular
-  assert 'self._alert_text = "신호\\n변경됨"' in circular
-  assert 'self._alert_text = "전방 차량\\n출발"' in circular
+  assert "CircularAlertsRenderer" not in mici_hud
+  assert "CircularAlertsRenderer" not in large_hud
+  assert "E2EAlertController" in mici_alert
+  assert "E2EAlertController" in large_alert
+  assert 'alert_type=f"{e2e_alert.name}/permanent"' in mici_alert
 
 
 def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
@@ -1051,6 +1091,38 @@ def test_fast_state_change_emits_before_next_path_update():
   assert should_emit
 
 
+def test_socket_sender_keeps_only_latest_pending_payload():
+  args = SimpleNamespace(
+    _socket_sender_cond=threading.Condition(),
+    _socket_sender_pending=None,
+  )
+
+  navdy_op_bridge.queue_socket({"seq": 1}, args)
+  navdy_op_bridge.queue_socket({"seq": 2}, args)
+
+  assert args._socket_sender_pending == {"seq": 2}
+
+
+def test_emit_queues_socket_work_off_polling_thread():
+  args = SimpleNamespace(
+    stdout=False,
+    socket_transport=True,
+    adb_path="adb",
+    adb_fallback=True,
+    _socket_sender_cond=threading.Condition(),
+    _socket_sender_pending=None,
+  )
+  original_socket_send = navdy_op_bridge.socket_send
+  navdy_op_bridge.socket_send = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+      AssertionError("socket send must not run on polling thread"))
+  try:
+    navdy_op_bridge.emit({"seq": 7}, args)
+  finally:
+    navdy_op_bridge.socket_send = original_socket_send
+
+  assert args._socket_sender_pending == {"seq": 7}
+
+
 def test_manager_child_ignores_inherited_manager_argv():
   assert navdy_power_bridge.should_use_default_args(
       "navdy_bridge", ["manager.py", "--socket-transport"])
@@ -1062,10 +1134,13 @@ if __name__ == "__main__":
   test_live_payload_ready_uses_recent_messages_not_alive_flags()
   test_live_payload_ready_allows_missing_car_state_when_selfdrive_is_recent()
   test_default_car_state_keeps_payload_safe_without_vehicle_sample()
+  test_navdy_socket_receiver_coalesces_frames_and_skips_payload_logs()
   test_navdy_path_view_retains_geometry_during_fast_state_updates()
   test_manager_defaults_use_starpilot_socket_transport()
   test_manager_defaults_keep_fast_state_and_throttle_path()
   test_navdy_path_update_is_independent_from_fast_state_rate()
   test_should_emit_payload_respects_min_emit_interval()
   test_fast_state_change_emits_before_next_path_update()
+  test_socket_sender_keeps_only_latest_pending_payload()
+  test_emit_queues_socket_work_off_polling_thread()
   test_manager_child_ignores_inherited_manager_argv()

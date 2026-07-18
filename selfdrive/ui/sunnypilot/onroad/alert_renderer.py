@@ -5,8 +5,10 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import pyray as rl
-from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer, AlertSize, ALERT_FONT_MEDIUM, ALERT_FONT_BIG, \
+from cereal import car
+from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer, AlertSize, AlertStatus, ALERT_FONT_MEDIUM, ALERT_FONT_BIG, \
   ALERT_FONT_SMALL, ALERT_MARGIN, ALERT_HEIGHTS, ALERT_PADDING, Alert
+from openpilot.selfdrive.ui.sunnypilot.onroad.e2e_alerts import E2EAlertController
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.wrap_text import wrap_text
@@ -17,6 +19,25 @@ ALERT_LINE_SPACING = 15
 class AlertRendererSP(AlertRenderer):
   def __init__(self):
     super().__init__()
+    self._e2e_alerts = E2EAlertController()
+    ui_state.add_offroad_transition_callback(self._e2e_alerts.reset)
+
+  def get_alert(self, sm):
+    e2e = sm['longitudinalPlanSP'].e2eAlerts
+    gear = sm['carState'].gearShifter
+    allowed = gear not in (
+      car.CarState.GearShifter.neutral,
+      car.CarState.GearShifter.park,
+      car.CarState.GearShifter.reverse,
+      car.CarState.GearShifter.unknown,
+    )
+    e2e_alert = self._e2e_alerts.update(
+      e2e.greenLightAlert, e2e.leadDepartAlert, allowed=allowed)
+    alert = super().get_alert(sm)
+    if alert is not None or e2e_alert is None:
+      return alert
+
+    return Alert(text1=e2e_alert.text1, text2=e2e_alert.text2, size=AlertSize.mid, status=AlertStatus.normal)
 
   def _draw_text(self, rect: rl.Rectangle, alert: Alert) -> None:
     if alert.size == AlertSize.small:

@@ -17,6 +17,7 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitAlertRenderer
+from openpilot.selfdrive.ui.sunnypilot.onroad.e2e_alerts import E2EAlertController
 from openpilot.selfdrive.ui.mici.onroad.status_timers import (
   PARKING_BRAKE_EVENT_NAMES,
   format_mmss,
@@ -137,6 +138,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     self._parking_brake_start_time: float | None = None
     self._parking_brake_timer_visible = False
     self._last_started_frame = -1
+    self._e2e_alerts = E2EAlertController()
 
     # animation filters
     # TODO: use 0.1 but with proper alert height calculation
@@ -156,6 +158,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     self._resume_required_start_time = None
     self._parking_brake_start_time = None
     self._parking_brake_timer_visible = False
+    self._e2e_alerts.reset()
 
   def parking_brake_timer_visible(self) -> bool:
     return self._parking_brake_timer_visible
@@ -217,6 +220,16 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
   def get_alert(self, sm: messaging.SubMaster) -> Alert | None:
     """Generate the current alert based on selfdrive state."""
     ss = sm['selfdriveState']
+    e2e = sm['longitudinalPlanSP'].e2eAlerts
+    gear = sm['carState'].gearShifter
+    allowed = gear not in (
+      car.CarState.GearShifter.neutral,
+      car.CarState.GearShifter.park,
+      car.CarState.GearShifter.reverse,
+      car.CarState.GearShifter.unknown,
+    )
+    e2e_alert = self._e2e_alerts.update(
+      e2e.greenLightAlert, e2e.leadDepartAlert, allowed=allowed)
 
     # Check if selfdriveState messages have stopped arriving
     if not sm.updated['selfdriveState']:
@@ -238,7 +251,13 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
     # No alert if size is none
     if ss.alertSize == 0:
-      return None
+      if e2e_alert is None:
+        return None
+
+      ret = Alert(text1=e2e_alert.text1, text2=e2e_alert.text2, size=AlertSize.mid, status=AlertStatus.normal,
+                  alert_type=f"{e2e_alert.name}/permanent", source="E2E")
+      self._prev_alert = ret
+      return ret
 
     # Return current alert
     ret = Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,

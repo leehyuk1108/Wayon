@@ -72,6 +72,10 @@ def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
 def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started
 
+def wayon_impact_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return not started and os.path.isfile("/data/wayon_cloud/config.json") \
+    and not os.path.isfile("/data/wayon_cloud/disable_impact_detection")
+
 def wayon_remote_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started and os.path.isfile("/data/wayon_cloud/config.json")
 
@@ -137,7 +141,7 @@ procs = [
   PythonProcess("modeld", "selfdrive.modeld.modeld", and_(only_onroad, is_stock_model)),
   PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
 
-  PythonProcess("sensord", "system.sensord.sensord", only_onroad, enabled=not PC),
+  PythonProcess("sensord", "system.sensord.sensord", or_(only_onroad, wayon_impact_ready), enabled=not PC),
   PythonProcess("ui", "selfdrive.ui.ui", always_run, restart_if_crash=True),
   PythonProcess("soundd", "selfdrive.ui.soundd", driverview),
   PythonProcess("locationd", "selfdrive.locationd.locationd", only_onroad),
@@ -166,6 +170,7 @@ procs = [
   PythonProcess("updated", "system.updated.updated", and_(only_offroad, non_driving_helpers_enabled), enabled=not PC),
   PythonProcess("uploader", "system.loggerd.uploader", uploader_ready, enabled=False),
   PythonProcess("wayon_cloud", "system.wayon_cloud_uploader", always_run, restart_if_crash=True),
+  PythonProcess("wayon_impactd", "system.wayon_impactd", wayon_impact_ready, restart_if_crash=True),
   PythonProcess("wayon_remote_installer", "system.wayon_remote_installer", wayon_remote_ready, enabled=not PC),
   PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", and_(only_offroad, non_driving_helpers_enabled), enabled=not PC),
   PythonProcess("statsd", "system.statsd", always_run),

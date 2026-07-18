@@ -4,6 +4,9 @@ compatibility_date = "2026-05-14"
 workers_dev = true
 preview_urls = true
 
+[vars]
+FCM_PROJECT_ID = "mycarserver-fb85e"
+
 [assets]
 directory = "./public"
 binding = "ASSETS"

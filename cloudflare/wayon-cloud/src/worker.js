@@ -18,6 +18,9 @@ const REMOTE_SSH_PATH = "/api/remote/ssh";
 const REMOTE_SSH_PROTOCOL_PREFIX = "wayon-ssh-v1";
 const REMOTE_SSH_MAX_AGE_SECONDS = 60;
 const REMOTE_SSH_TARGET = "172.31.255.254:22";
+const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
+const FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
+let cachedFcmAccessToken = null;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -42,6 +45,82 @@ function constantTimeEqual(a, b) {
     diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function textToBase64Url(value) {
+  return bytesToBase64Url(new TextEncoder().encode(value));
+}
+
+function pemToBytes(pem) {
+  const normalized = String(pem || "").replace(/\\n/g, "\n");
+  const body = normalized.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  if (!body) throw new Error("FCM private key is missing");
+  const binary = atob(body);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+async function createGoogleServiceJwt(env, nowSeconds = Math.floor(Date.now() / 1000)) {
+  if (!env.FCM_CLIENT_EMAIL || !env.FCM_PRIVATE_KEY) {
+    throw new Error("FCM service account bindings are missing");
+  }
+
+  const header = textToBase64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claims = textToBase64Url(JSON.stringify({
+    iss: env.FCM_CLIENT_EMAIL,
+    scope: FCM_SCOPE,
+    aud: FCM_TOKEN_URL,
+    iat: nowSeconds,
+    exp: nowSeconds + 3600,
+  }));
+  const unsigned = `${header}.${claims}`;
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToBytes(env.FCM_PRIVATE_KEY),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsigned),
+  );
+  return `${unsigned}.${bytesToBase64Url(new Uint8Array(signature))}`;
+}
+
+async function getFcmAccessToken(env) {
+  const now = Date.now();
+  if (cachedFcmAccessToken && cachedFcmAccessToken.expiresAt > now + 60_000) {
+    return cachedFcmAccessToken.token;
+  }
+
+  const assertion = await createGoogleServiceJwt(env);
+  const response = await fetch(FCM_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.access_token) {
+    throw new Error(`FCM OAuth failed (${response.status})`);
+  }
+
+  cachedFcmAccessToken = {
+    token: result.access_token,
+    expiresAt: now + Math.max(60, Number(result.expires_in || 3600)) * 1000,
+  };
+  return cachedFcmAccessToken.token;
 }
 
 function hexToBytes(value) {
@@ -262,6 +341,10 @@ function authorize(request, env, write = false) {
   return constantTimeEqual(token, viewToken) || constantTimeEqual(token, uploadToken);
 }
 
+function authorizePushRegistration(request, env) {
+  return constantTimeEqual(getBearerToken(request), env.WAYON_PUSH_REGISTRATION_TOKEN || "");
+}
+
 function requireBindings(env) {
   return Boolean(env.DB && env.SNAPSHOTS);
 }
@@ -432,6 +515,211 @@ async function handleTelemetry(request, env) {
   ).run();
 
   return json({ ok: true });
+}
+
+function impactData(event) {
+  return Object.fromEntries(Object.entries({
+    type: "wayon_impact",
+    impactId: event.id,
+    deviceId: event.deviceId,
+    detectedAt: event.detectedAt,
+    severity: event.severity,
+    peakDynamicG: event.peakDynamicG,
+    peakTotalG: event.peakTotalG,
+    peakJerkGPerSec: event.peakJerkGPerSec,
+    peakGyroRadPerSec: event.peakGyroRadPerSec,
+    latitude: event.latitude,
+    longitude: event.longitude,
+    test: event.test ? "true" : "false",
+  }).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]));
+}
+
+async function sendFcmMessage(env, token, event) {
+  if (!env.FCM_PROJECT_ID) throw new Error("FCM project binding is missing");
+  const accessToken = await getFcmAccessToken(env);
+  const response = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(env.FCM_PROJECT_ID)}/messages:send`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        message: {
+          token,
+          data: impactData(event),
+          android: {
+            priority: "HIGH",
+            ttl: "300s",
+          },
+        },
+      }),
+    },
+  );
+  const result = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, result };
+}
+
+function invalidFcmToken(response) {
+  const details = response?.result?.error?.details || [];
+  const errorCodes = details.map((detail) => detail.errorCode).filter(Boolean);
+  return response.status === 404 || errorCodes.includes("UNREGISTERED")
+    || errorCodes.includes("INVALID_ARGUMENT");
+}
+
+async function sendImpactNotifications(env, event) {
+  const query = event.deviceId === "*"
+    ? env.DB.prepare("SELECT token FROM push_subscriptions")
+    : env.DB.prepare("SELECT token FROM push_subscriptions WHERE device_id = ? OR device_id = '*'")
+      .bind(event.deviceId);
+  const subscriptions = await query.all();
+  const tokens = [...new Set((subscriptions.results || []).map((row) => row.token).filter(Boolean))];
+  let sent = 0;
+  let failed = 0;
+  let invalid = 0;
+
+  for (const token of tokens) {
+    const response = await sendFcmMessage(env, token, event);
+    if (response.ok) {
+      sent += 1;
+    } else if (invalidFcmToken(response)) {
+      await env.DB.prepare("DELETE FROM push_subscriptions WHERE token = ?").bind(token).run();
+      invalid += 1;
+    } else {
+      failed += 1;
+      console.error("Wayon FCM send failed", response.status, response.result?.error?.status || "unknown");
+    }
+  }
+  return { sent, failed, invalid, subscriptions: tokens.length };
+}
+
+async function handleImpact(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+
+  const payload = await request.json();
+  const id = String(payload.id || crypto.randomUUID()).slice(0, 128);
+  const deviceId = String(payload.deviceId || "unknown").slice(0, 128);
+  const detectedAt = String(payload.detectedAt || nowIso()).slice(0, 64);
+  const severity = ["light", "moderate", "severe"].includes(payload.severity)
+    ? payload.severity : "light";
+  const state = await env.DB.prepare(
+    "SELECT latitude, longitude FROM latest_state WHERE device_id = ?",
+  ).bind(deviceId).first();
+  const latitude = nullableNumber(payload.latitude) ?? nullableNumber(state?.latitude);
+  const longitude = nullableNumber(payload.longitude) ?? nullableNumber(state?.longitude);
+  const receivedAt = nowIso();
+
+  const inserted = await env.DB.prepare(`
+    INSERT OR IGNORE INTO impact_events (
+      id, device_id, detected_at, received_at, severity, peak_dynamic_g,
+      peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
+      sample_count, sensor_clipped, latitude, longitude, notified_count, raw_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+  `).bind(
+    id,
+    deviceId,
+    detectedAt,
+    receivedAt,
+    severity,
+    nullableNumber(payload.peakDynamicG),
+    nullableNumber(payload.peakTotalG),
+    nullableNumber(payload.peakJerkGPerSec),
+    nullableNumber(payload.peakGyroRadPerSec),
+    nullableNumber(payload.durationMs),
+    nullableNumber(payload.sampleCount),
+    toInt(payload.sensorClipped),
+    latitude,
+    longitude,
+    JSON.stringify(payload),
+  ).run();
+
+  if (!inserted.meta?.changes) {
+    const existing = await env.DB.prepare("SELECT notified_count FROM impact_events WHERE id = ?")
+      .bind(id).first();
+    if (Number(existing?.notified_count || 0) > 0) {
+      return json({ ok: true, id, duplicate: true, notified: existing.notified_count });
+    }
+  }
+
+  const event = {
+    id,
+    deviceId,
+    detectedAt,
+    severity,
+    peakDynamicG: nullableNumber(payload.peakDynamicG),
+    peakTotalG: nullableNumber(payload.peakTotalG),
+    peakJerkGPerSec: nullableNumber(payload.peakJerkGPerSec),
+    peakGyroRadPerSec: nullableNumber(payload.peakGyroRadPerSec),
+    latitude,
+    longitude,
+    test: Boolean(payload.test),
+  };
+  const notification = await sendImpactNotifications(env, event);
+  if (notification.failed > 0 && notification.sent === 0) {
+    throw new Error("FCM delivery failed; impact remains pending");
+  }
+  await env.DB.prepare("UPDATE impact_events SET notified_count = ? WHERE id = ?")
+    .bind(notification.sent, id).run();
+  return json({ ok: true, id, duplicate: !inserted.meta?.changes, notified: notification.sent });
+}
+
+async function handlePushRegistration(request, env) {
+  if (!authorizePushRegistration(request, env)) return json({ error: "unauthorized" }, 401);
+
+  const payload = await request.json();
+  const token = String(payload.fcmToken || "").trim();
+  const deviceId = String(payload.deviceId || "*").trim().slice(0, 128) || "*";
+  if (token.length < 32 || token.length > 4096) return json({ error: "invalid_fcm_token" }, 400);
+
+  if (payload.action === "unregister") {
+    await env.DB.prepare("DELETE FROM push_subscriptions WHERE token = ?").bind(token).run();
+    return json({ ok: true, registered: false });
+  }
+
+  const now = nowIso();
+  await env.DB.prepare(`
+    INSERT INTO push_subscriptions (token, device_id, platform, app_version, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(token) DO UPDATE SET
+      device_id = excluded.device_id,
+      platform = excluded.platform,
+      app_version = excluded.app_version,
+      updated_at = excluded.updated_at
+  `).bind(token, deviceId, String(payload.platform || "android").slice(0, 32),
+    String(payload.appVersion || "").slice(0, 32), now, now).run();
+  return json({ ok: true, registered: true, deviceId });
+}
+
+async function handlePushTest(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+  const payload = await request.json().catch(() => ({}));
+  const event = {
+    id: `test-${crypto.randomUUID()}`,
+    deviceId: String(payload.deviceId || "*"),
+    detectedAt: nowIso(),
+    severity: "light",
+    peakDynamicG: 0.62,
+    peakTotalG: 1.18,
+    peakJerkGPerSec: 6.4,
+    peakGyroRadPerSec: 0.21,
+    test: true,
+  };
+  const notification = await sendImpactNotifications(env, event);
+  return json({ ok: true, notified: notification.sent, subscriptions: notification.subscriptions });
+}
+
+async function handleImpacts(request, env) {
+  if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
+  const url = new URL(request.url);
+  const limit = Math.max(1, Math.min(100, Number.parseInt(url.searchParams.get("limit") || "25", 10)));
+  const impacts = await env.DB.prepare(`
+    SELECT id, device_id, detected_at, received_at, severity, peak_dynamic_g,
+           peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
+           sample_count, sensor_clipped, latitude, longitude, notified_count
+    FROM impact_events ORDER BY detected_at DESC LIMIT ?
+  `).bind(limit).all();
+  return json({ impacts: impacts.results || [] });
 }
 
 async function saveSnapshotImage(env, deviceId, camera, capturedAt, jpegBase64) {
@@ -712,6 +1000,15 @@ export default {
     if (request.method === "POST" && pathname === "/api/trips") {
       return handleTrip(request, env);
     }
+    if (request.method === "POST" && pathname === "/api/impact") {
+      return handleImpact(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/push/register") {
+      return handlePushRegistration(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/push/test") {
+      return handlePushTest(request, env);
+    }
     if (request.method === "GET" && pathname === "/api/state") {
       return handleState(request, env);
     }
@@ -723,6 +1020,9 @@ export default {
     }
     if (request.method === "GET" && pathname.startsWith("/api/trips")) {
       return handleTrips(request, env, pathname);
+    }
+    if (request.method === "GET" && pathname === "/api/impacts") {
+      return handleImpacts(request, env);
     }
     if (request.method === "GET" && pathname === "/api/snapshot") {
       return handleSnapshotImage(request, env);

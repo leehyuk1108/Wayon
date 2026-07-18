@@ -15,6 +15,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import set_core_affinity
 from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
+from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
 ROUTE_STATE_PATH = Path(os.getenv("WAYON_CLOUD_ROUTE_STATE", str(CONFIG_PATH.with_name("route_state.json"))))
@@ -85,6 +86,24 @@ def post_json(config, path, payload):
   )
   response.raise_for_status()
   return response.json() if response.content else {}
+
+
+def upload_pending_impacts(config, device_id, queue_path=None, limit=3):
+  uploaded = 0
+  for _ in range(max(1, limit)):
+    event = peek_impact_event() if queue_path is None else peek_impact_event(queue_path)
+    if event is None:
+      break
+
+    payload = {**event, "deviceId": device_id}
+    post_json(config, "/api/impact", payload)
+    event_id = str(event.get("id", ""))
+    if queue_path is None:
+      remove_impact_event(event_id)
+    else:
+      remove_impact_event(event_id, queue_path)
+    uploaded += 1
+  return uploaded
 
 
 def enum_name(value):
@@ -659,6 +678,7 @@ def main():
   next_telemetry = 0.0
   next_route_summary = 0.0
   next_snapshot = 0.0
+  next_impact_upload = 0.0
   previous_started = False
 
   while True:
@@ -678,6 +698,14 @@ def main():
 
     device_id = str(config.get("device_id") or get_param_str(params, "DongleId") or "unknown")
     started = bool(sm["deviceState"].started)
+
+    if now >= next_impact_upload:
+      try:
+        uploaded_impacts = upload_pending_impacts(config, device_id)
+        next_impact_upload = now + (0.2 if uploaded_impacts >= 3 else 1.0)
+      except Exception as exc:
+        print(f"Wayon cloud: impact upload failed: {exc}")
+        next_impact_upload = now + 15.0
 
     telemetry_interval = float(config.get(
       "telemetry_interval_onroad" if started else "telemetry_interval_offroad",

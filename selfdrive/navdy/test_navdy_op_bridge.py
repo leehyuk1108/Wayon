@@ -323,6 +323,34 @@ def test_navdy_e2e_alerts_become_held_korean_banners():
   assert "alertText1" not in expired
 
 
+def test_navdy_e2e_reader_latches_one_frame_until_consumed():
+  reader = object.__new__(navdy_op_bridge.NavdyE2EAlertReader)
+  reader._lock = threading.Lock()
+  reader._green_until = 0.0
+  reader._lead_until = 0.0
+
+  reader.capture(True, False, now=10.0)
+
+  assert reader.pending(now=11.9) == (True, False)
+  assert reader.pending(now=11.9, consume=True) == (True, False)
+  assert reader.pending(now=11.9) == (False, False)
+
+
+def test_navdy_repeated_e2e_sample_does_not_extend_banner():
+  args = SimpleNamespace()
+  payload = {
+    "gear": "drive",
+    "alertSize": "none",
+    "greenLightAlert": True,
+    "leadDepartAlert": False,
+  }
+
+  navdy_op_bridge.apply_navdy_e2e_alert(payload, args, 10.0)
+  navdy_op_bridge.apply_navdy_e2e_alert(payload, args, 10.5)
+
+  assert args._navdy_e2e_alert_until == 13.0
+
+
 def test_navdy_reverse_clears_held_e2e_banner():
   args = SimpleNamespace()
   drive = {

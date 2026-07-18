@@ -59,6 +59,7 @@ NAVDY_RADAR_STALE_SEC = 0.35
 NAVDY_RADAR_RETRY_SEC = 5.0
 NAVDY_RADAR_MAX_TRACK_WIDTH_M = 4.0
 NAVDY_E2E_ALERT_HOLD_SEC = 3.0
+NAVDY_E2E_CAPTURE_HOLD_SEC = 2.0
 NAVDY_FALLBACK_LANE_WIDTH_M = 3.6
 NAVDY_MIN_LANE_WIDTH_M = 2.4
 NAVDY_MAX_LANE_WIDTH_M = 4.8
@@ -167,8 +168,59 @@ def hold_bool(args: argparse.Namespace, name: str, value: bool, now: float, hold
   return now < float(getattr(args, attr, 0.0))
 
 
+def navdy_e2e_alert_allowed(payload: dict[str, Any]) -> bool:
+  return str(payload.get("gear", "unknown")).lower() not in ("neutral", "park", "reverse", "unknown")
+
+
+class NavdyE2EAlertReader:
+  """Latch one-frame planner alerts without increasing the main bridge rate."""
+
+  def __init__(self, messaging: Any):
+    self._messaging = messaging
+    self._sock = messaging.sub_sock("longitudinalPlanSP", conflate=False, timeout=1000)
+    self._lock = threading.Lock()
+    self._green_until = 0.0
+    self._lead_until = 0.0
+    self._thread = threading.Thread(target=self._run, name="navdy_e2e_alert_reader", daemon=True)
+    self._thread.start()
+
+  def is_alive(self) -> bool:
+    return self._thread.is_alive()
+
+  def capture(self, green_light: bool, lead_depart: bool, now: float | None = None) -> None:
+    now = time.monotonic() if now is None else now
+    with self._lock:
+      if green_light:
+        self._green_until = max(self._green_until, now + NAVDY_E2E_CAPTURE_HOLD_SEC)
+      if lead_depart:
+        self._lead_until = max(self._lead_until, now + NAVDY_E2E_CAPTURE_HOLD_SEC)
+
+  def pending(self, now: float | None = None, consume: bool = False) -> tuple[bool, bool]:
+    now = time.monotonic() if now is None else now
+    with self._lock:
+      green_light = now < self._green_until
+      lead_depart = now < self._lead_until
+      if consume:
+        if green_light:
+          self._green_until = 0.0
+        if lead_depart:
+          self._lead_until = 0.0
+      return green_light, lead_depart
+
+  def _run(self) -> None:
+    while True:
+      try:
+        msg = self._messaging.recv_one(self._sock)
+        if msg is None:
+          continue
+        e2e_alerts = msg.longitudinalPlanSP.e2eAlerts
+        self.capture(bool(e2e_alerts.greenLightAlert), bool(e2e_alerts.leadDepartAlert))
+      except Exception:
+        time.sleep(0.1)
+
+
 def apply_navdy_e2e_alert(payload: dict[str, Any], args: argparse.Namespace, now: float) -> None:
-  if str(payload.get("gear", "unknown")).lower() in ("neutral", "park", "reverse", "unknown"):
+  if not navdy_e2e_alert_allowed(payload):
     setattr(args, "_navdy_e2e_alert_name", "")
     setattr(args, "_navdy_e2e_alert_until", 0.0)
     return
@@ -179,8 +231,11 @@ def apply_navdy_e2e_alert(payload: dict[str, Any], args: argparse.Namespace, now
   elif payload.get("leadDepartAlert"):
     alert_name = "leadDeparting"
   if alert_name:
-    setattr(args, "_navdy_e2e_alert_name", alert_name)
-    setattr(args, "_navdy_e2e_alert_until", now + NAVDY_E2E_ALERT_HOLD_SEC)
+    held_name = str(getattr(args, "_navdy_e2e_alert_name", ""))
+    held_until = float(getattr(args, "_navdy_e2e_alert_until", 0.0))
+    if alert_name != held_name or now >= held_until:
+      setattr(args, "_navdy_e2e_alert_name", alert_name)
+      setattr(args, "_navdy_e2e_alert_until", now + NAVDY_E2E_ALERT_HOLD_SEC)
 
   if now >= float(getattr(args, "_navdy_e2e_alert_until", 0.0)):
     return
@@ -1505,6 +1560,7 @@ def run_live(args: argparse.Namespace) -> None:
   last_path_update_at = 0.0
   radar_reader = create_navdy_radar_reader(messaging, args.stdout) if args.radar_overlay else None
   lane_risk_detector = create_navdy_lane_risk_detector()
+  e2e_alert_reader = NavdyE2EAlertReader(messaging) if "longitudinalPlanSP" in services else None
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
   while True:
@@ -1559,6 +1615,11 @@ def run_live(args: argparse.Namespace) -> None:
                                     sm_optional(sm, services, "starpilotPlan"),
                                     sm_optional(sm, services, "longitudinalPlan"),
                                     longitudinal_plan_sp=sm_optional(sm, services, "longitudinalPlanSP"))
+    if e2e_alert_reader is not None:
+      captured_green, captured_lead = e2e_alert_reader.pending(
+        now, consume=navdy_e2e_alert_allowed(payload))
+      payload["greenLightAlert"] = bool(payload["greenLightAlert"] or captured_green)
+      payload["leadDepartAlert"] = bool(payload["leadDepartAlert"] or captured_lead)
     payload.update(path_geometry)
     payload = stabilize_display_payload(payload, args, now)
     should_emit, signature = should_emit_payload(payload, args, now, last_signature, last_emit_at)

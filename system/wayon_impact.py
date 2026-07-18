@@ -7,11 +7,18 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 STANDARD_GRAVITY = 9.80665
 DEFAULT_IMPACT_QUEUE_PATH = Path(os.getenv(
   "WAYON_IMPACT_QUEUE", "/data/wayon_cloud/impact_queue.jsonl"))
+DEFAULT_IMPACT_DIAGNOSTICS_PATH = Path(os.getenv(
+  "WAYON_IMPACT_DIAGNOSTICS", "/data/wayon_cloud/impact_diagnostics.jsonl"))
 MAX_QUEUED_IMPACTS = 64
+MAX_IMPACT_DIAGNOSTICS_BYTES = 512 * 1024
+DEFAULT_ARM_DELAY_S = 15.0
+DEFAULT_MIN_DYNAMIC_G = 0.20
+DEFAULT_MIN_JERK_G_PER_S = 1.8
+DEFAULT_STRONG_DYNAMIC_G = 0.50
+DETECTOR_VERSION = 2
 
 
 def utc_now() -> str:
@@ -25,12 +32,12 @@ def vector_norm(vector: tuple[float, float, float]) -> float:
 class ImpactDetector:
   def __init__(
     self,
-    arm_delay_s: float = 45.0,
+    arm_delay_s: float = DEFAULT_ARM_DELAY_S,
     warmup_s: float = 3.0,
     cooldown_s: float = 30.0,
-    min_dynamic_g: float = 0.38,
-    min_jerk_g_per_s: float = 3.5,
-    strong_dynamic_g: float = 0.85,
+    min_dynamic_g: float = DEFAULT_MIN_DYNAMIC_G,
+    min_jerk_g_per_s: float = DEFAULT_MIN_JERK_G_PER_S,
+    strong_dynamic_g: float = DEFAULT_STRONG_DYNAMIC_G,
     candidate_window_s: float = 0.18,
   ) -> None:
     self.arm_delay_s = max(0.0, arm_delay_s)
@@ -47,6 +54,10 @@ class ImpactDetector:
     self.gravity: list[float] | None = None
     self.last_trigger_at = -math.inf
     self.armed = False
+    self.last_dynamic_g = 0.0
+    self.last_total_g = 0.0
+    self.last_jerk_g_per_s = 0.0
+    self.last_gyro_rad_per_s = 0.0
     self._reset_candidate()
 
   def _reset_candidate(self) -> None:
@@ -96,7 +107,7 @@ class ImpactDetector:
       "sampleCount": self.candidate_samples,
       "sensorHz": 104,
       "sensorClipped": self.candidate_clipped,
-      "detectorVersion": 1,
+      "detectorVersion": DETECTOR_VERSION,
     }
 
   def update(self, accel: tuple[float, float, float], gyro: tuple[float, float, float],
@@ -123,6 +134,10 @@ class ImpactDetector:
     jerk_g_per_s = vector_norm(tuple(
       accel[index] - self.last_accel[index] for index in range(3))) / STANDARD_GRAVITY / dt
     gyro_rad_per_s = vector_norm(gyro)
+    self.last_dynamic_g = dynamic_g
+    self.last_total_g = total_g
+    self.last_jerk_g_per_s = jerk_g_per_s
+    self.last_gyro_rad_per_s = gyro_rad_per_s
     self.last_accel = accel
 
     ready_at = self.first_sample_at + max(self.arm_delay_s, self.warmup_s)
@@ -197,6 +212,29 @@ def enqueue_impact_event(event: dict, path: Path = DEFAULT_IMPACT_QUEUE_PATH,
     events.append(dict(event))
     _write_events(handle, events[-max(1, max_events):])
     fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def append_impact_diagnostic(record: dict, path: Path = DEFAULT_IMPACT_DIAGNOSTICS_PATH,
+                             max_bytes: int = MAX_IMPACT_DIAGNOSTICS_BYTES) -> None:
+  path.parent.mkdir(parents=True, exist_ok=True)
+  line = json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n"
+  with path.open("a", encoding="utf-8") as handle:
+    handle.write(line)
+
+  max_bytes = max(1024, max_bytes)
+  if path.stat().st_size <= max_bytes:
+    return
+
+  keep_bytes = max_bytes // 2
+  with path.open("rb") as handle:
+    handle.seek(max(0, path.stat().st_size - keep_bytes))
+    retained = handle.read()
+  newline = retained.find(b"\n")
+  if newline >= 0:
+    retained = retained[newline + 1:]
+  temporary = path.with_suffix(path.suffix + ".tmp")
+  temporary.write_bytes(retained)
+  os.replace(temporary, path)
 
 
 def peek_impact_event(path: Path = DEFAULT_IMPACT_QUEUE_PATH) -> dict | None:

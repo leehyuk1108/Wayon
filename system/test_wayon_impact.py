@@ -2,11 +2,11 @@ from pathlib import Path
 
 from openpilot.system.wayon_impact import (
   ImpactDetector,
+  append_impact_diagnostic,
   enqueue_impact_event,
   peek_impact_event,
   remove_impact_event,
 )
-
 
 GRAVITY = (0.0, 0.0, 9.80665)
 STILL_GYRO = (0.0, 0.0, 0.0)
@@ -38,6 +38,18 @@ def test_detector_ignores_small_vibration():
     now += 0.01
 
 
+def test_detector_ignores_measured_offroad_noise():
+  detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
+  now = prime(detector)
+
+  for index in range(200):
+    noise = 0.02 if index % 2 else -0.02
+    assert detector.update((noise, 0.0, 9.80665), (0.0, 0.01, 0.0), now) is None
+    now += 0.01
+
+  assert detector.last_dynamic_g < 0.01
+
+
 def test_detector_confirms_two_sample_impact():
   detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
   now = prime(detector)
@@ -49,6 +61,17 @@ def test_detector_confirms_two_sample_impact():
   assert event["severity"] == "light"
   assert event["peakDynamicG"] >= 0.45
   assert event["sampleCount"] == 2
+
+
+def test_detector_catches_light_parking_impact_at_new_threshold():
+  detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
+  now = prime(detector)
+
+  assert detector.update((2.05, 0.0, 9.80665), STILL_GYRO, now) is None
+  event = detector.update((2.15, 0.0, 9.80665), STILL_GYRO, now + 0.01)
+
+  assert event is not None
+  assert 0.20 <= event["peakDynamicG"] < 0.30
 
 
 def test_detector_uses_cooldown_after_strong_impact():
@@ -74,3 +97,14 @@ def test_impact_queue_round_trip(tmp_path: Path):
   assert peek_impact_event(queue) == second
   assert remove_impact_event("second", queue)
   assert peek_impact_event(queue) is None
+
+
+def test_impact_diagnostics_append_and_rotate(tmp_path: Path):
+  diagnostics = tmp_path / "impact_diagnostics.jsonl"
+  for index in range(100):
+    append_impact_diagnostic({"index": index, "peakDynamicG": index / 100.0}, diagnostics, max_bytes=1024)
+
+  lines = diagnostics.read_text().splitlines()
+  assert lines
+  assert '"index":99' in lines[-1]
+  assert diagnostics.stat().st_size <= 1024

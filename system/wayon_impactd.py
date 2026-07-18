@@ -5,9 +5,16 @@ import time
 from pathlib import Path
 
 from cereal import messaging
-
-from openpilot.system.wayon_impact import ImpactDetector, enqueue_impact_event, utc_now
-
+from openpilot.system.wayon_impact import (
+  DEFAULT_ARM_DELAY_S,
+  DEFAULT_MIN_DYNAMIC_G,
+  DEFAULT_MIN_JERK_G_PER_S,
+  DEFAULT_STRONG_DYNAMIC_G,
+  ImpactDetector,
+  append_impact_diagnostic,
+  enqueue_impact_event,
+  utc_now,
+)
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", "/data/wayon_cloud/config.json"))
 STATUS_PATH = Path(os.getenv("WAYON_IMPACT_STATUS", "/data/wayon_cloud/impact_status.json"))
@@ -24,13 +31,22 @@ def read_config() -> dict:
 
 def detector_from_config(config: dict) -> ImpactDetector:
   return ImpactDetector(
-    arm_delay_s=float(config.get("impact_arm_delay_s", 45.0)),
+    arm_delay_s=float(config.get("impact_arm_delay_s", DEFAULT_ARM_DELAY_S)),
     warmup_s=float(config.get("impact_warmup_s", 3.0)),
     cooldown_s=float(config.get("impact_cooldown_s", 30.0)),
-    min_dynamic_g=float(config.get("impact_min_dynamic_g", 0.38)),
-    min_jerk_g_per_s=float(config.get("impact_min_jerk_g_per_s", 3.5)),
-    strong_dynamic_g=float(config.get("impact_strong_dynamic_g", 0.85)),
+    min_dynamic_g=float(config.get("impact_min_dynamic_g", DEFAULT_MIN_DYNAMIC_G)),
+    min_jerk_g_per_s=float(config.get("impact_min_jerk_g_per_s", DEFAULT_MIN_JERK_G_PER_S)),
+    strong_dynamic_g=float(config.get("impact_strong_dynamic_g", DEFAULT_STRONG_DYNAMIC_G)),
   )
+
+
+def detector_status(detector: ImpactDetector) -> dict:
+  return {
+    "armDelayS": detector.arm_delay_s,
+    "minDynamicG": detector.min_dynamic_g,
+    "minJerkGPerSec": detector.min_jerk_g_per_s,
+    "strongDynamicG": detector.strong_dynamic_g,
+  }
 
 
 def write_status(state: str, **details) -> None:
@@ -58,8 +74,15 @@ def main() -> None:
   latest_gyro = (0.0, 0.0, 0.0)
   received_first_sample = False
   reported_armed = False
+  diagnostic_interval_s = max(10.0, float(config.get("impact_diagnostic_interval_s", 60.0)))
+  next_diagnostic_at: float | None = None
+  diagnostic_samples = 0
+  peak_dynamic_g = 0.0
+  peak_total_g = 0.0
+  peak_jerk_g_per_s = 0.0
+  peak_gyro_rad_per_s = 0.0
 
-  write_status("starting", armDelayS=detector.arm_delay_s)
+  write_status("starting", **detector_status(detector))
   print(f"Wayon impact: waiting for IMU, arm delay {detector.arm_delay_s:.0f}s", flush=True)
 
   while True:
@@ -79,18 +102,46 @@ def main() -> None:
 
     if not received_first_sample:
       received_first_sample = True
-      write_status("warmingUp", armDelayS=detector.arm_delay_s)
+      write_status("warmingUp", **detector_status(detector))
       print("Wayon impact: IMU samples received", flush=True)
 
     event = detector.update(accel, latest_gyro, now)
     if detector.armed and not reported_armed:
       reported_armed = True
-      write_status("armed", armDelayS=detector.arm_delay_s)
+      next_diagnostic_at = now + diagnostic_interval_s
+      write_status("armed", **detector_status(detector))
       print("Wayon impact: armed", flush=True)
+
+    if detector.armed:
+      diagnostic_samples += 1
+      peak_dynamic_g = max(peak_dynamic_g, detector.last_dynamic_g)
+      peak_total_g = max(peak_total_g, detector.last_total_g)
+      peak_jerk_g_per_s = max(peak_jerk_g_per_s, detector.last_jerk_g_per_s)
+      peak_gyro_rad_per_s = max(peak_gyro_rad_per_s, detector.last_gyro_rad_per_s)
+
+    if detector.armed and next_diagnostic_at is not None and now >= next_diagnostic_at:
+      diagnostic = {
+        "measuredAt": utc_now(),
+        "windowS": diagnostic_interval_s,
+        "sampleCount": diagnostic_samples,
+        "peakDynamicG": round(peak_dynamic_g, 4),
+        "peakTotalG": round(peak_total_g, 4),
+        "peakJerkGPerSec": round(peak_jerk_g_per_s, 2),
+        "peakGyroRadPerSec": round(peak_gyro_rad_per_s, 4),
+        **detector_status(detector),
+      }
+      append_impact_diagnostic(diagnostic)
+      write_status("armed", recentPeak=diagnostic, **detector_status(detector))
+      next_diagnostic_at = now + diagnostic_interval_s
+      diagnostic_samples = 0
+      peak_dynamic_g = 0.0
+      peak_total_g = 0.0
+      peak_jerk_g_per_s = 0.0
+      peak_gyro_rad_per_s = 0.0
 
     if event is not None:
       enqueue_impact_event(event)
-      write_status("impactQueued", lastEvent=event)
+      write_status("impactQueued", lastEvent=event, **detector_status(detector))
       print(
         f"Wayon impact: queued {event['severity']} impact "
         f"({event['peakDynamicG']:.2f}g, {event['peakJerkGPerSec']:.1f}g/s)",

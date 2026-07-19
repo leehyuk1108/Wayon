@@ -545,6 +545,20 @@ function doorLockData(event) {
   }).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]));
 }
 
+function parkingUnlockedData(event) {
+  return Object.fromEntries(Object.entries({
+    type: "wayon_parking_unlocked",
+    vehicleEventId: event.id,
+    deviceId: event.deviceId,
+    occurredAt: event.occurredAt,
+    delaySeconds: event.delaySeconds,
+    latitude: event.latitude,
+    longitude: event.longitude,
+    locationUpdatedAt: event.locationUpdatedAt,
+    test: event.test ? "true" : "false",
+  }).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]));
+}
+
 async function sendFcmMessage(env, token, data) {
   if (!env.FCM_PROJECT_ID) throw new Error("FCM project binding is missing");
   const accessToken = await getFcmAccessToken(env);
@@ -684,7 +698,10 @@ async function handleVehicleEvent(request, env) {
 
   const payload = await request.json();
   const eventType = String(payload.eventType || "").slice(0, 64);
-  if (eventType !== "door_lock" || typeof payload.locked !== "boolean") {
+  const doorLockEvent = eventType === "door_lock";
+  const parkingUnlockedEvent = eventType === "parking_unlocked";
+  if ((!doorLockEvent && !parkingUnlockedEvent)
+      || (doorLockEvent && typeof payload.locked !== "boolean")) {
     return json({ error: "invalid_vehicle_event" }, 400);
   }
 
@@ -692,7 +709,17 @@ async function handleVehicleEvent(request, env) {
   const deviceId = String(payload.deviceId || "unknown").slice(0, 128);
   const occurredAt = String(payload.occurredAt || nowIso()).slice(0, 64);
   const receivedAt = nowIso();
-  const locked = Boolean(payload.locked);
+  const locked = doorLockEvent ? Boolean(payload.locked) : null;
+  const delaySeconds = parkingUnlockedEvent
+    ? Math.max(0, Math.min(3600, Number.parseInt(payload.delaySeconds || "180", 10) || 180))
+    : null;
+  const state = parkingUnlockedEvent ? await env.DB.prepare(
+    "SELECT latitude, longitude, updated_at FROM latest_state WHERE device_id = ?",
+  ).bind(deviceId).first() : null;
+  const latitude = parkingUnlockedEvent
+    ? (nullableNumber(payload.latitude) ?? nullableNumber(state?.latitude)) : null;
+  const longitude = parkingUnlockedEvent
+    ? (nullableNumber(payload.longitude) ?? nullableNumber(state?.longitude)) : null;
   const inserted = await env.DB.prepare(`
     INSERT OR IGNORE INTO vehicle_events (
       id, device_id, event_type, occurred_at, received_at, locked, notified_count, raw_json
@@ -703,7 +730,7 @@ async function handleVehicleEvent(request, env) {
     eventType,
     occurredAt,
     receivedAt,
-    toInt(locked),
+    locked == null ? null : toInt(locked),
     JSON.stringify(payload),
   ).run();
 
@@ -721,9 +748,14 @@ async function handleVehicleEvent(request, env) {
     eventType,
     occurredAt,
     locked,
+    delaySeconds,
+    latitude,
+    longitude,
+    locationUpdatedAt: state?.updated_at || null,
     test: Boolean(payload.test),
   };
-  const notification = await sendDataNotifications(env, deviceId, doorLockData(event));
+  const notificationData = parkingUnlockedEvent ? parkingUnlockedData(event) : doorLockData(event);
+  const notification = await sendDataNotifications(env, deviceId, notificationData);
   if (notification.failed > 0 && notification.sent === 0) {
     throw new Error("FCM delivery failed; vehicle event remains pending");
   }

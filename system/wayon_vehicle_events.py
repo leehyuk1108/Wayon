@@ -9,6 +9,7 @@ from pathlib import Path
 DEFAULT_VEHICLE_EVENT_QUEUE_PATH = Path(os.getenv(
   "WAYON_VEHICLE_EVENT_QUEUE", "/data/wayon_cloud/vehicle_event_queue.jsonl"))
 MAX_QUEUED_VEHICLE_EVENTS = 128
+DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S = 180.0
 
 
 def utc_now() -> str:
@@ -23,6 +24,41 @@ def door_lock_event(locked: bool, test: bool = False) -> dict:
     "locked": bool(locked),
     "test": bool(test),
   }
+
+
+def parking_unlocked_event(delay_s: float, test: bool = False) -> dict:
+  return {
+    "id": str(uuid.uuid4()),
+    "eventType": "parking_unlocked",
+    "occurredAt": utc_now(),
+    "delaySeconds": int(round(max(0.0, delay_s))),
+    "test": bool(test),
+  }
+
+
+class ParkingUnlockReminder:
+  def __init__(self, delay_s: float = DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S,
+               enabled: bool = True) -> None:
+    self.delay_s = max(0.0, float(delay_s))
+    self.unlocked_since: float | None = None
+    self.completed = not enabled
+
+  def update(self, locked: bool | None, now: float) -> bool:
+    if self.completed:
+      return False
+    if locked is True:
+      self.completed = True
+      self.unlocked_since = None
+      return False
+    if locked is not False:
+      return False
+    if self.unlocked_since is None:
+      self.unlocked_since = now
+    if now - self.unlocked_since < self.delay_s:
+      return False
+
+    self.completed = True
+    return True
 
 
 def _read_events(handle) -> list[dict]:

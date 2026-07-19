@@ -19,7 +19,13 @@ from openpilot.system.wayon_impact import (
   enqueue_impact_event,
   utc_now,
 )
-from openpilot.system.wayon_vehicle_events import door_lock_event, enqueue_vehicle_event
+from openpilot.system.wayon_vehicle_events import (
+  DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S,
+  ParkingUnlockReminder,
+  door_lock_event,
+  enqueue_vehicle_event,
+  parking_unlocked_event,
+)
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", "/data/wayon_cloud/config.json"))
 STATUS_PATH = Path(os.getenv("WAYON_IMPACT_STATUS", "/data/wayon_cloud/impact_status.json"))
@@ -115,6 +121,11 @@ def main() -> None:
   config = read_config()
   detector = detector_from_config(config)
   lock_tracker = lock_tracker_from_config(config)
+  parking_unlock_reminder = ParkingUnlockReminder(
+    delay_s=float(config.get(
+      "parking_unlocked_reminder_delay_s", DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S)),
+    enabled=config_bool(config, "parking_unlocked_reminder_enabled", True),
+  )
   sm = messaging.SubMaster(["accelerometer", "gyroscope", "can"], poll="accelerometer")
   latest_gyro = (0.0, 0.0, 0.0)
   received_first_sample = False
@@ -126,6 +137,7 @@ def main() -> None:
   peak_total_g = 0.0
   peak_jerk_g_per_s = 0.0
   peak_gyro_rad_per_s = 0.0
+  lock_state_observed = False
 
   write_status("starting", **detector_status(detector, lock_tracker))
   print(f"Wayon impact: waiting for IMU, arm delay {detector.arm_delay_s:.0f}s", flush=True)
@@ -136,13 +148,28 @@ def main() -> None:
 
     if sm.updated["can"]:
       for frame in sm["can"]:
+        frame_bus = int(frame.src)
+        frame_address = int(frame.address)
+        frame_data = bytes(frame.dat)
+        if frame_bus == lock_tracker.bus and frame_address == lock_tracker.address \
+            and len(frame_data) > lock_tracker.byte_index:
+          lock_state_observed = True
         lock_was_known = lock_tracker.locked is not None
-        lock_changed = lock_tracker.update(int(frame.src), int(frame.address), bytes(frame.dat), now)
+        lock_changed = lock_tracker.update(frame_bus, frame_address, frame_data, now)
         if lock_changed and lock_was_known and lock_tracker.locked is not None:
           event = door_lock_event(lock_tracker.locked)
           enqueue_vehicle_event(event)
           state_text = "locked" if lock_tracker.locked else "unlocked"
           print(f"Wayon vehicle: queued door {state_text} event", flush=True)
+
+    if lock_state_observed and parking_unlock_reminder.update(lock_tracker.locked, now):
+      event = parking_unlocked_event(parking_unlock_reminder.delay_s)
+      enqueue_vehicle_event(event)
+      print(
+        f"Wayon vehicle: queued parking unlocked reminder after "
+        f"{parking_unlock_reminder.delay_s:.0f}s",
+        flush=True,
+      )
 
     if sm.updated["gyroscope"] and sm.valid["gyroscope"]:
       gyro = sensor_vector(sm["gyroscope"], "gyroUncalibrated")

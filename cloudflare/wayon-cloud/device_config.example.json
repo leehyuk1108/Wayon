@@ -12,5 +12,7 @@
   "impact_lock_can_byte": 4,
   "impact_lock_can_mask": 1,
   "impact_lock_can_unlocked_value": 1,
-  "impact_lock_arm_delay_s": 3
+  "impact_lock_arm_delay_s": 3,
+  "parking_unlocked_reminder_enabled": true,
+  "parking_unlocked_reminder_delay_s": 180
 }

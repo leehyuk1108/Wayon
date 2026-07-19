@@ -4,6 +4,7 @@ import io
 import json
 import math
 import os
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +16,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import set_core_affinity
 from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
-from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event
+from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event, update_impact_event
 from openpilot.system.wayon_vehicle_events import peek_vehicle_event, remove_vehicle_event
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
@@ -24,6 +25,8 @@ USER_AGENT = "wayon-cloud-uploader/1.0"
 GPS_SERVICE_MAX_AGE_S = 5.0
 GPS_TIMESTAMP_MAX_AGE_MS = 15_000
 LAST_GPS_POSITION_MAX_AGE_MS = 120_000
+IMPACT_MEDIA_ROOT = Path(os.getenv("WAYON_IMPACT_MEDIA_ROOT", "/data/wayon_cloud/impact_media"))
+MAX_IMPACT_CAPTURE_ATTEMPTS = 3
 
 DEFAULT_TELEMETRY_INTERVAL_ONROAD = 30.0
 DEFAULT_TELEMETRY_INTERVAL_OFFROAD = 300.0
@@ -89,7 +92,67 @@ def post_json(config, path, payload):
   return response.json() if response.content else {}
 
 
-def upload_pending_impacts(config, device_id, queue_path=None, limit=3):
+def impact_media_directory(event_id, media_root=IMPACT_MEDIA_ROOT):
+  safe_id = "".join(character for character in str(event_id) if character.isalnum() or character in "-_")[:128]
+  return Path(media_root) / (safe_id or "unknown")
+
+
+def jpeg_bytes(array, quality=78):
+  from PIL import Image
+
+  buffer = io.BytesIO()
+  Image.fromarray(array).save(buffer, "JPEG", quality=quality, optimize=True)
+  return buffer.getvalue()
+
+
+def write_bytes_atomic(path, data):
+  path.parent.mkdir(parents=True, exist_ok=True)
+  temporary = path.with_suffix(path.suffix + ".tmp")
+  temporary.write_bytes(data)
+  os.replace(temporary, path)
+
+
+def read_impact_media(event_id, media_root=IMPACT_MEDIA_ROOT):
+  directory = impact_media_directory(event_id, media_root)
+  media = {}
+  for camera in ("wide", "driver"):
+    path = directory / f"{camera}.jpg"
+    if path.is_file():
+      media[camera] = path.read_bytes()
+
+  captured_at = None
+  try:
+    captured_at = json.loads((directory / "capture.json").read_text(encoding="utf-8")).get("capturedAt")
+  except (OSError, TypeError, ValueError):
+    pass
+  return media, captured_at
+
+
+def capture_and_store_impact_media(event_id, media_root=IMPACT_MEDIA_ROOT, capture_fn=None):
+  media, captured_at = read_impact_media(event_id, media_root)
+  if len(media) == 2:
+    return media, captured_at
+
+  capture_fn = capture_fn or capture_offroad_images
+  wide, driver = capture_fn()
+  directory = impact_media_directory(event_id, media_root)
+  captured_at = captured_at or utc_now()
+  for camera, image in (("wide", wide), ("driver", driver)):
+    if camera not in media and image is not None:
+      write_bytes_atomic(directory / f"{camera}.jpg", jpeg_bytes(image))
+  write_bytes_atomic(
+    directory / "capture.json",
+    json.dumps({"capturedAt": captured_at}, separators=(",", ":")).encode("utf-8"),
+  )
+  return read_impact_media(event_id, media_root)
+
+
+def remove_impact_media(event_id, media_root=IMPACT_MEDIA_ROOT):
+  shutil.rmtree(impact_media_directory(event_id, media_root), ignore_errors=True)
+
+
+def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
+                           media_root=IMPACT_MEDIA_ROOT, capture_fn=None):
   uploaded = 0
   for _ in range(max(1, limit)):
     event = peek_impact_event() if queue_path is None else peek_impact_event(queue_path)
@@ -99,6 +162,31 @@ def upload_pending_impacts(config, device_id, queue_path=None, limit=3):
     payload = {**event, "deviceId": device_id}
     post_json(config, "/api/impact", payload)
     event_id = str(event.get("id", ""))
+
+    if event.get("captureRequested"):
+      media, captured_at = capture_and_store_impact_media(event_id, media_root, capture_fn)
+      attempts = int(event.get("captureAttempts", 0)) + 1
+      capture_complete = all(camera in media for camera in ("wide", "driver"))
+      if not capture_complete and attempts < MAX_IMPACT_CAPTURE_ATTEMPTS:
+        update_args = (event_id, {"captureAttempts": attempts})
+        if queue_path is None:
+          update_impact_event(*update_args)
+        else:
+          update_impact_event(*update_args, queue_path)
+        raise RuntimeError(f"impact camera capture incomplete ({attempts}/{MAX_IMPACT_CAPTURE_ATTEMPTS})")
+
+      capture_status = "complete" if capture_complete else "partial" if media else "failed"
+      post_json(config, "/api/impact-media", {
+        "id": event_id,
+        "deviceId": device_id,
+        "capturedAt": captured_at or utc_now(),
+        "captureStatus": capture_status,
+        "captureAttempts": attempts,
+        "wideJpegBase64": base64.b64encode(media["wide"]).decode("ascii") if "wide" in media else None,
+        "driverJpegBase64": base64.b64encode(media["driver"]).decode("ascii") if "driver" in media else None,
+      })
+      remove_impact_media(event_id, media_root)
+
     if queue_path is None:
       remove_impact_event(event_id)
     else:
@@ -130,6 +218,179 @@ def enum_name(value):
     return str(value).split(".")[-1]
   except Exception:
     return ""
+
+
+def numeric_list(values):
+  try:
+    return [float(value) for value in values]
+  except Exception:
+    return []
+
+
+def device_details_payload(device_state):
+  temperatures = {
+    "cpu": numeric_list(device_state.cpuTempC),
+    "gpu": numeric_list(device_state.gpuTempC),
+    "dsp": float(device_state.dspTempC),
+    "memory": float(device_state.memoryTempC),
+    "modem": numeric_list(device_state.modemTempC),
+    "pmic": numeric_list(device_state.pmicTempC),
+    "intake": float(device_state.intakeTempC),
+    "exhaust": float(device_state.exhaustTempC),
+    "gnss": float(device_state.gnssTempC),
+    "bottomSoc": float(device_state.bottomSocTempC),
+    "max": float(device_state.maxTempC),
+  }
+  try:
+    temperatures["zones"] = [
+      {"name": str(zone.name), "tempC": float(zone.temp)}
+      for zone in device_state.thermalZones
+    ]
+  except Exception:
+    temperatures["zones"] = []
+
+  return {
+    "type": enum_name(device_state.deviceType),
+    "network": {
+      "type": enum_name(device_state.networkType),
+      "strength": enum_name(device_state.networkStrength),
+      "metered": bool(device_state.networkMetered),
+    },
+    "usage": {
+      "freeSpacePercent": float(device_state.freeSpacePercent),
+      "memoryPercent": int(device_state.memoryUsagePercent),
+      "gpuPercent": int(device_state.gpuUsagePercent),
+      "cpuPercent": [int(value) for value in device_state.cpuUsagePercent],
+    },
+    "power": {
+      "drawW": float(device_state.powerDrawW),
+      "somDrawW": float(device_state.somPowerDrawW),
+      "offroadUsageUwh": int(device_state.offroadPowerUsageUwh),
+      "offroadUsageWh": float(device_state.offroadPowerUsageUwh) / 1_000_000.0,
+      "carBatteryCapacityUwh": int(device_state.carBatteryCapacityUwh),
+      "carBatteryCapacityWh": float(device_state.carBatteryCapacityUwh) / 1_000_000.0,
+    },
+    "thermal": {
+      "status": enum_name(device_state.thermalStatus),
+      "fanPercent": int(device_state.fanSpeedPercentDesired),
+      "temperaturesC": temperatures,
+    },
+    "screenBrightnessPercent": int(device_state.screenBrightnessPercent),
+  }
+
+
+def panda_details_payload(panda_state):
+  if panda_state is None:
+    return None
+
+  voltage_v = voltage_v_from_raw(panda_state.voltage)
+  current_ma = current_ma_from_raw(panda_state.current)
+  return {
+    "type": enum_name(panda_state.pandaType),
+    "ignitionLine": bool(panda_state.ignitionLine),
+    "ignitionCan": bool(panda_state.ignitionCan),
+    "voltageV": voltage_v,
+    "currentMa": current_ma,
+    "estimatedPowerW": voltage_v * current_ma / 1000.0 if voltage_v is not None and current_ma is not None else None,
+    "faultStatus": enum_name(panda_state.faultStatus),
+    "faults": [enum_name(fault) for fault in panda_state.faults],
+    "uptimeS": int(panda_state.uptime),
+    "heartbeatLost": bool(panda_state.heartbeatLost),
+    "interruptLoad": float(panda_state.interruptLoad),
+    "rxBufferOverflow": int(panda_state.rxBufferOverflow),
+    "txBufferOverflow": int(panda_state.txBufferOverflow),
+    "spiErrorCount": int(panda_state.spiErrorCount),
+    "harnessStatus": enum_name(panda_state.harnessStatus),
+    "controlsAllowed": bool(panda_state.controlsAllowed),
+    "controlsAllowedLateral": bool(panda_state.controlsAllowedLateral),
+    "controlsAllowedLongitudinal": bool(panda_state.controlsAllowedLongitudinal),
+    "safetyModel": enum_name(panda_state.safetyModel),
+    "safetyParam": int(panda_state.safetyParam),
+    "safetyRxInvalid": int(panda_state.safetyRxInvalid),
+    "safetyTxBlocked": int(panda_state.safetyTxBlocked),
+    "safetyRxChecksInvalid": bool(panda_state.safetyRxChecksInvalid),
+  }
+
+
+def vehicle_details_payload(sm, started):
+  if not started:
+    return {"available": False, "reason": "offroad"}
+
+  try:
+    car_state = sm["carState"]
+    cruise = car_state.cruiseState
+    speed = car_state_speed_payload(car_state)
+    return {
+      "available": True,
+      "speedMps": speed["speedMps"],
+      "speedKph": speed["speedMps"] * 3.6,
+      "speedSource": speed["source"],
+      "rawSpeedMps": float(car_state.vEgoRaw),
+      "accelerationMps2": float(car_state.aEgo),
+      "yawRateRadPerSec": float(car_state.yawRate),
+      "standstill": bool(car_state.standstill),
+      "gear": enum_name(car_state.gearShifter),
+      "steeringAngleDeg": float(car_state.steeringAngleDeg),
+      "steeringRateDegPerSec": float(car_state.steeringRateDeg),
+      "steeringPressed": bool(car_state.steeringPressed),
+      "gasPressed": bool(car_state.gasPressed),
+      "brakePressed": bool(car_state.brakePressed),
+      "parkingBrake": bool(car_state.parkingBrake),
+      "brakeHoldActive": bool(car_state.brakeHoldActive),
+      "leftBlinker": bool(car_state.leftBlinker),
+      "rightBlinker": bool(car_state.rightBlinker),
+      "leftBlindspot": bool(car_state.leftBlindspot),
+      "rightBlindspot": bool(car_state.rightBlindspot),
+      "doorOpen": bool(car_state.doorOpen),
+      "seatbeltUnlatched": bool(car_state.seatbeltUnlatched),
+      "fuelGauge": float(car_state.fuelGauge),
+      "charging": bool(car_state.charging),
+      "can": {
+        "valid": bool(car_state.canValid),
+        "timeout": bool(car_state.canTimeout),
+        "errorCounter": int(car_state.canErrorCounter),
+      },
+      "steeringFault": {
+        "temporary": bool(car_state.steerFaultTemporary),
+        "permanent": bool(car_state.steerFaultPermanent),
+      },
+      "cruise": {
+        "enabled": bool(cruise.enabled),
+        "available": bool(cruise.available),
+        "standstill": bool(cruise.standstill),
+        "nonAdaptive": bool(cruise.nonAdaptive),
+        "speedMps": float(cruise.speed),
+        "speedKph": float(cruise.speed) * 3.6,
+        "clusterSpeedMps": float(cruise.speedCluster),
+      },
+    }
+  except Exception:
+    return {"available": False, "reason": "carState_unavailable"}
+
+
+def openpilot_details_payload(sm):
+  try:
+    state = sm["selfdriveState"]
+    return {
+      "available": True,
+      "state": enum_name(state.state),
+      "enabled": bool(state.enabled),
+      "active": bool(state.active),
+      "engageable": bool(state.engageable),
+      "experimentalMode": bool(state.experimentalMode),
+      "personality": enum_name(state.personality),
+      "alert": {
+        "text1": str(state.alertText1),
+        "text2": str(state.alertText2),
+        "type": str(state.alertType),
+        "status": enum_name(state.alertStatus),
+        "size": enum_name(state.alertSize),
+        "sound": enum_name(state.alertSound),
+        "hudVisual": enum_name(state.alertHudVisual),
+      },
+    }
+  except Exception:
+    return {"available": False}
 
 
 def first_panda_state(panda_states):
@@ -261,18 +522,18 @@ def telemetry_payload(sm, params, device_id, started_override: bool | None = Non
 
   power_w = voltage_v * current_ma / 1000.0 if voltage_v is not None and current_ma is not None else None
 
-  enabled = False
-  try:
-    enabled = bool(sm["selfdriveState"].enabled)
-  except Exception:
-    pass
+  device = device_details_payload(device_state)
+  panda = panda_details_payload(panda_state)
+  vehicle = vehicle_details_payload(sm, started)
+  openpilot = openpilot_details_payload(sm)
 
   return {
+    "schemaVersion": "wayon-telemetry-v2",
     "deviceId": device_id,
     "updatedAt": utc_now(),
     "onroad": started,
     "ignition": ignition,
-    "enabled": enabled,
+    "enabled": bool(openpilot.get("enabled", False)),
     "voltageV": voltage_v,
     "currentMa": current_ma,
     "powerW": power_w,
@@ -284,6 +545,10 @@ def telemetry_payload(sm, params, device_id, started_override: bool | None = Non
     "vehicleSpeedMps": vehicle_speed.get("speedMps"),
     "vehicleSpeedSource": vehicle_speed.get("source"),
     "dongleId": get_param_str(params, "DongleId"),
+    "device": device,
+    "panda": panda,
+    "vehicle": vehicle,
+    "openpilot": openpilot,
   }
 
 
@@ -627,11 +892,7 @@ def upload_recent_route_summary(config, device_id):
 
 
 def jpeg_base64(array):
-  from PIL import Image
-
-  buffer = io.BytesIO()
-  Image.fromarray(array).save(buffer, "JPEG", quality=72, optimize=True)
-  return base64.b64encode(buffer.getvalue()).decode("ascii")
+  return base64.b64encode(jpeg_bytes(array, quality=72)).decode("ascii")
 
 
 def upload_offroad_snapshot(config, device_id):
@@ -669,6 +930,7 @@ def capture_offroad_images():
   params.put_bool("IsTakingSnapshot", True)
   set_offroad_alert("Offroad_IsTakingSnapshot", True)
   time.sleep(2.0)
+  started_camerad = False
 
   try:
     try:
@@ -679,10 +941,12 @@ def capture_offroad_images():
 
     if not PC:
       managed_processes["camerad"].start()
+      started_camerad = True
 
     return get_snapshots("wideRoadCameraState", "driverCameraState")
   finally:
-    managed_processes["camerad"].stop()
+    if started_camerad:
+      managed_processes["camerad"].stop()
     params.put_bool("IsTakingSnapshot", False)
     set_offroad_alert("Offroad_IsTakingSnapshot", False)
 

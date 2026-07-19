@@ -7,6 +7,7 @@ from openpilot.system.wayon_impact import (
   enqueue_impact_event,
   peek_impact_event,
   remove_impact_event,
+  update_impact_event,
 )
 
 GRAVITY = (0.0, 0.0, 9.80665)
@@ -135,6 +136,19 @@ def test_door_lock_tracker_ignores_other_can_frames(tmp_path: Path):
   assert not tracker.update(0, 0x123, bytes(8), 0.0)
   assert not tracker.update(0, 0x19D, bytes(4), 0.0)
   assert tracker.locked is None
+
+
+def test_update_impact_event_preserves_queue_order(tmp_path: Path):
+  queue = tmp_path / "impact_queue.jsonl"
+  enqueue_impact_event({"id": "first", "severity": "light"}, queue)
+  enqueue_impact_event({"id": "second", "severity": "moderate"}, queue)
+
+  updated = update_impact_event("first", {"captureAttempts": 1}, queue)
+
+  assert updated == {"id": "first", "severity": "light", "captureAttempts": 1}
+  assert peek_impact_event(queue) == updated
+  assert remove_impact_event("first", queue)
+  assert peek_impact_event(queue) == {"id": "second", "severity": "moderate"}
 
 
 def test_detector_uses_cooldown_after_strong_impact():

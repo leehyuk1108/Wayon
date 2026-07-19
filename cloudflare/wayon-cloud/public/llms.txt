@@ -1,0 +1,14 @@
+# Wayon Cloud AI access
+
+Wayon exposes owner-authorized, read-only vehicle and comma telemetry.
+
+- System prompt: /wayon-ai-prompt.md
+- OpenAPI: /wayon-ai-openapi.json
+- API base: /api/ai
+- Authentication: Authorization: Bearer WAYON_AI_READ_TOKEN
+
+Data includes telemetry freshness, driving state, location, speed, OpenPilot state,
+vehicle voltage/current/estimated input power, comma power draw, numeric device
+temperatures, trips, lock events, offroad impacts, and authorized impact images.
+
+The API has no write, SSH, update, or vehicle-control operation.

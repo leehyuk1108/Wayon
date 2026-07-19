@@ -336,6 +336,26 @@ def peek_impact_event(path: Path = DEFAULT_IMPACT_QUEUE_PATH) -> dict | None:
   return events[0] if events else None
 
 
+def update_impact_event(event_id: str, updates: dict,
+                        path: Path = DEFAULT_IMPACT_QUEUE_PATH) -> dict | None:
+  try:
+    with path.open("r+", encoding="utf-8") as handle:
+      fcntl.flock(handle, fcntl.LOCK_EX)
+      events = _read_events(handle)
+      updated_event = None
+      for index, event in enumerate(events):
+        if event.get("id") == event_id:
+          updated_event = {**event, **updates}
+          events[index] = updated_event
+          break
+      if updated_event is not None:
+        _write_events(handle, events)
+      fcntl.flock(handle, fcntl.LOCK_UN)
+      return updated_event
+  except FileNotFoundError:
+    return None
+
+
 def remove_impact_event(event_id: str, path: Path = DEFAULT_IMPACT_QUEUE_PATH) -> bool:
   try:
     with path.open("r+", encoding="utf-8") as handle:

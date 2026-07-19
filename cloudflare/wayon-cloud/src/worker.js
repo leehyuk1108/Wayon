@@ -345,6 +345,10 @@ function authorizePushRegistration(request, env) {
   return constantTimeEqual(getBearerToken(request), env.WAYON_PUSH_REGISTRATION_TOKEN || "");
 }
 
+function authorizeAi(request, env) {
+  return constantTimeEqual(getBearerToken(request), env.WAYON_AI_READ_TOKEN || "");
+}
+
 function requireBindings(env) {
   return Boolean(env.DB && env.SNAPSHOTS);
 }
@@ -638,13 +642,15 @@ async function handleImpact(request, env) {
   const latitude = nullableNumber(payload.latitude) ?? nullableNumber(state?.latitude);
   const longitude = nullableNumber(payload.longitude) ?? nullableNumber(state?.longitude);
   const receivedAt = nowIso();
+  const captureStatus = payload.captureRequested ? "pending" : "not_requested";
 
   const inserted = await env.DB.prepare(`
     INSERT OR IGNORE INTO impact_events (
       id, device_id, detected_at, received_at, severity, peak_dynamic_g,
       peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
-      sample_count, sensor_clipped, latitude, longitude, notified_count, raw_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+      sample_count, sensor_clipped, latitude, longitude, capture_status,
+      notified_count, raw_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
   `).bind(
     id,
     deviceId,
@@ -660,6 +666,7 @@ async function handleImpact(request, env) {
     toInt(payload.sensorClipped),
     latitude,
     longitude,
+    captureStatus,
     JSON.stringify(payload),
   ).run();
 
@@ -691,6 +698,74 @@ async function handleImpact(request, env) {
   await env.DB.prepare("UPDATE impact_events SET notified_count = ? WHERE id = ?")
     .bind(notification.sent, id).run();
   return json({ ok: true, id, duplicate: !inserted.meta?.changes, notified: notification.sent });
+}
+
+async function handleImpactMedia(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+
+  const payload = await request.json();
+  const id = String(payload.id || "").slice(0, 128);
+  const deviceId = String(payload.deviceId || "").slice(0, 128);
+  const capturedAt = String(payload.capturedAt || nowIso()).slice(0, 64);
+  const captureStatus = ["complete", "partial", "failed"].includes(payload.captureStatus)
+    ? payload.captureStatus : "failed";
+  const captureAttempts = Math.max(0, Math.min(20, Number.parseInt(payload.captureAttempts || "0", 10) || 0));
+  if (!id || !deviceId) return json({ error: "invalid_impact_media" }, 400);
+
+  const impact = await env.DB.prepare(`
+    SELECT device_id, capture_status, wide_snapshot_id, driver_snapshot_id
+    FROM impact_events WHERE id = ?
+  `).bind(id).first();
+  if (!impact || impact.device_id !== deviceId) return json({ error: "impact_not_found" }, 404);
+  if (impact.capture_status === "complete" && impact.wide_snapshot_id && impact.driver_snapshot_id) {
+    return json({
+      ok: true,
+      id,
+      duplicate: true,
+      captureStatus: "complete",
+      wideSnapshotId: impact.wide_snapshot_id,
+      driverSnapshotId: impact.driver_snapshot_id,
+    });
+  }
+
+  let wideSnapshotId = impact.wide_snapshot_id || null;
+  let driverSnapshotId = impact.driver_snapshot_id || null;
+  if (!wideSnapshotId && payload.wideJpegBase64) {
+    wideSnapshotId = (await saveSnapshotImage(
+      env, deviceId, "wide", capturedAt, payload.wideJpegBase64,
+    ))?.id || null;
+  }
+  if (!driverSnapshotId && payload.driverJpegBase64) {
+    driverSnapshotId = (await saveSnapshotImage(
+      env, deviceId, "driver", capturedAt, payload.driverJpegBase64,
+    ))?.id || null;
+  }
+
+  const resolvedStatus = wideSnapshotId && driverSnapshotId
+    ? "complete"
+    : (wideSnapshotId || driverSnapshotId ? "partial" : captureStatus);
+  await env.DB.prepare(`
+    UPDATE impact_events SET
+      capture_status = ?, captured_at = ?, capture_attempts = ?,
+      wide_snapshot_id = ?, driver_snapshot_id = ?
+    WHERE id = ? AND device_id = ?
+  `).bind(
+    resolvedStatus,
+    capturedAt,
+    captureAttempts,
+    wideSnapshotId,
+    driverSnapshotId,
+    id,
+    deviceId,
+  ).run();
+
+  return json({
+    ok: true,
+    id,
+    captureStatus: resolvedStatus,
+    wideSnapshotId,
+    driverSnapshotId,
+  });
 }
 
 async function handleVehicleEvent(request, env) {
@@ -816,10 +891,54 @@ async function handleImpacts(request, env) {
   const impacts = await env.DB.prepare(`
     SELECT id, device_id, detected_at, received_at, severity, peak_dynamic_g,
            peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
-           sample_count, sensor_clipped, latitude, longitude, notified_count
+           sample_count, sensor_clipped, latitude, longitude, capture_status,
+           captured_at, capture_attempts, wide_snapshot_id, driver_snapshot_id,
+           notified_count
     FROM impact_events ORDER BY detected_at DESC LIMIT ?
   `).bind(limit).all();
   return json({ impacts: impacts.results || [] });
+}
+
+async function handleMobileImpacts(request, env) {
+  if (!authorizePushRegistration(request, env)) return json({ error: "unauthorized" }, 401);
+  const url = new URL(request.url);
+  const deviceId = String(url.searchParams.get("deviceId") || "").slice(0, 128);
+  const limit = Math.max(1, Math.min(50, Number.parseInt(url.searchParams.get("limit") || "25", 10)));
+  if (!deviceId) return json({ error: "missing_device_id" }, 400);
+
+  const impacts = await env.DB.prepare(`
+    SELECT id, detected_at, received_at, severity, peak_dynamic_g,
+           peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
+           sample_count, sensor_clipped, latitude, longitude, capture_status,
+           captured_at, wide_snapshot_id, driver_snapshot_id
+    FROM impact_events
+    WHERE device_id = ?
+    ORDER BY detected_at DESC LIMIT ?
+  `).bind(deviceId, limit).all();
+  return json({ deviceId, impacts: impacts.results || [] });
+}
+
+async function handleMobileImpactImage(request, env) {
+  if (!authorizePushRegistration(request, env)) return json({ error: "unauthorized" }, 401);
+  const url = new URL(request.url);
+  const deviceId = String(url.searchParams.get("deviceId") || "").slice(0, 128);
+  const snapshotId = String(url.searchParams.get("snapshotId") || "").slice(0, 128);
+  if (!deviceId || !snapshotId) return json({ error: "missing_image_identity" }, 400);
+
+  const snapshot = await env.DB.prepare(`
+    SELECT kv_key FROM snapshots WHERE id = ? AND device_id = ?
+  `).bind(snapshotId, deviceId).first();
+  if (!snapshot) return json({ error: "not_found" }, 404);
+  const image = await env.SNAPSHOTS.get(snapshot.kv_key, "arrayBuffer");
+  if (!image) return json({ error: "not_found" }, 404);
+
+  return new Response(image, {
+    headers: {
+      ...CORS_HEADERS,
+      "content-type": "image/jpeg",
+      "cache-control": "private, max-age=300",
+    },
+  });
 }
 
 async function saveSnapshotImage(env, deviceId, camera, capturedAt, jpegBase64) {
@@ -912,8 +1031,15 @@ async function handleState(request, env) {
       SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
     `).first(),
     env.DB.prepare(`
-      SELECT id, device_id, camera, captured_at, kv_key, size_bytes
-      FROM snapshots ORDER BY captured_at DESC LIMIT 12
+      SELECT s.id, s.device_id, s.camera, s.captured_at, s.kv_key, s.size_bytes,
+             i.id AS impact_id, i.severity AS impact_severity,
+             i.peak_dynamic_g AS impact_peak_dynamic_g,
+             i.peak_total_g AS impact_peak_total_g,
+             i.detected_at AS impact_detected_at
+      FROM snapshots s
+      LEFT JOIN impact_events i
+        ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
+      ORDER BY s.captured_at DESC LIMIT 12
     `).all(),
     fetchVehicleStatus(),
   ]);
@@ -989,11 +1115,18 @@ async function handleSnapshotsList(request, env) {
   const url = new URL(request.url);
   const limit = boundedLimit(url.searchParams.get("limit"), 500, 1000);
   const date = url.searchParams.get("date");
-  const dateWhere = date ? "WHERE date(captured_at, '+9 hours') = ?" : "";
+  const dateWhere = date ? "WHERE date(s.captured_at, '+9 hours') = ?" : "";
   const snapshotQuery = `
-    SELECT id, device_id, camera, captured_at, kv_key, size_bytes, created_at
-    FROM snapshots ${dateWhere}
-    ORDER BY captured_at DESC LIMIT ?
+    SELECT s.id, s.device_id, s.camera, s.captured_at, s.kv_key, s.size_bytes, s.created_at,
+           i.id AS impact_id, i.severity AS impact_severity,
+           i.peak_dynamic_g AS impact_peak_dynamic_g,
+           i.peak_total_g AS impact_peak_total_g,
+           i.detected_at AS impact_detected_at
+    FROM snapshots s
+    LEFT JOIN impact_events i
+      ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
+    ${dateWhere}
+    ORDER BY s.captured_at DESC LIMIT ?
   `;
   const snapshots = date
     ? await env.DB.prepare(snapshotQuery).bind(date, limit).all()
@@ -1068,6 +1201,295 @@ async function handleSnapshotImage(request, env) {
   });
 }
 
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isoAgeSeconds(timestamp) {
+  const millis = Date.parse(timestamp || "");
+  if (!Number.isFinite(millis)) return null;
+  return Math.max(0, Math.round((Date.now() - millis) / 1000));
+}
+
+function aiImageUrl(request, snapshotId) {
+  if (!snapshotId) return null;
+  return new URL(`/api/ai/images/${encodeURIComponent(snapshotId)}`, request.url).toString();
+}
+
+function aiSnapshot(request, snapshot) {
+  return {
+    id: snapshot.id,
+    deviceId: snapshot.device_id,
+    camera: snapshot.camera,
+    capturedAt: snapshot.captured_at,
+    createdAt: snapshot.created_at,
+    sizeBytes: snapshot.size_bytes,
+    impact: snapshot.impact_id ? {
+      id: snapshot.impact_id,
+      severity: snapshot.impact_severity,
+      peakDynamicG: nullableNumber(snapshot.impact_peak_dynamic_g),
+      peakTotalG: nullableNumber(snapshot.impact_peak_total_g),
+      detectedAt: snapshot.impact_detected_at,
+    } : null,
+    imageUrl: aiImageUrl(request, snapshot.id),
+    contentType: "image/jpeg",
+  };
+}
+
+function aiImpact(request, impact) {
+  return {
+    id: impact.id,
+    deviceId: impact.device_id,
+    detectedAt: impact.detected_at,
+    receivedAt: impact.received_at,
+    severity: impact.severity,
+    peakDynamicG: nullableNumber(impact.peak_dynamic_g),
+    peakTotalG: nullableNumber(impact.peak_total_g),
+    peakJerkGPerSec: nullableNumber(impact.peak_jerk_g_per_s),
+    peakGyroRadPerSec: nullableNumber(impact.peak_gyro_rad_per_s),
+    durationMs: impact.duration_ms,
+    sampleCount: impact.sample_count,
+    sensorClipped: Boolean(impact.sensor_clipped),
+    location: validCoordinate(impact.latitude) && validCoordinate(impact.longitude) ? {
+      latitude: nullableNumber(impact.latitude),
+      longitude: nullableNumber(impact.longitude),
+    } : null,
+    capture: {
+      status: impact.capture_status,
+      capturedAt: impact.captured_at,
+      attempts: impact.capture_attempts,
+      wideSnapshotId: impact.wide_snapshot_id,
+      driverSnapshotId: impact.driver_snapshot_id,
+      wideImageUrl: aiImageUrl(request, impact.wide_snapshot_id),
+      driverImageUrl: aiImageUrl(request, impact.driver_snapshot_id),
+    },
+    notifiedCount: impact.notified_count,
+  };
+}
+
+function aiVehicleEvent(event) {
+  const raw = parseJsonObject(event.raw_json);
+  return {
+    id: event.id,
+    deviceId: event.device_id,
+    eventType: event.event_type,
+    occurredAt: event.occurred_at,
+    receivedAt: event.received_at,
+    locked: event.locked == null ? null : Boolean(event.locked),
+    notifiedCount: event.notified_count,
+    details: raw,
+  };
+}
+
+const AI_IMPACT_SELECT = `
+  SELECT id, device_id, detected_at, received_at, severity, peak_dynamic_g,
+         peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
+         sample_count, sensor_clipped, latitude, longitude, capture_status,
+         captured_at, capture_attempts, wide_snapshot_id, driver_snapshot_id,
+         notified_count
+  FROM impact_events
+`;
+
+const AI_SNAPSHOT_SELECT = `
+  SELECT s.id, s.device_id, s.camera, s.captured_at, s.size_bytes, s.created_at,
+         i.id AS impact_id, i.severity AS impact_severity,
+         i.peak_dynamic_g AS impact_peak_dynamic_g,
+         i.peak_total_g AS impact_peak_total_g,
+         i.detected_at AS impact_detected_at
+  FROM snapshots s
+  LEFT JOIN impact_events i
+    ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
+`;
+
+async function handleAiContext(request, env) {
+  if (!authorizeAi(request, env)) return json({ error: "unauthorized" }, 401);
+
+  const url = new URL(request.url);
+  const impactLimit = boundedLimit(url.searchParams.get("impacts"), 8, 50);
+  const eventLimit = boundedLimit(url.searchParams.get("events"), 20, 100);
+  const snapshotLimit = boundedLimit(url.searchParams.get("snapshots"), 12, 50);
+  const [state, impactResult, eventResult, latestTrip, snapshotResult, firebaseVehicleStatus] = await Promise.all([
+    env.DB.prepare("SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1").first(),
+    env.DB.prepare(`${AI_IMPACT_SELECT} ORDER BY detected_at DESC LIMIT ?`).bind(impactLimit).all(),
+    env.DB.prepare(`
+      SELECT id, device_id, event_type, occurred_at, received_at, locked, notified_count, raw_json
+      FROM vehicle_events ORDER BY occurred_at DESC LIMIT ?
+    `).bind(eventLimit).all(),
+    env.DB.prepare("SELECT * FROM trips ORDER BY ended_at DESC LIMIT 1").first(),
+    env.DB.prepare(`${AI_SNAPSHOT_SELECT} ORDER BY s.captured_at DESC LIMIT ?`).bind(snapshotLimit).all(),
+    fetchVehicleStatus(),
+  ]);
+
+  if (!state) return json({ error: "no_telemetry" }, 404);
+  const raw = parseJsonObject(state.raw_json);
+  const telemetryAgeSeconds = isoAgeSeconds(state.updated_at);
+  const staleAfterSeconds = state.onroad ? 45 : 600;
+  const location = validCoordinate(state.latitude) && validCoordinate(state.longitude) ? {
+    latitude: nullableNumber(state.latitude),
+    longitude: nullableNumber(state.longitude),
+    bearingDeg: nullableNumber(state.bearing_deg),
+    accuracyM: nullableNumber(state.gps_accuracy_m),
+    source: raw.gps?.source || null,
+    freshAtUpload: raw.gps?.fresh === true,
+  } : null;
+  const rawDevice = raw.device || {};
+  const rawPanda = raw.panda || {};
+  const rawVehicle = raw.vehicle || {};
+  const rawOpenpilot = raw.openpilot || {};
+
+  return json({
+    schemaVersion: "wayon-ai-context-v1",
+    generatedAt: nowIso(),
+    access: {
+      mode: "read-only",
+      controlsAvailable: false,
+      privacy: "Location and driver-camera images are sensitive. Use only for the user's explicit request.",
+    },
+    freshness: {
+      telemetryUpdatedAt: state.updated_at,
+      telemetryAgeSeconds,
+      staleAfterSeconds,
+      stale: telemetryAgeSeconds == null || telemetryAgeSeconds > staleAfterSeconds,
+      expectedUploadIntervalSeconds: state.onroad ? 15 : 300,
+    },
+    live: {
+      deviceId: state.device_id,
+      dongleId: raw.dongleId || null,
+      onroad: Boolean(state.onroad),
+      ignition: Boolean(state.ignition),
+      vehicle: {
+        ...rawVehicle,
+        speedMps: nullableNumber(state.speed_mps) ?? rawVehicle.speedMps ?? null,
+        speedKph: state.speed_mps == null ? (rawVehicle.speedKph ?? null) : Number(state.speed_mps) * 3.6,
+        location,
+      },
+      openpilot: {
+        ...rawOpenpilot,
+        enabled: Boolean(state.enabled),
+      },
+      electrical: {
+        vehicleBusVoltageV: nullableNumber(state.voltage_v),
+        vehicleCurrentMa: nullableNumber(state.current_ma),
+        estimatedVehicleInputPowerW: nullableNumber(state.power_w),
+        commaDevicePowerDrawW: nullableNumber(state.device_power_w),
+        commaSomPowerDrawW: nullableNumber(rawDevice.power?.somDrawW),
+        offroadEnergyUsedWh: nullableNumber(rawDevice.power?.offroadUsageWh),
+        estimatedCarBatteryCapacityWh: nullableNumber(rawDevice.power?.carBatteryCapacityWh),
+      },
+      thermal: {
+        status: state.thermal_status,
+        fanPercent: state.fan_percent,
+        temperaturesC: rawDevice.thermal?.temperaturesC || null,
+      },
+      system: {
+        deviceType: rawDevice.type || null,
+        usage: rawDevice.usage || null,
+        network: rawDevice.network || null,
+        screenBrightnessPercent: state.screen_brightness_percent,
+      },
+      commaInterface: rawPanda,
+    },
+    firebaseVehicleStatus,
+    latestTrip: latestTrip ? parseTripRoute(latestTrip) : null,
+    recentImpacts: (impactResult.results || []).map((impact) => aiImpact(request, impact)),
+    recentVehicleEvents: (eventResult.results || []).map(aiVehicleEvent),
+    recentSnapshots: (snapshotResult.results || []).map((snapshot) => aiSnapshot(request, snapshot)),
+    rawTelemetry: raw,
+  });
+}
+
+async function handleAiTrips(request, env, pathname) {
+  if (!authorizeAi(request, env)) return json({ error: "unauthorized" }, 401);
+
+  const prefix = "/api/ai/trips/";
+  if (pathname.startsWith(prefix) && pathname.length > prefix.length) {
+    const tripId = decodeURIComponent(pathname.slice(prefix.length));
+    const trip = await env.DB.prepare("SELECT * FROM trips WHERE id = ?").bind(tripId).first();
+    if (!trip) return json({ error: "not_found" }, 404);
+    return json({ schemaVersion: "wayon-ai-trip-v1", trip: parseTripRoute(trip) });
+  }
+
+  const url = new URL(request.url);
+  const limit = boundedLimit(url.searchParams.get("limit"), 25, 250);
+  const trips = await env.DB.prepare(`
+    SELECT id, device_id, started_at, ended_at, duration_s, distance_m,
+           start_lat, start_lon, end_lat, end_lon, route_point_count,
+           CASE WHEN duration_s > 0 AND distance_m IS NOT NULL
+                THEN distance_m / duration_s ELSE NULL END AS avg_speed_mps,
+           route_json
+    FROM trips ORDER BY ended_at DESC LIMIT ?
+  `).bind(limit).all();
+  return json({
+    schemaVersion: "wayon-ai-trip-list-v1",
+    generatedAt: nowIso(),
+    trips: (trips.results || []).map(parseTripSummary),
+  });
+}
+
+async function handleAiImpacts(request, env) {
+  if (!authorizeAi(request, env)) return json({ error: "unauthorized" }, 401);
+  const url = new URL(request.url);
+  const limit = boundedLimit(url.searchParams.get("limit"), 25, 100);
+  const result = await env.DB.prepare(`${AI_IMPACT_SELECT} ORDER BY detected_at DESC LIMIT ?`).bind(limit).all();
+  return json({
+    schemaVersion: "wayon-ai-impact-list-v1",
+    generatedAt: nowIso(),
+    impacts: (result.results || []).map((impact) => aiImpact(request, impact)),
+  });
+}
+
+async function handleAiVehicleEvents(request, env) {
+  if (!authorizeAi(request, env)) return json({ error: "unauthorized" }, 401);
+  const url = new URL(request.url);
+  const limit = boundedLimit(url.searchParams.get("limit"), 50, 250);
+  const result = await env.DB.prepare(`
+    SELECT id, device_id, event_type, occurred_at, received_at, locked, notified_count, raw_json
+    FROM vehicle_events ORDER BY occurred_at DESC LIMIT ?
+  `).bind(limit).all();
+  return json({
+    schemaVersion: "wayon-ai-vehicle-event-list-v1",
+    generatedAt: nowIso(),
+    events: (result.results || []).map(aiVehicleEvent),
+  });
+}
+
+async function handleAiSnapshots(request, env) {
+  if (!authorizeAi(request, env)) return json({ error: "unauthorized" }, 401);
+  const url = new URL(request.url);
+  const limit = boundedLimit(url.searchParams.get("limit"), 25, 100);
+  const result = await env.DB.prepare(`${AI_SNAPSHOT_SELECT} ORDER BY s.captured_at DESC LIMIT ?`).bind(limit).all();
+  return json({
+    schemaVersion: "wayon-ai-snapshot-list-v1",
+    generatedAt: nowIso(),
+    snapshots: (result.results || []).map((snapshot) => aiSnapshot(request, snapshot)),
+  });
+}
+
+async function handleAiImage(request, env, pathname) {
+  if (!authorizeAi(request, env)) return json({ error: "unauthorized" }, 401);
+  const prefix = "/api/ai/images/";
+  const snapshotId = decodeURIComponent(pathname.slice(prefix.length));
+  if (!snapshotId) return json({ error: "missing_snapshot_id" }, 400);
+  const snapshot = await env.DB.prepare("SELECT kv_key FROM snapshots WHERE id = ?")
+    .bind(snapshotId).first();
+  if (!snapshot) return json({ error: "not_found" }, 404);
+  const image = await env.SNAPSHOTS.get(snapshot.kv_key, "arrayBuffer");
+  if (!image) return json({ error: "not_found" }, 404);
+  return new Response(image, {
+    headers: {
+      ...CORS_HEADERS,
+      "content-type": "image/jpeg",
+      "cache-control": "private, max-age=300",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
@@ -1103,6 +1525,9 @@ export default {
     if (request.method === "POST" && pathname === "/api/impact") {
       return handleImpact(request, env);
     }
+    if (request.method === "POST" && pathname === "/api/impact-media") {
+      return handleImpactMedia(request, env);
+    }
     if (request.method === "POST" && pathname === "/api/vehicle-event") {
       return handleVehicleEvent(request, env);
     }
@@ -1115,6 +1540,24 @@ export default {
     if (request.method === "GET" && pathname === "/api/state") {
       return handleState(request, env);
     }
+    if (request.method === "GET" && pathname === "/api/ai/context") {
+      return handleAiContext(request, env);
+    }
+    if (request.method === "GET" && (pathname === "/api/ai/trips" || pathname.startsWith("/api/ai/trips/"))) {
+      return handleAiTrips(request, env, pathname);
+    }
+    if (request.method === "GET" && pathname === "/api/ai/impacts") {
+      return handleAiImpacts(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/ai/events") {
+      return handleAiVehicleEvents(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/ai/snapshots") {
+      return handleAiSnapshots(request, env);
+    }
+    if (request.method === "GET" && pathname.startsWith("/api/ai/images/")) {
+      return handleAiImage(request, env, pathname);
+    }
     if (request.method === "GET" && (pathname === "/api/export" || pathname === "/api/json")) {
       return handleExport(request, env);
     }
@@ -1126,6 +1569,12 @@ export default {
     }
     if (request.method === "GET" && pathname === "/api/impacts") {
       return handleImpacts(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/mobile/impacts") {
+      return handleMobileImpacts(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/mobile/impact-image") {
+      return handleMobileImpactImage(request, env);
     }
     if (request.method === "GET" && pathname === "/api/snapshot") {
       return handleSnapshotImage(request, env);

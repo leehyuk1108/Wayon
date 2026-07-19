@@ -224,11 +224,12 @@ def main() -> None:
       peak_gyro_rad_per_s = 0.0
 
     if event is not None:
+      event["captureRequested"] = True
       enqueue_impact_event(event)
       write_status("impactQueued", lastEvent=event, **detector_status(detector, lock_tracker))
       print(
-        f"Wayon impact: queued {event['severity']} impact "
-        f"({event['peakDynamicG']:.2f}g, {event['peakJerkGPerSec']:.1f}g/s)",
+        f"Wayon impact: queued {event['severity']} impact ({event['peakDynamicG']:.2f}g, "
+        f"{event['peakJerkGPerSec']:.1f}g/s)",
         flush=True,
       )
 

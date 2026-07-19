@@ -68,6 +68,11 @@ CREATE TABLE IF NOT EXISTS impact_events (
   sensor_clipped INTEGER NOT NULL DEFAULT 0,
   latitude REAL,
   longitude REAL,
+  capture_status TEXT,
+  captured_at TEXT,
+  capture_attempts INTEGER NOT NULL DEFAULT 0,
+  wide_snapshot_id TEXT,
+  driver_snapshot_id TEXT,
   notified_count INTEGER NOT NULL DEFAULT 0,
   raw_json TEXT NOT NULL
 );

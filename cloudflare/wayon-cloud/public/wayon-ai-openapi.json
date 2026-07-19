@@ -1,0 +1,151 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Wayon Read-only Vehicle API",
+    "version": "1.0.0",
+    "description": "Owner-authorized read-only access to Wayon vehicle/comma telemetry, trips, impacts, events, snapshots, and JPEG images. No control or write operations exist."
+  },
+  "servers": [
+    { "url": "https://wayon-cloud.leehyuk1108-comma.workers.dev" }
+  ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "paths": {
+    "/api/ai/context": {
+      "get": {
+        "operationId": "getWayonContext",
+        "summary": "Get current vehicle and comma context",
+        "description": "Returns freshness, current driving/OpenPilot state, location, voltage/current/power, numeric temperatures, latest trip, impacts, events, snapshots, and Firebase vehicle status.",
+        "parameters": [
+          { "$ref": "#/components/parameters/impactLimit" },
+          { "$ref": "#/components/parameters/eventLimit" },
+          { "$ref": "#/components/parameters/snapshotLimit" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/JsonResponse" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ai/trips": {
+      "get": {
+        "operationId": "listWayonTrips",
+        "summary": "List trip summaries",
+        "parameters": [{ "$ref": "#/components/parameters/limit" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/JsonResponse" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ai/trips/{tripId}": {
+      "get": {
+        "operationId": "getWayonTrip",
+        "summary": "Get one trip and route points",
+        "parameters": [
+          { "name": "tripId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/JsonResponse" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/ai/impacts": {
+      "get": {
+        "operationId": "listWayonImpacts",
+        "summary": "List impact detections and image IDs",
+        "parameters": [{ "$ref": "#/components/parameters/limit" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/JsonResponse" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ai/events": {
+      "get": {
+        "operationId": "listWayonVehicleEvents",
+        "summary": "List lock and parked-unlocked events",
+        "parameters": [{ "$ref": "#/components/parameters/limit" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/JsonResponse" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ai/snapshots": {
+      "get": {
+        "operationId": "listWayonSnapshots",
+        "summary": "List camera snapshots and impact associations",
+        "parameters": [{ "$ref": "#/components/parameters/limit" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/JsonResponse" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ai/images/{snapshotId}": {
+      "get": {
+        "operationId": "getWayonSnapshotImage",
+        "summary": "Get one authorized JPEG snapshot",
+        "parameters": [
+          { "name": "snapshotId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG image",
+            "content": { "image/jpeg": { "schema": { "type": "string", "contentEncoding": "binary" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "opaque" }
+    },
+    "parameters": {
+      "limit": {
+        "name": "limit", "in": "query", "required": false,
+        "schema": { "type": "integer", "minimum": 1, "maximum": 250, "default": 25 }
+      },
+      "impactLimit": {
+        "name": "impacts", "in": "query", "required": false,
+        "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 8 }
+      },
+      "eventLimit": {
+        "name": "events", "in": "query", "required": false,
+        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+      },
+      "snapshotLimit": {
+        "name": "snapshots", "in": "query", "required": false,
+        "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 12 }
+      }
+    },
+    "responses": {
+      "JsonResponse": {
+        "description": "Structured Wayon data",
+        "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid AI read token",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "string" } },
+        "required": ["error"]
+      }
+    }
+  }
+}

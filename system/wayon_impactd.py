@@ -7,6 +7,8 @@ from pathlib import Path
 from cereal import messaging
 from openpilot.system.wayon_impact import (
   DEFAULT_ARM_DELAY_S,
+  DEFAULT_IMPULSE_DYNAMIC_G,
+  DEFAULT_IMPULSE_JERK_G_PER_S,
   DEFAULT_MIN_DYNAMIC_G,
   DEFAULT_MIN_JERK_G_PER_S,
   DEFAULT_STRONG_DYNAMIC_G,
@@ -36,6 +38,8 @@ def detector_from_config(config: dict) -> ImpactDetector:
     cooldown_s=float(config.get("impact_cooldown_s", 30.0)),
     min_dynamic_g=float(config.get("impact_min_dynamic_g", DEFAULT_MIN_DYNAMIC_G)),
     min_jerk_g_per_s=float(config.get("impact_min_jerk_g_per_s", DEFAULT_MIN_JERK_G_PER_S)),
+    impulse_dynamic_g=float(config.get("impact_impulse_dynamic_g", DEFAULT_IMPULSE_DYNAMIC_G)),
+    impulse_jerk_g_per_s=float(config.get("impact_impulse_jerk_g_per_s", DEFAULT_IMPULSE_JERK_G_PER_S)),
     strong_dynamic_g=float(config.get("impact_strong_dynamic_g", DEFAULT_STRONG_DYNAMIC_G)),
   )
 
@@ -45,6 +49,8 @@ def detector_status(detector: ImpactDetector) -> dict:
     "armDelayS": detector.arm_delay_s,
     "minDynamicG": detector.min_dynamic_g,
     "minJerkGPerSec": detector.min_jerk_g_per_s,
+    "impulseDynamicG": detector.impulse_dynamic_g,
+    "impulseJerkGPerSec": detector.impulse_jerk_g_per_s,
     "strongDynamicG": detector.strong_dynamic_g,
   }
 

@@ -33,7 +33,7 @@ def test_detector_ignores_small_vibration():
   now = prime(detector)
 
   for index in range(100):
-    vibration = 0.6 if index % 2 else -0.6
+    vibration = 0.1 if index % 2 else -0.1
     assert detector.update((vibration, 0.0, 9.80665), STILL_GYRO, now) is None
     now += 0.01
 
@@ -51,7 +51,12 @@ def test_detector_ignores_measured_offroad_noise():
 
 
 def test_detector_confirms_two_sample_impact():
-  detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
+  detector = ImpactDetector(
+    arm_delay_s=0.0,
+    warmup_s=0.0,
+    impulse_dynamic_g=2.0,
+    strong_dynamic_g=2.0,
+  )
   now = prime(detector)
 
   assert detector.update((4.5, 0.0, 9.80665), (0.0, 0.2, 0.0), now) is None
@@ -67,11 +72,32 @@ def test_detector_catches_light_parking_impact_at_new_threshold():
   detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
   now = prime(detector)
 
-  assert detector.update((2.05, 0.0, 9.80665), STILL_GYRO, now) is None
-  event = detector.update((2.15, 0.0, 9.80665), STILL_GYRO, now + 0.01)
+  event = detector.update((2.05, 0.0, 9.80665), STILL_GYRO, now)
 
   assert event is not None
   assert 0.20 <= event["peakDynamicG"] < 0.30
+
+
+def test_detector_catches_measured_single_sample_parking_impact():
+  detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
+  now = prime(detector)
+
+  # The parked comma measured 0.0663 g and 11.49 g/s during a deliberate body impact.
+  assert detector.update((-0.48, 0.0, 9.80665), STILL_GYRO, now) is None
+  event = detector.update((0.65, 0.0, 9.80665), STILL_GYRO, now + 0.01)
+
+  assert event is not None
+  assert event["severity"] == "light"
+  assert 0.06 <= event["peakDynamicG"] < 0.07
+  assert event["peakJerkGPerSec"] >= 8.0
+
+
+def test_detector_rejects_slow_body_motion_at_similar_dynamic_g():
+  detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
+  now = prime(detector)
+
+  assert detector.update((0.45, 0.0, 9.80665), STILL_GYRO, now) is None
+  assert detector.update((0.55, 0.0, 9.80665), STILL_GYRO, now + 0.1) is None
 
 
 def test_detector_uses_cooldown_after_strong_impact():

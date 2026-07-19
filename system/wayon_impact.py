@@ -15,10 +15,12 @@ DEFAULT_IMPACT_DIAGNOSTICS_PATH = Path(os.getenv(
 MAX_QUEUED_IMPACTS = 64
 MAX_IMPACT_DIAGNOSTICS_BYTES = 512 * 1024
 DEFAULT_ARM_DELAY_S = 15.0
-DEFAULT_MIN_DYNAMIC_G = 0.20
-DEFAULT_MIN_JERK_G_PER_S = 1.8
-DEFAULT_STRONG_DYNAMIC_G = 0.50
-DETECTOR_VERSION = 2
+DEFAULT_MIN_DYNAMIC_G = 0.04
+DEFAULT_MIN_JERK_G_PER_S = 2.5
+DEFAULT_IMPULSE_DYNAMIC_G = 0.05
+DEFAULT_IMPULSE_JERK_G_PER_S = 8.0
+DEFAULT_STRONG_DYNAMIC_G = 0.20
+DETECTOR_VERSION = 3
 
 
 def utc_now() -> str:
@@ -37,14 +39,18 @@ class ImpactDetector:
     cooldown_s: float = 30.0,
     min_dynamic_g: float = DEFAULT_MIN_DYNAMIC_G,
     min_jerk_g_per_s: float = DEFAULT_MIN_JERK_G_PER_S,
+    impulse_dynamic_g: float = DEFAULT_IMPULSE_DYNAMIC_G,
+    impulse_jerk_g_per_s: float = DEFAULT_IMPULSE_JERK_G_PER_S,
     strong_dynamic_g: float = DEFAULT_STRONG_DYNAMIC_G,
     candidate_window_s: float = 0.18,
   ) -> None:
     self.arm_delay_s = max(0.0, arm_delay_s)
     self.warmup_s = max(0.0, warmup_s)
     self.cooldown_s = max(0.0, cooldown_s)
-    self.min_dynamic_g = max(0.05, min_dynamic_g)
+    self.min_dynamic_g = max(0.01, min_dynamic_g)
     self.min_jerk_g_per_s = max(0.1, min_jerk_g_per_s)
+    self.impulse_dynamic_g = max(self.min_dynamic_g, impulse_dynamic_g)
+    self.impulse_jerk_g_per_s = max(self.min_jerk_g_per_s, impulse_jerk_g_per_s)
     self.strong_dynamic_g = max(self.min_dynamic_g, strong_dynamic_g)
     self.candidate_window_s = max(0.05, candidate_window_s)
 
@@ -69,10 +75,11 @@ class ImpactDetector:
     self.peak_jerk_g_per_s = 0.0
     self.peak_gyro_rad_per_s = 0.0
     self.candidate_clipped = False
+    self.candidate_impulsive = False
 
   def _update_candidate(self, now: float, dynamic_g: float, total_g: float,
                         jerk_g_per_s: float, gyro_rad_per_s: float,
-                        clipped: bool, qualifying: bool) -> None:
+                        clipped: bool, qualifying: bool, impulsive: bool) -> None:
     if self.candidate_started_at is None:
       self.candidate_started_at = now
 
@@ -82,6 +89,7 @@ class ImpactDetector:
     self.peak_jerk_g_per_s = max(self.peak_jerk_g_per_s, jerk_g_per_s)
     self.peak_gyro_rad_per_s = max(self.peak_gyro_rad_per_s, gyro_rad_per_s)
     self.candidate_clipped = self.candidate_clipped or clipped
+    self.candidate_impulsive = self.candidate_impulsive or impulsive
     if qualifying or (dynamic_g >= self.min_dynamic_g * 0.75
                       and jerk_g_per_s >= self.min_jerk_g_per_s * 0.5):
       self.candidate_hits += 1
@@ -156,16 +164,20 @@ class ImpactDetector:
     clipped = max(abs(component) for component in accel) >= STANDARD_GRAVITY * 1.95
     qualifying = (dynamic_g >= self.min_dynamic_g and jerk_g_per_s >= self.min_jerk_g_per_s)
     qualifying = qualifying or dynamic_g >= self.strong_dynamic_g
+    impulsive = dynamic_g >= self.impulse_dynamic_g and jerk_g_per_s >= self.impulse_jerk_g_per_s
+    qualifying = qualifying or impulsive
 
     if self.candidate_started_at is None:
       if not qualifying:
         return None
-      self._update_candidate(now, dynamic_g, total_g, jerk_g_per_s, gyro_rad_per_s, clipped, qualifying)
+      self._update_candidate(now, dynamic_g, total_g, jerk_g_per_s, gyro_rad_per_s,
+                             clipped, qualifying, impulsive)
     else:
-      self._update_candidate(now, dynamic_g, total_g, jerk_g_per_s, gyro_rad_per_s, clipped, qualifying)
+      self._update_candidate(now, dynamic_g, total_g, jerk_g_per_s, gyro_rad_per_s,
+                             clipped, qualifying, impulsive)
 
     candidate_age = now - self.candidate_started_at
-    confirmed = self.peak_dynamic_g >= self.strong_dynamic_g or (
+    confirmed = self.peak_dynamic_g >= self.strong_dynamic_g or self.candidate_impulsive or (
       self.candidate_hits >= 2
       and self.peak_dynamic_g >= self.min_dynamic_g
       and self.peak_jerk_g_per_s >= self.min_jerk_g_per_s

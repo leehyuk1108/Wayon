@@ -534,7 +534,18 @@ function impactData(event) {
   }).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]));
 }
 
-async function sendFcmMessage(env, token, event) {
+function doorLockData(event) {
+  return Object.fromEntries(Object.entries({
+    type: "wayon_door_lock",
+    vehicleEventId: event.id,
+    deviceId: event.deviceId,
+    occurredAt: event.occurredAt,
+    locked: event.locked ? "true" : "false",
+    test: event.test ? "true" : "false",
+  }).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]));
+}
+
+async function sendFcmMessage(env, token, data) {
   if (!env.FCM_PROJECT_ID) throw new Error("FCM project binding is missing");
   const accessToken = await getFcmAccessToken(env);
   const response = await fetch(
@@ -548,7 +559,7 @@ async function sendFcmMessage(env, token, event) {
       body: JSON.stringify({
         message: {
           token,
-          data: impactData(event),
+          data,
           android: {
             priority: "HIGH",
             ttl: "300s",
@@ -568,11 +579,11 @@ function invalidFcmToken(response) {
     || errorCodes.includes("INVALID_ARGUMENT");
 }
 
-async function sendImpactNotifications(env, event) {
-  const query = event.deviceId === "*"
+async function sendDataNotifications(env, deviceId, data) {
+  const query = deviceId === "*"
     ? env.DB.prepare("SELECT token FROM push_subscriptions")
     : env.DB.prepare("SELECT token FROM push_subscriptions WHERE device_id = ? OR device_id = '*'")
-      .bind(event.deviceId);
+      .bind(deviceId);
   const subscriptions = await query.all();
   const tokens = [...new Set((subscriptions.results || []).map((row) => row.token).filter(Boolean))];
   let sent = 0;
@@ -580,7 +591,7 @@ async function sendImpactNotifications(env, event) {
   let invalid = 0;
 
   for (const token of tokens) {
-    const response = await sendFcmMessage(env, token, event);
+    const response = await sendFcmMessage(env, token, data);
     if (response.ok) {
       sent += 1;
     } else if (invalidFcmToken(response)) {
@@ -592,6 +603,10 @@ async function sendImpactNotifications(env, event) {
     }
   }
   return { sent, failed, invalid, subscriptions: tokens.length };
+}
+
+async function sendImpactNotifications(env, event) {
+  return sendDataNotifications(env, event.deviceId, impactData(event));
 }
 
 async function handleImpact(request, env) {
@@ -660,6 +675,59 @@ async function handleImpact(request, env) {
     throw new Error("FCM delivery failed; impact remains pending");
   }
   await env.DB.prepare("UPDATE impact_events SET notified_count = ? WHERE id = ?")
+    .bind(notification.sent, id).run();
+  return json({ ok: true, id, duplicate: !inserted.meta?.changes, notified: notification.sent });
+}
+
+async function handleVehicleEvent(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+
+  const payload = await request.json();
+  const eventType = String(payload.eventType || "").slice(0, 64);
+  if (eventType !== "door_lock" || typeof payload.locked !== "boolean") {
+    return json({ error: "invalid_vehicle_event" }, 400);
+  }
+
+  const id = String(payload.id || crypto.randomUUID()).slice(0, 128);
+  const deviceId = String(payload.deviceId || "unknown").slice(0, 128);
+  const occurredAt = String(payload.occurredAt || nowIso()).slice(0, 64);
+  const receivedAt = nowIso();
+  const locked = Boolean(payload.locked);
+  const inserted = await env.DB.prepare(`
+    INSERT OR IGNORE INTO vehicle_events (
+      id, device_id, event_type, occurred_at, received_at, locked, notified_count, raw_json
+    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+  `).bind(
+    id,
+    deviceId,
+    eventType,
+    occurredAt,
+    receivedAt,
+    toInt(locked),
+    JSON.stringify(payload),
+  ).run();
+
+  if (!inserted.meta?.changes) {
+    const existing = await env.DB.prepare("SELECT notified_count FROM vehicle_events WHERE id = ?")
+      .bind(id).first();
+    if (Number(existing?.notified_count || 0) > 0) {
+      return json({ ok: true, id, duplicate: true, notified: existing.notified_count });
+    }
+  }
+
+  const event = {
+    id,
+    deviceId,
+    eventType,
+    occurredAt,
+    locked,
+    test: Boolean(payload.test),
+  };
+  const notification = await sendDataNotifications(env, deviceId, doorLockData(event));
+  if (notification.failed > 0 && notification.sent === 0) {
+    throw new Error("FCM delivery failed; vehicle event remains pending");
+  }
+  await env.DB.prepare("UPDATE vehicle_events SET notified_count = ? WHERE id = ?")
     .bind(notification.sent, id).run();
   return json({ ok: true, id, duplicate: !inserted.meta?.changes, notified: notification.sent });
 }
@@ -1002,6 +1070,9 @@ export default {
     }
     if (request.method === "POST" && pathname === "/api/impact") {
       return handleImpact(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/vehicle-event") {
+      return handleVehicleEvent(request, env);
     }
     if (request.method === "POST" && pathname === "/api/push/register") {
       return handlePushRegistration(request, env);

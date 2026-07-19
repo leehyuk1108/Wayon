@@ -75,6 +75,20 @@ CREATE TABLE IF NOT EXISTS impact_events (
 CREATE INDEX IF NOT EXISTS impact_events_device_detected_idx
   ON impact_events(device_id, detected_at DESC);
 
+CREATE TABLE IF NOT EXISTS vehicle_events (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  locked INTEGER,
+  notified_count INTEGER NOT NULL DEFAULT 0,
+  raw_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS vehicle_events_device_occurred_idx
+  ON vehicle_events(device_id, occurred_at DESC);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   token TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,

@@ -16,6 +16,7 @@ from openpilot.common.realtime import set_core_affinity
 from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event
+from openpilot.system.wayon_vehicle_events import peek_vehicle_event, remove_vehicle_event
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
 ROUTE_STATE_PATH = Path(os.getenv("WAYON_CLOUD_ROUTE_STATE", str(CONFIG_PATH.with_name("route_state.json"))))
@@ -102,6 +103,24 @@ def upload_pending_impacts(config, device_id, queue_path=None, limit=3):
       remove_impact_event(event_id)
     else:
       remove_impact_event(event_id, queue_path)
+    uploaded += 1
+  return uploaded
+
+
+def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3):
+  uploaded = 0
+  for _ in range(max(1, limit)):
+    event = peek_vehicle_event() if queue_path is None else peek_vehicle_event(queue_path)
+    if event is None:
+      break
+
+    payload = {**event, "deviceId": device_id}
+    post_json(config, "/api/vehicle-event", payload)
+    event_id = str(event.get("id", ""))
+    if queue_path is None:
+      remove_vehicle_event(event_id)
+    else:
+      remove_vehicle_event(event_id, queue_path)
     uploaded += 1
   return uploaded
 
@@ -679,6 +698,7 @@ def main():
   next_route_summary = 0.0
   next_snapshot = 0.0
   next_impact_upload = 0.0
+  next_vehicle_event_upload = 0.0
   previous_started = False
 
   while True:
@@ -706,6 +726,14 @@ def main():
       except Exception as exc:
         print(f"Wayon cloud: impact upload failed: {exc}")
         next_impact_upload = now + 15.0
+
+    if now >= next_vehicle_event_upload:
+      try:
+        uploaded_vehicle_events = upload_pending_vehicle_events(config, device_id)
+        next_vehicle_event_upload = now + (0.2 if uploaded_vehicle_events >= 3 else 1.0)
+      except Exception as exc:
+        print(f"Wayon cloud: vehicle event upload failed: {exc}")
+        next_vehicle_event_upload = now + 15.0
 
     telemetry_interval = float(config.get(
       "telemetry_interval_onroad" if started else "telemetry_interval_offroad",

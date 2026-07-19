@@ -6,7 +6,8 @@ from types import SimpleNamespace
 # Direct execution starts inside system/, so add openpilot root explicitly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from system.wayon_cloud_uploader import gps_payload, resolve_onroad_state
+from system.wayon_cloud_uploader import gps_payload, resolve_onroad_state, upload_pending_vehicle_events
+from system.wayon_vehicle_events import door_lock_event, enqueue_vehicle_event
 
 
 class FakeSubMaster(dict):
@@ -36,6 +37,21 @@ def test_stale_gps_clears_current_location():
   )
   sm = FakeSubMaster(gps=gps, receive_time=0.0)
   assert gps_payload(sm) == {"fresh": False, "source": "unavailable"}
+
+
+def test_vehicle_event_upload_removes_only_after_success(tmp_path, monkeypatch):
+  queue = tmp_path / "vehicle_events.jsonl"
+  event = {**door_lock_event(False), "id": "unlock-event"}
+  enqueue_vehicle_event(event, queue)
+  posted = []
+
+  def fake_post(config, path, payload):
+    posted.append((path, payload))
+    return {"ok": True}
+
+  monkeypatch.setattr("system.wayon_cloud_uploader.post_json", fake_post)
+  assert upload_pending_vehicle_events({"endpoint": "test", "token": "test"}, "device", queue) == 1
+  assert posted == [("/api/vehicle-event", {**event, "deviceId": "device"})]
 
 
 if __name__ == "__main__":

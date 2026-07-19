@@ -19,6 +19,7 @@ from openpilot.system.wayon_impact import (
   enqueue_impact_event,
   utc_now,
 )
+from openpilot.system.wayon_vehicle_events import door_lock_event, enqueue_vehicle_event
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", "/data/wayon_cloud/config.json"))
 STATUS_PATH = Path(os.getenv("WAYON_IMPACT_STATUS", "/data/wayon_cloud/impact_status.json"))
@@ -135,7 +136,13 @@ def main() -> None:
 
     if sm.updated["can"]:
       for frame in sm["can"]:
-        lock_tracker.update(int(frame.src), int(frame.address), bytes(frame.dat), now)
+        lock_was_known = lock_tracker.locked is not None
+        lock_changed = lock_tracker.update(int(frame.src), int(frame.address), bytes(frame.dat), now)
+        if lock_changed and lock_was_known and lock_tracker.locked is not None:
+          event = door_lock_event(lock_tracker.locked)
+          enqueue_vehicle_event(event)
+          state_text = "locked" if lock_tracker.locked else "unlocked"
+          print(f"Wayon vehicle: queued door {state_text} event", flush=True)
 
     if sm.updated["gyroscope"] and sm.valid["gyroscope"]:
       gyro = sensor_vector(sm["gyroscope"], "gyroUncalibrated")

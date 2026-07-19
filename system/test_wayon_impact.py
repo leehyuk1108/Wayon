@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from openpilot.system.wayon_impact import (
+  DoorLockTracker,
   ImpactDetector,
   append_impact_diagnostic,
   enqueue_impact_event,
@@ -98,6 +99,42 @@ def test_detector_rejects_slow_body_motion_at_similar_dynamic_g():
 
   assert detector.update((0.45, 0.0, 9.80665), STILL_GYRO, now) is None
   assert detector.update((0.55, 0.0, 9.80665), STILL_GYRO, now + 0.1) is None
+
+
+def test_detector_suppresses_impact_while_detection_disabled():
+  detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
+  now = prime(detector)
+
+  assert detector.update((2.5, 0.0, 9.80665), STILL_GYRO, now, detection_enabled=False) is None
+  assert detector.update((2.6, 0.0, 9.80665), STILL_GYRO, now + 0.01, detection_enabled=False) is None
+
+
+def test_door_lock_tracker_requires_locked_state_and_persists(tmp_path: Path):
+  state_path = tmp_path / "door_lock_status.json"
+  tracker = DoorLockTracker(required=True, arm_delay_s=3.0, state_path=state_path)
+
+  assert not tracker.detection_allowed(10.0)
+  assert tracker.update(0, 0x19D, bytes.fromhex("00000000030000ff"), 10.0)
+  assert tracker.locked is False
+  assert not tracker.detection_allowed(20.0)
+
+  assert tracker.update(0, 0x19D, bytes.fromhex("c0003ffd020000ff"), 20.0)
+  assert tracker.locked is True
+  assert not tracker.detection_allowed(22.9)
+  assert tracker.detection_allowed(23.0)
+
+  restored = DoorLockTracker(required=True, arm_delay_s=3.0, state_path=state_path)
+  assert restored.locked is True
+  assert restored.detection_allowed(0.0)
+
+
+def test_door_lock_tracker_ignores_other_can_frames(tmp_path: Path):
+  tracker = DoorLockTracker(required=True, state_path=tmp_path / "state.json")
+
+  assert not tracker.update(1, 0x19D, bytes(8), 0.0)
+  assert not tracker.update(0, 0x123, bytes(8), 0.0)
+  assert not tracker.update(0, 0x19D, bytes(4), 0.0)
+  assert tracker.locked is None
 
 
 def test_detector_uses_cooldown_after_strong_impact():

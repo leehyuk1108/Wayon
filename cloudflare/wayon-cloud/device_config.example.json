@@ -5,5 +5,12 @@
   "telemetry_interval_onroad": 15,
   "telemetry_interval_offroad": 300,
   "route_interval_onroad": 15,
-  "snapshot_interval_offroad": 3600
+  "snapshot_interval_offroad": 3600,
+  "impact_require_door_locked": true,
+  "impact_lock_can_bus": 0,
+  "impact_lock_can_address": 413,
+  "impact_lock_can_byte": 4,
+  "impact_lock_can_mask": 1,
+  "impact_lock_can_unlocked_value": 1,
+  "impact_lock_arm_delay_s": 3
 }

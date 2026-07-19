@@ -12,6 +12,8 @@ DEFAULT_IMPACT_QUEUE_PATH = Path(os.getenv(
   "WAYON_IMPACT_QUEUE", "/data/wayon_cloud/impact_queue.jsonl"))
 DEFAULT_IMPACT_DIAGNOSTICS_PATH = Path(os.getenv(
   "WAYON_IMPACT_DIAGNOSTICS", "/data/wayon_cloud/impact_diagnostics.jsonl"))
+DEFAULT_DOOR_LOCK_STATE_PATH = Path(os.getenv(
+  "WAYON_DOOR_LOCK_STATE", "/data/wayon_cloud/door_lock_status.json"))
 MAX_QUEUED_IMPACTS = 64
 MAX_IMPACT_DIAGNOSTICS_BYTES = 512 * 1024
 DEFAULT_ARM_DELAY_S = 15.0
@@ -29,6 +31,80 @@ def utc_now() -> str:
 
 def vector_norm(vector: tuple[float, float, float]) -> float:
   return math.sqrt(sum(component * component for component in vector))
+
+
+class DoorLockTracker:
+  def __init__(
+    self,
+    required: bool = False,
+    bus: int = 0,
+    address: int = 0x19D,
+    byte_index: int = 4,
+    mask: int = 0x01,
+    unlocked_value: int = 0x01,
+    arm_delay_s: float = 3.0,
+    state_path: Path = DEFAULT_DOOR_LOCK_STATE_PATH,
+  ) -> None:
+    self.required = required
+    self.bus = bus
+    self.address = address
+    self.byte_index = max(0, byte_index)
+    self.mask = max(1, min(0xFF, mask))
+    self.unlocked_value = unlocked_value & self.mask
+    self.arm_delay_s = max(0.0, arm_delay_s)
+    self.state_path = state_path
+    self.locked: bool | None = None
+    self.locked_since: float | None = None
+    self.observed_at: str | None = None
+    self._load()
+
+  def _load(self) -> None:
+    if not self.required:
+      return
+    try:
+      payload = json.loads(self.state_path.read_text(encoding="utf-8"))
+      if isinstance(payload.get("locked"), bool):
+        self.locked = payload["locked"]
+        self.locked_since = -math.inf if self.locked else None
+        self.observed_at = payload.get("observedAt")
+    except (OSError, TypeError, ValueError):
+      pass
+
+  def _persist(self) -> None:
+    self.state_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+      "locked": self.locked,
+      "observedAt": self.observed_at,
+      "bus": self.bus,
+      "address": self.address,
+      "byteIndex": self.byte_index,
+      "mask": self.mask,
+    }
+    temporary = self.state_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    os.replace(temporary, self.state_path)
+
+  def update(self, bus: int, address: int, data: bytes, now: float) -> bool:
+    if bus != self.bus or address != self.address or len(data) <= self.byte_index:
+      return False
+
+    unlocked = data[self.byte_index] & self.mask == self.unlocked_value
+    locked = not unlocked
+    changed = locked != self.locked
+    if not changed:
+      return False
+
+    self.locked = locked
+    self.locked_since = now if locked else None
+    self.observed_at = utc_now()
+    self._persist()
+    return True
+
+  def detection_allowed(self, now: float) -> bool:
+    if not self.required:
+      return True
+    return self.locked is True and self.locked_since is not None \
+      and now - self.locked_since >= self.arm_delay_s
 
 
 class ImpactDetector:
@@ -119,7 +195,7 @@ class ImpactDetector:
     }
 
   def update(self, accel: tuple[float, float, float], gyro: tuple[float, float, float],
-             now: float) -> dict | None:
+             now: float, detection_enabled: bool = True) -> dict | None:
     if len(accel) != 3 or len(gyro) != 3 or not all(math.isfinite(value) for value in (*accel, *gyro)):
       return None
 
@@ -157,7 +233,7 @@ class ImpactDetector:
       for index in range(3):
         self.gravity[index] += alpha * (accel[index] - self.gravity[index])
 
-    if not self.armed or now - self.last_trigger_at < self.cooldown_s:
+    if not detection_enabled or not self.armed or now - self.last_trigger_at < self.cooldown_s:
       self._reset_candidate()
       return None
 

@@ -143,26 +143,39 @@ def enqueue_vehicle_event(event: dict, path: Path = DEFAULT_VEHICLE_EVENT_QUEUE_
 
 
 def peek_vehicle_event(path: Path = DEFAULT_VEHICLE_EVENT_QUEUE_PATH) -> dict | None:
+  events = peek_vehicle_events(path, limit=1)
+  return events[0] if events else None
+
+
+def peek_vehicle_events(path: Path = DEFAULT_VEHICLE_EVENT_QUEUE_PATH,
+                        limit: int | None = None) -> list[dict]:
   try:
     with path.open("r", encoding="utf-8") as handle:
       fcntl.flock(handle, fcntl.LOCK_SH)
       events = _read_events(handle)
       fcntl.flock(handle, fcntl.LOCK_UN)
   except FileNotFoundError:
-    return None
-  return events[0] if events else None
+    return []
+  return events if limit is None else events[:max(0, limit)]
 
 
 def remove_vehicle_event(event_id: str, path: Path = DEFAULT_VEHICLE_EVENT_QUEUE_PATH) -> bool:
+  return remove_vehicle_events({event_id}, path) > 0
+
+
+def remove_vehicle_events(event_ids: set[str],
+                          path: Path = DEFAULT_VEHICLE_EVENT_QUEUE_PATH) -> int:
+  if not event_ids:
+    return 0
   try:
     with path.open("r+", encoding="utf-8") as handle:
       fcntl.flock(handle, fcntl.LOCK_EX)
       events = _read_events(handle)
-      remaining = [event for event in events if event.get("id") != event_id]
-      removed = len(remaining) != len(events)
+      remaining = [event for event in events if event.get("id") not in event_ids]
+      removed = len(events) - len(remaining)
       if removed:
         _write_events(handle, remaining)
       fcntl.flock(handle, fcntl.LOCK_UN)
       return removed
   except FileNotFoundError:
-    return False
+    return 0

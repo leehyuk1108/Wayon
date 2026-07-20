@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,7 +14,7 @@ from openpilot.system.wayon_cloud_uploader import (device_details_payload, gps_p
                                                    upload_pending_impacts, upload_pending_vehicle_events,
                                                    vehicle_details_payload)
 from openpilot.system.wayon_impact import enqueue_impact_event, peek_impact_event
-from openpilot.system.wayon_vehicle_events import door_lock_event, enqueue_vehicle_event
+from openpilot.system.wayon_vehicle_events import door_lock_event, enqueue_vehicle_event, peek_vehicle_event
 
 
 class FakeSubMaster(dict):
@@ -97,7 +98,12 @@ def test_ai_telemetry_helpers_expose_numeric_thermal_power_and_drive_state():
 
 def test_vehicle_event_upload_removes_only_after_success(tmp_path, monkeypatch):
   queue = tmp_path / "vehicle_events.jsonl"
-  event = {**door_lock_event(False), "id": "unlock-event"}
+  now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+  event = {
+    **door_lock_event(False),
+    "id": "unlock-event",
+    "occurredAt": (now - timedelta(seconds=9)).isoformat().replace("+00:00", "Z"),
+  }
   enqueue_vehicle_event(event, queue)
   posted = []
 
@@ -106,8 +112,57 @@ def test_vehicle_event_upload_removes_only_after_success(tmp_path, monkeypatch):
     return {"ok": True}
 
   monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json", fake_post)
-  assert upload_pending_vehicle_events({"endpoint": "test", "token": "test"}, "device", queue) == 1
+  assert upload_pending_vehicle_events(
+    {"endpoint": "test", "token": "test"}, "device", queue, now=now) == 1
   assert posted == [("/api/vehicle-event", {**event, "deviceId": "device"})]
+
+
+def test_vehicle_event_upload_holds_recent_unlock(tmp_path, monkeypatch):
+  queue = tmp_path / "vehicle_events.jsonl"
+  now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+  event = {
+    **door_lock_event(False),
+    "id": "unlock-event",
+    "occurredAt": (now - timedelta(seconds=4)).isoformat().replace("+00:00", "Z"),
+  }
+  enqueue_vehicle_event(event, queue)
+  posted = []
+  monkeypatch.setattr(
+    "openpilot.system.wayon_cloud_uploader.post_json",
+    lambda config, path, payload: posted.append((path, payload)),
+  )
+
+  assert upload_pending_vehicle_events(
+    {"endpoint": "test", "token": "test"}, "device", queue, now=now) == 0
+  assert posted == []
+  assert peek_vehicle_event(queue) == event
+
+
+def test_vehicle_event_upload_suppresses_quick_unlock_relock_pair(tmp_path, monkeypatch):
+  queue = tmp_path / "vehicle_events.jsonl"
+  now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+  unlocked = {
+    **door_lock_event(False),
+    "id": "unlock-event",
+    "occurredAt": (now - timedelta(seconds=7)).isoformat().replace("+00:00", "Z"),
+  }
+  locked = {
+    **door_lock_event(True),
+    "id": "lock-event",
+    "occurredAt": (now - timedelta(seconds=2)).isoformat().replace("+00:00", "Z"),
+  }
+  enqueue_vehicle_event(unlocked, queue)
+  enqueue_vehicle_event(locked, queue)
+  posted = []
+  monkeypatch.setattr(
+    "openpilot.system.wayon_cloud_uploader.post_json",
+    lambda config, path, payload: posted.append((path, payload)),
+  )
+
+  assert upload_pending_vehicle_events(
+    {"endpoint": "test", "token": "test"}, "device", queue, now=now) == 0
+  assert posted == []
+  assert peek_vehicle_event(queue) is None
 
 
 def test_impact_upload_captures_both_cameras_and_cleans_local_media(tmp_path, monkeypatch):

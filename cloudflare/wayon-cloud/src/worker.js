@@ -314,7 +314,7 @@ export async function websocketBytes(data) {
   return null;
 }
 
-async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs = 0) {
+async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs = 0, startDelayMs = 0) {
   let socket;
   try {
     socket = env.COMMA_NETWORK.connect(target);
@@ -354,6 +354,9 @@ async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs
   server.addEventListener("error", close);
 
   ctx.waitUntil((async () => {
+    if (startDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, startDelayMs));
+    }
     const reader = socket.readable.getReader();
     try {
       while (!closed) {
@@ -410,7 +413,7 @@ async function handleLiveStream(request, env, ctx) {
   );
   if (!protocol) return json({ error: "unauthorized" }, 401);
 
-  return proxyTcpWebSocket(env, ctx, LIVE_STREAM_TARGET, protocol, "live stream", 500);
+  return proxyTcpWebSocket(env, ctx, LIVE_STREAM_TARGET, protocol, "live stream", 500, 100);
 }
 
 function authorize(request, env, write = false) {

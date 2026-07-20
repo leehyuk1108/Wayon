@@ -7,10 +7,12 @@ from openpilot.system.wayon_live_stream import (
   FRAME_MAGIC,
   FRAME_TYPE_METADATA,
   bounded_number,
+  camera_busy,
   encoded_payload,
   is_offroad,
   json_frame,
   pack_frame,
+  wait_for_camera,
 )
 
 
@@ -65,3 +67,24 @@ def test_is_offroad_requires_matching_manager_params():
   assert is_offroad(FakeParams({"IsOffroad": True, "IsOnroad": False}))
   assert not is_offroad(FakeParams({"IsOffroad": False, "IsOnroad": False}))
   assert not is_offroad(FakeParams({"IsOffroad": True, "IsOnroad": True}))
+
+
+def test_wait_for_camera_retries_snapshot_contention(monkeypatch):
+  class FakeParams:
+    def get_bool(self, key):
+      return key == "IsOffroad"
+
+  busy = iter((True, True, False, False))
+  monkeypatch.setattr("openpilot.system.wayon_live_stream.camera_busy", lambda _params: next(busy))
+  monkeypatch.setattr("openpilot.system.wayon_live_stream.time.sleep", lambda _seconds: None)
+
+  assert wait_for_camera(FakeParams(), timeout_s=1.0, poll_s=0.01)
+
+
+def test_camera_busy_checks_snapshot_param_before_process(monkeypatch):
+  class FakeParams:
+    def get_bool(self, key):
+      return key == "IsTakingSnapshot"
+
+  monkeypatch.setattr("openpilot.system.wayon_live_stream.process_running", lambda _name: False)
+  assert camera_busy(FakeParams())

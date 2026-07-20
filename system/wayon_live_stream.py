@@ -13,6 +13,7 @@ LISTEN_HOST = os.getenv("WAYON_LIVE_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.getenv("WAYON_LIVE_PORT", "8765"))
 DEFAULT_BITRATE = 800_000
 DEFAULT_MAX_SESSION_S = 300.0
+DEFAULT_CAMERA_WAIT_S = 30.0
 MIN_BITRATE = 250_000
 MAX_BITRATE = 2_000_000
 MIN_SESSION_S = 30.0
@@ -81,6 +82,20 @@ def process_running(name: str) -> bool:
   ).returncode == 0
 
 
+def camera_busy(params) -> bool:
+  return params.get_bool("IsTakingSnapshot") or process_running("encoderd")
+
+
+def wait_for_camera(params, timeout_s: float = DEFAULT_CAMERA_WAIT_S,
+                    poll_s: float = 0.25) -> bool:
+  deadline = time.monotonic() + timeout_s
+  while is_offroad(params) and camera_busy(params):
+    if time.monotonic() >= deadline:
+      return False
+    time.sleep(poll_s)
+  return is_offroad(params) and not camera_busy(params)
+
+
 def is_offroad(params) -> bool:
   return params.get_bool("IsOffroad") and not params.get_bool("IsOnroad")
 
@@ -109,6 +124,15 @@ def stream_metadata(bitrate: int, max_session_s: float) -> dict:
   }
 
 
+def send_terminal(client: socket.socket, state: str, message: str = "") -> None:
+  payload = {"state": state}
+  if message:
+    payload["message"] = message
+  client.sendall(json_frame(FRAME_TYPE_STATUS, payload))
+  # Give the TCP/WebSocket bridge time to forward a short final frame before EOF.
+  time.sleep(0.25)
+
+
 def run_stream(client: socket.socket) -> None:
   from cereal import messaging
   from openpilot.common.params import Params
@@ -117,10 +141,11 @@ def run_stream(client: socket.socket) -> None:
 
   params = Params()
   if not is_offroad(params):
-    client.sendall(json_frame(FRAME_TYPE_STATUS, {"state": "onroad", "message": "Offroad only"}))
+    send_terminal(client, "onroad", "Offroad only")
     return
-  if params.get_bool("IsTakingSnapshot") or process_running("encoderd"):
-    client.sendall(json_frame(FRAME_TYPE_STATUS, {"state": "busy", "message": "Camera is busy"}))
+  if not wait_for_camera(params):
+    state = "onroad" if not is_offroad(params) else "busy"
+    send_terminal(client, state, "Offroad only" if state == "onroad" else "Camera is busy")
     return
 
   config = read_config()
@@ -186,10 +211,15 @@ def run_stream(client: socket.socket) -> None:
   except (BrokenPipeError, ConnectionError, OSError):
     pass
   finally:
-    for process_name in reversed(started_processes):
-      managed_processes[process_name].stop()
-    params.put_bool("IsTakingSnapshot", False, block=True)
-    set_offroad_alert("Offroad_IsTakingSnapshot", False)
+    try:
+      for process_name in reversed(started_processes):
+        try:
+          managed_processes[process_name].stop()
+        except Exception as exc:
+          print(f"Wayon live: failed to stop {process_name}: {exc}", flush=True)
+    finally:
+      params.put_bool("IsTakingSnapshot", False, block=True)
+      set_offroad_alert("Offroad_IsTakingSnapshot", False)
 
 
 def main() -> None:
@@ -215,7 +245,7 @@ def main() -> None:
         except Exception as exc:
           print(f"Wayon live: session failed: {exc}", flush=True)
           try:
-            client.sendall(json_frame(FRAME_TYPE_STATUS, {"state": "error"}))
+            send_terminal(client, "error")
           except OSError:
             pass
       print("Wayon live: viewer disconnected", flush=True)

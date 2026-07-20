@@ -635,6 +635,18 @@ function doorLockData(event) {
   }).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]));
 }
 
+export function visibleFcmNotification(data) {
+  if (data?.type !== "wayon_door_lock") return null;
+  const locked = data.locked === "true";
+  return {
+    title: data.test === "true"
+      ? "차량 잠금 알림 테스트"
+      : (locked ? "차량 잠금 활성화" : "차량 잠금 해제"),
+    body: locked ? "차량 잠금이 활성화되었습니다." : "차량 잠금이 해제되었습니다.",
+    channelId: "wayon_door_lock_alerts",
+  };
+}
+
 function parkingUnlockedData(event) {
   return Object.fromEntries(Object.entries({
     type: "wayon_parking_unlocked",
@@ -652,6 +664,24 @@ function parkingUnlockedData(event) {
 async function sendFcmMessage(env, token, data) {
   if (!env.FCM_PROJECT_ID) throw new Error("FCM project binding is missing");
   const accessToken = await getFcmAccessToken(env);
+  const visibleNotification = visibleFcmNotification(data);
+  const message = {
+    token,
+    data,
+    android: {
+      priority: "HIGH",
+      ttl: "300s",
+      ...(visibleNotification ? {
+        notification: { channel_id: visibleNotification.channelId },
+      } : {}),
+    },
+    ...(visibleNotification ? {
+      notification: {
+        title: visibleNotification.title,
+        body: visibleNotification.body,
+      },
+    } : {}),
+  };
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(env.FCM_PROJECT_ID)}/messages:send`,
     {
@@ -660,16 +690,7 @@ async function sendFcmMessage(env, token, data) {
         authorization: `Bearer ${accessToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        message: {
-          token,
-          data,
-          android: {
-            priority: "HIGH",
-            ttl: "300s",
-          },
-        },
-      }),
+      body: JSON.stringify({ message }),
     },
   );
   const result = await response.json().catch(() => ({}));

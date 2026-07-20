@@ -5,6 +5,7 @@ import worker, {
   issueRemoteSshProtocol,
   verifyLiveProtocol,
   verifyRemoteSshProtocol,
+  visibleFcmNotification,
   websocketBytes,
 } from "../src/worker.js";
 
@@ -22,6 +23,19 @@ assert.equal(await verifyLiveProtocol(liveProtocol, secret, now), liveProtocol);
 assert.equal(await verifyLiveProtocol(liveProtocol, secret, now + 31), "");
 assert.equal(await verifyRemoteSshProtocol(liveProtocol, secret, now), "");
 assert.deepEqual([...await websocketBytes(new Blob([Uint8Array.from([0, 127, 255])]))], [0, 127, 255]);
+assert.deepEqual(visibleFcmNotification({ type: "wayon_door_lock", locked: "true" }), {
+  title: "차량 잠금 활성화",
+  body: "차량 잠금이 활성화되었습니다.",
+  channelId: "wayon_door_lock_alerts",
+});
+assert.deepEqual(visibleFcmNotification({
+  type: "wayon_door_lock", locked: "false", test: "true",
+}), {
+  title: "차량 잠금 알림 테스트",
+  body: "차량 잠금이 해제되었습니다.",
+  channelId: "wayon_door_lock_alerts",
+});
+assert.equal(visibleFcmNotification({ type: "wayon_impact" }), null);
 
 const env = {
   DB: {},

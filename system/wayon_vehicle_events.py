@@ -42,24 +42,27 @@ class ParkingUnlockReminder:
   def __init__(self, delay_s: float = DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S,
                enabled: bool = True) -> None:
     self.delay_s = max(0.0, float(delay_s))
+    self.enabled = bool(enabled)
     self.unlocked_since: float | None = None
-    self.completed = not enabled
+    self.alerted = False
 
   def update(self, locked: bool | None, now: float) -> bool:
-    if self.completed:
+    if not self.enabled:
       return False
     if locked is True:
-      self.completed = True
       self.unlocked_since = None
+      self.alerted = False
       return False
     if locked is not False:
+      return False
+    if self.alerted:
       return False
     if self.unlocked_since is None:
       self.unlocked_since = now
     if now - self.unlocked_since < self.delay_s:
       return False
 
-    self.completed = True
+    self.alerted = True
     return True
 
 

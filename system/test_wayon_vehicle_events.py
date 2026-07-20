@@ -39,12 +39,20 @@ def test_parking_unlock_reminder_waits_for_known_unlocked_state():
   assert not reminder.update(False, 900)
 
 
-def test_parking_unlock_reminder_is_cancelled_by_lock():
+def test_parking_unlock_reminder_is_reset_and_rearmed_by_lock():
   reminder = ParkingUnlockReminder(delay_s=180)
 
   assert not reminder.update(False, 10)
   assert not reminder.update(True, 100)
   assert not reminder.update(False, 400)
+  assert not reminder.update(False, 579.9)
+  assert reminder.update(False, 580)
+  assert not reminder.update(False, 900)
+
+  assert not reminder.update(True, 901)
+  assert not reminder.update(False, 1000)
+  assert not reminder.update(False, 1179.9)
+  assert reminder.update(False, 1180)
 
 
 def test_parking_unlock_reminder_can_be_disabled():

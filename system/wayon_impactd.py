@@ -20,7 +20,9 @@ from openpilot.system.wayon_impact import (
   utc_now,
 )
 from openpilot.system.wayon_vehicle_events import (
+  DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
   DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S,
+  DoorLockNotificationDebouncer,
   ParkingUnlockReminder,
   door_lock_event,
   enqueue_vehicle_event,
@@ -126,6 +128,12 @@ def main() -> None:
       "parking_unlocked_reminder_delay_s", DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S)),
     enabled=config_bool(config, "parking_unlocked_reminder_enabled", True),
   )
+  door_lock_notification_debouncer = DoorLockNotificationDebouncer(
+    pair_window_s=float(config.get(
+      "door_lock_notification_pair_window_s",
+      DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
+    )),
+  )
   sm = messaging.SubMaster(["accelerometer", "gyroscope", "can"], poll="accelerometer")
   latest_gyro = (0.0, 0.0, 0.0)
   received_first_sample = False
@@ -157,10 +165,21 @@ def main() -> None:
         lock_was_known = lock_tracker.locked is not None
         lock_changed = lock_tracker.update(frame_bus, frame_address, frame_data, now)
         if lock_changed and lock_was_known and lock_tracker.locked is not None:
-          event = door_lock_event(lock_tracker.locked)
-          enqueue_vehicle_event(event)
-          state_text = "locked" if lock_tracker.locked else "unlocked"
-          print(f"Wayon vehicle: queued door {state_text} event", flush=True)
+          pending_unlock = door_lock_notification_debouncer.has_pending_unlock
+          events = door_lock_notification_debouncer.on_change(
+            door_lock_event(lock_tracker.locked), now)
+          if lock_tracker.locked is False:
+            print("Wayon vehicle: holding door unlock notification", flush=True)
+          elif pending_unlock and not events:
+            print("Wayon vehicle: suppressed quick unlock/lock notification pair", flush=True)
+          for event in events:
+            enqueue_vehicle_event(event)
+            state_text = "locked" if event["locked"] else "unlocked"
+            print(f"Wayon vehicle: queued door {state_text} event", flush=True)
+
+    for event in door_lock_notification_debouncer.flush(now):
+      enqueue_vehicle_event(event)
+      print("Wayon vehicle: queued sustained door unlocked event", flush=True)
 
     if lock_state_observed and parking_unlock_reminder.update(lock_tracker.locked, now):
       event = parking_unlocked_event(parking_unlock_reminder.delay_s)

@@ -410,7 +410,7 @@ async function handleLiveStream(request, env, ctx) {
   );
   if (!protocol) return json({ error: "unauthorized" }, 401);
 
-  return proxyTcpWebSocket(env, ctx, LIVE_STREAM_TARGET, protocol, "live stream", 50);
+  return proxyTcpWebSocket(env, ctx, LIVE_STREAM_TARGET, protocol, "live stream", 500);
 }
 
 function authorize(request, env, write = false) {

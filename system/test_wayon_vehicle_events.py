@@ -41,6 +41,15 @@ def test_door_lock_notification_debouncer_suppresses_quick_unlock_lock_pair():
   assert debouncer.flush(30) == []
 
 
+def test_door_lock_notification_debouncer_keeps_immediate_manual_pair():
+  debouncer = DoorLockNotificationDebouncer(pair_window_s=8, pair_min_s=3.5)
+  unlocked = {**door_lock_event(False), "id": "unlocked"}
+  locked = {**door_lock_event(True), "id": "locked"}
+
+  assert debouncer.on_change(unlocked, 10) == []
+  assert debouncer.on_change(locked, 11) == [unlocked, locked]
+
+
 def test_door_lock_notification_debouncer_releases_sustained_unlock():
   debouncer = DoorLockNotificationDebouncer(pair_window_s=8)
   unlocked = {**door_lock_event(False), "id": "unlocked"}
@@ -67,13 +76,14 @@ def test_door_lock_notification_debouncer_keeps_standalone_lock():
   assert debouncer.on_change(locked, 10) == [locked]
 
 
-def test_door_lock_notification_debouncer_suppresses_back_to_back_wake_pairs():
+def test_door_lock_notification_debouncer_keeps_non_signature_pair_after_wake_pair():
   debouncer = DoorLockNotificationDebouncer(pair_window_s=8)
 
   assert debouncer.on_change({**door_lock_event(False), "id": "unlock-1"}, 10) == []
   assert debouncer.on_change({**door_lock_event(True), "id": "lock-1"}, 14.2) == []
   assert debouncer.on_change({**door_lock_event(False), "id": "unlock-2"}, 14.3) == []
-  assert debouncer.on_change({**door_lock_event(True), "id": "lock-2"}, 15.1) == []
+  assert [event["id"] for event in debouncer.on_change(
+    {**door_lock_event(True), "id": "lock-2"}, 15.1)] == ["unlock-2", "lock-2"]
   assert debouncer.flush(30) == []
 
 

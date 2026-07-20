@@ -20,6 +20,7 @@ from openpilot.system.wayon_impact import (
   utc_now,
 )
 from openpilot.system.wayon_vehicle_events import (
+  DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S,
   DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
   DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S,
   DoorLockNotificationDebouncer,
@@ -132,6 +133,10 @@ def main() -> None:
     pair_window_s=float(config.get(
       "door_lock_notification_pair_window_s",
       DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
+    )),
+    pair_min_s=float(config.get(
+      "door_lock_notification_pair_min_s",
+      DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S,
     )),
   )
   sm = messaging.SubMaster(["accelerometer", "gyroscope", "can"], poll="accelerometer")

@@ -10,7 +10,9 @@ DEFAULT_VEHICLE_EVENT_QUEUE_PATH = Path(os.getenv(
   "WAYON_VEHICLE_EVENT_QUEUE", "/data/wayon_cloud/vehicle_event_queue.jsonl"))
 MAX_QUEUED_VEHICLE_EVENTS = 128
 DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S = 180.0
+# MyChevrolet's telemetry wake cycle stays unlocked for about five seconds.
 DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S = 8.0
+DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S = 3.5
 
 
 def utc_now() -> str:
@@ -38,8 +40,10 @@ def parking_unlocked_event(delay_s: float, test: bool = False) -> dict:
 
 
 class DoorLockNotificationDebouncer:
-  def __init__(self, pair_window_s: float = DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S) -> None:
+  def __init__(self, pair_window_s: float = DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
+               pair_min_s: float = DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S) -> None:
     self.pair_window_s = max(0.0, float(pair_window_s))
+    self.pair_min_s = min(self.pair_window_s, max(0.0, float(pair_min_s)))
     self._pending_unlock_event: dict | None = None
     self._pending_unlock_at: float | None = None
 
@@ -76,7 +80,8 @@ class DoorLockNotificationDebouncer:
     if self._pending_unlock_event is None or self._pending_unlock_at is None:
       return [dict(event)]
 
-    if now - self._pending_unlock_at <= self.pair_window_s:
+    elapsed_s = now - self._pending_unlock_at
+    if self.pair_min_s <= elapsed_s <= self.pair_window_s:
       self._take_pending_unlock()
       return []
 

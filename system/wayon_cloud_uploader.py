@@ -18,6 +18,7 @@ from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event, update_impact_event
 from openpilot.system.wayon_vehicle_events import (
+  DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S,
   DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
   peek_vehicle_events,
   remove_vehicle_event,
@@ -207,7 +208,7 @@ def _vehicle_event_datetime(event):
     return None
 
 
-def _quick_relock_event(events, unlock_event, pair_window_s):
+def _quick_relock_event(events, unlock_event, pair_min_s, pair_window_s):
   unlock_at = _vehicle_event_datetime(unlock_event)
   if unlock_at is None:
     return None
@@ -220,7 +221,7 @@ def _quick_relock_event(events, unlock_event, pair_window_s):
     if locked_at is None:
       break
     elapsed_s = (locked_at - unlock_at).total_seconds()
-    return event if 0.0 <= elapsed_s <= pair_window_s else None
+    return event if pair_min_s <= elapsed_s <= pair_window_s else None
   return None
 
 
@@ -237,7 +238,11 @@ def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, n
         "door_lock_notification_pair_window_s",
         DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
       )))
-      relock_event = _quick_relock_event(events, event, pair_window_s)
+      pair_min_s = min(pair_window_s, max(0.0, float(config.get(
+        "door_lock_notification_pair_min_s",
+        DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S,
+      ))))
+      relock_event = _quick_relock_event(events, event, pair_min_s, pair_window_s)
       if relock_event is not None:
         event_ids = {str(event.get("id", "")), str(relock_event.get("id", ""))}
         if queue_path is None:

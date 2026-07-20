@@ -18,6 +18,11 @@ const REMOTE_SSH_PATH = "/api/remote/ssh";
 const REMOTE_SSH_PROTOCOL_PREFIX = "wayon-ssh-v1";
 const REMOTE_SSH_MAX_AGE_SECONDS = 60;
 const REMOTE_SSH_TARGET = "172.31.255.254:22";
+const LIVE_SESSION_PATH = "/api/live/session";
+const LIVE_STREAM_PATH = "/api/live/stream";
+const LIVE_PROTOCOL_PREFIX = "wayon-live-v1";
+const LIVE_MAX_AGE_SECONDS = 30;
+const LIVE_STREAM_TARGET = "172.31.255.254:8765";
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
 let cachedFcmAccessToken = null;
@@ -146,10 +151,7 @@ async function importHmacKey(secret, usage) {
   );
 }
 
-export async function issueRemoteSshProtocol(
-  sessionSecret,
-  nowSeconds = Math.floor(Date.now() / 1000),
-) {
+async function issueSignedProtocol(prefix, sessionSecret, nowSeconds) {
   const nonceBytes = new Uint8Array(16);
   crypto.getRandomValues(nonceBytes);
   const nonce = bytesToHex(nonceBytes);
@@ -159,26 +161,22 @@ export async function issueRemoteSshProtocol(
     key,
     new TextEncoder().encode(`${nowSeconds}:${nonce}`),
   );
-  return `${REMOTE_SSH_PROTOCOL_PREFIX}.${nowSeconds}.${nonce}.${bytesToHex(new Uint8Array(signature))}`;
+  return `${prefix}.${nowSeconds}.${nonce}.${bytesToHex(new Uint8Array(signature))}`;
 }
 
-export async function verifyRemoteSshProtocol(
-  header,
-  sessionSecret,
-  nowSeconds = Math.floor(Date.now() / 1000),
-) {
+async function verifySignedProtocol(prefix, maxAgeSeconds, header, sessionSecret, nowSeconds) {
   if (!header || !sessionSecret) return "";
 
   const protocol = header.split(",").map((value) => value.trim())
-    .find((value) => value.startsWith(`${REMOTE_SSH_PROTOCOL_PREFIX}.`));
+    .find((value) => value.startsWith(`${prefix}.`));
   if (!protocol) return "";
 
   const parts = protocol.split(".");
-  if (parts.length !== 4 || parts[0] !== REMOTE_SSH_PROTOCOL_PREFIX) return "";
+  if (parts.length !== 4 || parts[0] !== prefix) return "";
   const timestamp = Number.parseInt(parts[1], 10);
   const nonce = parts[2];
   const signature = hexToBytes(parts[3]);
-  if (!Number.isFinite(timestamp) || Math.abs(nowSeconds - timestamp) > REMOTE_SSH_MAX_AGE_SECONDS) return "";
+  if (!Number.isFinite(timestamp) || Math.abs(nowSeconds - timestamp) > maxAgeSeconds) return "";
   if (!/^[0-9a-f]{32}$/i.test(nonce) || !signature || signature.length !== 32) return "";
 
   const encoder = new TextEncoder();
@@ -190,6 +188,48 @@ export async function verifyRemoteSshProtocol(
     encoder.encode(`${timestamp}:${nonce}`),
   );
   return valid ? protocol : "";
+}
+
+export async function issueRemoteSshProtocol(
+  sessionSecret,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  return issueSignedProtocol(REMOTE_SSH_PROTOCOL_PREFIX, sessionSecret, nowSeconds);
+}
+
+export async function verifyRemoteSshProtocol(
+  header,
+  sessionSecret,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  return verifySignedProtocol(
+    REMOTE_SSH_PROTOCOL_PREFIX,
+    REMOTE_SSH_MAX_AGE_SECONDS,
+    header,
+    sessionSecret,
+    nowSeconds,
+  );
+}
+
+export async function issueLiveProtocol(
+  sessionSecret,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  return issueSignedProtocol(LIVE_PROTOCOL_PREFIX, sessionSecret, nowSeconds);
+}
+
+export async function verifyLiveProtocol(
+  header,
+  sessionSecret,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  return verifySignedProtocol(
+    LIVE_PROTOCOL_PREFIX,
+    LIVE_MAX_AGE_SECONDS,
+    header,
+    sessionSecret,
+    nowSeconds,
+  );
 }
 
 function basicCredentials(request) {
@@ -245,6 +285,25 @@ function handleRemoteBootstrap(request, env) {
   return json({ tunnelToken: env.WAYON_TUNNEL_TOKEN });
 }
 
+async function handleLiveSession(request, env) {
+  const liveToken = env.WAYON_LIVE_TOKEN || env.WAYON_PUSH_REGISTRATION_TOKEN || "";
+  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET || !liveToken) {
+    return json({ error: "live_access_unavailable" }, 503);
+  }
+  if (!constantTimeEqual(getBearerToken(request), liveToken)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const websocketUrl = new URL(LIVE_STREAM_PATH, request.url);
+  websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+  return json({
+    protocol: await issueLiveProtocol(env.WAYON_SSH_SESSION_SECRET, issuedAt),
+    websocketUrl: websocketUrl.toString(),
+    expiresAt: issuedAt + LIVE_MAX_AGE_SECONDS,
+  });
+}
+
 export async function websocketBytes(data) {
   if (data instanceof ArrayBuffer) return new Uint8Array(data.slice(0));
   if (ArrayBuffer.isView(data)) {
@@ -255,26 +314,13 @@ export async function websocketBytes(data) {
   return null;
 }
 
-async function handleRemoteSsh(request, env, ctx) {
-  if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
-    return json({ error: "websocket_required" }, 426);
-  }
-  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET) {
-    return json({ error: "remote_access_unavailable" }, 503);
-  }
-
-  const protocol = await verifyRemoteSshProtocol(
-    request.headers.get("sec-websocket-protocol") || "",
-    env.WAYON_SSH_SESSION_SECRET,
-  );
-  if (!protocol) return json({ error: "unauthorized" }, 401);
-
+async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs = 0) {
   let socket;
   try {
-    socket = env.COMMA_NETWORK.connect(REMOTE_SSH_TARGET);
+    socket = env.COMMA_NETWORK.connect(target);
     await socket.opened;
   } catch (error) {
-    console.error("Wayon remote SSH origin connection failed", error);
+    console.error(`Wayon ${label} origin connection failed`, error);
     try { socket?.close(); } catch {}
     return json({ error: "comma_offline" }, 503);
   }
@@ -300,7 +346,7 @@ async function handleRemoteSsh(request, env, ctx) {
       if (!bytes) throw new TypeError("unsupported WebSocket message");
       await writer.write(bytes);
     }).catch((error) => {
-      console.error("Wayon remote SSH client write failed", error);
+      console.error(`Wayon ${label} client write failed`, error);
       close();
     });
   });
@@ -316,9 +362,12 @@ async function handleRemoteSsh(request, env, ctx) {
         if (server.readyState === 1) server.send(value);
       }
     } catch {
-      // The SSH client will report the closed transport.
+      // The client reports the closed transport.
     } finally {
       try { reader.releaseLock(); } catch {}
+      if (!closed && closeDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, closeDelayMs));
+      }
       close();
     }
   })());
@@ -328,6 +377,40 @@ async function handleRemoteSsh(request, env, ctx) {
     webSocket: client,
     headers: { "Sec-WebSocket-Protocol": protocol },
   });
+}
+
+async function handleRemoteSsh(request, env, ctx) {
+  if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
+    return json({ error: "websocket_required" }, 426);
+  }
+  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET) {
+    return json({ error: "remote_access_unavailable" }, 503);
+  }
+
+  const protocol = await verifyRemoteSshProtocol(
+    request.headers.get("sec-websocket-protocol") || "",
+    env.WAYON_SSH_SESSION_SECRET,
+  );
+  if (!protocol) return json({ error: "unauthorized" }, 401);
+
+  return proxyTcpWebSocket(env, ctx, REMOTE_SSH_TARGET, protocol, "remote SSH");
+}
+
+async function handleLiveStream(request, env, ctx) {
+  if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
+    return json({ error: "websocket_required" }, 426);
+  }
+  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET) {
+    return json({ error: "live_access_unavailable" }, 503);
+  }
+
+  const protocol = await verifyLiveProtocol(
+    request.headers.get("sec-websocket-protocol") || "",
+    env.WAYON_SSH_SESSION_SECRET,
+  );
+  if (!protocol) return json({ error: "unauthorized" }, 401);
+
+  return proxyTcpWebSocket(env, ctx, LIVE_STREAM_TARGET, protocol, "live stream", 50);
 }
 
 function authorize(request, env, write = false) {
@@ -1026,7 +1109,7 @@ async function handleState(request, env) {
     return json({ error: "unauthorized" }, 401);
   }
 
-  const [state, snapshots, vehicleStatus] = await Promise.all([
+  const [state, snapshots, vehicleStatus, vehicleLock] = await Promise.all([
     env.DB.prepare(`
       SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
     `).first(),
@@ -1042,9 +1125,31 @@ async function handleState(request, env) {
       ORDER BY s.captured_at DESC LIMIT 12
     `).all(),
     fetchVehicleStatus(),
+    latestVehicleLock(env),
   ]);
 
-  return json({ state, snapshots: snapshots.results || [], vehicleStatus });
+  return json({ state, snapshots: snapshots.results || [], vehicleStatus, vehicleLock });
+}
+
+async function latestVehicleLock(env) {
+  const event = await env.DB.prepare(`
+    SELECT locked, occurred_at, received_at
+    FROM vehicle_events
+    WHERE event_type = 'door_lock' AND locked IS NOT NULL
+    ORDER BY occurred_at DESC LIMIT 1
+  `).first();
+
+  return event ? {
+    known: true,
+    locked: Boolean(event.locked),
+    occurredAt: event.occurred_at,
+    receivedAt: event.received_at,
+  } : {
+    known: false,
+    locked: null,
+    occurredAt: null,
+    receivedAt: null,
+  };
 }
 
 function parseTripRoute(trip) {
@@ -1084,7 +1189,7 @@ async function handleExport(request, env) {
     return json({ error: "unauthorized" }, 401);
   }
 
-  const [state, snapshots, trips, vehicleStatus] = await Promise.all([
+  const [state, snapshots, trips, vehicleStatus, vehicleLock] = await Promise.all([
     env.DB.prepare(`
       SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
     `).first(),
@@ -1096,12 +1201,14 @@ async function handleExport(request, env) {
       SELECT * FROM trips ORDER BY ended_at DESC LIMIT 25
     `).all(),
     fetchVehicleStatus(),
+    latestVehicleLock(env),
   ]);
 
   return json({
     generatedAt: nowIso(),
     state,
     vehicleStatus,
+    vehicleLock,
     snapshots: snapshots.results || [],
     trips: (trips.results || []).map(parseTripRoute),
   });
@@ -1511,6 +1618,12 @@ export default {
     }
     if (request.method === "GET" && pathname === REMOTE_SSH_PATH) {
       return handleRemoteSsh(request, env, ctx);
+    }
+    if (request.method === "POST" && pathname === LIVE_SESSION_PATH) {
+      return handleLiveSession(request, env);
+    }
+    if (request.method === "GET" && pathname === LIVE_STREAM_PATH) {
+      return handleLiveStream(request, env, ctx);
     }
 
     if (request.method === "POST" && pathname === "/api/telemetry") {

@@ -13,6 +13,8 @@
   "impact_lock_can_mask": 1,
   "impact_lock_can_unlocked_value": 1,
   "impact_lock_arm_delay_s": 3,
+  "vehicle_status_url": "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json",
+  "door_lock_refresh_marker_window_s": 30,
   "parking_unlocked_reminder_enabled": true,
   "parking_unlocked_reminder_delay_s": 180
 }

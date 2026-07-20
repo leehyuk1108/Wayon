@@ -37,6 +37,11 @@ LAST_SUPPRESSED_VEHICLE_PAIR_PATH = Path(os.getenv(
   "/data/wayon_cloud/last_suppressed_vehicle_pair.json",
 ))
 MAX_IMPACT_CAPTURE_ATTEMPTS = 3
+DEFAULT_VEHICLE_STATUS_URL = (
+  "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json"
+)
+DEFAULT_DOOR_LOCK_REFRESH_MARKER_WINDOW_S = 30.0
+DOOR_LOCK_REFRESH_MARKER_FUTURE_TOLERANCE_S = 3.0
 
 DEFAULT_TELEMETRY_INTERVAL_ONROAD = 30.0
 DEFAULT_TELEMETRY_INTERVAL_OFFROAD = 300.0
@@ -100,6 +105,17 @@ def post_json(config, path, payload):
   )
   response.raise_for_status()
   return response.json() if response.content else {}
+
+
+def fetch_vehicle_status(config):
+  response = requests.get(
+    str(config.get("vehicle_status_url", DEFAULT_VEHICLE_STATUS_URL)),
+    headers={"User-Agent": USER_AGENT},
+    timeout=5,
+  )
+  response.raise_for_status()
+  payload = response.json()
+  return payload if isinstance(payload, dict) else {}
 
 
 def impact_media_directory(event_id, media_root=IMPACT_MEDIA_ROOT):
@@ -229,14 +245,54 @@ def _next_door_relock(events, unlock_event):
   return None, None
 
 
-def _record_suppressed_vehicle_pair(unlock_event, relock_event, elapsed_s, path):
+def _epoch_seconds(value):
+  if isinstance(value, str):
+    value = value.rsplit("_", 1)[-1].strip()
+  try:
+    timestamp = float(value)
+  except (TypeError, ValueError):
+    return None
+  if timestamp > 100_000_000_000:
+    timestamp /= 1000.0
+  return timestamp if timestamp > 0.0 and math.isfinite(timestamp) else None
+
+
+def _matching_vehicle_refresh_marker(config, unlock_event, fetch_status_fn):
+  unlock_at = _vehicle_event_datetime(unlock_event)
+  if unlock_at is None:
+    return None
+  try:
+    status = fetch_status_fn(config)
+  except Exception as exc:
+    print(f"Wayon vehicle: refresh marker unavailable, sending alerts: {exc}", flush=True)
+    return None
+
+  window_s = max(0.0, float(config.get(
+    "door_lock_refresh_marker_window_s",
+    DEFAULT_DOOR_LOCK_REFRESH_MARKER_WINDOW_S,
+  )))
+  unlock_timestamp = unlock_at.timestamp()
+  for key in ("refresh_action", "cmd_refresh"):
+    marker_timestamp = _epoch_seconds(status.get(key))
+    if marker_timestamp is None:
+      continue
+    elapsed_s = unlock_timestamp - marker_timestamp
+    if -DOOR_LOCK_REFRESH_MARKER_FUTURE_TOLERANCE_S <= elapsed_s <= window_s:
+      return {"source": key, "timestamp": marker_timestamp, "elapsedSeconds": elapsed_s}
+  return None
+
+
+def _record_suppressed_vehicle_pair(unlock_event, relock_event, elapsed_s, path,
+                                    refresh_marker=None):
   record = {
     "recordedAt": utc_now(),
-    "reason": "telemetry_wake_relock",
+    "reason": "vehicle_status_refresh",
     "elapsedSeconds": round(elapsed_s, 3),
     "unlockEvent": unlock_event,
     "relockEvent": relock_event,
   }
+  if refresh_marker is not None:
+    record["refreshMarker"] = refresh_marker
   temp_path = path.with_suffix(path.suffix + ".tmp")
   try:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -247,8 +303,9 @@ def _record_suppressed_vehicle_pair(unlock_event, relock_event, elapsed_s, path)
 
 
 def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, now=None,
-                                  suppressed_state_path=None):
+                                  suppressed_state_path=None, fetch_status_fn=None):
   uploaded = 0
+  fetch_status_fn = fetch_status_fn or fetch_vehicle_status
   for _ in range(max(1, limit)):
     events = peek_vehicle_events() if queue_path is None else peek_vehicle_events(queue_path)
     event = events[0] if events else None
@@ -268,18 +325,21 @@ def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, n
 
       if relock_event is not None and relock_elapsed_s is not None \
           and filter_min_s <= relock_elapsed_s <= filter_max_s:
-        state_path = suppressed_state_path or LAST_SUPPRESSED_VEHICLE_PAIR_PATH
-        _record_suppressed_vehicle_pair(event, relock_event, relock_elapsed_s, state_path)
-        event_ids = {str(event.get("id", "")), str(relock_event.get("id", ""))}
-        if queue_path is None:
-          remove_vehicle_events(event_ids)
-        else:
-          remove_vehicle_events(event_ids, queue_path)
-        print(
-          f"Wayon vehicle: suppressed telemetry wake pair ({relock_elapsed_s:.3f}s)",
-          flush=True,
-        )
-        continue
+        refresh_marker = _matching_vehicle_refresh_marker(config, event, fetch_status_fn)
+        if refresh_marker is not None:
+          state_path = suppressed_state_path or LAST_SUPPRESSED_VEHICLE_PAIR_PATH
+          _record_suppressed_vehicle_pair(
+            event, relock_event, relock_elapsed_s, state_path, refresh_marker)
+          event_ids = {str(event.get("id", "")), str(relock_event.get("id", ""))}
+          if queue_path is None:
+            remove_vehicle_events(event_ids)
+          else:
+            remove_vehicle_events(event_ids, queue_path)
+          print(
+            f"Wayon vehicle: suppressed status refresh pair ({relock_elapsed_s:.3f}s)",
+            flush=True,
+          )
+          continue
 
       if relock_event is None:
         occurred_at = _vehicle_event_datetime(event)

@@ -209,13 +209,46 @@ def test_vehicle_event_upload_suppresses_pair_relocked_from_four_to_six_seconds(
       "openpilot.system.wayon_cloud_uploader.post_json",
       lambda config, path, payload: posted.append((path, payload)),
     )
+    marker_ms = int((now - timedelta(seconds=elapsed_s + 1.0)).timestamp() * 1000)
 
     assert upload_pending_vehicle_events(
       {"endpoint": "test", "token": "test"}, "device", queue, now=now,
-      suppressed_state_path=suppressed_state) == 0
+      suppressed_state_path=suppressed_state,
+      fetch_status_fn=lambda config: {"refresh_action": f"CLICKED_AT_{marker_ms}"}) == 0
     assert posted == []
     assert peek_vehicle_event(queue) is None
-    assert json.loads(suppressed_state.read_text())["elapsedSeconds"] == elapsed_s
+    suppressed = json.loads(suppressed_state.read_text())
+    assert suppressed["elapsedSeconds"] == elapsed_s
+    assert suppressed["reason"] == "vehicle_status_refresh"
+    assert suppressed["refreshMarker"]["source"] == "refresh_action"
+
+
+def test_vehicle_event_upload_sends_five_second_pair_without_refresh_marker(tmp_path, monkeypatch):
+  queue = tmp_path / "vehicle_events.jsonl"
+  now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+  unlocked = {
+    **door_lock_event(False),
+    "id": "unlock-event",
+    "occurredAt": (now - timedelta(seconds=4.98)).isoformat().replace("+00:00", "Z"),
+  }
+  locked = {
+    **door_lock_event(True),
+    "id": "lock-event",
+    "occurredAt": now.isoformat().replace("+00:00", "Z"),
+  }
+  enqueue_vehicle_event(unlocked, queue)
+  enqueue_vehicle_event(locked, queue)
+  posted = []
+  monkeypatch.setattr(
+    "openpilot.system.wayon_cloud_uploader.post_json",
+    lambda config, path, payload: posted.append((path, payload)),
+  )
+
+  assert upload_pending_vehicle_events(
+    {"endpoint": "test", "token": "test"}, "device", queue, now=now,
+    fetch_status_fn=lambda config: {}) == 2
+  assert [payload["locked"] for _, payload in posted] == [False, True]
+  assert peek_vehicle_event(queue) is None
 
 
 def test_vehicle_event_upload_sends_pair_relocked_after_six_seconds(tmp_path, monkeypatch):

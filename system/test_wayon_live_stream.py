@@ -12,6 +12,7 @@ from openpilot.system.wayon_live_stream import (
   is_offroad,
   json_frame,
   pack_frame,
+  stream_metadata,
   wait_for_camera,
 )
 
@@ -88,3 +89,8 @@ def test_camera_busy_checks_snapshot_param_before_process(monkeypatch):
 
   monkeypatch.setattr("openpilot.system.wayon_live_stream.process_running", lambda _name: False)
   assert camera_busy(FakeParams())
+
+
+def test_driver_camera_uses_correct_horizontal_orientation():
+  metadata = stream_metadata(800_000, 300)
+  assert metadata["panorama"]["driverMirror"] is False

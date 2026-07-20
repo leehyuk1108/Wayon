@@ -118,7 +118,7 @@ def stream_metadata(bitrate: int, max_session_s: float) -> dict:
       "driverYawDeg": 180.0,
       "driverFovDeg": 205.0,
       "driverPitchDeg": -20.0,
-      "driverMirror": True,
+      "driverMirror": False,
       "blendDeg": 16.0,
     },
   }

@@ -18,11 +18,8 @@ from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event, update_impact_event
 from openpilot.system.wayon_vehicle_events import (
-  DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S,
-  DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
-  peek_vehicle_events,
+  peek_vehicle_event,
   remove_vehicle_event,
-  remove_vehicle_events,
 )
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
@@ -201,60 +198,12 @@ def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
   return uploaded
 
 
-def _vehicle_event_datetime(event):
-  try:
-    return datetime.fromisoformat(str(event.get("occurredAt", "")).replace("Z", "+00:00"))
-  except (TypeError, ValueError):
-    return None
-
-
-def _quick_relock_event(events, unlock_event, pair_min_s, pair_window_s):
-  unlock_at = _vehicle_event_datetime(unlock_event)
-  if unlock_at is None:
-    return None
-  for event in events[1:]:
-    if event.get("eventType") != "door_lock":
-      continue
-    if event.get("locked") is not True:
-      break
-    locked_at = _vehicle_event_datetime(event)
-    if locked_at is None:
-      break
-    elapsed_s = (locked_at - unlock_at).total_seconds()
-    return event if pair_min_s <= elapsed_s <= pair_window_s else None
-  return None
-
-
-def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, now=None):
+def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3):
   uploaded = 0
   for _ in range(max(1, limit)):
-    events = peek_vehicle_events() if queue_path is None else peek_vehicle_events(queue_path)
-    event = events[0] if events else None
+    event = peek_vehicle_event() if queue_path is None else peek_vehicle_event(queue_path)
     if event is None:
       break
-
-    if event.get("eventType") == "door_lock" and event.get("locked") is False:
-      pair_window_s = max(0.0, float(config.get(
-        "door_lock_notification_pair_window_s",
-        DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S,
-      )))
-      pair_min_s = min(pair_window_s, max(0.0, float(config.get(
-        "door_lock_notification_pair_min_s",
-        DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S,
-      ))))
-      relock_event = _quick_relock_event(events, event, pair_min_s, pair_window_s)
-      if relock_event is not None:
-        event_ids = {str(event.get("id", "")), str(relock_event.get("id", ""))}
-        if queue_path is None:
-          remove_vehicle_events(event_ids)
-        else:
-          remove_vehicle_events(event_ids, queue_path)
-        continue
-
-      occurred_at = _vehicle_event_datetime(event)
-      current_time = now or datetime.now(timezone.utc)
-      if occurred_at is not None and (current_time - occurred_at).total_seconds() < pair_window_s:
-        break
 
     payload = {**event, "deviceId": device_id}
     post_json(config, "/api/vehicle-event", payload)

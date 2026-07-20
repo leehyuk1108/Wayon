@@ -10,9 +10,6 @@ DEFAULT_VEHICLE_EVENT_QUEUE_PATH = Path(os.getenv(
   "WAYON_VEHICLE_EVENT_QUEUE", "/data/wayon_cloud/vehicle_event_queue.jsonl"))
 MAX_QUEUED_VEHICLE_EVENTS = 128
 DEFAULT_PARKING_UNLOCKED_REMINDER_DELAY_S = 180.0
-# Observed vehicle telemetry wakes relock in a tight 4.963-4.986 second band.
-DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_MIN_S = 4.94
-DEFAULT_DOOR_LOCK_NOTIFICATION_PAIR_WINDOW_S = 5.02
 
 
 def utc_now() -> str:

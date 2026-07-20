@@ -18,8 +18,11 @@ from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event, update_impact_event
 from openpilot.system.wayon_vehicle_events import (
-  peek_vehicle_event,
+  DEFAULT_DOOR_LOCK_WAKE_FILTER_MAX_S,
+  DEFAULT_DOOR_LOCK_WAKE_FILTER_MIN_S,
+  peek_vehicle_events,
   remove_vehicle_event,
+  remove_vehicle_events,
 )
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
@@ -29,6 +32,10 @@ GPS_SERVICE_MAX_AGE_S = 5.0
 GPS_TIMESTAMP_MAX_AGE_MS = 15_000
 LAST_GPS_POSITION_MAX_AGE_MS = 120_000
 IMPACT_MEDIA_ROOT = Path(os.getenv("WAYON_IMPACT_MEDIA_ROOT", "/data/wayon_cloud/impact_media"))
+LAST_SUPPRESSED_VEHICLE_PAIR_PATH = Path(os.getenv(
+  "WAYON_LAST_SUPPRESSED_VEHICLE_PAIR",
+  "/data/wayon_cloud/last_suppressed_vehicle_pair.json",
+))
 MAX_IMPACT_CAPTURE_ATTEMPTS = 3
 
 DEFAULT_TELEMETRY_INTERVAL_ONROAD = 30.0
@@ -198,12 +205,87 @@ def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
   return uploaded
 
 
-def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3):
+def _vehicle_event_datetime(event):
+  try:
+    parsed = datetime.fromisoformat(str(event.get("occurredAt", "")).replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+  except (TypeError, ValueError):
+    return None
+
+
+def _next_door_relock(events, unlock_event):
+  unlock_at = _vehicle_event_datetime(unlock_event)
+  if unlock_at is None:
+    return None, None
+  for event in events[1:]:
+    if event.get("eventType") != "door_lock":
+      continue
+    if event.get("locked") is not True:
+      return None, None
+    locked_at = _vehicle_event_datetime(event)
+    if locked_at is None:
+      return event, None
+    return event, (locked_at - unlock_at).total_seconds()
+  return None, None
+
+
+def _record_suppressed_vehicle_pair(unlock_event, relock_event, elapsed_s, path):
+  record = {
+    "recordedAt": utc_now(),
+    "reason": "telemetry_wake_relock",
+    "elapsedSeconds": round(elapsed_s, 3),
+    "unlockEvent": unlock_event,
+    "relockEvent": relock_event,
+  }
+  temp_path = path.with_suffix(path.suffix + ".tmp")
+  try:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path.write_text(json.dumps(record, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    os.replace(temp_path, path)
+  except OSError as exc:
+    print(f"Wayon vehicle: failed to record suppressed pair: {exc}", flush=True)
+
+
+def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, now=None,
+                                  suppressed_state_path=None):
   uploaded = 0
   for _ in range(max(1, limit)):
-    event = peek_vehicle_event() if queue_path is None else peek_vehicle_event(queue_path)
+    events = peek_vehicle_events() if queue_path is None else peek_vehicle_events(queue_path)
+    event = events[0] if events else None
     if event is None:
       break
+
+    if event.get("eventType") == "door_lock" and event.get("locked") is False:
+      filter_max_s = max(0.0, float(config.get(
+        "door_lock_notification_pair_window_s",
+        DEFAULT_DOOR_LOCK_WAKE_FILTER_MAX_S,
+      )))
+      filter_min_s = min(filter_max_s, max(0.0, float(config.get(
+        "door_lock_notification_pair_min_s",
+        DEFAULT_DOOR_LOCK_WAKE_FILTER_MIN_S,
+      ))))
+      relock_event, relock_elapsed_s = _next_door_relock(events, event)
+
+      if relock_event is not None and relock_elapsed_s is not None \
+          and filter_min_s <= relock_elapsed_s <= filter_max_s:
+        state_path = suppressed_state_path or LAST_SUPPRESSED_VEHICLE_PAIR_PATH
+        _record_suppressed_vehicle_pair(event, relock_event, relock_elapsed_s, state_path)
+        event_ids = {str(event.get("id", "")), str(relock_event.get("id", ""))}
+        if queue_path is None:
+          remove_vehicle_events(event_ids)
+        else:
+          remove_vehicle_events(event_ids, queue_path)
+        print(
+          f"Wayon vehicle: suppressed telemetry wake pair ({relock_elapsed_s:.3f}s)",
+          flush=True,
+        )
+        continue
+
+      if relock_event is None:
+        occurred_at = _vehicle_event_datetime(event)
+        current_time = now or datetime.now(timezone.utc)
+        if occurred_at is not None and (current_time - occurred_at).total_seconds() <= filter_max_s:
+          break
 
     payload = {**event, "deviceId": device_id}
     post_json(config, "/api/vehicle-event", payload)

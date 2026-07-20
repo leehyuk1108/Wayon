@@ -136,18 +136,18 @@ def is_offroad() -> bool:
 
 
 def main() -> None:
-  for attempt in range(5):
-    if not is_offroad():
-      return
+  attempt = 0
+  while is_offroad():
     try:
       install()
       print("Wayon remote: installed; starting supervisor", flush=True)
       run_supervisor()
     except Exception as exc:
-      print(f"Wayon remote: install attempt {attempt + 1} failed: {exc}")
-      if attempt < 4:
-        time.sleep(min(15 * (attempt + 1), 60))
-  raise RuntimeError("Wayon remote installation failed")
+      attempt += 1
+      print(f"Wayon remote: install attempt {attempt} failed: {exc}", flush=True)
+      if not is_offroad():
+        return
+      time.sleep(min(15 * attempt, 60))
 
 
 if __name__ == "__main__":

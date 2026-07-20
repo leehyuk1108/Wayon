@@ -48,3 +48,22 @@ def test_run_supervisor_replaces_manager_process(tmp_path: Path, monkeypatch):
   installer.run_supervisor()
 
   assert calls == [(str(supervisor), [str(supervisor)])]
+
+
+def test_main_keeps_retrying_while_offroad(monkeypatch):
+  offroad = iter((True, True, True, False))
+  attempts = []
+  sleeps = []
+
+  def fail_install():
+    attempts.append(1)
+    raise OSError("offline")
+
+  monkeypatch.setattr(installer, "is_offroad", lambda: next(offroad))
+  monkeypatch.setattr(installer, "install", fail_install)
+  monkeypatch.setattr(installer.time, "sleep", sleeps.append)
+
+  installer.main()
+
+  assert len(attempts) == 2
+  assert sleeps == [15]

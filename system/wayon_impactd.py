@@ -64,10 +64,10 @@ def lock_tracker_from_config(config: dict) -> DoorLockTracker:
   return DoorLockTracker(
     required=config_bool(config, "impact_require_door_locked"),
     bus=int(config.get("impact_lock_can_bus", 0)),
-    address=int(config.get("impact_lock_can_address", 0x19D)),
-    byte_index=int(config.get("impact_lock_can_byte", 4)),
-    mask=int(config.get("impact_lock_can_mask", 0x01)),
-    unlocked_value=int(config.get("impact_lock_can_unlocked_value", 0x01)),
+    address=int(config.get("impact_lock_can_address", 0x130)),
+    byte_index=int(config.get("impact_lock_can_byte", 0)),
+    mask=int(config.get("impact_lock_can_mask", 0x06)),
+    unlocked_value=int(config.get("impact_lock_can_unlocked_value", 0x02)),
     arm_delay_s=float(config.get("impact_lock_arm_delay_s", 3.0)),
     state_path=Path(config.get("impact_lock_state_path", DEFAULT_DOOR_LOCK_STATE_PATH)),
   )

@@ -115,11 +115,13 @@ def test_door_lock_tracker_requires_locked_state_and_persists(tmp_path: Path):
   tracker = DoorLockTracker(required=True, arm_delay_s=3.0, state_path=state_path)
 
   assert not tracker.detection_allowed(10.0)
-  assert tracker.update(0, 0x19D, bytes.fromhex("00000000030000ff"), 10.0)
+  assert tracker.update(0, 0x130, bytes.fromhex("020000"), 10.0)
   assert tracker.locked is False
   assert not tracker.detection_allowed(20.0)
 
-  assert tracker.update(0, 0x19D, bytes.fromhex("c0003ffd020000ff"), 20.0)
+  assert tracker.update(0, 0x130, bytes.fromhex("040000"), 20.0)
+  assert tracker.locked is True
+  assert not tracker.update(0, 0x130, bytes.fromhex("010000"), 21.0)
   assert tracker.locked is True
   assert not tracker.detection_allowed(22.9)
   assert tracker.detection_allowed(23.0)
@@ -132,9 +134,9 @@ def test_door_lock_tracker_requires_locked_state_and_persists(tmp_path: Path):
 def test_door_lock_tracker_ignores_other_can_frames(tmp_path: Path):
   tracker = DoorLockTracker(required=True, state_path=tmp_path / "state.json")
 
-  assert not tracker.update(1, 0x19D, bytes(8), 0.0)
+  assert not tracker.update(1, 0x130, bytes(8), 0.0)
   assert not tracker.update(0, 0x123, bytes(8), 0.0)
-  assert not tracker.update(0, 0x19D, bytes(4), 0.0)
+  assert not tracker.update(0, 0x130, bytes(0), 0.0)
   assert tracker.locked is None
 
 

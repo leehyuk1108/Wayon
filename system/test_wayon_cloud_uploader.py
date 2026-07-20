@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -140,6 +141,7 @@ def test_vehicle_event_upload_holds_recent_unlock_for_wake_pair(tmp_path, monkey
 
 def test_vehicle_event_upload_suppresses_five_second_telemetry_wake_pair(tmp_path, monkeypatch):
   queue = tmp_path / "vehicle_events.jsonl"
+  suppressed_log = tmp_path / "suppressed.jsonl"
   now = datetime(2026, 7, 20, tzinfo=timezone.utc)
   unlocked = {
     **door_lock_event(False),
@@ -160,9 +162,13 @@ def test_vehicle_event_upload_suppresses_five_second_telemetry_wake_pair(tmp_pat
   )
 
   assert upload_pending_vehicle_events(
-    {"endpoint": "test", "token": "test"}, "device", queue, now=now) == 0
+    {"endpoint": "test", "token": "test"}, "device", queue, now=now,
+    suppressed_log_path=suppressed_log) == 0
   assert posted == []
   assert peek_vehicle_event(queue) is None
+  suppressed = json.loads(suppressed_log.read_text())
+  assert suppressed["reason"] == "telemetry_wake_relock"
+  assert suppressed["elapsedSeconds"] == 4.98
 
 
 def test_vehicle_event_upload_keeps_manual_pair_outside_wake_signature(tmp_path, monkeypatch):
@@ -204,6 +210,33 @@ def test_vehicle_event_upload_keeps_short_manual_pair(tmp_path, monkeypatch):
     **door_lock_event(True),
     "id": "lock-event",
     "occurredAt": (now - timedelta(seconds=3.865)).isoformat().replace("+00:00", "Z"),
+  }
+  enqueue_vehicle_event(unlocked, queue)
+  enqueue_vehicle_event(locked, queue)
+  posted = []
+  monkeypatch.setattr(
+    "openpilot.system.wayon_cloud_uploader.post_json",
+    lambda config, path, payload: posted.append((path, payload)),
+  )
+
+  assert upload_pending_vehicle_events(
+    {"endpoint": "test", "token": "test"}, "device", queue, now=now) == 2
+  assert [payload["locked"] for _, payload in posted] == [False, True]
+  assert peek_vehicle_event(queue) is None
+
+
+def test_vehicle_event_upload_keeps_pair_outside_tight_wake_band(tmp_path, monkeypatch):
+  queue = tmp_path / "vehicle_events.jsonl"
+  now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+  unlocked = {
+    **door_lock_event(False),
+    "id": "unlock-event",
+    "occurredAt": (now - timedelta(seconds=8)).isoformat().replace("+00:00", "Z"),
+  }
+  locked = {
+    **door_lock_event(True),
+    "id": "lock-event",
+    "occurredAt": (now - timedelta(seconds=2.9)).isoformat().replace("+00:00", "Z"),
   }
   enqueue_vehicle_event(unlocked, queue)
   enqueue_vehicle_event(locked, queue)

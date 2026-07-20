@@ -32,6 +32,10 @@ GPS_SERVICE_MAX_AGE_S = 5.0
 GPS_TIMESTAMP_MAX_AGE_MS = 15_000
 LAST_GPS_POSITION_MAX_AGE_MS = 120_000
 IMPACT_MEDIA_ROOT = Path(os.getenv("WAYON_IMPACT_MEDIA_ROOT", "/data/wayon_cloud/impact_media"))
+SUPPRESSED_VEHICLE_EVENT_LOG_PATH = Path(os.getenv(
+  "WAYON_SUPPRESSED_VEHICLE_EVENT_LOG",
+  "/data/wayon_cloud/suppressed_vehicle_events.jsonl",
+))
 MAX_IMPACT_CAPTURE_ATTEMPTS = 3
 
 DEFAULT_TELEMETRY_INTERVAL_ONROAD = 30.0
@@ -225,7 +229,27 @@ def _telemetry_wake_relock_event(events, unlock_event, pair_min_s, pair_window_s
   return None
 
 
-def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, now=None):
+def _record_suppressed_vehicle_pair(unlock_event, relock_event, path):
+  unlock_at = _vehicle_event_datetime(unlock_event)
+  relock_at = _vehicle_event_datetime(relock_event)
+  elapsed_s = (relock_at - unlock_at).total_seconds() if unlock_at and relock_at else None
+  record = {
+    "recordedAt": utc_now(),
+    "reason": "telemetry_wake_relock",
+    "elapsedSeconds": round(elapsed_s, 3) if elapsed_s is not None else None,
+    "unlockEvent": unlock_event,
+    "relockEvent": relock_event,
+  }
+  try:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+      handle.write(json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n")
+  except OSError as exc:
+    print(f"Wayon vehicle: failed to record suppressed pair: {exc}", flush=True)
+
+
+def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, now=None,
+                                  suppressed_log_path=None):
   uploaded = 0
   for _ in range(max(1, limit)):
     events = peek_vehicle_events() if queue_path is None else peek_vehicle_events(queue_path)
@@ -244,12 +268,14 @@ def upload_pending_vehicle_events(config, device_id, queue_path=None, limit=3, n
       ))))
       relock_event = _telemetry_wake_relock_event(events, event, pair_min_s, pair_window_s)
       if relock_event is not None:
+        audit_path = suppressed_log_path or SUPPRESSED_VEHICLE_EVENT_LOG_PATH
+        _record_suppressed_vehicle_pair(event, relock_event, audit_path)
         event_ids = {str(event.get("id", "")), str(relock_event.get("id", ""))}
         if queue_path is None:
           remove_vehicle_events(event_ids)
         else:
           remove_vehicle_events(event_ids, queue_path)
-        print("Wayon vehicle: suppressed five-second telemetry wake lock pair", flush=True)
+        print("Wayon vehicle: suppressed telemetry wake lock pair", flush=True)
         continue
 
       occurred_at = _vehicle_event_datetime(event)

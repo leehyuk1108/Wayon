@@ -1,146 +1,238 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Wayon Cloud</title>
+    <meta name="theme-color" content="#0c0d10">
+    <title>Wayon</title>
+    <link rel="icon" href="/assets/traverse-front.png">
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossorigin>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <main class="screen">
-      <header class="topline">
-        <div class="brand">
-          <strong>WAYON CLOUD</strong>
-          <span>TRAVERSE / LIVE VEHICLE TELEMETRY</span>
+    <header class="app-header">
+      <a class="brand" href="#overview" aria-label="Wayon 개요">
+        <strong>Wayon</strong>
+        <span>Traverse</span>
+      </a>
+
+      <nav class="view-switcher" aria-label="대시보드 화면">
+        <button class="active" type="button" data-view-target="overview" aria-pressed="true">
+          <i data-lucide="car-front"></i><span>차량</span>
+        </button>
+        <button type="button" data-view-target="trips" aria-pressed="false">
+          <i data-lucide="route"></i><span>주행</span>
+        </button>
+        <button type="button" data-view-target="cameras" aria-pressed="false">
+          <i data-lucide="camera"></i><span>카메라</span>
+        </button>
+      </nav>
+
+      <div class="header-actions">
+        <div id="connectionPill" class="connection-pill" role="status">
+          <span class="connection-dot"></span>
+          <span id="connectionStatus">연결 대기</span>
         </div>
-        <form id="tokenForm" class="token-form">
-          <label for="tokenInput">VIEW TOKEN</label>
-          <input id="tokenInput" type="password" autocomplete="current-password" placeholder="Wayon Cloud Key">
-          <button type="submit">SYNC</button>
-        </form>
-        <div id="connectionStatus" class="sync"><i></i> 대기 중</div>
-      </header>
+        <button id="refreshButton" class="icon-button" type="button" aria-label="데이터 새로고침" title="데이터 새로고침">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+        <button id="tokenButton" class="icon-button" type="button" aria-label="연결 설정" title="연결 설정">
+          <i data-lucide="key-round"></i>
+        </button>
+      </div>
+    </header>
 
-      <section class="grid">
-        <aside class="left-stack">
-          <section>
-            <div class="label-row">
-              <div class="hud-label">RANGE:</div>
-              <div class="hud-label blue">STATE:</div>
-            </div>
-            <div class="headline-row">
-              <div>
-                <div class="big-number"><span id="rangeValue">--</span><small id="rangeUnit">km</small></div>
-                <div id="rangeSubtext" class="subline">주행 가능 거리 데이터 없음</div>
-              </div>
-              <div>
-                <div id="driveState" class="state-word">--</div>
-                <div id="lastGpsTime" class="subline">GPS --</div>
-              </div>
-            </div>
+    <main class="app-main">
+      <section id="overviewView" class="view active" data-view="overview">
+        <section class="vehicle-scene" aria-labelledby="driveState">
+          <div class="scene-top">
+            <strong id="vehicleName">CHEVROLET TRAVERSE</strong>
+            <span id="lastUpdated">업데이트 대기 중</span>
+          </div>
 
-            <div class="range-scale">
-              <div class="range-top">
-                <span id="rangePercent" class="pct">--%</span>
-                <span id="dailyBadge" class="daily">LIVE<br>--</span>
-              </div>
-              <div id="rangeBars" class="range-bars" aria-label="range gauge"></div>
-              <div class="ticks"><span>E</span><span>1/2</span><span>SAFE</span><span>F</span></div>
+          <div class="scene-state">
+            <span>현재 상태</span>
+            <div class="scene-title-row">
+              <h1 id="driveState">연결 대기</h1>
+              <span id="driveBadge" class="state-badge">--</span>
             </div>
-          </section>
+            <p id="stateDescription">Wayon Cloud 연결을 기다리고 있습니다.</p>
+            <div class="scene-place"><i data-lucide="map-pin"></i><strong id="currentAddress">위치 데이터 대기 중</strong></div>
+          </div>
 
-          <section class="vehicle-block">
-            <h1>TRAVERSE</h1>
-            <p id="vehicleMeta">Wayon linked</p>
-            <div class="stat-line">
-              <div class="stat"><span>IGNITION</span><strong id="ignitionState">--</strong></div>
-              <div class="stat"><span>BATTERY</span><strong id="batteryInfo">--</strong></div>
-              <div class="stat"><span>ODOMETER</span><strong id="odometer">--</strong></div>
-              <div class="stat"><span>VEHICLE DATA</span><strong id="vehicleUpdatedAt">--</strong></div>
-            </div>
-          </section>
-        </aside>
+          <div class="vehicle-visual">
+            <img class="vehicle-image" src="/assets/traverse-front.png" alt="흰색 Chevrolet Traverse 전면">
+          </div>
 
-        <section class="map-panel" aria-label="vehicle map">
-          <div id="map" class="map"></div>
-          <div class="crosshair" aria-hidden="true"></div>
-          <div class="map-caption">
-            <div>
-              <strong>CURRENT POSITION</strong>
-              <span id="currentAddress">위치 데이터 대기 중</span>
+          <dl class="scene-metrics">
+            <div class="scene-metric range-metric">
+              <dt>주행 가능 거리<small id="rangeHint">Firebase 데이터 대기</small></dt>
+              <dd><b id="rangeValue" data-animate-number>--</b><small>km</small></dd>
+              <div class="scene-range-track" aria-hidden="true"><i id="rangeFill"></i></div>
             </div>
-            <em id="currentCoords">--</em>
+            <div class="scene-metric">
+              <dt>현재 속도<small id="speedSource">Comma 차량 속도</small></dt>
+              <dd><b id="speedValue" data-animate-number>--</b><small>km/h</small></dd>
+            </div>
+            <div class="scene-metric">
+              <dt>연료<small id="fuelHint">Firebase 차량 정보</small></dt>
+              <dd><b id="fuelValue" data-animate-number>--</b><small id="fuelUnit">L</small></dd>
+            </div>
+            <div class="scene-metric">
+              <dt>누적 주행 거리<small id="vehicleDataAge">차량 정보 대기</small></dt>
+              <dd><b id="odometerValue" data-animate-number data-number-format="comma">--</b><small>km</small></dd>
+            </div>
+          </dl>
+
+          <div class="scene-footer" role="group" aria-label="현재 상태">
+            <div id="ignitionChip" class="status-item"><i data-lucide="power"></i><span>시동<strong data-status-value>--</strong></span></div>
+            <div id="openpilotChip" class="status-item"><i data-lucide="route"></i><span>OpenPilot<strong data-status-value>--</strong></span></div>
+            <div id="commaChip" class="status-item"><i data-lucide="cpu"></i><span>Comma<strong data-status-value>--</strong></span></div>
+            <div class="status-item"><i data-lucide="battery-charging"></i><span>차량 배터리<strong id="vehicleBattery">--</strong><small id="vehicleBatteryLife">상태 --</small></span></div>
           </div>
         </section>
 
-        <aside class="right-stack">
-          <section>
-            <div class="hud-label">LIVE:</div>
-            <div class="speed-panel">
-              <div class="data-box">
-                <span>CLUSTER SPEED</span>
-                <strong><span id="speed">--</span><small> km/h</small></strong>
-              </div>
-              <div class="data-box">
-                <span>ONROAD STATE</span>
-                <strong id="driveGlyph">--</strong>
-              </div>
-              <div class="data-box">
-                <span>FUEL LEVEL</span>
-                <strong><span id="fuelLevel">--</span><small id="fuelUnit"> L</small></strong>
-              </div>
-              <div class="data-box">
-                <span>OIL LIFE</span>
-                <strong><span id="oilLife">--</span><small> %</small></strong>
-              </div>
+        <section class="location-surface reveal" aria-labelledby="positionTitle">
+          <div class="map-column">
+            <header class="surface-header">
+              <h2 id="positionTitle">차량 위치</h2>
+              <button id="recenterButton" class="icon-button" type="button" aria-label="현재 차량 위치로 이동" title="현재 차량 위치로 이동">
+                <i data-lucide="locate-fixed"></i>
+              </button>
+            </header>
+            <div id="overviewMap" class="map overview-map"></div>
+          </div>
+          <aside class="location-data">
+            <div class="location-primary">
+              <span id="gpsBadge">GPS --</span>
+              <h3>최근 위치</h3>
+              <p id="currentCoords">--</p>
             </div>
-          </section>
-
-          <section>
-            <div class="section-head">
-              <span class="section-kicker">PARKING SNAPSHOTS</span>
-              <span id="snapshotStatus">--</span>
-            </div>
-            <div id="snapshots" class="snapshots"></div>
-          </section>
-
-          <section class="stat-line compact">
-            <a class="stat link" href="/json.html" target="_blank" rel="noreferrer"><span>JSON VIEW</span><strong>/API/JSON</strong></a>
-            <div class="stat"><span>TRIP ARCHIVE</span><strong id="tripStatus">--</strong></div>
-            <div class="stat"><span>TIRE PRESSURE</span><strong id="tirePressure">--</strong></div>
-            <div class="stat"><span>DTC STATUS</span><strong id="dtcStatus">--</strong></div>
-          </section>
-        </aside>
-
-        <section class="bottom">
-          <section class="chart-wrap">
-            <div class="chart-title">
-              <div>
-                <strong id="monthTotal">-- km</strong>
-                <span>TOTAL FROM LAST 31 DAYS</span>
-              </div>
-              <span id="chartMonth" class="section-kicker">--</span>
-            </div>
-            <div id="monthChart" class="bars-chart" aria-label="last 31 days chart">
-              <div class="axis"><span id="chartMax">--</span><span>1/2</span><span>0</span></div>
-            </div>
-            <div class="chart-foot">
-              <span>AVG: <b id="monthAvg">--</b></span>
-              <span>MAX: <b id="monthMaxSpeed">--</b></span>
-              <span>TIME: <b id="monthTime">--</b></span>
-            </div>
-          </section>
-
-          <section class="trip-list-wrap">
-            <div class="month">RECENT</div>
-            <div id="trips" class="trip-list"></div>
-          </section>
+            <div id="overviewTrips" class="overview-trips"></div>
+          </aside>
         </section>
+
+        <section class="health-section reveal" aria-labelledby="healthTitle">
+          <header class="content-heading">
+            <h2 id="healthTitle">차량과 Comma</h2>
+            <span id="healthStatus" class="health-label">확인 중</span>
+          </header>
+          <div class="health-grid">
+            <article class="health-item">
+              <i data-lucide="circle-gauge"></i>
+              <div><span>타이어 공기압</span><small>앞좌 · 앞우 · 뒤좌 · 뒤우</small></div>
+              <strong id="tirePressure">--</strong>
+            </article>
+            <article class="health-item">
+              <i data-lucide="thermometer"></i>
+              <div><span>Comma 열 상태</span><small id="fanStatus">팬 --</small></div>
+              <strong id="thermalStatus">--</strong>
+            </article>
+            <article class="health-item">
+              <i data-lucide="activity"></i>
+              <div><span>Comma 소비 전력</span><small id="commaVoltage">전압 --</small></div>
+              <strong id="commaPower">--</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="detail-band reveal" aria-labelledby="detailTitle">
+          <header class="content-heading"><h2 id="detailTitle">상세 상태</h2></header>
+          <div class="detail-columns">
+            <dl>
+              <div><dt>차량 진단</dt><dd id="dtcStatus">--</dd></div>
+              <div><dt>오일 수명</dt><dd id="oilLife">--</dd></div>
+              <div><dt>배터리 충전량</dt><dd id="batteryLevel">--</dd></div>
+              <div><dt>Firebase 동기화</dt><dd id="firebaseUpdatedAt">--</dd></div>
+              <div><dt>차량 데이터 새로고침</dt><dd id="refreshStatus">--</dd></div>
+            </dl>
+            <dl>
+              <div><dt>Comma 상태 갱신</dt><dd id="commaUpdatedAt">--</dd></div>
+              <div><dt>화면 밝기</dt><dd><span id="screenBrightness">--</span><small id="deviceId">기기 --</small></dd></div>
+              <div><dt>GPS 소스</dt><dd id="gpsSource">--</dd></div>
+              <div><dt>소비 전류</dt><dd id="currentDraw">--</dd></div>
+              <div><dt>속도 소스</dt><dd id="vehicleSpeedSource">--</dd></div>
+            </dl>
+          </div>
+        </section>
+      </section>
+
+      <section id="tripsView" class="view" data-view="trips" hidden>
+        <header class="view-heading">
+          <h1>주행 기록</h1>
+          <span id="tripCount" class="count-label">0개 경로</span>
+        </header>
+
+        <ul class="trip-summary reveal" aria-label="최근 31일 주행 요약">
+          <li class="featured"><span>총 주행 거리</span><strong id="monthTotal">--</strong><small>최근 31일</small></li>
+          <li><span>일 평균</span><strong id="monthAvg">--</strong><small>주행일 기준</small></li>
+          <li><span>최고 속도</span><strong id="monthMaxSpeed">--</strong><small>저장 경로 기준</small></li>
+          <li><span>총 주행 시간</span><strong id="monthTime">--</strong><small id="chartMonth">--</small></li>
+        </ul>
+
+        <section class="chart-section reveal" aria-labelledby="chartTitle">
+          <header class="content-heading">
+            <h2 id="chartTitle">일별 주행 거리</h2>
+            <span id="chartScale">최대 -- km</span>
+          </header>
+          <div id="monthChart" class="bars-chart" role="img" aria-label="최근 31일 일별 주행 거리"></div>
+          <div class="chart-axis"><span>31일 전</span><span>오늘</span></div>
+        </section>
+
+        <div class="trip-workspace reveal">
+          <section class="trip-map-section" aria-labelledby="routeTitle">
+            <header class="surface-header">
+              <h2 id="routeTitle">선택한 경로</h2>
+              <button id="clearRouteButton" class="icon-button" type="button" aria-label="현재 차량 위치로 이동" title="현재 차량 위치로 이동">
+                <i data-lucide="locate-fixed"></i>
+              </button>
+            </header>
+            <div id="tripMap" class="map trip-map"></div>
+          </section>
+          <aside class="trip-list-section" aria-labelledby="tripListTitle">
+            <header class="surface-header"><h2 id="tripListTitle">최근 주행</h2></header>
+            <div id="trips" class="trip-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="camerasView" class="view" data-view="cameras" hidden>
+        <header class="view-heading camera-heading">
+          <h1>카메라</h1>
+          <div class="camera-tools">
+            <div class="filter-switcher" role="group" aria-label="카메라 필터">
+              <button class="active" type="button" data-camera-filter="all">전체</button>
+              <button type="button" data-camera-filter="wide">실외</button>
+              <button type="button" data-camera-filter="driver">실내</button>
+            </div>
+            <span id="snapshotCount" class="count-label">0장</span>
+          </div>
+        </header>
+        <div id="snapshots" class="snapshot-grid reveal"></div>
       </section>
     </main>
 
+    <dialog id="tokenDialog" class="token-dialog">
+      <form id="tokenForm" method="dialog">
+        <input class="visually-hidden" type="text" name="username" value="wayon" autocomplete="username" tabindex="-1" aria-hidden="true">
+        <button id="closeTokenDialog" class="icon-button dialog-close" type="button" aria-label="닫기" title="닫기">
+          <i data-lucide="x"></i>
+        </button>
+        <span class="dialog-icon"><i data-lucide="key-round"></i></span>
+        <h2>Wayon Cloud 연결</h2>
+        <p>View Token은 이 브라우저에만 저장됩니다.</p>
+        <label for="tokenInput">View Token</label>
+        <input id="tokenInput" type="password" autocomplete="current-password" placeholder="Wayon Cloud View Token" required>
+        <span id="tokenError" class="form-error" role="alert"></span>
+        <button class="primary-button" type="submit">연결</button>
+        <button id="disconnectButton" class="text-button danger" type="button">저장된 연결 해제</button>
+      </form>
+    </dialog>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <script src="/app.js" type="module"></script>
   </body>
 </html>

@@ -330,11 +330,18 @@ async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs
   server.accept();
 
   const writer = socket.writable.getWriter();
+  const reader = socket.readable.getReader();
   let clientWriteQueue = Promise.resolve();
   let closed = false;
   const close = () => {
     if (closed) return;
     closed = true;
+    try { void reader.cancel().catch(() => {}); } catch {}
+    try {
+      void writer.abort().catch(() => {}).finally(() => {
+        try { writer.releaseLock(); } catch {}
+      });
+    } catch {}
     try { socket.close(); } catch {}
     try { server.close(1000, "closed"); } catch {}
   };
@@ -357,7 +364,6 @@ async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs
     if (startDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, startDelayMs));
     }
-    const reader = socket.readable.getReader();
     try {
       while (!closed) {
         const { value, done } = await reader.read();
@@ -1000,7 +1006,15 @@ async function handleImpacts(request, env) {
            peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
            sample_count, sensor_clipped, latitude, longitude, capture_status,
            captured_at, capture_attempts, wide_snapshot_id, driver_snapshot_id,
-           notified_count
+           notified_count,
+           (
+             SELECT locked FROM vehicle_events
+             WHERE device_id = impact_events.device_id
+               AND event_type = 'door_lock'
+               AND locked IS NOT NULL
+               AND occurred_at <= impact_events.detected_at
+             ORDER BY occurred_at DESC LIMIT 1
+           ) AS vehicle_locked
     FROM impact_events ORDER BY detected_at DESC LIMIT ?
   `).bind(limit).all();
   return json({ impacts: impacts.results || [] });
@@ -1090,6 +1104,274 @@ async function handleSnapshot(request, env) {
   if (wide) saved.push(wide);
 
   return json({ ok: true, snapshots: saved });
+}
+
+const MAX_LIVE_CAPTURE_BYTES = 48 * 1024 * 1024;
+const LIVE_CAPTURE_PART_BYTES = 20 * 1024 * 1024;
+const LIVE_CAPTURE_UPLOAD_PART_BYTES = 2 * 1024 * 1024;
+const MAX_LIVE_CAPTURE_UPLOAD_PARTS = 32;
+
+async function putLiveCaptureBytes(env, key, bytes, metadata) {
+  if (bytes.byteLength <= LIVE_CAPTURE_PART_BYTES) {
+    metadata.multipart = false;
+    await env.SNAPSHOTS.put(key, bytes, { metadata });
+    return;
+  }
+
+  const partKeys = [];
+  for (let offset = 0, index = 0; offset < bytes.byteLength; offset += LIVE_CAPTURE_PART_BYTES, index += 1) {
+    const partKey = `${key}.part${String(index).padStart(3, "0")}`;
+    await env.SNAPSHOTS.put(partKey, bytes.slice(offset, offset + LIVE_CAPTURE_PART_BYTES));
+    partKeys.push(partKey);
+  }
+  metadata.multipart = true;
+  metadata.partCount = partKeys.length;
+  await env.SNAPSHOTS.put(key, JSON.stringify({
+    schema: "wayon-live-capture-parts-v1",
+    sizeBytes: bytes.byteLength,
+    partKeys,
+  }), { metadata: { ...metadata, multipart: true, partCount: partKeys.length } });
+}
+
+async function getLiveCaptureBytes(env, capture) {
+  let metadata = {};
+  try {
+    metadata = JSON.parse(capture.metadata_json || "{}");
+  } catch (_) {}
+  if (!metadata.multipart) {
+    return env.SNAPSHOTS.get(capture.kv_key, "arrayBuffer");
+  }
+
+  const manifest = await env.SNAPSHOTS.get(capture.kv_key, "json");
+  if (manifest?.schema !== "wayon-live-capture-parts-v1" || !Array.isArray(manifest.partKeys)) return null;
+  const chunks = await Promise.all(manifest.partKeys.map((key) => env.SNAPSHOTS.get(key, "arrayBuffer")));
+  if (chunks.some((chunk) => !chunk)) return null;
+  const joined = new Uint8Array(Number(capture.size_bytes));
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(new Uint8Array(chunk), offset);
+    offset += chunk.byteLength;
+  }
+  return offset === joined.byteLength ? joined.buffer : null;
+}
+
+function safeCaptureHeader(request, name, fallback, maxLength = 128) {
+  return String(request.headers.get(name) || fallback || "").trim().slice(0, maxLength);
+}
+
+function safeCapturePathPart(value) {
+  return String(value || "unknown").replace(/[^0-9A-Za-z_-]/g, "-").slice(0, 128);
+}
+
+function liveCaptureUploadPartKey(deviceId, uploadId, index) {
+  return `live-capture-parts/${safeCapturePathPart(deviceId)}/${uploadId}/part${String(index).padStart(3, "0")}`;
+}
+
+async function handleLiveCapturePartUpload(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+
+  const declaredSize = Number(request.headers.get("content-length") || 0);
+  if (declaredSize > LIVE_CAPTURE_UPLOAD_PART_BYTES) return json({ error: "part_too_large" }, 413);
+  const deviceId = safeCaptureHeader(request, "x-wayon-device-id", "unknown");
+  const uploadId = safeCaptureHeader(request, "x-wayon-upload-id", "", 64);
+  const partIndex = Number.parseInt(request.headers.get("x-wayon-part-index") || "-1", 10);
+  const partCount = Number.parseInt(request.headers.get("x-wayon-part-count") || "0", 10);
+  const totalSize = Number.parseInt(request.headers.get("x-wayon-total-size") || "0", 10);
+  if (!/^[0-9a-f]{32}$/.test(uploadId) || partIndex < 0 || partIndex >= partCount ||
+      partCount < 1 || partCount > MAX_LIVE_CAPTURE_UPLOAD_PARTS ||
+      totalSize < 1 || totalSize > MAX_LIVE_CAPTURE_BYTES) {
+    return json({ error: "invalid_capture_part" }, 400);
+  }
+
+  const bytes = await request.arrayBuffer();
+  if (!bytes.byteLength || bytes.byteLength > LIVE_CAPTURE_UPLOAD_PART_BYTES) {
+    return json({ error: "invalid_part_size" }, bytes.byteLength ? 413 : 400);
+  }
+  const key = liveCaptureUploadPartKey(deviceId, uploadId, partIndex);
+  await env.SNAPSHOTS.put(key, bytes, {
+    metadata: { schema: "wayon-live-upload-part-v1", uploadId, partIndex, partCount, totalSize },
+  });
+  return json({ ok: true, uploadId, partIndex, sizeBytes: bytes.byteLength });
+}
+
+async function handleLiveCaptureCommit(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+  const payload = await request.json();
+  const deviceId = String(payload.deviceId || "unknown").slice(0, 128);
+  const uploadId = String(payload.uploadId || "").slice(0, 64);
+  const partCount = Number.parseInt(payload.partCount, 10);
+  const totalSize = Number.parseInt(payload.sizeBytes, 10);
+  const capturedAt = String(payload.capturedAt || nowIso()).slice(0, 64);
+  const durationS = Number(payload.durationS);
+  if (!/^[0-9a-f]{32}$/.test(uploadId) || partCount < 1 ||
+      partCount > MAX_LIVE_CAPTURE_UPLOAD_PARTS || totalSize < 1 ||
+      totalSize > MAX_LIVE_CAPTURE_BYTES || !Number.isFinite(durationS) || durationS <= 0) {
+    return json({ error: "invalid_capture_commit" }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id, kind, captured_at, duration_s, size_bytes FROM live_captures WHERE id = ?
+  `).bind(uploadId).first();
+  if (existing) {
+    return json({
+      ok: true,
+      id: existing.id,
+      kind: existing.kind,
+      capturedAt: existing.captured_at,
+      durationS: existing.duration_s,
+      sizeBytes: existing.size_bytes,
+    });
+  }
+
+  const partKeys = [];
+  let verifiedSize = 0;
+  for (let index = 0; index < partCount; index += 1) {
+    const partKey = liveCaptureUploadPartKey(deviceId, uploadId, index);
+    const part = await env.SNAPSHOTS.get(partKey, "arrayBuffer");
+    if (!part) return json({ error: "missing_capture_part", partIndex: index }, 409);
+    verifiedSize += part.byteLength;
+    partKeys.push(partKey);
+  }
+  if (verifiedSize !== totalSize) return json({ error: "capture_size_mismatch", verifiedSize }, 409);
+
+  const contentType = "application/zip";
+  const cameraLayout = String(payload.cameraLayout || "dual_h264_360").slice(0, 64);
+  const safeCapturedAt = capturedAt.replace(/[^0-9A-Za-z_-]/g, "-");
+  const key = `live-captures/${safeCapturePathPart(deviceId)}/${safeCapturedAt}-${uploadId}.zip`;
+  const createdAt = nowIso();
+  const metadata = {
+    schema: "wayon-live-capture-v1",
+    uploadSchema: "wayon-live-chunk-upload-v1",
+    deviceId,
+    kind: "clip",
+    capturedAt,
+    durationS,
+    cameraLayout,
+    contentType,
+    multipart: true,
+    partCount,
+  };
+  await env.SNAPSHOTS.put(key, JSON.stringify({
+    schema: "wayon-live-capture-parts-v1",
+    sizeBytes: totalSize,
+    partKeys,
+  }), { metadata });
+  await env.DB.prepare(`
+    INSERT INTO live_captures (
+      id, device_id, kind, captured_at, duration_s, content_type,
+      camera_layout, kv_key, size_bytes, metadata_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    uploadId,
+    deviceId,
+    "clip",
+    capturedAt,
+    durationS,
+    contentType,
+    cameraLayout,
+    key,
+    totalSize,
+    JSON.stringify(metadata),
+    createdAt,
+  ).run();
+  return json({ ok: true, id: uploadId, kind: "clip", capturedAt, durationS, sizeBytes: totalSize });
+}
+
+async function handleLiveCaptureUpload(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+
+  const declaredSize = Number(request.headers.get("content-length") || 0);
+  if (declaredSize > MAX_LIVE_CAPTURE_BYTES) return json({ error: "capture_too_large" }, 413);
+
+  const deviceId = safeCaptureHeader(request, "x-wayon-device-id", "unknown");
+  const kind = safeCaptureHeader(request, "x-wayon-capture-kind", "photo", 16);
+  const capturedAt = safeCaptureHeader(request, "x-wayon-captured-at", nowIso(), 64);
+  const cameraLayout = safeCaptureHeader(request, "x-wayon-camera-layout", "stitched_360", 64);
+  const requestedDuration = Number(request.headers.get("x-wayon-duration-s") || 0);
+  const durationS = Number.isFinite(requestedDuration) && requestedDuration > 0 ? requestedDuration : null;
+  const contentType = String(request.headers.get("content-type") || "application/octet-stream")
+    .split(";", 1)[0].trim().toLowerCase();
+  const allowedType = kind === "photo" ? contentType === "image/jpeg" : contentType === "application/zip";
+  if (!deviceId || !["photo", "clip"].includes(kind) || !allowedType) {
+    return json({ error: "invalid_live_capture" }, 400);
+  }
+
+  const bytes = await request.arrayBuffer();
+  if (!bytes.byteLength || bytes.byteLength > MAX_LIVE_CAPTURE_BYTES) {
+    return json({ error: "invalid_capture_size" }, bytes.byteLength ? 413 : 400);
+  }
+
+  const id = crypto.randomUUID();
+  const extension = kind === "photo" ? "jpg" : "zip";
+  const safeCapturedAt = capturedAt.replace(/[^0-9A-Za-z_-]/g, "-");
+  const key = `live-captures/${deviceId}/${safeCapturedAt}-${id}.${extension}`;
+  const createdAt = nowIso();
+  const metadata = {
+    schema: "wayon-live-capture-v1",
+    deviceId,
+    kind,
+    capturedAt,
+    durationS,
+    cameraLayout,
+    contentType,
+  };
+
+  await putLiveCaptureBytes(env, key, bytes, metadata);
+  await env.DB.prepare(`
+    INSERT INTO live_captures (
+      id, device_id, kind, captured_at, duration_s, content_type,
+      camera_layout, kv_key, size_bytes, metadata_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    id,
+    deviceId,
+    kind,
+    capturedAt,
+    durationS,
+    contentType,
+    cameraLayout,
+    key,
+    bytes.byteLength,
+    JSON.stringify(metadata),
+    createdAt,
+  ).run();
+
+  return json({ ok: true, id, kind, capturedAt, durationS, sizeBytes: bytes.byteLength });
+}
+
+async function handleLiveCaptures(request, env) {
+  if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
+  const url = new URL(request.url);
+  const limit = Math.max(1, Math.min(100, Number.parseInt(url.searchParams.get("limit") || "25", 10)));
+  const captures = await env.DB.prepare(`
+    SELECT id, device_id, kind, captured_at, duration_s, content_type,
+           camera_layout, size_bytes, created_at
+    FROM live_captures ORDER BY captured_at DESC LIMIT ?
+  `).bind(limit).all();
+  return json({ captures: captures.results || [] });
+}
+
+async function handleLiveCapture(request, env) {
+  if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
+  const id = String(new URL(request.url).searchParams.get("id") || "").slice(0, 128);
+  if (!id) return json({ error: "missing_capture_id" }, 400);
+
+  const capture = await env.DB.prepare(`
+    SELECT kind, captured_at, content_type, kv_key, size_bytes, metadata_json FROM live_captures WHERE id = ?
+  `).bind(id).first();
+  if (!capture) return json({ error: "not_found" }, 404);
+  const bytes = await getLiveCaptureBytes(env, capture);
+  if (!bytes) return json({ error: "not_found" }, 404);
+
+  const extension = capture.kind === "photo" ? "jpg" : "zip";
+  return new Response(bytes, {
+    headers: {
+      ...CORS_HEADERS,
+      "content-type": capture.content_type,
+      "content-disposition": `attachment; filename="wayon-${capture.kind}-${capture.captured_at.replace(/[^0-9A-Za-z_-]/g, "-")}.${extension}"`,
+      "cache-control": "private, max-age=300",
+    },
+  });
 }
 
 async function handleTrip(request, env) {
@@ -1656,6 +1938,15 @@ export default {
     if (request.method === "POST" && pathname === "/api/snapshot") {
       return handleSnapshot(request, env);
     }
+    if (request.method === "POST" && pathname === "/api/live-capture") {
+      return handleLiveCaptureUpload(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/live-capture-part") {
+      return handleLiveCapturePartUpload(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/live-capture-commit") {
+      return handleLiveCaptureCommit(request, env);
+    }
     if (request.method === "POST" && pathname === "/api/trips") {
       return handleTrip(request, env);
     }
@@ -1700,6 +1991,12 @@ export default {
     }
     if (request.method === "GET" && pathname === "/api/snapshots") {
       return handleSnapshotsList(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/live-captures") {
+      return handleLiveCaptures(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/live-capture") {
+      return handleLiveCapture(request, env);
     }
     if (request.method === "GET" && pathname.startsWith("/api/trips")) {
       return handleTrips(request, env, pathname);

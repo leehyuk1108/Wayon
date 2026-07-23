@@ -64,7 +64,7 @@ Read requests use the view token:
 
 ```sh
 curl -H "Authorization: Bearer $WAYON_VIEW_TOKEN" \
-  https://wayon-cloud.leehyuk1108-comma.workers.dev/api/json
+  https://wayon-cloud.hyuklee.workers.dev/api/json
 ```
 
 Available read endpoints:

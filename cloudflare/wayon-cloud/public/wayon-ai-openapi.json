@@ -6,7 +6,7 @@
     "description": "Owner-authorized read-only access to Wayon vehicle/comma telemetry, trips, impacts, events, snapshots, and JPEG images. No control or write operations exist."
   },
   "servers": [
-    { "url": "https://wayon-cloud.leehyuk1108-comma.workers.dev" }
+    { "url": "https://wayon-cloud.hyuklee.workers.dev" }
   ],
   "security": [
     { "bearerAuth": [] }

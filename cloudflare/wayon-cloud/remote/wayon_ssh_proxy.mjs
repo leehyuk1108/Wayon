@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const endpoint = process.env.WAYON_SSH_URL
-  || "wss://wayon-cloud.leehyuk1108-comma.workers.dev/api/remote/ssh";
+  || "wss://wayon-cloud.hyuklee.workers.dev/api/remote/ssh";
 const connectTimeoutMs = Number.parseInt(process.env.WAYON_SSH_CONNECT_TIMEOUT_MS || "30000", 10);
 const credentialsPath = process.env.WAYON_SSH_CREDENTIALS_FILE
   || join(homedir(), ".config", "wayon", "ssh.credentials.json");

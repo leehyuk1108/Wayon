@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const SERVER_INFO = { name: "wayon", version: "1.0.0" };
-const DEFAULT_ENDPOINT = "https://wayon-cloud.leehyuk1108-comma.workers.dev";
+const DEFAULT_ENDPOINT = "https://wayon-cloud.hyuklee.workers.dev";
 const DEFAULT_CONFIG = join(homedir(), ".config", "wayon", "ai.credentials.json");
 
 function loadConfig() {

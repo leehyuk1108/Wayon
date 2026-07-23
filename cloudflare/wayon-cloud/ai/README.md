@@ -39,22 +39,22 @@ registration token. Store the client copy outside Git at mode `0600`:
 
 ```json
 {
-  "endpoint": "https://wayon-cloud.leehyuk1108-comma.workers.dev",
+  "endpoint": "https://wayon-cloud.hyuklee.workers.dev",
   "token": "64-character-secret"
 }
 ```
 
 ## HTTP and OpenAPI
 
-- OpenAPI: `https://wayon-cloud.leehyuk1108-comma.workers.dev/wayon-ai-openapi.json`
-- System prompt: `https://wayon-cloud.leehyuk1108-comma.workers.dev/wayon-ai-prompt.md`
-- AI discovery: `https://wayon-cloud.leehyuk1108-comma.workers.dev/llms.txt`
+- OpenAPI: `https://wayon-cloud.hyuklee.workers.dev/wayon-ai-openapi.json`
+- System prompt: `https://wayon-cloud.hyuklee.workers.dev/wayon-ai-prompt.md`
+- AI discovery: `https://wayon-cloud.hyuklee.workers.dev/llms.txt`
 
 All API requests need `Authorization: Bearer ...`:
 
 ```sh
 curl -H "Authorization: Bearer $WAYON_AI_READ_TOKEN" \
-  'https://wayon-cloud.leehyuk1108-comma.workers.dev/api/ai/context'
+  'https://wayon-cloud.hyuklee.workers.dev/api/ai/context'
 ```
 
 HTTP endpoints:

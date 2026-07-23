@@ -9,7 +9,7 @@ Gateway baseline commit: `a1eeb531` on `leehyuk1108/Wayon`, branch `Sunnypilot`
 
 Cloud Worker: `wayon-cloud`
 
-Cloud URL: `https://wayon-cloud.leehyuk1108-comma.workers.dev`
+Cloud URL: `https://wayon-cloud.hyuklee.workers.dev`
 
 ## 1. Agent boot instructions
 
@@ -118,7 +118,7 @@ Expected format:
 
 ```json
 {
-  "endpoint": "https://wayon-cloud.leehyuk1108-comma.workers.dev",
+  "endpoint": "https://wayon-cloud.hyuklee.workers.dev",
   "token": "owner-supplied-secret"
 }
 ```
@@ -155,7 +155,7 @@ token directly in a shell history command.
 Import this URL:
 
 ```text
-https://wayon-cloud.leehyuk1108-comma.workers.dev/wayon-ai-openapi.json
+https://wayon-cloud.hyuklee.workers.dev/wayon-ai-openapi.json
 ```
 
 Configure HTTP Bearer authentication with `WAYON_AI_READ_TOKEN`. Use the system
@@ -214,7 +214,7 @@ Available MCP tools:
 Base URL:
 
 ```text
-https://wayon-cloud.leehyuk1108-comma.workers.dev
+https://wayon-cloud.hyuklee.workers.dev
 ```
 
 Every request below requires:
@@ -246,7 +246,7 @@ Example without exposing the token in the command:
 ```sh
 TOKEN=$(python3 -c 'import json, pathlib; print(json.loads(pathlib.Path.home().joinpath(".config/wayon/ai.credentials.json").read_text())["token"])')
 curl -H "Authorization: Bearer $TOKEN" \
-  'https://wayon-cloud.leehyuk1108-comma.workers.dev/api/ai/context'
+  'https://wayon-cloud.hyuklee.workers.dev/api/ai/context'
 ```
 
 ## 7. `/api/ai/context` contract

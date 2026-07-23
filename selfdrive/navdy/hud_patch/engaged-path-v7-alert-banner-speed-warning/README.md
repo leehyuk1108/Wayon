@@ -70,3 +70,7 @@ Behavior:
   `OpenpilotStateReceiver` without clobbering the log tag in `v3`.
 - Retains the last valid path while fast state-only payloads update icons,
   speed, set speed, alerts, and music independently.
+- Coalesces socket updates on the Android main looper so an overloaded frame
+  queue keeps only the newest vehicle state instead of replaying stale frames.
+- Omits full per-frame payload/state logging to reduce allocation and log I/O on
+  the Navdy hardware.

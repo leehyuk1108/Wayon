@@ -1151,6 +1151,67 @@ def test_emit_queues_socket_work_off_polling_thread():
   assert args._socket_sender_pending == {"seq": 7}
 
 
+def test_adb_recovery_restarts_offline_dedicated_server(monkeypatch):
+  args = SimpleNamespace(
+    adb_path="adb",
+    adb_server_port=5038,
+    adb_timeout_sec=4.0,
+    adb_wait_device_sec=1.0,
+    adb_recover_sec=5.0,
+    stdout=False,
+    _last_adb_recover_at=0.0,
+    _adb_recover_lock=threading.Lock(),
+  )
+  calls = []
+
+  def fake_run(command, **_kwargs):
+    calls.append(command)
+    output = "FPI647618N4111AT\toffline\n" if command[-1] == "devices" else ""
+    return SimpleNamespace(returncode=0, stdout=output, stderr="")
+
+  monkeypatch.setattr(navdy_op_bridge.subprocess, "run", fake_run)
+  monkeypatch.setattr(navdy_op_bridge.time, "monotonic", lambda: 10.0)
+
+  navdy_op_bridge.recover_adb(args, "returncode", force=True)
+
+  assert calls == [
+    ["adb", "-P", "5038", "devices"],
+    ["adb", "-P", "5038", "kill-server"],
+    ["adb", "-P", "5038", "start-server"],
+    ["adb", "-P", "5038", "wait-for-device"],
+  ]
+
+
+def test_adb_recovery_keeps_healthy_server(monkeypatch):
+  args = SimpleNamespace(
+    adb_path="adb",
+    adb_server_port=5038,
+    adb_timeout_sec=4.0,
+    adb_wait_device_sec=1.0,
+    adb_recover_sec=5.0,
+    stdout=False,
+    _last_adb_recover_at=0.0,
+    _adb_recover_lock=threading.Lock(),
+  )
+  calls = []
+
+  def fake_run(command, **_kwargs):
+    calls.append(command)
+    output = "FPI647618N4111AT\tdevice\n" if command[-1] == "devices" else ""
+    return SimpleNamespace(returncode=0, stdout=output, stderr="")
+
+  monkeypatch.setattr(navdy_op_bridge.subprocess, "run", fake_run)
+  monkeypatch.setattr(navdy_op_bridge.time, "monotonic", lambda: 10.0)
+
+  navdy_op_bridge.recover_adb(args, "startup", force=True)
+
+  assert ["adb", "-P", "5038", "kill-server"] not in calls
+  assert calls[-2:] == [
+    ["adb", "-P", "5038", "start-server"],
+    ["adb", "-P", "5038", "wait-for-device"],
+  ]
+
+
 def test_manager_child_ignores_inherited_manager_argv():
   assert navdy_power_bridge.should_use_default_args(
       "navdy_bridge", ["manager.py", "--socket-transport"])

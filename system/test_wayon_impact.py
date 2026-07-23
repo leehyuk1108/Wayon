@@ -94,6 +94,18 @@ def test_detector_catches_measured_single_sample_parking_impact():
   assert event["peakJerkGPerSec"] >= 8.0
 
 
+def test_detector_catches_small_two_sample_body_shake():
+  detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
+  now = prime(detector)
+
+  assert detector.update((0.20, 0.0, 9.80665), STILL_GYRO, now) is None
+  event = detector.update((0.38, 0.0, 9.80665), STILL_GYRO, now + 0.01)
+
+  assert event is not None
+  assert event["severity"] == "light"
+  assert 0.03 <= event["peakDynamicG"] < 0.04
+
+
 def test_detector_rejects_slow_body_motion_at_similar_dynamic_g():
   detector = ImpactDetector(arm_delay_s=0.0, warmup_s=0.0)
   now = prime(detector)

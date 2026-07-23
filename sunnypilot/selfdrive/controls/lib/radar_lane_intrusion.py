@@ -17,9 +17,9 @@ LANE_RISK_START_GAP_M = 0.80
 LANE_RISK_FADE_TIME_S = 0.45
 REQUIRED_OUTSIDE_SAMPLES = 3
 REQUIRED_INTRUSION_SAMPLES = 3
-# Navdy evaluates at 5 Hz, so keep track history across normal scheduler jitter.
-MAX_SAMPLE_GAP_S = 0.35
-TRACK_STALE_S = 0.50
+# Navdy evaluates at 5 Hz. Preserve history through short lane-confidence dropouts.
+MAX_SAMPLE_GAP_S = 0.75
+TRACK_STALE_S = 0.85
 MAX_LATERAL_JUMP_M = 1.25
 
 

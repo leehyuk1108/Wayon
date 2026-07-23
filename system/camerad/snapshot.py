@@ -9,6 +9,7 @@ import cereal.messaging as messaging
 from msgq.visionipc import VisionIpcClient, VisionStreamType
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
+from openpilot.system.camera_lease import CameraLease
 from openpilot.system.hardware import PC
 from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
 from openpilot.system.manager.process_config import managed_processes
@@ -82,42 +83,57 @@ def get_snapshots(frame="roadCameraState", front_frame="driverCameraState"):
 def snapshot():
   params = Params()
 
-  if (not params.get_bool("IsOffroad")) or params.get_bool("IsTakingSnapshot"):
+  if not params.get_bool("IsOffroad"):
     print("Already taking snapshot")
     return None, None
 
-  front_camera_allowed = params.get_bool("RecordFront")
-  params.put_bool("IsTakingSnapshot", True, block=True)
-  set_offroad_alert("Offroad_IsTakingSnapshot", True)
-  time.sleep(2.0)  # Give hardwared time to read the param, or if just started give camerad time to start
-
-  # Check if camerad is already started
-  try:
-    subprocess.check_call(["pgrep", "camerad"])
-    print("Camerad already running")
-    params.put_bool("IsTakingSnapshot", False, block=True)
-    params.remove("Offroad_IsTakingSnapshot")
+  lease = CameraLease("snapshot", 45.0)
+  if not lease.acquire():
+    print("Camera is leased by another process")
     return None, None
-  except subprocess.CalledProcessError:
-    pass
 
+  snapshot_flag_set = False
   try:
-    # Allow testing on replay on PC
-    if not PC:
-      managed_processes['camerad'].start()
+    if params.get_bool("IsTakingSnapshot"):
+      print("Already taking snapshot")
+      return None, None
 
-    frame = "wideRoadCameraState"
-    front_frame = "driverCameraState" if front_camera_allowed else None
-    rear, front = get_snapshots(frame, front_frame)
+    front_camera_allowed = params.get_bool("RecordFront")
+    params.put_bool("IsTakingSnapshot", True, block=True)
+    snapshot_flag_set = True
+    set_offroad_alert("Offroad_IsTakingSnapshot", True)
+    time.sleep(2.0)  # Give hardwared time to read the param, or if just started give camerad time to start
+
+    try:
+      subprocess.check_call(["pgrep", "camerad"])
+      print("Camerad already running")
+      return None, None
+    except subprocess.CalledProcessError:
+      pass
+
+    started_camerad = False
+    try:
+      # Allow testing on replay on PC
+      if not PC:
+        managed_processes['camerad'].start()
+        started_camerad = True
+
+      frame = "wideRoadCameraState"
+      front_frame = "driverCameraState" if front_camera_allowed else None
+      rear, front = get_snapshots(frame, front_frame)
+    finally:
+      if started_camerad:
+        managed_processes['camerad'].stop()
+
+    if not front_camera_allowed:
+      front = None
+
+    return rear, front
   finally:
-    managed_processes['camerad'].stop()
-    params.put_bool("IsTakingSnapshot", False, block=True)
-    set_offroad_alert("Offroad_IsTakingSnapshot", False)
-
-  if not front_camera_allowed:
-    front = None
-
-  return rear, front
+    if snapshot_flag_set:
+      params.put_bool("IsTakingSnapshot", False, block=True)
+      set_offroad_alert("Offroad_IsTakingSnapshot", False)
+    lease.release()
 
 
 if __name__ == "__main__":

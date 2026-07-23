@@ -14,6 +14,7 @@ from openpilot.sunnypilot.models.helpers import get_active_model_runner
 from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, use_sunnylink_uploader
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
+WAYON_LIVE_ACTIVE_PATH = "/tmp/wayon_live.active"
 
 def driverview(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started or params.get_bool("IsDriverViewEnabled")
@@ -79,6 +80,9 @@ def wayon_impact_ready(started: bool, params: Params, CP: car.CarParams) -> bool
 def wayon_remote_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started and os.path.isfile("/data/wayon_cloud/config.json")
 
+def wayon_live_streaming(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return not started and os.path.isfile(WAYON_LIVE_ACTIVE_PATH)
+
 def use_github_runner(started, params, CP: car.CarParams) -> bool:
   return not PC and params.get_bool("EnableGithubRunner") and (
     not params.get_bool("NetworkMetered") and not params.get_bool("GithubRunnerSufficientVoltage"))
@@ -121,17 +125,35 @@ def or_(*fns):
 def and_(*fns):
   return lambda *args: operator.and_(*(fn(*args) for fn in fns))
 
+
+class RestartOnTransition:
+  def __init__(self, condition):
+    self.condition = condition
+    self.last_started: bool | None = None
+
+  def __call__(self, started: bool, params: Params, CP: car.CarParams) -> bool:
+    transitioned = self.last_started is not None and started != self.last_started
+    self.last_started = started
+    return not transitioned and self.condition(started, params, CP)
+
+
+sensord_ready = RestartOnTransition(or_(only_onroad, wayon_impact_ready))
+
+
 procs = [
   # Keep official comma.ai connect/upload disabled. Wayon Cloud runs separately.
   DaemonProcess("manage_athenad", "system.athena.manage_athenad", "AthenadPid", enabled=False),
 
   NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
-  NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], notcar),
+  NativeProcess("stream_encoderd", "system/loggerd",
+                ["/usr/bin/env", "STREAM_BITRATE=5000000", "./encoderd", "--stream"],
+                or_(notcar, wayon_live_streaming)),
   PythonProcess("logmessaged", "system.logmessaged", always_run),
   PythonProcess("navdy_bridge", "selfdrive.navdy.navdy_power_bridge", always_run, restart_if_crash=True),
 
-  NativeProcess("camerad", "system/camerad", ["./camerad"], driverview, enabled=not WEBCAM),
+  NativeProcess("camerad", "system/camerad", ["./camerad"],
+                or_(driverview, wayon_live_streaming), enabled=not WEBCAM),
   PythonProcess("webcamerad", "tools.webcam.camerad", driverview, enabled=WEBCAM),
   PythonProcess("proclogd", "system.proclogd", only_onroad, enabled=platform.system() != "Darwin"),
   PythonProcess("journald", "system.journald", only_onroad, platform.system() != "Darwin"),
@@ -141,7 +163,7 @@ procs = [
   PythonProcess("modeld", "selfdrive.modeld.modeld", and_(only_onroad, is_stock_model)),
   PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
 
-  PythonProcess("sensord", "system.sensord.sensord", or_(only_onroad, wayon_impact_ready), enabled=not PC),
+  PythonProcess("sensord", "system.sensord.sensord", sensord_ready, enabled=not PC),
   PythonProcess("ui", "selfdrive.ui.ui", always_run, restart_if_crash=True),
   PythonProcess("soundd", "selfdrive.ui.soundd", driverview),
   PythonProcess("locationd", "selfdrive.locationd.locationd", only_onroad),
@@ -174,7 +196,7 @@ procs = [
   PythonProcess("wayon_live", "system.wayon_live_stream", wayon_remote_ready, restart_if_crash=True),
   PythonProcess("wayon_remote_installer", "system.wayon_remote_installer", wayon_remote_ready,
                 enabled=not PC, restart_if_crash=True),
-  PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", and_(only_offroad, non_driving_helpers_enabled), enabled=not PC),
+  PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", only_offroad, enabled=not PC),
   PythonProcess("statsd", "system.statsd", always_run),
   PythonProcess("feedbackd", "selfdrive.ui.feedback.feedbackd", only_onroad),
 

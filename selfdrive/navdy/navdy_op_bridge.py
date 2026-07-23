@@ -1214,22 +1214,49 @@ def adb_base_cmd(args: argparse.Namespace) -> list[str]:
 def recover_adb(args: argparse.Namespace, reason: str, force: bool = False) -> None:
   if not args.adb_path:
     return
-  now = time.monotonic()
-  last = float(getattr(args, "_last_adb_recover_at", 0.0))
-  if not force and now - last < max(args.adb_recover_sec, 0.1):
-    return
-  setattr(args, "_last_adb_recover_at", now)
 
-  base = adb_base_cmd(args)
-  try:
-    subprocess.run(base + ["start-server"], check=False, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL, timeout=max(args.adb_timeout_sec, 0.1))
-    if args.adb_wait_device_sec > 0.0:
-      subprocess.run(base + ["wait-for-device"], check=False, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, timeout=max(args.adb_wait_device_sec, 0.1))
-  except subprocess.TimeoutExpired:
-    if args.stdout:
-      print(f"adb recover timeout reason={reason}", flush=True)
+  lock = getattr(args, "_adb_recover_lock", None)
+  if lock is None:
+    lock = threading.Lock()
+    args._adb_recover_lock = lock
+
+  with lock:
+    now = time.monotonic()
+    last = float(getattr(args, "_last_adb_recover_at", 0.0))
+    if not force and now - last < max(args.adb_recover_sec, 0.1):
+      return
+    args._last_adb_recover_at = now
+
+    server_cmd = [args.adb_path]
+    if args.adb_server_port > 0:
+      server_cmd += ["-P", str(args.adb_server_port)]
+
+    restart_server = False
+    try:
+      status = subprocess.run(
+        server_cmd + ["devices"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=max(args.adb_timeout_sec, 0.1),
+      )
+      device_status = f"{status.stdout}\n{status.stderr}".lower()
+      restart_server = status.returncode != 0 or "\toffline" in device_status or "device offline" in device_status
+    except subprocess.TimeoutExpired:
+      restart_server = True
+
+    try:
+      if restart_server:
+        subprocess.run(server_cmd + ["kill-server"], check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=max(args.adb_timeout_sec, 0.1))
+      subprocess.run(server_cmd + ["start-server"], check=False, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, timeout=max(args.adb_timeout_sec, 0.1))
+      if args.adb_wait_device_sec > 0.0:
+        subprocess.run(server_cmd + ["wait-for-device"], check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=max(args.adb_wait_device_sec, 0.1))
+    except subprocess.TimeoutExpired:
+      if args.stdout:
+        print(f"adb recover timeout reason={reason}", flush=True)
 
 
 def run_adb(args: argparse.Namespace, adb_args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
@@ -1702,6 +1729,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
   args = parse_args()
   setattr(args, "_last_adb_recover_at", 0.0)
+  args._adb_recover_lock = threading.Lock()
   setattr(args, "_last_power_on_ensure_at", 0.0)
   setattr(args, "_last_onroad_process_check_at", 0.0)
   setattr(args, "_last_onroad_process_started", False)

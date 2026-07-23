@@ -96,6 +96,21 @@ def test_five_hz_navdy_samples_keep_track_history():
   assert any(result is not None for result in results)
 
 
+def test_short_lane_confidence_dropout_keeps_intrusion_history():
+  detector = RadarLaneIntrusionDetector()
+  low_confidence = model(probabilities=[0.8, 0.3, 0.9, 0.8])
+
+  for index, lateral in enumerate([-3.5, -3.4, -3.3]):
+    assert update(detector, index * 0.2, lateral) is None
+  assert update(detector, 0.6, -2.9, model_v2=low_confidence) is None
+  assert update(detector, 0.8, -2.6, model_v2=low_confidence) is None
+
+  results = [update(detector, now, lateral) for now, lateral in (
+    (1.0, -2.45), (1.2, -2.35), (1.4, -2.30),
+  )]
+  assert any(result is not None for result in results)
+
+
 def test_new_track_already_inside_lane_does_not_alert():
   detector = RadarLaneIntrusionDetector()
   assert all(update(detector, index * 0.05, -0.5) is None for index in range(10))

@@ -14,6 +14,7 @@ import requests
 from cereal import log, messaging
 from openpilot.common.params import Params
 from openpilot.common.realtime import set_core_affinity
+from openpilot.system.camera_lease import CameraLease
 from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event, update_impact_event
@@ -1069,15 +1070,24 @@ def capture_offroad_images():
 
   params = Params()
 
-  if (not params.get_bool("IsOffroad")) or params.get_bool("IsTakingSnapshot"):
+  if not params.get_bool("IsOffroad"):
     return None, None
 
-  params.put_bool("IsTakingSnapshot", True)
-  set_offroad_alert("Offroad_IsTakingSnapshot", True)
-  time.sleep(2.0)
-  started_camerad = False
+  lease = CameraLease("wayon_snapshot", 45.0)
+  if not lease.acquire():
+    return None, None
 
+  snapshot_flag_set = False
   try:
+    if params.get_bool("IsTakingSnapshot"):
+      return None, None
+
+    params.put_bool("IsTakingSnapshot", True)
+    snapshot_flag_set = True
+    set_offroad_alert("Offroad_IsTakingSnapshot", True)
+    time.sleep(2.0)
+    started_camerad = False
+
     try:
       subprocess.check_call(["pgrep", "camerad"])
       return None, None
@@ -1088,12 +1098,16 @@ def capture_offroad_images():
       managed_processes["camerad"].start()
       started_camerad = True
 
-    return get_snapshots("wideRoadCameraState", "driverCameraState")
+    try:
+      return get_snapshots("wideRoadCameraState", "driverCameraState")
+    finally:
+      if started_camerad:
+        managed_processes["camerad"].stop()
   finally:
-    if started_camerad:
-      managed_processes["camerad"].stop()
-    params.put_bool("IsTakingSnapshot", False)
-    set_offroad_alert("Offroad_IsTakingSnapshot", False)
+    if snapshot_flag_set:
+      params.put_bool("IsTakingSnapshot", False)
+      set_offroad_alert("Offroad_IsTakingSnapshot", False)
+    lease.release()
 
 
 def main():

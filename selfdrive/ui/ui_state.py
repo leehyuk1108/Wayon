@@ -1,5 +1,6 @@
 import pyray as rl
 import numpy as np
+import platform
 import time
 import threading
 from collections.abc import Callable
@@ -67,7 +68,7 @@ class UIState(UIStateSP):
     )
 
     self.prime_state = PrimeState()
-    self.params_memory = Params()
+    self.params_memory = Params("/dev/shm/params") if platform.system() != "Darwin" else self.params
 
     # UI Status tracking
     self.status: UIStatus = UIStatus.DISENGAGED
@@ -228,6 +229,7 @@ class Device(DeviceSP):
     self._prev_timed_out = False
     self._awake: bool = True
     self._last_offroad_wake_counter = 0
+    self._offroad_wake_counter_path = ui_state.params_memory.get_param_path("OffroadWakeCounter")
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
@@ -267,18 +269,11 @@ class Device(DeviceSP):
     self._interactive_timeout_callbacks.append(callback)
 
   def _offroad_wake_counter(self) -> int:
-    value = None
     try:
-      value = ui_state.params_memory.get("OffroadWakeCounter", return_default=True)
-    except Exception:
-      pass
-
-    if value is None:
-      try:
-        with open(ui_state.params_memory.get_param_path("OffroadWakeCounter"), "rb") as f:
-          value = f.read()
-      except OSError:
-        return 0
+      with open(self._offroad_wake_counter_path, "rb") as f:
+        value = f.read()
+    except OSError:
+      return 0
 
     try:
       if isinstance(value, (bytes, bytearray)):

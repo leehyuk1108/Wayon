@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import time
 from pathlib import Path
 
@@ -25,16 +26,12 @@ def raw_memory_param_path(params: Params, key: str) -> Path:
 
 
 def get_memory_int(params: Params, key: str, default: int = 0) -> int:
-  value = None
   try:
-    value = params.get(key, return_default=True)
-  except Exception:
-    pass
-
-  if value is None:
+    value = raw_memory_param_path(params, key).read_bytes()
+  except OSError:
     try:
-      value = raw_memory_param_path(params, key).read_bytes()
-    except OSError:
+      value = params.get(key, return_default=True)
+    except Exception:
       return default
 
   try:
@@ -146,7 +143,7 @@ def parser_active(parsers: list[CANParser], parser_input) -> bool:
 
 def main() -> None:
   params = Params()
-  params_memory = Params()
+  params_memory = Params("/dev/shm/params") if platform.system() != "Darwin" else params
 
   modern_parsers = [
     build_parser("gm_global_a_lowspeed_1818125", ["Door_Open_Switch_Status_LS", "Door_Handle_Switch_Status_LS"], bus)
@@ -167,6 +164,7 @@ def main() -> None:
   last_trigger_time = 0.0
   last_can_activity_time = 0.0
   last_counter = get_memory_int(params_memory, "OffroadWakeCounter")
+  put_memory_int(params_memory, "OffroadWakeCounter", last_counter)
 
   while True:
     sm.update(POLL_TIMEOUT_MS)

@@ -100,6 +100,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"Offroad_UnregisteredHardware", {CLEAR_ON_MANAGER_START, JSON}},
     {"Offroad_UpdateFailed", {CLEAR_ON_MANAGER_START, JSON}},
     {"Offroad_DriverMonitoringUncertain", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, JSON}},
+    {"OffroadWakeCounter", {CLEAR_ON_MANAGER_START, INT, "0"}},
     {"OnroadCycleRequested", {CLEAR_ON_MANAGER_START, BOOL}},
     {"OpenpilotEnabledToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"PandaHeartbeatLost", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},

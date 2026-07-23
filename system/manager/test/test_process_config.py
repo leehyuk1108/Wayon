@@ -25,4 +25,4 @@ def test_wayon_live_stream_processes_are_offroad_only(monkeypatch):
   assert not wayon_live_streaming(False, params, CP)
 
   stream_process = managed_processes["stream_encoderd"]
-  assert stream_process.cmdline[:2] == ["/usr/bin/env", "STREAM_BITRATE=5000000"]
+  assert stream_process.cmdline[:2] == ["/usr/bin/env", "STREAM_BITRATE=1500000"]

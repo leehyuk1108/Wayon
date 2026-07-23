@@ -25,7 +25,7 @@ from openpilot.system.wayon_live_archive import (
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", "/data/wayon_cloud/config.json"))
 LISTEN_HOST = os.getenv("WAYON_LIVE_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.getenv("WAYON_LIVE_PORT", "8765"))
-LIVE_BITRATE = 5_000_000
+LIVE_BITRATE = 1_500_000
 DEFAULT_MAX_SESSION_S = 300.0
 DEFAULT_CAMERA_WAIT_S = 30.0
 DEFAULT_PROCESS_WAIT_S = 10.0

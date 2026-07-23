@@ -23,6 +23,8 @@ const LIVE_STREAM_PATH = "/api/live/stream";
 const LIVE_PROTOCOL_PREFIX = "wayon-live-v1";
 const LIVE_MAX_AGE_SECONDS = 30;
 const LIVE_STREAM_TARGET = "172.31.255.254:8765";
+const LIVE_FRAME_HEADER_SIZE = 24;
+const LIVE_FRAME_MAX_PAYLOAD_SIZE = 4 * 1024 * 1024;
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
 let cachedFcmAccessToken = null;
@@ -314,7 +316,76 @@ export async function websocketBytes(data) {
   return null;
 }
 
-async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs = 0, startDelayMs = 0) {
+export class WayonLiveFrameAssembler {
+  constructor() {
+    this.header = new Uint8Array(LIVE_FRAME_HEADER_SIZE);
+    this.headerLength = 0;
+    this.frame = null;
+    this.frameLength = 0;
+  }
+
+  push(chunk) {
+    const complete = [];
+    let offset = 0;
+
+    while (offset < chunk.byteLength) {
+      if (!this.frame) {
+        const headerBytes = Math.min(
+          LIVE_FRAME_HEADER_SIZE - this.headerLength,
+          chunk.byteLength - offset,
+        );
+        this.header.set(chunk.subarray(offset, offset + headerBytes), this.headerLength);
+        this.headerLength += headerBytes;
+        offset += headerBytes;
+        if (this.headerLength < LIVE_FRAME_HEADER_SIZE) continue;
+
+        if (this.header[0] !== 87 || this.header[1] !== 76
+            || this.header[2] !== 86 || this.header[3] !== 49) {
+          throw new TypeError("invalid Wayon Live frame");
+        }
+        const payloadSize = new DataView(
+          this.header.buffer,
+          this.header.byteOffset,
+          this.header.byteLength,
+        ).getUint32(20);
+        if (payloadSize > LIVE_FRAME_MAX_PAYLOAD_SIZE) {
+          throw new RangeError("Wayon Live frame too large");
+        }
+
+        this.frame = new Uint8Array(LIVE_FRAME_HEADER_SIZE + payloadSize);
+        this.frame.set(this.header);
+        this.frameLength = LIVE_FRAME_HEADER_SIZE;
+      }
+
+      const frameBytes = Math.min(
+        this.frame.byteLength - this.frameLength,
+        chunk.byteLength - offset,
+      );
+      this.frame.set(chunk.subarray(offset, offset + frameBytes), this.frameLength);
+      this.frameLength += frameBytes;
+      offset += frameBytes;
+
+      if (this.frameLength === this.frame.byteLength) {
+        complete.push(this.frame);
+        this.frame = null;
+        this.frameLength = 0;
+        this.headerLength = 0;
+      }
+    }
+    return complete;
+  }
+}
+
+async function proxyTcpWebSocket(
+  env,
+  ctx,
+  target,
+  protocol,
+  label,
+  closeDelayMs = 0,
+  startDelayMs = 0,
+  frameAssembler = null,
+) {
   let socket;
   try {
     socket = env.COMMA_NETWORK.connect(target);
@@ -368,7 +439,10 @@ async function proxyTcpWebSocket(env, ctx, target, protocol, label, closeDelayMs
       while (!closed) {
         const { value, done } = await reader.read();
         if (done) break;
-        if (server.readyState === 1) server.send(value);
+        const messages = frameAssembler ? frameAssembler.push(value) : [value];
+        for (const message of messages) {
+          if (server.readyState === 1) server.send(message);
+        }
       }
     } catch {
       // The client reports the closed transport.
@@ -419,7 +493,16 @@ async function handleLiveStream(request, env, ctx) {
   );
   if (!protocol) return json({ error: "unauthorized" }, 401);
 
-  return proxyTcpWebSocket(env, ctx, LIVE_STREAM_TARGET, protocol, "live stream", 500, 100);
+  return proxyTcpWebSocket(
+    env,
+    ctx,
+    LIVE_STREAM_TARGET,
+    protocol,
+    "live stream",
+    500,
+    100,
+    new WayonLiveFrameAssembler(),
+  );
 }
 
 function authorize(request, env, write = false) {

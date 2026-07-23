@@ -147,7 +147,7 @@ procs = [
   NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
   NativeProcess("stream_encoderd", "system/loggerd",
-                ["/usr/bin/env", "STREAM_BITRATE=5000000", "./encoderd", "--stream"],
+                ["/usr/bin/env", "STREAM_BITRATE=1500000", "./encoderd", "--stream"],
                 or_(notcar, wayon_live_streaming)),
   PythonProcess("logmessaged", "system.logmessaged", always_run),
   PythonProcess("navdy_bridge", "selfdrive.navdy.navdy_power_bridge", always_run, restart_if_crash=True),

@@ -1511,6 +1511,14 @@ def due_for_power_on_ensure(args: argparse.Namespace, now: float) -> bool:
   return True
 
 
+def due_for_power_off_ensure(args: argparse.Namespace, now: float) -> bool:
+  last = float(getattr(args, "_last_power_off_ensure_at", 0.0))
+  if now - last < max(args.power_off_ensure_sec, 0.1):
+    return False
+  setattr(args, "_last_power_off_ensure_at", now)
+  return True
+
+
 def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offroad_since: float | None,
                        last_target_on: bool | None) -> tuple[float | None, bool | None]:
   if not args.manage_navdy_power:
@@ -1524,9 +1532,11 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
 
   if offroad_since is None:
     offroad_since = now
-  if now - offroad_since >= max(args.power_off_delay_sec, 0.0) and last_target_on is not False:
-    if set_navdy_display(args, False, "offroad"):
-      last_target_on = False
+  if now - offroad_since >= max(args.power_off_delay_sec, 0.0):
+    ensure_due = due_for_power_off_ensure(args, now)
+    if last_target_on is not False or ensure_due:
+      if set_navdy_display(args, False, "offroad"):
+        last_target_on = False
   return offroad_since, last_target_on
 
 
@@ -1717,6 +1727,8 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--power-off-delay-sec", type=float, default=30.0, help="Offroad duration before Navdy display sleep.")
   parser.add_argument("--power-on-ensure-sec", type=float, default=1.0,
                       help="Re-check Navdy display state at this interval while onroad.")
+  parser.add_argument("--power-off-ensure-sec", type=float, default=5.0,
+                      help="Re-check Navdy display state at this interval after the offroad delay.")
   parser.add_argument("--onroad-process-check-sec", type=float, default=1.0,
                       help="Minimum interval for onroad process fallback checks.")
   parser.add_argument("--blinker-hold-sec", type=float, default=1.6,
@@ -1731,6 +1743,7 @@ def main() -> int:
   setattr(args, "_last_adb_recover_at", 0.0)
   args._adb_recover_lock = threading.Lock()
   setattr(args, "_last_power_on_ensure_at", 0.0)
+  setattr(args, "_last_power_off_ensure_at", 0.0)
   setattr(args, "_last_onroad_process_check_at", 0.0)
   setattr(args, "_last_onroad_process_started", False)
   setattr(args, "_last_set_speed_kph", 0.0)

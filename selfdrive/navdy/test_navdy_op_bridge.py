@@ -1086,6 +1086,31 @@ def test_manager_defaults_keep_fast_state_and_throttle_path():
   assert "--min-emit-sec" not in navdy_power_bridge.DEFAULT_ARGS
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--heartbeat-sec") + 1] == "5"
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--power-on-ensure-sec") + 1] == "60"
+  assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--power-off-ensure-sec") + 1] == "5"
+
+
+def test_navdy_power_rechecks_display_after_offroad_sleep(monkeypatch):
+  calls = []
+  args = SimpleNamespace(
+      manage_navdy_power=True,
+      power_off_delay_sec=30.0,
+      power_off_ensure_sec=5.0,
+      power_on_ensure_sec=60.0,
+      _last_power_off_ensure_at=0.0,
+  )
+  monkeypatch.setattr(navdy_op_bridge, "set_navdy_display",
+                      lambda _args, should_be_on, reason: calls.append((should_be_on, reason)) or True)
+
+  offroad_since, target_on = navdy_op_bridge.manage_navdy_power(args, False, 131.0, 100.0, False)
+  assert calls == [(False, "offroad")]
+  assert offroad_since == 100.0
+  assert target_on is False
+
+  navdy_op_bridge.manage_navdy_power(args, False, 134.0, offroad_since, target_on)
+  assert calls == [(False, "offroad")]
+
+  navdy_op_bridge.manage_navdy_power(args, False, 136.0, offroad_since, target_on)
+  assert calls == [(False, "offroad"), (False, "offroad")]
 
 
 def test_navdy_path_update_is_independent_from_fast_state_rate():

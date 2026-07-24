@@ -22,6 +22,7 @@ DEFAULT_ARGS = [
   "--heartbeat-sec", "5",
   "--power-on-ensure-sec", "60",
   "--power-off-delay-sec", "30",
+  "--power-off-ensure-sec", "5",
 ]
 
 

@@ -145,6 +145,18 @@ def test_driver_camera_uses_correct_horizontal_orientation():
   assert metadata["panorama"]["wideRadialDistortion"] == [-0.018, 0.006]
 
 
+def test_panorama_uses_mici_equidistant_projection():
+  panorama = stream_metadata(800_000, 300)["panorama"]
+
+  assert panorama["projectionModel"] == "equidistant-sphere-v1"
+  assert panorama["wideFocalScale"] == [0.31640625, 0.55953947]
+  assert panorama["driverFocalScale"] == [0.31640625, 0.55953947]
+  assert panorama["widePitchDeg"] == -6.5
+  assert panorama["driverPitchDeg"] == -14.0
+  assert panorama["widePositionM"] == [-0.2, 0.0, 0.0]
+  assert panorama["driverPositionM"] == [0.0, -0.435, 0.03]
+
+
 def test_client_control_accepts_fragmented_heartbeat():
   state = ClientControlState()
 

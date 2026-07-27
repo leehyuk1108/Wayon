@@ -99,10 +99,40 @@ def test_frame_classifier_reads_white_yellow_solid_and_dashed_lines():
   assert profiles[3].yellow_confidence > 0.48
 
 
-def test_lane_type_keeps_unknown_as_legacy_fallback():
+def test_lane_type_keeps_unknown_white_but_preserves_detected_yellow():
   assert classifier.lane_type("solid", False) == "solid"
   assert classifier.lane_type("dashed", True) == "centerDashed"
-  assert classifier.lane_type("unknown", True) == "unknown"
+  assert classifier.lane_type("unknown", False) == "unknown"
+  assert classifier.lane_type("unknown", True) == "centerSolid"
+
+
+def test_yellow_profile_requires_longitudinal_coverage():
+  sustained = np.zeros(48, dtype=np.float32)
+  sustained[4:14] = 0.8
+  sustained[18:28] = 0.8
+  sustained[32:42] = 0.8
+  transverse = np.zeros(48, dtype=np.float32)
+  transverse[18:26] = 1.0
+
+  assert classifier.classify_yellow_profile(sustained) > 0.48
+  assert classifier.classify_yellow_profile(transverse) < 0.48
+
+
+def test_unknown_pattern_with_sustained_yellow_renders_solid_yellow():
+  worker = object.__new__(classifier.NavdyLaneMarkingClassifier)
+  worker._condition = threading.Condition()
+  worker._active = True
+  worker._result = dict(classifier.UNKNOWN_LANE_TYPES)
+  worker._result_at = 0.0
+  worker._pattern_scores = np.zeros(4, dtype=np.float32)
+  worker._center_scores = np.zeros(4, dtype=np.float32)
+  worker._last_duration_ms = 0.0
+  yellow = classifier.LaneProfile("unknown", 0.0, 0.8)
+  unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
+
+  worker._update_result((unknown, yellow, unknown, unknown), now=10.0, duration_ms=2.0)
+
+  assert worker._result["navLaneLeftType"] == "centerSolid"
 
 
 def test_projection_uses_c4_road_camera_without_full_frame_copy():

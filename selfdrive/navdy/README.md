@@ -638,10 +638,12 @@ Android renderer:
 - 0.5초 간격, 최대 2 Hz
 - 7에서 42 m 구간만 0.75 m 간격으로 검사
 - 밝기 대비의 연속성으로 실선과 점선 분류
-- NV12 UV chroma로 노란 중앙선 후보 분류
+- 어두운 노란 도색은 밝기 검사와 독립된 NV12 UV chroma ROI로 분류
+- 넓은 거리 구간에서 이어지는 노란색만 통과시켜 짧은 횡단 표식은 제외
+- 노란색은 확인됐지만 형태가 불명확하면 노란 실선으로 유지
 - 결과는 시간 필터를 통과한 뒤 `navLane*Type` 네 문자열로만 전송
 - 결과가 2초 이상 오래되거나 confidence가 낮으면 `unknown`
-- `unknown`은 기존 점선 표시로 fallback
+- 색상과 형태가 모두 `unknown`이면 기존 점선 표시로 fallback
 
 분류는 `navdy_bridge` 내부의 latest-only daemon thread에서 실행된다. 새 요청은 이전 대기 요청을
 덮어쓰며, 결과는 Navdy JSON에만 추가된다. `modeld`, `controlsd`, planner, panda safety 및

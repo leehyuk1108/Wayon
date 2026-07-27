@@ -18,11 +18,12 @@ import numpy as np
 LANE_SUFFIXES = ("FarLeft", "Left", "Right", "FarRight")
 UNKNOWN_LANE_TYPES = {f"navLane{suffix}Type": "unknown" for suffix in LANE_SUFFIXES}
 
-MIN_MODEL_PROBABILITY = 0.1
+MIN_MODEL_PROBABILITY = 0.05
 SAMPLE_START_M = 7.0
 SAMPLE_END_M = 42.0
 SAMPLE_STEP_M = 0.75
 PROFILE_HIT_THRESHOLD = 0.42
+YELLOW_HIT_THRESHOLD = 0.1
 
 VIEW_FROM_DEVICE = np.array([
   [0.0, 1.0, 0.0],
@@ -64,11 +65,9 @@ def clamp01(value: float) -> float:
 
 
 def lane_type(pattern: str, centerline: bool) -> str:
-  if pattern not in ("solid", "dashed"):
-    return "unknown"
   if centerline:
-    return "centerSolid" if pattern == "solid" else "centerDashed"
-  return pattern
+    return "centerDashed" if pattern == "dashed" else "centerSolid"
+  return pattern if pattern in ("solid", "dashed") else "unknown"
 
 
 def euler_rotation(rpy: np.ndarray) -> np.ndarray:
@@ -182,6 +181,25 @@ def boolean_runs(mask: np.ndarray) -> list[tuple[bool, int]]:
   return runs
 
 
+def classify_yellow_profile(yellow_scores: np.ndarray) -> float:
+  yellow_scores = np.asarray(yellow_scores, dtype=np.float32)
+  if yellow_scores.size < 12:
+    return 0.0
+
+  occupancy = clean_occupancy(yellow_scores >= YELLOW_HIT_THRESHOLD)
+  hit_count = int(np.count_nonzero(occupancy))
+  longest_hit = max(
+    (length for value, length in boolean_runs(occupancy) if value),
+    default=0,
+  )
+
+  # A longitudinal marking covers many distance samples and has at least one
+  # sustained run. Short transverse markings such as crosswalk bars do not.
+  coverage_score = clamp01((hit_count - 12) / 12.0)
+  continuity_score = clamp01((longest_hit - 5) / 5.0)
+  return coverage_score * continuity_score
+
+
 def classify_profile(strengths: np.ndarray, yellow_scores: np.ndarray) -> LaneProfile:
   strengths = np.asarray(strengths, dtype=np.float32)
   yellow_scores = np.asarray(yellow_scores, dtype=np.float32)
@@ -211,11 +229,7 @@ def classify_profile(strengths: np.ndarray, yellow_scores: np.ndarray) -> LanePr
     gap_strength = min(1.0, longest_gap / 4.0)
     confidence = clamp01(0.35 + 0.35 * periodicity + 0.3 * gap_strength)
 
-  occupied_yellow = yellow_scores[occupancy]
-  if occupied_yellow.size < 4:
-    yellow_confidence = 0.0
-  else:
-    yellow_confidence = clamp01(float(np.mean(occupied_yellow)))
+  yellow_confidence = classify_yellow_profile(yellow_scores)
   return LaneProfile(pattern, confidence, yellow_confidence)
 
 
@@ -229,12 +243,15 @@ def sample_profile(frame: Any, line: LaneModelLine,
   stride = int(frame.stride)
   uv_offset = int(frame.uv_offset)
   raw = np.frombuffer(frame.data, dtype=np.uint8)
-  if width <= 0 or height <= 0 or stride < width or raw.size < uv_offset + stride:
+  uv_height = (height + 1) // 2
+  if (width <= 0 or height <= 0 or stride < width or
+      raw.size < uv_offset + stride * uv_height):
     return LaneProfile("unknown", 0.0, 0.0)
   y_plane_size = stride * height
   if raw.size < y_plane_size:
     return LaneProfile("unknown", 0.0, 0.0)
   y_plane = raw[:y_plane_size].reshape((height, stride))
+  uv_plane = raw[uv_offset:uv_offset + stride * uv_height].reshape((uv_height, stride))
 
   distances, pixels = project_line(line, rpy_calib, width, height)
   if distances.size < 12:
@@ -256,22 +273,46 @@ def sample_profile(frame: Any, line: LaneModelLine,
 
     flat_index = int(np.argmax(patch))
     patch_y, patch_x = np.unravel_index(flat_index, patch.shape)
-    mark_y = top + int(patch_y)
-    mark_x = left + int(patch_x)
     max_luma = float(patch[patch_y, patch_x])
     background = float(np.median(patch))
     contrast_score = clamp01((max_luma - background - 10.0) / 35.0)
     brightness_score = clamp01((max_luma - 55.0) / 110.0)
     strengths[index] = 0.78 * contrast_score + 0.22 * brightness_score
 
-    uv_index = uv_offset + (mark_y // 2) * stride + (mark_x & ~1)
-    if uv_index + 1 >= raw.size:
+    # Yellow paint is often darker than white paint at night, so inspect its
+    # chroma independently instead of only checking the brightest pixel.
+    yellow_half = int(round(np.interp(
+      distance, [SAMPLE_START_M, SAMPLE_END_M], [28.0, 8.0])))
+    yellow_left = max(0, center_x - yellow_half)
+    yellow_right = min(width, center_x + yellow_half + 1)
+    yellow_top = max(0, center_y - 2)
+    yellow_bottom = min(height, center_y + 3)
+    pair_left = yellow_left & ~1
+    pair_right = min(width - 2, (yellow_right - 1) & ~1)
+    if pair_right < pair_left or yellow_bottom <= yellow_top:
       continue
-    u = float(raw[uv_index])
-    v = float(raw[uv_index + 1])
-    saturation_score = clamp01((v - u - 8.0) / 30.0)
-    low_u_score = clamp01((132.0 - u) / 28.0)
-    yellow_scores[index] = saturation_score * low_u_score
+
+    pair_x = np.arange(pair_left, pair_right + 1, 2)
+    yellow_patch = y_plane[yellow_top:yellow_bottom, yellow_left:yellow_right]
+    yellow_background = float(np.median(yellow_patch))
+    pair_luma = np.maximum(
+      np.max(y_plane[yellow_top:yellow_bottom, pair_x], axis=0),
+      np.max(y_plane[yellow_top:yellow_bottom, pair_x + 1], axis=0),
+    ).astype(np.float32)
+    uv_rows = np.arange(
+      yellow_top // 2,
+      min(uv_height - 1, (yellow_bottom - 1) // 2) + 1,
+    )
+    u = uv_plane[uv_rows[:, None], pair_x[None, :]].astype(np.float32)
+    v = uv_plane[uv_rows[:, None], (pair_x + 1)[None, :]].astype(np.float32)
+    chroma = np.max(
+      np.clip((v - u - 8.0) / 30.0, 0.0, 1.0) *
+      np.clip((132.0 - u) / 28.0, 0.0, 1.0),
+      axis=0,
+    )
+    yellow_luma = np.clip(
+      (pair_luma - yellow_background - 2.0) / 20.0, 0.0, 1.0)
+    yellow_scores[index] = float(np.max(chroma * yellow_luma))
 
   return classify_profile(strengths, yellow_scores)
 
@@ -360,18 +401,24 @@ class NavdyLaneMarkingClassifier:
         elif profile.pattern == "dashed":
           pattern_target = -profile.confidence
         else:
-          pattern_target = 0.0
-        self._pattern_scores[index] = (
-          (1.0 - alpha) * self._pattern_scores[index] + alpha * pattern_target)
+          pattern_target = None
+        if pattern_target is None:
+          self._pattern_scores[index] *= 0.88
+        else:
+          self._pattern_scores[index] = (
+            (1.0 - alpha) * self._pattern_scores[index] + alpha * pattern_target)
 
         if profile.yellow_confidence >= 0.48:
           center_target = profile.yellow_confidence
         elif profile.pattern != "unknown":
           center_target = -profile.confidence
         else:
-          center_target = 0.0
-        self._center_scores[index] = (
-          (1.0 - alpha) * self._center_scores[index] + alpha * center_target)
+          center_target = None
+        if center_target is None:
+          self._center_scores[index] *= 0.88
+        else:
+          self._center_scores[index] = (
+            (1.0 - alpha) * self._center_scores[index] + alpha * center_target)
 
         pattern_score = float(self._pattern_scores[index])
         pattern = "solid" if pattern_score >= 0.24 else (

@@ -99,7 +99,7 @@ class BluetoothReceiver : BroadcastReceiver() {
                 val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
                 if (device.address != null) {
                     prefs.edit().putString(MainActivity.PREF_KEY_MAC_ADDRESS, device.address).apply()
-                    Log.d("BluetoothReceiver", "Saved/Updated MAC Address: ${device.address}")
+                    Log.d("BluetoothReceiver", "Saved vehicle Bluetooth identifier")
                 }
 
                 // ‼️ (삭제) goAsync() 및 자체 위치 저장 로직 모두 제거

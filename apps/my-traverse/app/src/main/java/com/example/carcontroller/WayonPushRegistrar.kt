@@ -17,12 +17,14 @@ object WayonPushRegistrar {
     private val executor = Executors.newSingleThreadExecutor()
 
     fun registerCurrentToken(context: Context) {
+        if (BuildConfig.APPLICATION_ID.endsWith(".source")) return
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token -> registerToken(context, token) }
             .addOnFailureListener { error -> Log.w(TAG, "FCM token lookup failed", error) }
     }
 
     fun registerToken(context: Context, token: String, force: Boolean = false) {
+        if (BuildConfig.APPLICATION_ID.endsWith(".source")) return
         if (token.isBlank() ||
             BuildConfig.WAYON_PUSH_REGISTRATION_TOKEN.isBlank() ||
             BuildConfig.WAYON_DEVICE_ID.isBlank()

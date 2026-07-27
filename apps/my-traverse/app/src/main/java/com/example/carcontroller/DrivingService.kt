@@ -190,7 +190,7 @@ class DrivingService : Service(), CoroutineScope by CoroutineScope(Dispatchers.I
                              if (!addresses.isNullOrEmpty()) {
                                  startAddress = addresses[0].getAddressLine(0)
                                  saveTemporaryState()
-                                 Log.d("DrivingService", "출발지 주소 확보: $startAddress")
+                                 Log.d("DrivingService", "출발지 주소 확보 완료")
                              }
                          }
                      } catch (e: Exception) {
@@ -353,7 +353,7 @@ class DrivingService : Service(), CoroutineScope by CoroutineScope(Dispatchers.I
 
         var currentAddress = "주소를 찾을 수 없음"
         if (location != null) {
-            Log.d("DrivingService", "주차 위치 저장: ${location.latitude}, ${location.longitude}")
+            Log.d("DrivingService", "주차 위치 저장 완료")
             val timeFormat = SimpleDateFormat("HH:mm", Locale.KOREAN)
             val timestamp = timeFormat.format(Date())
 

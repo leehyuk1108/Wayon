@@ -771,13 +771,14 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     }
 
     private fun runJs(script: String) {
+        val callName = script.substringBefore('(').take(80)
         if (!isPageLoaded) {
-            Log.w("MainActivity", "Page not loaded, skipping JS call: $script")
+            Log.w("MainActivity", "Page not loaded, skipping JS call: $callName")
             return
         }
 
         launch {
-            Log.d("MainActivity", "Running JS: $script")
+            Log.d("MainActivity", "Running JS: $callName")
             myWebView.loadUrl("javascript:$script")
         }
     }
@@ -1465,7 +1466,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
                         if (selectedDevice != null) {
                             prefs.edit().putString(PREF_KEY_MAC_ADDRESS, selectedDevice.address).apply()
-                            Log.d("WebAppInterface", "MAC Address Saved: ${selectedDevice.address}")
+                            Log.d("WebAppInterface", "Vehicle Bluetooth identifier saved")
                             showJsStatus("'${selectedDevice.name ?: "이름 없음"}' 기기가 등록되었습니다.", "success")
                             checkBluetoothStatus()
                             updateDashboardStatus()

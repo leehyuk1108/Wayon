@@ -1,4 +1,5 @@
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,19 @@ def test_run_supervisor_replaces_manager_process(tmp_path: Path, monkeypatch):
   installer.run_supervisor()
 
   assert calls == [(str(supervisor), [str(supervisor)])]
+
+
+def test_supervisor_supports_cellular_transport_fallback():
+  source = installer.SUPERVISOR_SOURCE.read_text(encoding="utf-8")
+
+  assert "--protocol quic" not in source
+  assert "cloudflared_tunnel_ha_connections" in source
+  assert "HEALTH_FAILURES_TO_RESTART=6" in source
+  assert "systemctl start ssh" in source
+
+
+def test_supervisor_shell_syntax():
+  subprocess.run(["sh", "-n", str(installer.SUPERVISOR_SOURCE)], check=True)
 
 
 def test_main_keeps_retrying_while_offroad(monkeypatch):

@@ -38,6 +38,8 @@ LAST_SUPPRESSED_VEHICLE_PAIR_PATH = Path(os.getenv(
   "/data/wayon_cloud/last_suppressed_vehicle_pair.json",
 ))
 MAX_IMPACT_CAPTURE_ATTEMPTS = 3
+WAYON_WIDE_SNAPSHOT_WARMUP_S = 0.5
+WAYON_DRIVER_SNAPSHOT_WARMUP_S = 0.8
 DEFAULT_VEHICLE_STATUS_URL = (
   "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json"
 )
@@ -187,13 +189,21 @@ def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
       break
 
     payload = {**event, "deviceId": device_id}
-    post_json(config, "/api/impact", payload)
     event_id = str(event.get("id", ""))
+    media = {}
+    captured_at = None
+    attempts = int(event.get("captureAttempts", 0))
+    capture_complete = False
 
     if event.get("captureRequested"):
       media, captured_at = capture_and_store_impact_media(event_id, media_root, capture_fn)
-      attempts = int(event.get("captureAttempts", 0)) + 1
+      attempts += 1
       capture_complete = all(camera in media for camera in ("wide", "driver"))
+
+    # Capture locally before network I/O so a slow connection cannot delay the evidence frame.
+    post_json(config, "/api/impact", payload)
+
+    if event.get("captureRequested"):
       if not capture_complete and attempts < MAX_IMPACT_CAPTURE_ATTEMPTS:
         update_args = (event_id, {"captureAttempts": attempts})
         if queue_path is None:
@@ -1082,10 +1092,9 @@ def capture_offroad_images():
     if params.get_bool("IsTakingSnapshot"):
       return None, None
 
-    params.put_bool("IsTakingSnapshot", True)
+    params.put_bool("IsTakingSnapshot", True, block=True)
     snapshot_flag_set = True
     set_offroad_alert("Offroad_IsTakingSnapshot", True)
-    time.sleep(2.0)
     started_camerad = False
 
     try:
@@ -1099,13 +1108,18 @@ def capture_offroad_images():
       started_camerad = True
 
     try:
-      return get_snapshots("wideRoadCameraState", "driverCameraState")
+      return get_snapshots(
+        "wideRoadCameraState",
+        "driverCameraState",
+        warmup_s=WAYON_WIDE_SNAPSHOT_WARMUP_S,
+        front_warmup_s=WAYON_DRIVER_SNAPSHOT_WARMUP_S,
+      )
     finally:
       if started_camerad:
         managed_processes["camerad"].stop()
   finally:
     if snapshot_flag_set:
-      params.put_bool("IsTakingSnapshot", False)
+      params.put_bool("IsTakingSnapshot", False, block=True)
       set_offroad_alert("Offroad_IsTakingSnapshot", False)
     lease.release()
 

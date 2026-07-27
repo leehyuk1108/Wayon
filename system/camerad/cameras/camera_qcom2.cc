@@ -23,6 +23,9 @@ const bool env_debug_frames = getenv("DEBUG_FRAMES") != nullptr;
 const bool env_log_raw_frames = getenv("LOG_RAW_FRAMES") != nullptr;
 const bool env_ctrl_exp_from_params = getenv("CTRL_EXP_FROM_PARAMS") != nullptr;
 
+const int snapshot_driver_initial_exposure_divisor = 4;
+const int snapshot_driver_fast_exposure_frames = 12;
+
 
 class CameraState {
 public:
@@ -44,6 +47,9 @@ public:
 
   float fl_pix = 0;
   std::unique_ptr<PubMaster> pm;
+
+  bool fast_snapshot_exposure = false;
+  int exposure_update_count = 0;
 
   CameraState(SpectraMaster *master, const CameraConfig &config) : camera(master, config) {};
   ~CameraState();
@@ -68,6 +74,17 @@ void CameraState::init(VisionIpcServer *v) {
 
   dc_gain_weight = camera.sensor->dc_gain_min_weight;
   gain_idx = camera.sensor->analog_gain_rec_idx;
+  analog_gain_frac = camera.sensor->sensor_analog_gains[gain_idx];
+
+  static Params params;
+  fast_snapshot_exposure = camera.cc.stream_type == VISION_STREAM_DRIVER && params.getBool("IsTakingSnapshot");
+  if (fast_snapshot_exposure) {
+    exposure_time = std::clamp(camera.sensor->exposure_time_max / snapshot_driver_initial_exposure_divisor,
+                               camera.sensor->exposure_time_min, camera.sensor->exposure_time_max);
+    auto exp_reg_array = camera.sensor->getExposureRegisters(exposure_time, gain_idx, dc_gain_enabled);
+    camera.sensors_i2c(exp_reg_array.data(), exp_reg_array.size(), CAM_SENSOR_PACKET_OPCODE_SENSOR_CONFIG, camera.sensor->data_word);
+  }
+
   cur_ev[0] = cur_ev[1] = cur_ev[2] = get_gain_factor() * camera.sensor->sensor_analog_gains[gain_idx] * exposure_time;
 
   pm = std::make_unique<PubMaster>(std::vector{camera.cc.publish_name});
@@ -177,8 +194,9 @@ void CameraState::set_camera_exposure(float grey_frac) {
     enable_dc_gain = false;
   } else {
     // Simple brute force optimizer to choose sensor parameters to reach desired EV
-    int min_g = std::max(gain_idx - 1, sensor->analog_gain_min_idx);
-    int max_g = std::min(gain_idx + 1, sensor->analog_gain_max_idx);
+    const bool fast_exposure = fast_snapshot_exposure && exposure_update_count < snapshot_driver_fast_exposure_frames;
+    int min_g = fast_exposure ? sensor->analog_gain_min_idx : std::max(gain_idx - 1, sensor->analog_gain_min_idx);
+    int max_g = fast_exposure ? sensor->analog_gain_max_idx : std::min(gain_idx + 1, sensor->analog_gain_max_idx);
     for (int g = min_g; g <= max_g; g++) {
       float gain = sensor->sensor_analog_gains[g] * get_gain_factor();
 
@@ -193,6 +211,7 @@ void CameraState::set_camera_exposure(float grey_frac) {
       update_exposure_score(desired_ev, t, g, gain);
     }
   }
+  exposure_update_count++;
 
   measured_grey_fraction = grey_frac;
   target_grey_fraction = target_grey;

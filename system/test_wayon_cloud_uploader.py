@@ -289,21 +289,28 @@ def test_impact_upload_captures_both_cameras_and_cleans_local_media(tmp_path, mo
   }
   enqueue_impact_event(event, queue)
   posted = []
+  operations = []
 
   def fake_post(config, path, payload):
+    operations.append(path)
     posted.append((path, payload))
     return {"ok": True}
 
   image = np.zeros((8, 12, 3), dtype=np.uint8)
   monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json", fake_post)
 
+  def capture():
+    operations.append("capture")
+    return image, image
+
   assert upload_pending_impacts(
     {"endpoint": "test", "token": "test"},
     "device",
     queue,
     media_root=media_root,
-    capture_fn=lambda: (image, image),
+    capture_fn=capture,
   ) == 1
+  assert operations == ["capture", "/api/impact", "/api/impact-media"]
   assert [path for path, _ in posted] == ["/api/impact", "/api/impact-media"]
   assert posted[1][1]["captureStatus"] == "complete"
   assert posted[1][1]["wideJpegBase64"]

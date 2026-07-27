@@ -57,26 +57,30 @@ def extract_image(buf):
   return yuv_to_rgb(y, u, v)
 
 
-def get_snapshots(frame="roadCameraState", front_frame="driverCameraState"):
+def get_snapshots(frame="roadCameraState", front_frame="driverCameraState",
+                  warmup_s=4.0, front_warmup_s=None):
   sockets = [s for s in (frame, front_frame) if s is not None]
   sm = messaging.SubMaster(sockets)
   vipc_clients = {s: VisionIpcClient("camerad", VISION_STREAMS[s], True) for s in sockets}
 
-  # wait 4 sec from camerad startup for focus and exposure
-  while sm[sockets[0]].frameId < int(4. / DT_MDL):
-    sm.update()
+  def wait_for_warmup(service, seconds):
+    target_frame = int(max(0.0, float(seconds)) / DT_MDL)
+    while sm[service].frameId < target_frame:
+      sm.update()
 
-  for client in vipc_clients.values():
-    client.connect(True)
-
-  # grab images
   rear, front = None, None
   if frame is not None:
+    wait_for_warmup(frame, warmup_s)
     c = vipc_clients[frame]
-    rear = extract_image(c.recv())
+    c.connect(True)
+    buffer = c.recv()
+    rear = extract_image(buffer) if buffer is not None else None
   if front_frame is not None:
+    wait_for_warmup(front_frame, warmup_s if front_warmup_s is None else front_warmup_s)
     c = vipc_clients[front_frame]
-    front = extract_image(c.recv())
+    c.connect(True)
+    buffer = c.recv()
+    front = extract_image(buffer) if buffer is not None else None
   return rear, front
 
 

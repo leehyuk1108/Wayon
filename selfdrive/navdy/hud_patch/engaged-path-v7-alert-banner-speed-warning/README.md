@@ -32,7 +32,9 @@ Behavior:
   current speed, and music only while openpilot is actively engaged.
 - Shows music as `artist - title` in both stock and engaged layouts, and restores
   the current track whenever the dashboard view is recreated.
-- Draws all four `modelV2.laneLines` as animated 56px/24px dashed lines.
+- Draws all four `modelV2.laneLines` as classified dashed or solid lines.
+- Renders classified yellow markings as center lines, with unknown markings
+  retaining the legacy animated 56px/24px dashed fallback.
 - Animates lane dashes at 18-80 pixels per second based on vehicle speed.
 - Uses 3.2px lane strokes, 2.8px road-edge strokes, and a stronger
   0x55-to-0xff distance gradient so projected boundaries remain legible.

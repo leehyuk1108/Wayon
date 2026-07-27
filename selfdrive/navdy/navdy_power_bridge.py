@@ -14,6 +14,8 @@ DEFAULT_ARGS = [
   "--hz", "5",
   "--path-update-sec", "0.1",
   "--radar-overlay",
+  "--lane-marking-classifier",
+  "--lane-marking-interval-sec", "0.5",
   "--adb-path", "adb",
   "--adb-server-port", "5038",
   "--no-stdout",

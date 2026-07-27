@@ -506,8 +506,8 @@ def test_navdy_path_renderer_keeps_lane_and_road_edges_legible():
   assert "roadEdgePaint.setStrokeWidth(2.8f)" in java
   assert "0x55ffffff, 0xffffffff" in java
   assert "confidence * 210.0f + 25.0f" in java
-  assert "const v2, 0x404ccccd    # 3.2f" in smali
-  assert "const v2, 0x40333333    # 2.8f" in smali
+  assert "0x404ccccd    # 3.2f" in smali
+  assert "0x40333333    # 2.8f" in smali
   assert "const v5, 0x55ffffff" in smali
   assert "const/high16 v1, 0x43520000    # 210.0f" in smali
   assert "const/high16 v1, 0x41c80000    # 25.0f" in smali
@@ -565,6 +565,7 @@ def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
 def test_navdy_bridge_avoids_saturated_car_state_service():
   assert navdy_op_bridge.NAVDY_CAR_STATE_SERVICE == "carStateSP"
   assert navdy_op_bridge.NAVDY_MODEL_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES
+  assert navdy_op_bridge.NAVDY_CALIBRATION_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES
 
 
 def test_navdy_model_geometry_projects_path_and_all_lane_lines():
@@ -756,6 +757,13 @@ def test_navdy_payload_signature_tracks_lane_risk_changes():
   assert navdy_op_bridge.payload_signature(clear) != navdy_op_bridge.payload_signature(danger)
 
 
+def test_navdy_payload_signature_tracks_lane_marking_type_changes():
+  dashed = {"navLaneLeftType": "dashed"}
+  solid = {"navLaneLeftType": "solid"}
+
+  assert navdy_op_bridge.payload_signature(dashed) != navdy_op_bridge.payload_signature(solid)
+
+
 def test_navdy_lane_risk_payload_forwards_detector_sides():
   class FakeDetector:
     def __init__(self):
@@ -943,15 +951,28 @@ def test_navdy_path_renderer_animates_dashed_lanes_and_keeps_road_edges_solid():
   assert "LANE_DASH_CYCLE = 80.0f" in java
   assert "new DashPathEffect(LANE_DASH_PATTERN, dashPhase)" in java
   assert "Math.min(80.0f, Math.max(18.0f, vehicleSpeedKph * 0.8f))" in java
-  assert "drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f)" in java
-  assert "drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft)" in java
-  assert "drawLane(canvas, laneRight, laneRightProb, laneRiskRight)" in java
-  assert "drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f)" in java
+  assert "drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f, laneFarLeftType)" in java
+  assert "drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft, laneLeftType)" in java
+  assert "drawLane(canvas, laneRight, laneRightProb, laneRiskRight, laneRightType)" in java
+  assert "drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f, laneFarRightType)" in java
+  assert "lanePaint.setPathEffect(solid ? null : laneDashEffect)" in java
   assert "canvas.drawPath(linePath(points), roadEdgePaint)" in java
   assert "canvas.drawPath(linePath(points), lanePaint)" in java
   assert "vehicleSpeedKph > 1.0f" in java
   assert "postInvalidateDelayed(DASH_FRAME_MS)" in java
-  assert java.index("drawRoadEdge(canvas, roadEdgeLeft") < java.index("lanePaint.setPathEffect")
+  assert java.index("drawRoadEdge(canvas, roadEdgeLeft") < java.index("laneDashEffect = new")
+
+
+def test_navdy_path_renderer_uses_classified_solid_and_center_lines():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java").read_text()
+
+  for suffix in ("FarLeft", "Left", "Right", "FarRight"):
+    assert f'readLaneType(json, "navLane{suffix}Type")' in java
+  assert 'type.startsWith("center")' in java
+  assert '"centerSolid".equals(type)' in java
+  assert "COLOR_LANE_CENTER = 0xffffd43b" in java
+  assert "centerLaneRiskFilters[filterIndex]" in java
 
 
 def test_navdy_path_renderer_blends_inner_lanes_toward_red_by_risk():
@@ -963,11 +984,11 @@ def test_navdy_path_renderer_blends_inner_lanes_toward_red_by_risk():
   assert "COLOR_LANE_DANGER = 0xffff2028" in java
   assert 'json.optDouble("navLaneRiskLeft", 0.0)' in java
   assert 'json.optDouble("navLaneRiskRight", 0.0)' in java
-  assert "lanePaint.setColorFilter(laneRiskFilters[filterIndex])" in java
+  assert "centerline ? centerLaneRiskFilters[filterIndex] : laneRiskFilters[filterIndex]" in java
   assert "new LightingColorFilter[LANE_RISK_FILTER_STEPS + 1]" in java
   assert 'const-string v2, "navLaneRiskLeft"' in smali
   assert 'const-string v1, "navLaneRiskRight"' in smali
-  assert ".method private drawLane(Landroid/graphics/Canvas;[FFF)V" in smali
+  assert ".method private drawLane(Landroid/graphics/Canvas;[FFFLjava/lang/String;)V" in smali
 
 
 def test_navdy_vehicle_markers_remain_visible_at_long_range():
@@ -1091,13 +1112,19 @@ def test_default_car_state_keeps_payload_safe_without_vehicle_sample():
 def test_manager_defaults_use_starpilot_socket_transport():
   assert "--socket-transport" in navdy_power_bridge.DEFAULT_ARGS
   assert "--radar-overlay" in navdy_power_bridge.DEFAULT_ARGS
+  assert "--lane-marking-classifier" in navdy_power_bridge.DEFAULT_ARGS
 
 
 def test_manager_defaults_keep_fast_state_and_throttle_path():
   hz = float(navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1])
   path_update_sec = float(navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--path-update-sec") + 1])
+  marking_update_sec = float(
+    navdy_power_bridge.DEFAULT_ARGS[
+      navdy_power_bridge.DEFAULT_ARGS.index("--lane-marking-interval-sec") + 1])
   assert hz == 5.0
   assert path_update_sec == 0.1
+  assert marking_update_sec == 0.5
+  assert marking_update_sec >= path_update_sec * 5.0
   assert path_update_sec < 1.0 / hz
   assert "--min-emit-sec" not in navdy_power_bridge.DEFAULT_ARGS
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--heartbeat-sec") + 1] == "5"

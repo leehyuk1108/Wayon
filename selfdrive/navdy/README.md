@@ -399,6 +399,7 @@ geometry는 `active=true`일 때만 생성한다.
 | `navLaneRight` | number[] | ego lane 우측 선 |
 | `navLaneFarRight` | number[] | 우측 인접 차선 바깥 선 |
 | `navLane*Prob` | number | 해당 `modelV2.laneLineProbs` |
+| `navLane*Type` | string | `unknown`, `dashed`, `solid`, `centerDashed`, `centerSolid` |
 | `navRoadEdgeLeft` | number[] | confidence를 통과한 좌측 도로 경계 |
 | `navRoadEdgeRight` | number[] | confidence를 통과한 우측 도로 경계 |
 | `navRoadEdge*Prob` | number | `1 - roadEdgeStd` |
@@ -616,7 +617,9 @@ height = 100
 Android renderer:
 
 - path 영역은 반투명 녹색 fill과 녹색 좌우 edge
-- 모든 lane line은 점선
+- `unknown`, `dashed`, `centerDashed` lane line은 점선
+- `solid`, `centerSolid` lane line은 실선
+- `centerDashed`, `centerSolid`는 노란 중앙선으로 표시
 - 점선 pattern은 `56 px line + 24 px gap`
 - 점선 이동 속도는 `clamp(vEgoKph * 0.8, 18, 80) px/s`
 - 주행 중 약 66 ms마다 dash phase를 갱신
@@ -624,6 +627,24 @@ Android renderer:
 - lane alpha는 probability에 따라 조절
 - 차선 stroke는 `3.2 px`, 도로 경계 stroke는 `2.8 px`
 - 원거리 선 alpha는 `0x55`, 근거리 선 alpha는 `0xff`까지 증가
+
+### 차선 표식 분류
+
+`lane_marking_classifier.py`는 `modelV2.laneLines`의 기존 좌표를 카메라 영상에 투영한 뒤 각 선
+주변의 가느다란 ROI만 읽는다. 전체 프레임 변환, 별도 신경망, 새 segmentation은 실행하지 않는다.
+
+- VisionIPC의 기존 NV12 road frame을 zero-copy view로 읽음
+- 0.5초 간격, 최대 2 Hz
+- 7에서 42 m 구간만 0.75 m 간격으로 검사
+- 밝기 대비의 연속성으로 실선과 점선 분류
+- NV12 UV chroma로 노란 중앙선 후보 분류
+- 결과는 시간 필터를 통과한 뒤 `navLane*Type` 네 문자열로만 전송
+- 결과가 2초 이상 오래되거나 confidence가 낮으면 `unknown`
+- `unknown`은 기존 점선 표시로 fallback
+
+분류는 `navdy_bridge` 내부의 latest-only daemon thread에서 실행된다. 새 요청은 이전 대기 요청을
+덮어쓰며, 결과는 Navdy JSON에만 추가된다. `modeld`, `controlsd`, planner, panda safety 및
+조향·가감속 값에는 연결하지 않는다.
 
 ### 도로 경계
 
@@ -1263,18 +1284,18 @@ selfdrive/navdy/hud_patch/engaged-path-v7-alert-banner-speed-warning/
 
 주의 사항:
 
-1. Patch 디렉터리 README의 artifact 이름은 아직 v39 기준으로 stale하다.
+1. Patch 디렉터리 README 상단의 base artifact 이름은 누적 빌드 이력인 v39 기준이다.
 2. 최신 로컬 signed artifact는 다음 파일이다.
 
    ```text
    /Users/ijonghyeog/Documents/navdy/build_outputs/
-     Hud-engaged-path-v42-stutter-fix-signed.apk
+     Hud-lane-marking-v1-signed.apk
    ```
 
-3. 2026-07-18 기준 해당 파일 SHA-256:
+3. 2026-07-27 기준 해당 파일 SHA-256:
 
    ```text
-   d474f3eedac57f85b1fe9e66060469b000e5e12af22f5ca0cadc21d8e95a10cd
+   73a75ac2fed5c690a90bbbe347b1f189f875444cb7c896fdf138e9f71d7f978d
    ```
 
 4. 파일명이 최신이라고 장치에 설치된 APK도 동일하다고 가정하면 안 된다.

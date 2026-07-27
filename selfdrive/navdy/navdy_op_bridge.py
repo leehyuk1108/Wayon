@@ -52,6 +52,7 @@ NAVDY_FAST_SERVICES = (
   "longitudinalPlanSP",
 )
 NAVDY_MODEL_SERVICE = "modelV2"
+NAVDY_CALIBRATION_SERVICE = "liveCalibration"
 NAVDY_RADAR_TO_CAMERA_M = 1.52
 NAVDY_VEHICLE_MAX_DISTANCE_M = 80.0
 NAVDY_VEHICLE_MAX_COUNT = 8
@@ -91,6 +92,22 @@ def create_navdy_lane_risk_detector() -> Any:
     from openpilot.sunnypilot.selfdrive.controls.lib.radar_lane_intrusion import RadarLaneIntrusionDetector
     return RadarLaneIntrusionDetector()
   except ImportError:
+    return None
+
+
+def create_navdy_lane_marking_classifier(args: argparse.Namespace) -> Any:
+  if not args.lane_marking_classifier:
+    return None
+  try:
+    from openpilot.selfdrive.navdy.lane_marking_classifier import NavdyLaneMarkingClassifier
+    return NavdyLaneMarkingClassifier(
+      interval_sec=args.lane_marking_interval_sec,
+      stale_sec=args.lane_marking_stale_sec,
+      stdout=args.stdout,
+    )
+  except Exception as error:
+    if args.stdout:
+      print(f"navdy lane classifier unavailable: {error}", flush=True)
     return None
 
 
@@ -1387,6 +1404,10 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("navLaneLeftProb"),
     payload.get("navLaneRightProb"),
     payload.get("navLaneFarRightProb"),
+    payload.get("navLaneFarLeftType"),
+    payload.get("navLaneLeftType"),
+    payload.get("navLaneRightType"),
+    payload.get("navLaneFarRightType"),
     payload.get("navLaneRiskLeft"),
     payload.get("navLaneRiskRight"),
     tuple(payload.get("navRoadEdgeLeft", [])),
@@ -1584,7 +1605,8 @@ def run_live(args: argparse.Namespace) -> None:
   maybe_reexec_openpilot_python(args)
   messaging = import_messaging()
   services = available_services(messaging, list(NAVDY_FAST_SERVICES))
-  model_services = available_services(messaging, [NAVDY_MODEL_SERVICE])
+  model_services = available_services(
+    messaging, [NAVDY_MODEL_SERVICE, NAVDY_CALIBRATION_SERVICE])
   if args.manage_navdy_power:
     services += available_services(messaging, ["deviceState", "pandaStates"])
   sm = messaging.SubMaster(services)
@@ -1597,6 +1619,7 @@ def run_live(args: argparse.Namespace) -> None:
   last_path_update_at = 0.0
   radar_reader = create_navdy_radar_reader(messaging, args.stdout) if args.radar_overlay else None
   lane_risk_detector = create_navdy_lane_risk_detector()
+  lane_marking_classifier = create_navdy_lane_marking_classifier(args)
   e2e_alert_reader = NavdyE2EAlertReader(messaging) if "longitudinalPlanSP" in services else None
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
@@ -1617,6 +1640,11 @@ def run_live(args: argparse.Namespace) -> None:
     else:
       car_state = default_car_state()
     active = bool(getattr(sm["selfdriveState"], "active", False))
+    if lane_marking_classifier is not None:
+      if not lane_marking_classifier.is_alive():
+        lane_marking_classifier = None
+      else:
+        lane_marking_classifier.set_active(active)
     if radar_reader is not None and not radar_reader.is_alive():
       radar_reader = None
     if args.radar_overlay and radar_reader is None and \
@@ -1633,6 +1661,11 @@ def run_live(args: argparse.Namespace) -> None:
         if service_recent(model_sm, NAVDY_MODEL_SERVICE, now):
           model_v2 = model_sm[NAVDY_MODEL_SERVICE]
           path_geometry = navdy_model_geometry(model_v2)
+          if lane_marking_classifier is not None:
+            if service_recent(model_sm, NAVDY_CALIBRATION_SERVICE, now):
+              lane_marking_classifier.submit(
+                model_v2, model_sm[NAVDY_CALIBRATION_SERVICE], now)
+            path_geometry.update(lane_marking_classifier.snapshot(now))
           radar_points = radar_reader.snapshot(now) if radar_reader is not None else []
           path_geometry.update(navdy_vehicle_geometry(model_v2, radar_points))
           lane_risks, intrusion = evaluate_navdy_lane_risk(
@@ -1693,6 +1726,15 @@ def parse_args() -> argparse.Namespace:
                       help="Fuse passive raw GM radar targets into the Navdy path overlay (default).")
   parser.add_argument("--no-radar-overlay", dest="radar_overlay", action="store_false",
                       help="Disable passive raw radar targets in the Navdy path overlay.")
+  parser.add_argument("--lane-marking-classifier", dest="lane_marking_classifier",
+                      action="store_true", default=False,
+                      help="Classify solid, dashed, and yellow center lane markings for Navdy.")
+  parser.add_argument("--no-lane-marking-classifier", dest="lane_marking_classifier",
+                      action="store_false", help="Disable Navdy lane-marking classification.")
+  parser.add_argument("--lane-marking-interval-sec", type=float, default=0.5,
+                      help="Minimum interval between camera lane-marking samples.")
+  parser.add_argument("--lane-marking-stale-sec", type=float, default=2.0,
+                      help="Age after which a lane-marking result becomes unknown.")
   parser.add_argument("--once", action="store_true", help="Send one payload and exit.")
   parser.add_argument("--synthetic", action="store_true", help="Send fake OP data without cereal imports.")
   parser.add_argument("--synthetic-gear", default="drive", help="Gear text for --synthetic payloads.")

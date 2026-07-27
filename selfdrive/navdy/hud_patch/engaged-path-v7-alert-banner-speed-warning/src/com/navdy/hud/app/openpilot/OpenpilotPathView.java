@@ -20,6 +20,7 @@ import org.json.JSONObject;
 public final class OpenpilotPathView extends View {
   private static final int COLOR_GREEN = 0xff00e646;
   private static final int COLOR_LANE_CLEAR = 0xffffffff;
+  private static final int COLOR_LANE_CENTER = 0xffffd43b;
   private static final int COLOR_LANE_DANGER = 0xffff2028;
   private static final int COLOR_VEHICLE_RADAR = 0xddffffff;
   private static final int COLOR_VEHICLE_VISION = 0xff00e646;
@@ -39,6 +40,8 @@ public final class OpenpilotPathView extends View {
       Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
   private final LightingColorFilter[] laneRiskFilters =
       new LightingColorFilter[LANE_RISK_FILTER_STEPS + 1];
+  private final LightingColorFilter[] centerLaneRiskFilters =
+      new LightingColorFilter[LANE_RISK_FILTER_STEPS + 1];
   private final LightingColorFilter vehicleRadarFilter = new LightingColorFilter(0xffffffff, 0);
   private final LightingColorFilter vehicleVisionFilter = new LightingColorFilter(
       COLOR_VEHICLE_VISION, 0);
@@ -49,14 +52,18 @@ public final class OpenpilotPathView extends View {
   private final Bitmap[] vehicleRightMarkerBitmaps;
   private float[] laneFarLeft = new float[0];
   private float laneFarLeftProb;
+  private String laneFarLeftType = "unknown";
   private float[] laneLeft = new float[0];
   private float laneLeftProb;
+  private String laneLeftType = "unknown";
   private float laneRiskLeft;
   private float[] laneRight = new float[0];
   private float laneRightProb;
+  private String laneRightType = "unknown";
   private float laneRiskRight;
   private float[] laneFarRight = new float[0];
   private float laneFarRightProb;
+  private String laneFarRightType = "unknown";
   private float[] pathLeft = new float[0];
   private float[] pathRight = new float[0];
   private float[] roadEdgeLeft = new float[0];
@@ -64,6 +71,7 @@ public final class OpenpilotPathView extends View {
   private float[] roadEdgeRight = new float[0];
   private float roadEdgeRightProb;
   private float[] vehicles = new float[0];
+  private DashPathEffect laneDashEffect;
   private float dashPhase;
   private long lastDashFrameMs;
   private float vehicleSpeedKph;
@@ -79,6 +87,8 @@ public final class OpenpilotPathView extends View {
       float risk = index / (float) LANE_RISK_FILTER_STEPS;
       laneRiskFilters[index] = new LightingColorFilter(blendColor(
           COLOR_LANE_CLEAR, COLOR_LANE_DANGER, risk), 0);
+      centerLaneRiskFilters[index] = new LightingColorFilter(blendColor(
+          COLOR_LANE_CENTER, COLOR_LANE_DANGER, risk), 0);
     }
 
     roadEdgePaint.setStyle(Paint.Style.STROKE);
@@ -173,6 +183,10 @@ public final class OpenpilotPathView extends View {
       laneLeftProb = clamp01((float) json.optDouble("navLaneLeftProb", 0.0));
       laneRightProb = clamp01((float) json.optDouble("navLaneRightProb", 0.0));
       laneFarRightProb = clamp01((float) json.optDouble("navLaneFarRightProb", 0.0));
+      laneFarLeftType = readLaneType(json, "navLaneFarLeftType");
+      laneLeftType = readLaneType(json, "navLaneLeftType");
+      laneRightType = readLaneType(json, "navLaneRightType");
+      laneFarRightType = readLaneType(json, "navLaneFarRightType");
       roadEdgeLeftProb = clamp01((float) json.optDouble("navRoadEdgeLeftProb", 0.0));
       roadEdgeRightProb = clamp01((float) json.optDouble("navRoadEdgeRightProb", 0.0));
       setVisibility(View.VISIBLE);
@@ -214,11 +228,11 @@ public final class OpenpilotPathView extends View {
     drawRoadEdge(canvas, roadEdgeRight, roadEdgeRightProb);
 
     updateDashPhase();
-    lanePaint.setPathEffect(new DashPathEffect(LANE_DASH_PATTERN, dashPhase));
-    drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f);
-    drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft);
-    drawLane(canvas, laneRight, laneRightProb, laneRiskRight);
-    drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f);
+    laneDashEffect = new DashPathEffect(LANE_DASH_PATTERN, dashPhase);
+    drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f, laneFarLeftType);
+    drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft, laneLeftType);
+    drawLane(canvas, laneRight, laneRightProb, laneRiskRight, laneRightType);
+    drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f, laneFarRightType);
     drawVehicles(canvas);
 
     if (vehicleSpeedKph > 1.0f) {
@@ -226,13 +240,18 @@ public final class OpenpilotPathView extends View {
     }
   }
 
-  private void drawLane(Canvas canvas, float[] points, float probability, float risk) {
+  private void drawLane(
+      Canvas canvas, float[] points, float probability, float risk, String type) {
     if (!validLine(points) || probability < 0.05f) {
       return;
     }
     int filterIndex = Math.min(LANE_RISK_FILTER_STEPS,
         Math.max(0, Math.round(clamp01(risk) * LANE_RISK_FILTER_STEPS)));
-    lanePaint.setColorFilter(laneRiskFilters[filterIndex]);
+    boolean centerline = type != null && type.startsWith("center");
+    boolean solid = "solid".equals(type) || "centerSolid".equals(type);
+    lanePaint.setPathEffect(solid ? null : laneDashEffect);
+    lanePaint.setColorFilter(
+        centerline ? centerLaneRiskFilters[filterIndex] : laneRiskFilters[filterIndex]);
     lanePaint.setAlpha((int) (probability * 225.0f + 30.0f));
     canvas.drawPath(linePath(points), lanePaint);
   }
@@ -344,11 +363,15 @@ public final class OpenpilotPathView extends View {
     roadEdgeRight = new float[0];
     vehicles = new float[0];
     laneFarLeftProb = 0.0f;
+    laneFarLeftType = "unknown";
     laneLeftProb = 0.0f;
+    laneLeftType = "unknown";
     laneRiskLeft = 0.0f;
     laneRightProb = 0.0f;
+    laneRightType = "unknown";
     laneRiskRight = 0.0f;
     laneFarRightProb = 0.0f;
+    laneFarRightType = "unknown";
     roadEdgeLeftProb = 0.0f;
     roadEdgeRightProb = 0.0f;
     vehicleSpeedKph = 0.0f;
@@ -359,6 +382,15 @@ public final class OpenpilotPathView extends View {
 
   private static float clamp01(float value) {
     return Math.max(0.0f, Math.min(1.0f, value));
+  }
+
+  private static String readLaneType(JSONObject json, String key) {
+    String type = json.optString(key, "unknown");
+    if ("solid".equals(type) || "dashed".equals(type)
+        || "centerSolid".equals(type) || "centerDashed".equals(type)) {
+      return type;
+    }
+    return "unknown";
   }
 
   private static int blendColor(int from, int to, float amount) {

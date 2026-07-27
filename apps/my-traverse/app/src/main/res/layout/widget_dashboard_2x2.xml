@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_premium"
+    android:padding="14dp">
+
+    <!-- REFINED V1.61: Cleaner Typography & Spacing -->
+
+    <!-- Top: Header Row (Glassy) -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true">
+
+        <!-- Car Name (Premium Tracking) -->
+        <TextView
+            android:id="@+id/widget_car_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TRAVERSE"
+            android:textColor="#B3FFFFFF"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.25"
+            android:layout_centerHorizontal="true"
+            android:layout_centerVertical="true" />
+
+    </RelativeLayout>
+
+    <!-- Refresh Overlay (Invisible Touch Target) -->
+    <ImageView
+        android:id="@+id/widget_btn_refresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@android:drawable/ic_popup_sync"
+        android:alpha="0.0"
+        android:clickable="true"/>
+
+    <!-- Center Hero: Range (Ultra Clean) -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_centerInParent="true"
+        android:gravity="center_horizontal"
+        android:layout_marginBottom="12dp"> <!-- Lifted slightly for balance -->
+
+        <TextView
+            android:id="@+id/widget_fuel_range"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="570"
+            android:textColor="#FFFFFF"
+            android:textSize="56sp"
+            android:textStyle="normal"
+            android:fontFamily="sans-serif-thin"
+            android:shadowColor="#40000000"
+            android:shadowDx="0"
+            android:shadowDy="4"
+            android:shadowRadius="8"
+            android:includeFontPadding="false"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="KILOMETERS"
+            android:textColor="#80FFFFFF"
+            android:textSize="8sp"
+            android:letterSpacing="0.4"
+            android:textStyle="bold"
+            android:layout_marginTop="-4dp"/>
+    </LinearLayout>
+
+    <!-- Bottom: Premium Gauge & Stats -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="2dp">
+
+        <!-- Sleek Progress Bar with Icon -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="6dp">
+
+            <ImageView
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:src="@drawable/ic_widget_fuel"
+                android:tint="#99FFFFFF"
+                android:layout_marginEnd="6dp"/>
+
+            <ProgressBar
+                 android:id="@+id/widget_fuel_bar"
+                 style="?android:attr/progressBarStyleHorizontal"
+                 android:layout_width="0dp"
+                 android:layout_height="4dp"
+                 android:layout_weight="1"
+                 android:max="100"
+                 android:progress="85"
+                 android:progressTint="#00E676"
+                 android:progressBackgroundTint="#33FFFFFF"/>
+        </LinearLayout>
+
+         <!-- Bottom Info Row -->
+         <LinearLayout
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             android:orientation="horizontal"
+             android:gravity="center_vertical">
+
+             <!-- Left: Fuel (White/Glassy) -->
+             <TextView
+                android:id="@+id/widget_fuel_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="85%"
+                android:textSize="11sp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="#E6FFFFFF"
+                android:layout_marginStart="0dp"/>
+
+             <!-- Spacer -->
+             <TextView
+                 android:layout_width="0dp"
+                 android:layout_height="0dp"
+                 android:layout_weight="1"/>
+
+             <!-- Right: Battery (Voltage) -->
+             <TextView
+                android:id="@+id/widget_bat_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="12.4V"
+                android:textSize="11sp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="#E6FFFFFF"
+                android:layout_marginEnd="4dp"/>
+
+             <ImageView
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:src="@android:drawable/ic_lock_idle_charging"
+                android:tint="#99FFFFFF"/>
+         </LinearLayout>
+    </LinearLayout>
+
+     <!-- Hidden timestamp -->
+     <TextView
+            android:id="@+id/widget_last_updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="09:41"
+            android:visibility="gone"/>
+
+</RelativeLayout>

@@ -43,7 +43,7 @@ async function apiImage(snapshotId) {
 const TOOLS = [
   {
     name: "wayon_get_context",
-    description: "Get read-only current Wayon vehicle/comma state, freshness, voltage, power, numeric temperatures, location, OpenPilot state, latest trip, impacts, events, and snapshots.",
+    description: "Get read-only current Wayon vehicle/comma state, freshness, voltage, power, numeric temperatures, location, OpenPilot state, latest trip, impacts, events, and snapshots. Panda error counters are cumulative since Panda boot, so a nonzero total alone is not an active fault.",
     inputSchema: {
       type: "object",
       properties: {
@@ -165,7 +165,7 @@ async function handle(message) {
       protocolVersion: message.params?.protocolVersion || "2024-11-05",
       capabilities: { tools: {} },
       serverInfo: SERVER_INFO,
-      instructions: "Read-only Wayon data. Check freshness.stale before calling telemetry live. Never infer vehicle control capability.",
+      instructions: "Read-only Wayon data. Check freshness.stale before calling telemetry live. Panda error counters are cumulative since boot; alert only on an increase between fresh samples from the same boot. Never infer vehicle control capability.",
     };
   }
   if (message.method === "ping") return {};

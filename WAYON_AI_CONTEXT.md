@@ -385,6 +385,13 @@ This is a curated `pandaStates` health view:
 - controls allowed flags
 - safety model/parameter and safety counters
 
+`rxBufferOverflow`, `txBufferOverflow`, and `spiErrorCount` are cumulative totals
+since the current Panda boot. A nonzero total by itself describes earlier activity
+in that boot and must not be reported as a current fault. A live incident requires
+an increase between two fresh samples from the same Panda boot, and should be
+corroborated with `faultStatus`, `faults`, `heartbeatLost`, and the safety validity
+fields.
+
 These values describe interface/safety state. They do not authorize an AI to
 send CAN or change safety configuration.
 

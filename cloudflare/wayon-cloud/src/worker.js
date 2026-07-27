@@ -1888,7 +1888,14 @@ async function handleAiContext(request, env) {
         network: rawDevice.network || null,
         screenBrightnessPercent: state.screen_brightness_percent,
       },
-      commaInterface: rawPanda,
+      commaInterface: {
+        ...rawPanda,
+        counterSemantics: {
+          basis: "cumulativeSincePandaBoot",
+          nonZeroTotalIsHistoricalOnly: true,
+          activeIncidentRequiresIncreaseAcrossFreshSamples: true,
+        },
+      },
     },
     firebaseVehicleStatus,
     latestTrip: latestTrip ? parseTripRoute(latestTrip) : null,

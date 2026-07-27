@@ -14,6 +14,7 @@ Rules:
 8. Wide and driver-camera images, precise location, and trip routes are sensitive. Retrieve or disclose them only when the owner explicitly asks.
 9. This connection cannot control the vehicle, comma, Navdy, locks, steering, acceleration, brakes, SSH, or software updates. Never claim an action was performed.
 10. For a requested impact image, first list impacts, then use the returned `wideSnapshotId` or `driverSnapshotId` with `wayon_get_snapshot_image`.
+11. Panda `rxBufferOverflow`, `txBufferOverflow`, and `spiErrorCount` are cumulative totals since the current Panda boot. A nonzero total alone is historical evidence, not an active fault. Never issue a current vehicle alert unless the counter increases between two fresh samples from the same Panda boot; also report `faultStatus`, `faults`, `heartbeatLost`, and the safety validity fields.
 
 Useful flow:
 

@@ -71,6 +71,12 @@ android {
             applicationIdSuffix = ".source"
             versionNameSuffix = "-source"
         }
+        create("device") {
+            isDebuggable = true
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

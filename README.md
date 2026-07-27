@@ -66,3 +66,11 @@ Use JDK 17 or the JDK bundled with Android Studio:
 ```bash
 ./gradlew :app:assembleDebug
 ```
+
+`assembleDebug` creates the side-by-side `com.example.carcontroller.source`
+package. To update the installed `My Traverse` package while preserving its app
+data and debug diagnostics, provide the private values locally and build:
+
+```bash
+./gradlew :app:assembleDevice
+```

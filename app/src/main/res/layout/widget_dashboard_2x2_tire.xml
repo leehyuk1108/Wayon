@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_premium"
+    android:padding="14dp">
+
+    <!-- TIRE PRESSURE WIDGET (2x2) -->
+
+    <!-- Top: Header -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true">
+
+        <!-- Widget Title -->
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TIRE PRESSURE"
+            android:textColor="#B3FFFFFF"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.25"
+            android:layout_centerHorizontal="true"
+            android:layout_centerVertical="true" />
+
+    </RelativeLayout>
+
+    <!-- Refresh Overlay -->
+    <ImageView
+        android:id="@+id/widget_btn_refresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@android:drawable/ic_popup_sync"
+        android:alpha="0.0"
+        android:clickable="true"/>
+
+    <!-- Center Grid: 4 Tires -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_centerInParent="true"
+        android:gravity="center_horizontal">
+
+        <!-- Top Row: Front Tires -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="24dp">
+
+            <!-- FL -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_tire_fl"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="35"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="normal"
+                    android:fontFamily="sans-serif-thin"
+                    android:shadowColor="#40000000"
+                    android:shadowDx="0"
+                    android:shadowDy="4"
+                    android:shadowRadius="8"
+                    android:includeFontPadding="false"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="FL kPa"
+                    android:textColor="#80FFFFFF"
+                    android:textSize="9sp"/>
+            </LinearLayout>
+
+            <!-- Spacer (Removed Icon) -->
+            <TextView
+                android:layout_width="10dp"
+                android:layout_height="1dp"
+                android:layout_marginHorizontal="4dp"/>
+
+            <!-- FR -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_tire_fr"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="240"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="normal"
+                    android:fontFamily="sans-serif-thin"
+                    android:shadowColor="#40000000"
+                    android:shadowDx="0"
+                    android:shadowDy="4"
+                    android:shadowRadius="8"
+                    android:includeFontPadding="false"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="FR kPa"
+                    android:textColor="#80FFFFFF"
+                    android:textSize="9sp"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Bottom Row: Rear Tires -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <!-- RL -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_tire_rl"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="35"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="normal"
+                    android:fontFamily="sans-serif-thin"
+                    android:shadowColor="#40000000"
+                    android:shadowDx="0"
+                    android:shadowDy="4"
+                    android:shadowRadius="8"
+                    android:includeFontPadding="false"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="RL kPa"
+                    android:textColor="#80FFFFFF"
+                    android:textSize="9sp"/>
+            </LinearLayout>
+
+            <!-- Spacer -->
+            <TextView
+                 android:layout_width="10dp"
+                 android:layout_height="0dp"
+                 android:layout_marginHorizontal="4dp"/>
+
+
+            <!-- RR -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/widget_tire_rr"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="240"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="normal"
+                    android:fontFamily="sans-serif-thin"
+                    android:shadowColor="#40000000"
+                    android:shadowDx="0"
+                    android:shadowDy="4"
+                    android:shadowRadius="8"
+                    android:includeFontPadding="false"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="RR kPa"
+                    android:textColor="#80FFFFFF"
+                    android:textSize="9sp"/>
+            </LinearLayout>
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Bottom Footer: Last Updated -->
+    <TextView
+        android:id="@+id/widget_tire_footer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="4dp"
+        android:text="Updated 09:41"
+        android:textColor="#66FFFFFF"
+        android:textSize="9sp" />
+
+</RelativeLayout>

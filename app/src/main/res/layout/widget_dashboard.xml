@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_premium"
+    android:padding="16dp">
+
+    <!-- BACKGROUND CAR IMAGE -->
+    <!-- Positioned to the far right, taking up ~50% width, vertically centered -->
+    <ImageView
+        android:id="@+id/widget_car_image"
+        android:layout_width="300dp"
+        android:layout_height="match_parent"
+        android:src="@drawable/widget_car"
+        android:scaleType="centerCrop"
+        android:layout_alignParentEnd="true"
+        android:layout_centerVertical="true"
+        android:layout_marginEnd="-160dp"
+        android:alpha="1.0" />
+
+
+    <!-- Top Row: Car Name + Subtle Refresh -->
+    <RelativeLayout
+        android:id="@+id/top_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true">
+
+        <TextView
+            android:id="@+id/widget_car_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TRAVERSE"
+            android:textColor="#DDDDDD"
+            android:textSize="14sp"
+            android:letterSpacing="0.1"
+            android:textStyle="bold"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"/>
+
+        <ImageView
+            android:id="@+id/widget_btn_refresh"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@android:drawable/ic_popup_sync"
+            android:alpha="0.4"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"/>
+    </RelativeLayout>
+
+    <!-- Main Content: Range (Left Aligned, Large) -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_below="@id/top_row"
+        android:layout_above="@id/bottom_row"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Est. Range"
+            android:textColor="#888888"
+            android:textSize="10sp"
+            android:textAllCaps="true" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="bottom">
+
+            <TextView
+                android:id="@+id/widget_fuel_range"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="470"
+                android:textColor="#FFFFFF"
+                android:textSize="44sp"
+                android:textStyle="normal"
+                android:fontFamily="sans-serif-light"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="km"
+                android:textColor="#AAAAAA"
+                android:textSize="18sp"
+                android:layout_marginStart="6dp"
+                android:layout_marginBottom="6dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+
+    <!-- Bottom Row: Battery & Oil -->
+    <!-- Using Weights for nice distribution or just simple margins -->
+    <LinearLayout
+        android:id="@+id/bottom_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_alignParentBottom="true"
+        android:gravity="center_vertical">
+
+        <!-- Battery Info -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginEnd="30dp">
+             <LinearLayout
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+                 android:gravity="center_vertical"
+                 android:layout_marginBottom="2dp">
+                 <ImageView
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:src="@android:drawable/ic_lock_idle_charging"
+                    android:tint="#AAAAAA"/>
+                 <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Battery"
+                    android:textSize="10sp"
+                    android:textColor="#AAAAAA"
+                    android:layout_marginStart="4dp"/>
+             </LinearLayout>
+             <TextView
+                android:id="@+id/widget_bat_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="12.4V (Low)"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"/>
+        </LinearLayout>
+
+        <!-- Oil Info -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+             <LinearLayout
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+                 android:gravity="center_vertical"
+                 android:layout_marginBottom="2dp">
+                 <ImageView
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:src="@drawable/ic_widget_fuel"
+                    android:alpha="0.7"/>
+                 <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Oil Life"
+                    android:textSize="10sp"
+                    android:textColor="#AAAAAA"
+                    android:layout_marginStart="4dp"/>
+             </LinearLayout>
+             <TextView
+                android:id="@+id/widget_oil_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="72%"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"/>
+        </LinearLayout>
+    </LinearLayout>
+
+</RelativeLayout>

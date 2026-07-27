@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_premium"
+    android:padding="16dp">
+
+    <!-- Car Image (Right Aligned, Cropped) -->
+    <ImageView
+        android:id="@+id/widget_car_image"
+        android:layout_width="220dp"
+        android:layout_height="match_parent"
+        android:layout_alignParentEnd="true"
+        android:layout_centerVertical="true"
+        android:src="@drawable/widget_car"
+        android:scaleType="centerCrop"
+        android:alpha="0.8"
+        android:layout_marginEnd="-80dp" />
+
+    <!-- Dark Gradient Overlay (Optional, to ensure text readability if image is bright) -->
+    <!-- Ideally part of background drawable, but keeping simple for now -->
+
+    <!-- Top Left Title -->
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="TRAVERSE"
+        android:textColor="#CCCCCC"
+        android:textSize="12sp"
+        android:letterSpacing="0.2"
+        android:textStyle="bold"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentStart="true" />
+
+    <!-- Refresh Icon (Top Right) -->
+    <ImageView
+        android:id="@+id/widget_btn_refresh"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:src="@android:drawable/ic_popup_sync"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:contentDescription="Refresh"
+        android:alpha="0.7"
+        android:tint="#FFFFFF"/>
+
+    <!-- Main Content Area -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_below="@id/widget_title"
+        android:layout_marginTop="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Ready for"
+            android:textColor="#999999"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="bottom"
+            android:layout_marginTop="-4dp">
+
+            <TextView
+                android:id="@+id/widget_car_range"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="459"
+                android:textColor="#FFFFFF"
+                android:textSize="56sp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="km"
+                android:textColor="#AAAAAA"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:layout_marginStart="6dp"
+                android:layout_marginBottom="10dp" />
+        </LinearLayout>
+
+        <!-- Progress Bar / Divider -->
+        <ImageView
+            android:layout_width="140dp"
+            android:layout_height="4dp"
+            android:src="@drawable/widget_glass_pill"
+            android:backgroundTint="#55FFFFFF"
+            android:layout_marginTop="4dp" />
+
+        <!-- Filled part of progress bar simulation (static for now or dynamic?) -->
+        <ImageView
+             android:layout_width="100dp"
+             android:layout_height="4dp"
+             android:src="@drawable/widget_glass_pill"
+             android:backgroundTint="#FFFFFF"
+             android:layout_marginTop="-4dp" />
+
+    </LinearLayout>
+
+    <!-- Bottom Row (Fuel & Battery) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_alignParentBottom="true"
+        android:paddingBottom="4dp">
+
+        <!-- Fuel -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_widget_fuel"
+                android:tint="#888888" />
+
+            <TextView
+                android:id="@+id/widget_car_fuel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="72%"
+                android:textColor="#AAAAAA"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+        <Space
+            android:layout_width="24dp"
+            android:layout_height="match_parent" />
+
+        <!-- Battery -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_stat_battery"
+                android:tint="#888888" />
+
+            <TextView
+                android:id="@+id/widget_car_battery"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="12.2V (49%)"
+                android:textColor="#AAAAAA"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</RelativeLayout>

@@ -622,6 +622,8 @@ Android renderer:
 - 주행 중 약 66 ms마다 dash phase를 갱신
 - 정지 시 animation 정지
 - lane alpha는 probability에 따라 조절
+- 차선 stroke는 `3.2 px`, 도로 경계 stroke는 `2.8 px`
+- 원거리 선 alpha는 `0x55`, 근거리 선 alpha는 `0xff`까지 증가
 
 ### 도로 경계
 
@@ -634,6 +636,7 @@ confidence = clamp(1 - roadEdgeStd, 0, 1)
 - confidence가 0.5 미만이면 JSON에 넣지 않는다.
 - Android에서도 0.5 미만을 그리지 않는다.
 - 도로 경계는 점선이 아니라 실선이다.
+- 도로 경계 alpha는 `confidence * 210 + 25`로 계산한다.
 - 도로 경계가 없거나 불확실하면 빈 선을 억지로 생성하지 않는다.
 
 ### 빠른 상태 payload와 geometry 유지

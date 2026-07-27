@@ -497,6 +497,22 @@ def test_navdy_path_view_reads_and_draws_road_edges():
   assert "confidence < ROAD_EDGE_MIN_CONFIDENCE" in java
 
 
+def test_navdy_path_renderer_keeps_lane_and_road_edges_legible():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java").read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
+
+  assert "lanePaint.setStrokeWidth(3.2f)" in java
+  assert "roadEdgePaint.setStrokeWidth(2.8f)" in java
+  assert "0x55ffffff, 0xffffffff" in java
+  assert "confidence * 210.0f + 25.0f" in java
+  assert "const v2, 0x404ccccd    # 3.2f" in smali
+  assert "const v2, 0x40333333    # 2.8f" in smali
+  assert "const v5, 0x55ffffff" in smali
+  assert "const/high16 v1, 0x43520000    # 210.0f" in smali
+  assert "const/high16 v1, 0x41c80000    # 25.0f" in smali
+
+
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
   selfdrive_state = SimpleNamespace(
     active=False,

@@ -74,7 +74,7 @@ public final class OpenpilotPathView extends View {
     lanePaint.setStyle(Paint.Style.STROKE);
     lanePaint.setStrokeCap(Paint.Cap.ROUND);
     lanePaint.setStrokeJoin(Paint.Join.ROUND);
-    lanePaint.setStrokeWidth(2.5f);
+    lanePaint.setStrokeWidth(3.2f);
     for (int index = 0; index <= LANE_RISK_FILTER_STEPS; index++) {
       float risk = index / (float) LANE_RISK_FILTER_STEPS;
       laneRiskFilters[index] = new LightingColorFilter(blendColor(
@@ -84,7 +84,7 @@ public final class OpenpilotPathView extends View {
     roadEdgePaint.setStyle(Paint.Style.STROKE);
     roadEdgePaint.setStrokeCap(Paint.Cap.ROUND);
     roadEdgePaint.setStrokeJoin(Paint.Join.ROUND);
-    roadEdgePaint.setStrokeWidth(2.2f);
+    roadEdgePaint.setStrokeWidth(2.8f);
     roadEdgePaint.setAlpha(115);
 
     pathEdgePaint.setColor(COLOR_GREEN);
@@ -187,7 +187,7 @@ public final class OpenpilotPathView extends View {
     super.onSizeChanged(width, height, oldWidth, oldHeight);
     float h = height;
     Shader lineGradient = new LinearGradient(
-        0.0f, 0.0f, 0.0f, h, 0x22ffffff, 0xeeffffff, Shader.TileMode.CLAMP);
+        0.0f, 0.0f, 0.0f, h, 0x55ffffff, 0xffffffff, Shader.TileMode.CLAMP);
     lanePaint.setShader(lineGradient);
     roadEdgePaint.setShader(lineGradient);
     pathFillPaint.setShader(new LinearGradient(
@@ -241,7 +241,7 @@ public final class OpenpilotPathView extends View {
     if (!validLine(points) || confidence < ROAD_EDGE_MIN_CONFIDENCE) {
       return;
     }
-    roadEdgePaint.setAlpha((int) (confidence * 140.0f));
+    roadEdgePaint.setAlpha((int) (confidence * 210.0f + 25.0f));
     canvas.drawPath(linePath(points), roadEdgePaint);
   }
 

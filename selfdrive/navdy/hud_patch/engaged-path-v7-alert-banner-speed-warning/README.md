@@ -34,8 +34,11 @@ Behavior:
   the current track whenever the dashboard view is recreated.
 - Draws all four `modelV2.laneLines` as animated 56px/24px dashed lines.
 - Animates lane dashes at 18-80 pixels per second based on vehicle speed.
+- Uses 3.2px lane strokes, 2.8px road-edge strokes, and a stronger
+  0x55-to-0xff distance gradient so projected boundaries remain legible.
 - Draws `modelV2.roadEdges` as solid lines only when `1 - roadEdgeStd` is at
-  least 0.5. Every path, lane, and road-edge line is capped at 10 projected points.
+  least 0.5, with alpha `confidence * 210 + 25`. Every path, lane, and road-edge
+  line is capped at 10 projected points.
 - Reads GM long-range radar targets through the Navdy bridge without publishing
   them to `liveTracks`, `radarState`, or any controls process.
 - Uses camera lane geometry to classify radar targets into left, current, and

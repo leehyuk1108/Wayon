@@ -268,7 +268,7 @@
     invoke-virtual {v0, v2}, Landroid/graphics/Paint;->setStrokeJoin(Landroid/graphics/Paint$Join;)V
 
     .line 77
-    const/high16 v2, 0x40200000    # 2.5f
+    const v2, 0x404ccccd    # 3.2f
 
     invoke-virtual {v0, v2}, Landroid/graphics/Paint;->setStrokeWidth(F)V
 
@@ -332,7 +332,7 @@
     .line 87
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgePaint:Landroid/graphics/Paint;
 
-    const v2, 0x400ccccd    # 2.2f
+    const v2, 0x40333333    # 2.8f
 
     invoke-virtual {v0, v2}, Landroid/graphics/Paint;->setStrokeWidth(F)V
 
@@ -850,9 +850,13 @@
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgePaint:Landroid/graphics/Paint;
 
-    const/high16 v1, 0x430c0000    # 140.0f
+    const/high16 v1, 0x43520000    # 210.0f
 
     mul-float p3, p3, v1
+
+    const/high16 v1, 0x41c80000    # 25.0f
+
+    add-float/2addr p3, v1
 
     float-to-int p3, p3
 
@@ -1989,9 +1993,9 @@
 
     const/4 v3, 0x0
 
-    const v5, 0x22ffffff
+    const v5, 0x55ffffff
 
-    const v6, -0x11000001
+    const v6, -0x1
 
     sget-object v7, Landroid/graphics/Shader$TileMode;->CLAMP:Landroid/graphics/Shader$TileMode;
 

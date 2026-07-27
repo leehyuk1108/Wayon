@@ -96,6 +96,7 @@ public final class OpenpilotPathView extends View {
     roadEdgePaint.setStrokeJoin(Paint.Join.ROUND);
     roadEdgePaint.setStrokeWidth(2.8f);
     roadEdgePaint.setAlpha(115);
+    roadEdgePaint.setColorFilter(new LightingColorFilter(COLOR_LANE_DANGER, 0));
 
     pathEdgePaint.setColor(COLOR_GREEN);
     pathEdgePaint.setStyle(Paint.Style.STROKE);

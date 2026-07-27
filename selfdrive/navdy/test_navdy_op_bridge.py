@@ -504,10 +504,13 @@ def test_navdy_path_renderer_keeps_lane_and_road_edges_legible():
 
   assert "lanePaint.setStrokeWidth(3.2f)" in java
   assert "roadEdgePaint.setStrokeWidth(2.8f)" in java
+  assert "roadEdgePaint.setColorFilter(new LightingColorFilter(COLOR_LANE_DANGER, 0))" in java
   assert "0x55ffffff, 0xffffffff" in java
   assert "confidence * 210.0f + 25.0f" in java
   assert "0x404ccccd    # 3.2f" in smali
   assert "0x40333333    # 2.8f" in smali
+  assert "const v6, -0xdfd8" in smali
+  assert "Paint;->setColorFilter(Landroid/graphics/ColorFilter;)" in smali
   assert "const v5, 0x55ffffff" in smali
   assert "const/high16 v1, 0x43520000    # 210.0f" in smali
   assert "const/high16 v1, 0x41c80000    # 25.0f" in smali

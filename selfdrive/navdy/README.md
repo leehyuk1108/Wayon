@@ -620,6 +620,7 @@ Android renderer:
 - `unknown`, `dashed`, `centerDashed` lane line은 점선
 - `solid`, `centerSolid` lane line은 실선
 - `centerDashed`, `centerSolid`는 노란 중앙선으로 표시
+- 도로 끝 경계는 빨간 실선으로 표시
 - 점선 pattern은 `56 px line + 24 px gap`
 - 점선 이동 속도는 `clamp(vEgoKph * 0.8, 18, 80) px/s`
 - 주행 중 약 66 ms마다 dash phase를 갱신
@@ -1289,13 +1290,13 @@ selfdrive/navdy/hud_patch/engaged-path-v7-alert-banner-speed-warning/
 
    ```text
    /Users/ijonghyeog/Documents/navdy/build_outputs/
-     Hud-lane-marking-v1-signed.apk
+     Hud-road-edge-red-v1-signed.apk
    ```
 
 3. 2026-07-27 기준 해당 파일 SHA-256:
 
    ```text
-   73a75ac2fed5c690a90bbbe347b1f189f875444cb7c896fdf138e9f71d7f978d
+   88e5edec91d2793c3f936870958239d9b582b850db5b4cdce1d4efbe536835fb
    ```
 
 4. 파일명이 최신이라고 장치에 설치된 APK도 동일하다고 가정하면 안 된다.

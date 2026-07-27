@@ -399,6 +399,16 @@
 
     invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setAlpha(I)V
 
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgePaint:Landroid/graphics/Paint;
+
+    new-instance v3, Landroid/graphics/LightingColorFilter;
+
+    const v6, -0xdfd8
+
+    invoke-direct {v3, v6, v4}, Landroid/graphics/LightingColorFilter;-><init>(II)V
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setColorFilter(Landroid/graphics/ColorFilter;)Landroid/graphics/ColorFilter;
+
     .line 100
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->pathEdgePaint:Landroid/graphics/Paint;
 

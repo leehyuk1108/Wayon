@@ -24,6 +24,7 @@ SAMPLE_END_M = 42.0
 SAMPLE_STEP_M = 0.75
 PROFILE_HIT_THRESHOLD = 0.42
 YELLOW_HIT_THRESHOLD = 0.1
+VISION_FRAME_TIMEOUT_MS = 120
 
 VIEW_FROM_DEVICE = np.array([
   [0.0, 1.0, 0.0],
@@ -181,15 +182,21 @@ def boolean_runs(mask: np.ndarray) -> list[tuple[bool, int]]:
   return runs
 
 
-def classify_yellow_profile(yellow_scores: np.ndarray) -> float:
+def classify_yellow_marking(yellow_scores: np.ndarray) -> tuple[str, float]:
   yellow_scores = np.asarray(yellow_scores, dtype=np.float32)
   if yellow_scores.size < 12:
-    return 0.0
+    return "unknown", 0.0
 
   occupancy = clean_occupancy(yellow_scores >= YELLOW_HIT_THRESHOLD)
   hit_count = int(np.count_nonzero(occupancy))
+  runs = boolean_runs(occupancy)
+  hit_runs = [length for value, length in runs if value]
+  internal_gap_runs = [
+    length for index, (value, length) in enumerate(runs)
+    if not value and 0 < index < len(runs) - 1
+  ]
   longest_hit = max(
-    (length for value, length in boolean_runs(occupancy) if value),
+    hit_runs,
     default=0,
   )
 
@@ -197,7 +204,23 @@ def classify_yellow_profile(yellow_scores: np.ndarray) -> float:
   # sustained run. Short transverse markings such as crosswalk bars do not.
   coverage_score = clamp01((hit_count - 12) / 12.0)
   continuity_score = clamp01((longest_hit - 5) / 5.0)
-  return coverage_score * continuity_score
+  confidence = coverage_score * continuity_score
+  if confidence <= 0.0:
+    return "unknown", 0.0
+
+  longest_gap = max(internal_gap_runs, default=0)
+  # One interrupted solid line commonly becomes two runs when a lead vehicle,
+  # shadow, or road repair hides part of it. Require a repeating pattern before
+  # declaring a yellow marking dashed.
+  if len(hit_runs) <= 2 or longest_gap <= 2:
+    return "solid", confidence
+  if len(hit_runs) >= 3 and longest_gap >= 3:
+    return "dashed", confidence
+  return "unknown", confidence
+
+
+def classify_yellow_profile(yellow_scores: np.ndarray) -> float:
+  return classify_yellow_marking(yellow_scores)[1]
 
 
 def classify_profile(strengths: np.ndarray, yellow_scores: np.ndarray) -> LaneProfile:
@@ -229,7 +252,10 @@ def classify_profile(strengths: np.ndarray, yellow_scores: np.ndarray) -> LanePr
     gap_strength = min(1.0, longest_gap / 4.0)
     confidence = clamp01(0.35 + 0.35 * periodicity + 0.3 * gap_strength)
 
-  yellow_confidence = classify_yellow_profile(yellow_scores)
+  yellow_pattern, yellow_confidence = classify_yellow_marking(yellow_scores)
+  if yellow_confidence >= 0.48 and yellow_pattern in ("solid", "dashed"):
+    pattern = yellow_pattern
+    confidence = max(confidence, yellow_confidence)
   return LaneProfile(pattern, confidence, yellow_confidence)
 
 
@@ -454,9 +480,8 @@ class NavdyLaneMarkingClassifier:
             client = None
             time.sleep(0.1)
             continue
-        frame = client.recv(timeout_ms=20)
+        frame = client.recv(timeout_ms=VISION_FRAME_TIMEOUT_MS)
         if frame is None:
-          client = None
           continue
         started_at = time.monotonic()
         profiles = classify_frame(request, frame)

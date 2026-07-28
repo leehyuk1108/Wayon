@@ -118,6 +118,47 @@ def test_yellow_profile_requires_longitudinal_coverage():
   assert classifier.classify_yellow_profile(transverse) < 0.48
 
 
+def test_continuous_yellow_pixels_override_false_dashed_luma_pattern():
+  dashed_luma = np.tile(np.concatenate((
+    np.ones(4, dtype=np.float32),
+    np.zeros(4, dtype=np.float32),
+  )), 6)
+  continuous_yellow = np.ones(48, dtype=np.float32)
+
+  profile = classifier.classify_profile(dashed_luma, continuous_yellow)
+
+  assert profile.pattern == "solid"
+  assert profile.yellow_confidence > 0.9
+
+
+def test_gapped_yellow_pixels_remain_dashed():
+  weak_luma = np.zeros(48, dtype=np.float32)
+  dashed_yellow = np.tile(np.concatenate((
+    np.ones(8, dtype=np.float32),
+    np.zeros(4, dtype=np.float32),
+  )), 4)
+
+  profile = classifier.classify_profile(weak_luma, dashed_yellow)
+
+  assert profile.pattern == "dashed"
+  assert profile.yellow_confidence > 0.48
+
+
+def test_single_occlusion_does_not_turn_solid_yellow_into_dashes():
+  weak_luma = np.zeros(48, dtype=np.float32)
+  occluded_yellow = np.concatenate((
+    np.ones(18, dtype=np.float32),
+    np.zeros(7, dtype=np.float32),
+    np.ones(15, dtype=np.float32),
+    np.zeros(8, dtype=np.float32),
+  ))
+
+  profile = classifier.classify_profile(weak_luma, occluded_yellow)
+
+  assert profile.pattern == "solid"
+  assert profile.yellow_confidence > 0.48
+
+
 def test_unknown_pattern_with_sustained_yellow_renders_solid_yellow():
   worker = object.__new__(classifier.NavdyLaneMarkingClassifier)
   worker._condition = threading.Condition()

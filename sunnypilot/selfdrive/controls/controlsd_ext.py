@@ -10,12 +10,14 @@ import cereal.messaging as messaging
 from cereal import log, custom
 
 from opendbc.car import structs
+from opendbc.car.gm.values import CAR as GM
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
+from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_nnff_c3 import LatControlNNFFC3
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 
 
@@ -36,7 +38,13 @@ class ControlsExt(ModelStateBase):
 
   def initialize_lateral_control(self, lac, CI, dt):
     enforce_torque_control = self.params.get_bool("EnforceTorqueControl")
+    nnlc_enabled = self.params.get_bool("NeuralNetworkLateralControl")
     torque_versions = self.params.get("TorqueControlTune")
+
+    if (self.CP.lateralTuning.which() == 'torque' and
+        self.CP.carFingerprint == GM.CHEVROLET_TRAVERSE and nnlc_enabled):
+      return LatControlNNFFC3(self.CP, self.CP_SP, CI, dt)
+
     if not enforce_torque_control:
       if self.CP.lateralTuning.which() == 'torque':
         return LatControlTorqueV0(self.CP, self.CP_SP, CI, dt)  # FIXME-SP: revert when upstream fixes tuning issues with v1

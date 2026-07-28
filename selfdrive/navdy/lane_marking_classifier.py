@@ -24,6 +24,7 @@ SAMPLE_END_M = 42.0
 SAMPLE_STEP_M = 0.75
 PROFILE_HIT_THRESHOLD = 0.42
 YELLOW_HIT_THRESHOLD = 0.1
+YELLOW_HOLD_SEC = 2.5
 VISION_FRAME_TIMEOUT_MS = 120
 
 VIEW_FROM_DEVICE = np.array([
@@ -363,6 +364,7 @@ class NavdyLaneMarkingClassifier:
     self._result_at = 0.0
     self._pattern_scores = np.zeros(4, dtype=np.float32)
     self._center_scores = np.zeros(4, dtype=np.float32)
+    self._center_last_seen_at = np.zeros(4, dtype=np.float64)
     self._last_duration_ms = 0.0
     self._thread = threading.Thread(
       target=self._run, name="navdy_lane_marking", daemon=True)
@@ -383,6 +385,7 @@ class NavdyLaneMarkingClassifier:
         self._result_at = 0.0
         self._pattern_scores.fill(0.0)
         self._center_scores.fill(0.0)
+        self._center_last_seen_at.fill(0.0)
       self._condition.notify()
 
   def submit(self, model_v2: Any, live_calibration: Any,
@@ -422,26 +425,38 @@ class NavdyLaneMarkingClassifier:
       alpha = 0.45
       for index, suffix in enumerate(LANE_SUFFIXES):
         profile = profiles[index] if index < len(profiles) else LaneProfile("unknown", 0.0, 0.0)
-        if profile.pattern == "solid":
+        yellow_hit = profile.yellow_confidence >= 0.48
+        if yellow_hit:
+          self._center_last_seen_at[index] = now
+        yellow_held = (
+          self._center_last_seen_at[index] > 0.0 and
+          now - self._center_last_seen_at[index] <= YELLOW_HOLD_SEC
+        )
+
+        if yellow_held and not yellow_hit:
+          pattern_target = None
+        elif profile.pattern == "solid":
           pattern_target = profile.confidence
         elif profile.pattern == "dashed":
           pattern_target = -profile.confidence
         else:
           pattern_target = None
         if pattern_target is None:
-          self._pattern_scores[index] *= 0.88
+          self._pattern_scores[index] *= 0.98 if yellow_held else 0.88
         else:
           self._pattern_scores[index] = (
             (1.0 - alpha) * self._pattern_scores[index] + alpha * pattern_target)
 
-        if profile.yellow_confidence >= 0.48:
+        if yellow_hit:
           center_target = profile.yellow_confidence
+        elif yellow_held:
+          center_target = None
         elif profile.pattern != "unknown":
           center_target = -profile.confidence
         else:
           center_target = None
         if center_target is None:
-          self._center_scores[index] *= 0.88
+          self._center_scores[index] *= 0.98 if yellow_held else 0.88
         else:
           self._center_scores[index] = (
             (1.0 - alpha) * self._center_scores[index] + alpha * center_target)

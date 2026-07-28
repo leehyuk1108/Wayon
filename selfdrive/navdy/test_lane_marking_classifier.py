@@ -167,6 +167,7 @@ def test_unknown_pattern_with_sustained_yellow_renders_solid_yellow():
   worker._result_at = 0.0
   worker._pattern_scores = np.zeros(4, dtype=np.float32)
   worker._center_scores = np.zeros(4, dtype=np.float32)
+  worker._center_last_seen_at = np.zeros(4, dtype=np.float64)
   worker._last_duration_ms = 0.0
   yellow = classifier.LaneProfile("unknown", 0.0, 0.8)
   unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
@@ -174,6 +175,32 @@ def test_unknown_pattern_with_sustained_yellow_renders_solid_yellow():
   worker._update_result((unknown, yellow, unknown, unknown), now=10.0, duration_ms=2.0)
 
   assert worker._result["navLaneLeftType"] == "centerSolid"
+
+
+def test_yellow_centerline_survives_short_color_detection_gaps():
+  worker = object.__new__(classifier.NavdyLaneMarkingClassifier)
+  worker._condition = threading.Condition()
+  worker._active = True
+  worker._result = dict(classifier.UNKNOWN_LANE_TYPES)
+  worker._result_at = 0.0
+  worker._pattern_scores = np.zeros(4, dtype=np.float32)
+  worker._center_scores = np.zeros(4, dtype=np.float32)
+  worker._center_last_seen_at = np.zeros(4, dtype=np.float64)
+  worker._last_duration_ms = 0.0
+  yellow_solid = classifier.LaneProfile("solid", 1.0, 0.8)
+  white_dashed = classifier.LaneProfile("dashed", 1.0, 0.0)
+  unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
+
+  worker._update_result(
+    (unknown, yellow_solid, unknown, unknown), now=10.0, duration_ms=2.0)
+  for now in (10.5, 11.0, 11.5, 12.0):
+    worker._update_result(
+      (unknown, white_dashed, unknown, unknown), now=now, duration_ms=2.0)
+    assert worker._result["navLaneLeftType"] == "centerSolid"
+
+  worker._update_result(
+    (unknown, white_dashed, unknown, unknown), now=13.0, duration_ms=2.0)
+  assert not worker._result["navLaneLeftType"].startswith("center")
 
 
 def test_projection_uses_c4_road_camera_without_full_frame_copy():
@@ -196,6 +223,7 @@ def test_finished_sample_cannot_restore_result_after_disengagement():
   worker._result_at = 0.0
   worker._pattern_scores = np.zeros(4, dtype=np.float32)
   worker._center_scores = np.zeros(4, dtype=np.float32)
+  worker._center_last_seen_at = np.zeros(4, dtype=np.float64)
   worker._last_duration_ms = 0.0
   solid = classifier.LaneProfile("solid", 1.0, 0.0)
 

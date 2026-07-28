@@ -26,6 +26,7 @@ PROFILE_HIT_THRESHOLD = 0.42
 YELLOW_HIT_THRESHOLD = 0.1
 YELLOW_HOLD_SEC = 2.5
 VISION_FRAME_TIMEOUT_MS = 120
+VISION_IMPORT_RETRY_SEC = 1.0
 
 VIEW_FROM_DEVICE = np.array([
   [0.0, 1.0, 0.0],
@@ -472,12 +473,14 @@ class NavdyLaneMarkingClassifier:
       self._last_duration_ms = duration_ms
 
   def _run(self) -> None:
-    try:
-      from msgq.visionipc import VisionIpcClient, VisionStreamType
-    except Exception as error:
-      if self.stdout:
-        print(f"navdy lane classifier unavailable: {error}", flush=True)
-      return
+    while True:
+      try:
+        from msgq.visionipc import VisionIpcClient, VisionStreamType
+        break
+      except Exception as error:
+        if self.stdout:
+          print(f"navdy lane classifier unavailable: {error}", flush=True)
+        time.sleep(VISION_IMPORT_RETRY_SEC)
 
     client = None
     while True:

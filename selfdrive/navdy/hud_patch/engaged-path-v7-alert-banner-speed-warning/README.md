@@ -36,6 +36,8 @@ Behavior:
 - Renders classified yellow markings as center lines, with unknown markings
   retaining the legacy animated 56px/24px dashed fallback.
 - Animates lane dashes at 18-80 pixels per second based on vehicle speed.
+- Keeps only one pending dash-animation repaint so repeated socket updates
+  cannot multiply render callbacks and stall the Navdy main thread.
 - Uses 3.2px lane strokes, 2.8px road-edge strokes, and a stronger
   0x55-to-0xff distance gradient so projected boundaries remain legible.
 - Draws `modelV2.roadEdges` as red solid lines only when `1 - roadEdgeStd` is

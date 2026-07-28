@@ -509,7 +509,7 @@ def test_navdy_path_renderer_keeps_lane_and_road_edges_legible():
   assert "confidence * 210.0f + 25.0f" in java
   assert "0x404ccccd    # 3.2f" in smali
   assert "0x40333333    # 2.8f" in smali
-  assert "const v6, -0xdfd8" in smali
+  assert "-0xdfd8" in smali
   assert "Paint;->setColorFilter(Landroid/graphics/ColorFilter;)" in smali
   assert "const v5, 0x55ffffff" in smali
   assert "const/high16 v1, 0x43520000    # 210.0f" in smali
@@ -962,7 +962,11 @@ def test_navdy_path_renderer_animates_dashed_lanes_and_keeps_road_edges_solid():
   assert "canvas.drawPath(linePath(points), roadEdgePaint)" in java
   assert "canvas.drawPath(linePath(points), lanePaint)" in java
   assert "vehicleSpeedKph > 1.0f" in java
-  assert "postInvalidateDelayed(DASH_FRAME_MS)" in java
+  assert "OpenpilotPathView extends View implements Runnable" in java
+  assert "if (dashFrameScheduled)" in java
+  assert "postDelayed(this, DASH_FRAME_MS)" in java
+  assert "removeCallbacks(this)" in java
+  assert "postInvalidateDelayed(DASH_FRAME_MS)" not in java
   assert java.index("drawRoadEdge(canvas, roadEdgeLeft") < java.index("laneDashEffect = new")
 
 

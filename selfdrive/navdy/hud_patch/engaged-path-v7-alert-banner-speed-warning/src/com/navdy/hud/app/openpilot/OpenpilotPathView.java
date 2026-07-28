@@ -17,7 +17,7 @@ import android.view.View;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public final class OpenpilotPathView extends View {
+public final class OpenpilotPathView extends View implements Runnable {
   private static final int COLOR_GREEN = 0xff00e646;
   private static final int COLOR_LANE_CLEAR = 0xffffffff;
   private static final int COLOR_LANE_CENTER = 0xffffd43b;
@@ -73,6 +73,7 @@ public final class OpenpilotPathView extends View {
   private float[] vehicles = new float[0];
   private DashPathEffect laneDashEffect;
   private float dashPhase;
+  private boolean dashFrameScheduled;
   private long lastDashFrameMs;
   private float vehicleSpeedKph;
 
@@ -237,7 +238,24 @@ public final class OpenpilotPathView extends View {
     drawVehicles(canvas);
 
     if (vehicleSpeedKph > 1.0f) {
-      postInvalidateDelayed(DASH_FRAME_MS);
+      scheduleDashFrame();
+    }
+  }
+
+  private void scheduleDashFrame() {
+    if (dashFrameScheduled) {
+      return;
+    }
+    dashFrameScheduled = true;
+    postDelayed(this, DASH_FRAME_MS);
+  }
+
+  @Override
+  public void run() {
+    dashFrameScheduled = false;
+    if (vehicleSpeedKph > 1.0f && getVisibility() == View.VISIBLE
+        && validLine(pathLeft) && validLine(pathRight)) {
+      invalidate();
     }
   }
 
@@ -354,6 +372,8 @@ public final class OpenpilotPathView extends View {
   }
 
   private void clearGeometry() {
+    removeCallbacks(this);
+    dashFrameScheduled = false;
     pathLeft = new float[0];
     pathRight = new float[0];
     laneFarLeft = new float[0];

@@ -385,12 +385,11 @@ This is a curated `pandaStates` health view:
 - controls allowed flags
 - safety model/parameter and safety counters
 
-`rxBufferOverflow`, `txBufferOverflow`, and `spiErrorCount` are cumulative totals
-since the current Panda boot. A nonzero total by itself describes earlier activity
-in that boot and must not be reported as a current fault. A live incident requires
-an increase between two fresh samples from the same Panda boot, and should be
-corroborated with `faultStatus`, `faults`, `heartbeatLost`, and the safety validity
-fields.
+The API places raw totals under `diagnosticCounters` because they are cumulative
+since the current Panda boot. For CAN buffer alerts, use only
+`counterHealth.shouldAlert`. The accompanying health object provides same-boot
+comparison, sample interval, counter deltas, and active-fault corroboration. A
+nonzero diagnostic total must never be reported as a current fault.
 
 These values describe interface/safety state. They do not authorize an AI to
 send CAN or change safety configuration.

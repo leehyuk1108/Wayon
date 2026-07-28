@@ -1,3 +1,8 @@
+import {
+  attachPandaCounterHealth,
+  buildAiPandaInterface,
+} from "./panda_counter_health.mjs";
+
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
@@ -643,8 +648,20 @@ async function handleTelemetry(request, env) {
   const payload = await request.json();
   const deviceId = String(payload.deviceId || "unknown");
   const updatedAt = payload.updatedAt || nowIso();
-  const gps = await resolveTelemetryGps(env, deviceId, payload.gps || {});
+  const [gps, previousState] = await Promise.all([
+    resolveTelemetryGps(env, deviceId, payload.gps || {}),
+    env.DB.prepare(`
+      SELECT updated_at, raw_json
+      FROM latest_state WHERE device_id = ?
+    `).bind(deviceId).first(),
+  ]);
   payload.gps = gps;
+  attachPandaCounterHealth(
+    payload,
+    parseJsonObject(previousState?.raw_json),
+    previousState?.updated_at,
+    updatedAt,
+  );
   const speedMps = payload.vehicleSpeedMps ?? payload.speedMps ?? gps.speedMps;
 
   await env.DB.prepare(`
@@ -1835,6 +1852,7 @@ async function handleAiContext(request, env) {
   } : null;
   const rawDevice = raw.device || {};
   const rawPanda = raw.panda || {};
+  const aiPanda = buildAiPandaInterface(rawPanda);
   const rawVehicle = raw.vehicle || {};
   const rawOpenpilot = raw.openpilot || {};
 
@@ -1888,21 +1906,17 @@ async function handleAiContext(request, env) {
         network: rawDevice.network || null,
         screenBrightnessPercent: state.screen_brightness_percent,
       },
-      commaInterface: {
-        ...rawPanda,
-        counterSemantics: {
-          basis: "cumulativeSincePandaBoot",
-          nonZeroTotalIsHistoricalOnly: true,
-          activeIncidentRequiresIncreaseAcrossFreshSamples: true,
-        },
-      },
+      commaInterface: aiPanda,
     },
     firebaseVehicleStatus,
     latestTrip: latestTrip ? parseTripRoute(latestTrip) : null,
     recentImpacts: (impactResult.results || []).map((impact) => aiImpact(request, impact)),
     recentVehicleEvents: (eventResult.results || []).map(aiVehicleEvent),
     recentSnapshots: (snapshotResult.results || []).map((snapshot) => aiSnapshot(request, snapshot)),
-    rawTelemetry: raw,
+    rawTelemetry: {
+      ...raw,
+      panda: aiPanda,
+    },
   });
 }
 

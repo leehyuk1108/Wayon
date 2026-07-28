@@ -16,7 +16,7 @@
       "get": {
         "operationId": "getWayonContext",
         "summary": "Get current vehicle and comma context",
-        "description": "Returns freshness, current driving/OpenPilot state, location, voltage/current/power, numeric temperatures, latest trip, impacts, events, snapshots, and Firebase vehicle status.",
+        "description": "Returns freshness, current driving/OpenPilot state, location, voltage/current/power, numeric temperatures, latest trip, impacts, events, snapshots, and Firebase vehicle status. For Panda CAN buffer alerts, use only live.commaInterface.counterHealth.shouldAlert; diagnosticCounters values are cumulative totals and never prove a current incident.",
         "parameters": [
           { "$ref": "#/components/parameters/impactLimit" },
           { "$ref": "#/components/parameters/eventLimit" },

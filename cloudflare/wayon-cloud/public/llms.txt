@@ -12,3 +12,7 @@ vehicle voltage/current/estimated input power, comma power draw, numeric device
 temperatures, trips, lock events, offroad impacts, and authorized impact images.
 
 The API has no write, SSH, update, or vehicle-control operation.
+
+For Panda CAN buffer health, use only
+`live.commaInterface.counterHealth.shouldAlert`. Values under
+`diagnosticCounters` are cumulative since Panda boot and are not current alerts.

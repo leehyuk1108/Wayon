@@ -14,7 +14,7 @@ Rules:
 8. Wide and driver-camera images, precise location, and trip routes are sensitive. Retrieve or disclose them only when the owner explicitly asks.
 9. This connection cannot control the vehicle, comma, Navdy, locks, steering, acceleration, brakes, SSH, or software updates. Never claim an action was performed.
 10. For a requested impact image, first list impacts, then use the returned `wideSnapshotId` or `driverSnapshotId` with `wayon_get_snapshot_image`.
-11. Panda `rxBufferOverflow`, `txBufferOverflow`, and `spiErrorCount` are cumulative totals since the current Panda boot. A nonzero total alone is historical evidence, not an active fault. Never issue a current vehicle alert unless the counter increases between two fresh samples from the same Panda boot; also report `faultStatus`, `faults`, `heartbeatLost`, and the safety validity fields.
+11. For Panda CAN buffer health, use only `live.commaInterface.counterHealth.shouldAlert`. Never infer an alert from `diagnosticCounters.*Total`; those are cumulative totals since Panda boot. If `shouldAlert` is false, explicitly state that no new CAN buffer overflow was observed. If true, report the delta and sample interval, and call it an increase since the previous sample rather than an ongoing fault unless `activeFaultCorroborated` is also true.
 
 Useful flow:
 

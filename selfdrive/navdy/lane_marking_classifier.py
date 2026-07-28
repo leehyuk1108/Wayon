@@ -239,7 +239,13 @@ def classify_profile(strengths: np.ndarray, yellow_scores: np.ndarray) -> LanePr
     if not value and 0 < index < len(runs) - 1
   ]
   occupancy_ratio = float(np.mean(occupancy))
+  longest_hit = max(hit_runs, default=0)
   longest_gap = max(internal_gap_runs, default=0)
+  significant_hit_runs = [length for length in hit_runs if length >= 2]
+  significant_gap_runs = [length for length in internal_gap_runs if length >= 2]
+  repeating_pattern = (
+    len(significant_hit_runs) >= 3 and len(significant_gap_runs) >= 2
+  )
 
   pattern = "unknown"
   confidence = 0.0
@@ -247,6 +253,11 @@ def classify_profile(strengths: np.ndarray, yellow_scores: np.ndarray) -> LanePr
       longest_gap <= 3 or (occupancy_ratio >= 0.8 and len(internal_gap_runs) <= 1)):
     pattern = "solid"
     confidence = clamp01((occupancy_ratio - 0.58) / 0.32)
+  elif longest_hit >= 12 and not repeating_pattern:
+    # A lead vehicle or worn paint can hide much of a solid marking. Preserve
+    # one dominant continuous run while rejecting the repeated runs of dashes.
+    pattern = "solid"
+    confidence = max(0.32, clamp01((longest_hit - 10) / 12.0))
   elif (0.16 <= occupancy_ratio <= 0.76 and len(hit_runs) >= 2 and
         longest_gap >= 2 and len(runs) >= 4):
     pattern = "dashed"

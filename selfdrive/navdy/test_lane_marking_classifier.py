@@ -79,6 +79,29 @@ def test_profile_classifier_distinguishes_solid_and_dashed():
   assert classifier.classify_profile(dashed, no_yellow).pattern == "dashed"
 
 
+def test_profile_classifier_keeps_partially_occluded_solid():
+  occluded_solid = np.zeros(48, dtype=np.float32)
+  occluded_solid[4:18] = 1.0
+  occluded_solid[25:28] = 1.0
+  no_yellow = np.zeros(48, dtype=np.float32)
+
+  profile = classifier.classify_profile(occluded_solid, no_yellow)
+
+  assert profile.pattern == "solid"
+  assert profile.confidence >= 0.32
+
+
+def test_profile_classifier_does_not_promote_repeating_dashes():
+  repeating_dashes = np.zeros(48, dtype=np.float32)
+  repeating_dashes[1:5] = 1.0
+  repeating_dashes[10:22] = 1.0
+  repeating_dashes[28:33] = 1.0
+  repeating_dashes[39:43] = 1.0
+  no_yellow = np.zeros(48, dtype=np.float32)
+
+  assert classifier.classify_profile(repeating_dashes, no_yellow).pattern == "dashed"
+
+
 def test_frame_classifier_reads_white_yellow_solid_and_dashed_lines():
   request = request_for_lines()
   assert request is not None

@@ -103,7 +103,7 @@ def test_c3_nnff_runs_one_bounded_pid_update():
     VM = VehicleModel(CP)
 
     steer, _, lac_log = controller.update(
-      True, CS, VM, live_params, False, 1e-4, pose, False, 0.2)
+      True, CS, VM, live_params, False, 1e-4, pose, False, 0.25)
 
     assert lac_log.version == VERSION
     assert math.isfinite(steer)

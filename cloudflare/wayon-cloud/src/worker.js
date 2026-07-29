@@ -71,6 +71,14 @@ function textToBase64Url(value) {
   return bytesToBase64Url(new TextEncoder().encode(value));
 }
 
+function base64UrlToText(value) {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("invalid_base64url");
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+}
+
 function pemToBytes(pem) {
   const normalized = String(pem || "").replace(/\\n/g, "\n");
   const body = normalized.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
@@ -527,6 +535,10 @@ function authorizePushRegistration(request, env) {
 
 function authorizeAi(request, env) {
   return constantTimeEqual(getBearerToken(request), env.WAYON_AI_READ_TOKEN || "");
+}
+
+function authorizeServerSync(request, env) {
+  return constantTimeEqual(getBearerToken(request), env.WAYON_SERVER_SYNC_TOKEN || "");
 }
 
 function requireBindings(env) {
@@ -1590,6 +1602,75 @@ function parseTripSummary(trip) {
   };
 }
 
+function parseTripSyncCursor(value) {
+  if (!value) return { valid: true, cursor: null };
+  if (value.length > 512) return { valid: false, cursor: null };
+
+  try {
+    const parsed = JSON.parse(base64UrlToText(value));
+    const createdAt = String(parsed?.createdAt || "");
+    const id = String(parsed?.id || "");
+    if (!createdAt || !id || createdAt.length > 64 || id.length > 256) {
+      return { valid: false, cursor: null };
+    }
+    return { valid: true, cursor: { createdAt, id } };
+  } catch {
+    return { valid: false, cursor: null };
+  }
+}
+
+function tripSyncCursor(trip) {
+  return textToBase64Url(JSON.stringify({
+    createdAt: trip.created_at,
+    id: trip.id,
+  }));
+}
+
+async function handleServerSyncTrips(request, env) {
+  if (!authorizeServerSync(request, env)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  const url = new URL(request.url);
+  const parsedCursor = parseTripSyncCursor(url.searchParams.get("cursor") || "");
+  if (!parsedCursor.valid) return json({ error: "invalid_cursor" }, 400);
+
+  const limit = boundedLimit(url.searchParams.get("limit"), 50, 100);
+  const queryLimit = limit + 1;
+  const select = `
+    SELECT id, device_id, started_at, ended_at, duration_s, distance_m,
+           start_lat, start_lon, end_lat, end_lon, route_point_count,
+           route_json, created_at
+    FROM trips
+  `;
+  const result = parsedCursor.cursor
+    ? await env.DB.prepare(`
+        ${select}
+        WHERE created_at > ? OR (created_at = ? AND id > ?)
+        ORDER BY created_at ASC, id ASC LIMIT ?
+      `).bind(
+        parsedCursor.cursor.createdAt,
+        parsedCursor.cursor.createdAt,
+        parsedCursor.cursor.id,
+        queryLimit,
+      ).all()
+    : await env.DB.prepare(`
+        ${select}
+        ORDER BY created_at ASC, id ASC LIMIT ?
+      `).bind(queryLimit).all();
+
+  const rows = result.results || [];
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  return json({
+    schemaVersion: "wayon-trip-sync-v1",
+    generatedAt: nowIso(),
+    trips: page.map(parseTripRoute),
+    nextCursor: page.length ? tripSyncCursor(page[page.length - 1]) : null,
+    hasMore,
+  });
+}
+
 async function handleExport(request, env) {
   if (!authorize(request, env, false)) {
     return json({ error: "unauthorized" }, 401);
@@ -2077,6 +2158,9 @@ export default {
     }
     if (request.method === "GET" && (pathname === "/api/ai/trips" || pathname.startsWith("/api/ai/trips/"))) {
       return handleAiTrips(request, env, pathname);
+    }
+    if (request.method === "GET" && pathname === "/api/server-sync/trips") {
+      return handleServerSyncTrips(request, env);
     }
     if (request.method === "GET" && pathname === "/api/ai/impacts") {
       return handleAiImpacts(request, env);

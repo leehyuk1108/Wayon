@@ -83,6 +83,22 @@ from GPS speed.
 The JSON endpoints include CORS headers, so another browser-based visualizer can
 fetch them with an `Authorization: Bearer ...` header.
 
+## Long-term trip sync
+
+The HYUKLEE Server mirror uses a dedicated read-only token and an ascending,
+opaque cursor. It never shares the dashboard view token and does not affect
+device uploads.
+
+```sh
+curl -H "Authorization: Bearer $WAYON_SERVER_SYNC_TOKEN" \
+  "https://wayon-cloud.hyuklee.workers.dev/api/server-sync/trips?limit=100"
+```
+
+The response uses schema `wayon-trip-sync-v1` and contains full trip records,
+including route points, `nextCursor`, and `hasMore`. A consumer must commit the
+whole page before persisting `nextCursor`. On any HTTP or database failure it
+must retry from the previous cursor. Trip IDs remain the idempotency key.
+
 ## AI access
 
 Wayon also provides a separate read-only AI gateway. It exposes normalized live
@@ -116,6 +132,7 @@ cannot upload data, open remote SSH, update software, or control the vehicle.
    ```sh
    npx wrangler secret put WAYON_UPLOAD_TOKEN
    npx wrangler secret put WAYON_VIEW_TOKEN
+   npx wrangler secret put WAYON_SERVER_SYNC_TOKEN
    ```
 
 5. Deploy:

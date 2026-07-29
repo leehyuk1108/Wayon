@@ -171,7 +171,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         const val PREF_KEY_MAC_ADDRESS = "MY_CHEVROLET_MAC_ADDRESS"
         const val ACTION_REQUEST_STATUS = "ACTION_REQUEST_STATUS"
         private val WAYON_CLOUD_JSON_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/json"
-        private val WAYON_CLOUD_TRIPS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/trips?limit=1000"
+        private val WAYON_CLOUD_TRIPS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/trips?limit=5000"
         private const val WAYON_CLOUD_AUTO_REFRESH_INTERVAL_MS = 15_000L
     }
 

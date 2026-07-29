@@ -30,6 +30,7 @@ const LIVE_MAX_AGE_SECONDS = 30;
 const LIVE_STREAM_TARGET = "172.31.255.254:8765";
 const LIVE_FRAME_HEADER_SIZE = 24;
 const LIVE_FRAME_MAX_PAYLOAD_SIZE = 4 * 1024 * 1024;
+const SERVER_API_TIMEOUT_MS = 5000;
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
 let cachedFcmAccessToken = null;
@@ -38,6 +39,15 @@ function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: JSON_HEADERS,
+  });
+}
+
+function tripHistoryJson(data, source) {
+  return new Response(JSON.stringify(data), {
+    headers: {
+      ...JSON_HEADERS,
+      "x-wayon-history-source": source,
+    },
   });
 }
 
@@ -1578,20 +1588,24 @@ function parseTripRoute(trip) {
   };
 }
 
-function maxRouteSpeedMps(routeJson) {
+function maxRoutePointSpeedMps(route) {
   let maxSpeed = null;
+  for (const point of route) {
+    const speed = Number(point?.speedMps ?? point?.speed_mps ?? point?.speed);
+    if (Number.isFinite(speed)) {
+      maxSpeed = Math.max(maxSpeed ?? speed, speed);
+    }
+  }
+  return maxSpeed;
+}
+
+function maxRouteSpeedMps(routeJson) {
   try {
     const route = JSON.parse(routeJson || "[]");
-    for (const point of route) {
-      const speed = Number(point?.speedMps ?? point?.speed_mps ?? point?.speed);
-      if (Number.isFinite(speed)) {
-        maxSpeed = Math.max(maxSpeed ?? speed, speed);
-      }
-    }
+    return maxRoutePointSpeedMps(Array.isArray(route) ? route : []);
   } catch {
     return null;
   }
-  return maxSpeed;
 }
 
 function parseTripSummary(trip) {
@@ -1600,6 +1614,63 @@ function parseTripSummary(trip) {
     ...rest,
     max_speed_mps: maxRouteSpeedMps(routeJson),
   };
+}
+
+function parseServerTripSummary(trip) {
+  const { route, ...summary } = trip || {};
+  const suppliedMaxSpeed = summary.max_speed_mps == null
+    ? null
+    : Number(summary.max_speed_mps);
+  return {
+    ...summary,
+    max_speed_mps: Number.isFinite(suppliedMaxSpeed)
+      ? suppliedMaxSpeed
+      : maxRoutePointSpeedMps(Array.isArray(route) ? route : []),
+  };
+}
+
+async function fetchServerApi(env, path) {
+  if (!env.WAYON_SERVER_API || !env.WAYON_SERVER_SYNC_TOKEN) return null;
+
+  return env.WAYON_SERVER_API.fetch(`http://wayon-server${path}`, {
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${env.WAYON_SERVER_SYNC_TOKEN}`,
+    },
+    signal: AbortSignal.timeout(SERVER_API_TIMEOUT_MS),
+  });
+}
+
+async function fetchServerTripList(env, limit) {
+  const response = await fetchServerApi(
+    env,
+    `/v1/wayon/trips?limit=${encodeURIComponent(limit)}&offset=0&include_route=false`,
+  );
+  if (!response || !response.ok) {
+    throw new Error(`server_trip_list_${response?.status || "unavailable"}`);
+  }
+
+  const payload = await response.json();
+  if (payload?.schemaVersion !== "wayon-trip-read-v1" || !Array.isArray(payload.trips)) {
+    throw new Error("server_trip_list_schema");
+  }
+  return payload.trips.map(parseServerTripSummary);
+}
+
+async function fetchServerTrip(env, tripId) {
+  const response = await fetchServerApi(
+    env,
+    `/v1/wayon/trips/${encodeURIComponent(tripId)}`,
+  );
+  if (!response || !response.ok) {
+    throw new Error(`server_trip_${response?.status || "unavailable"}`);
+  }
+
+  const payload = await response.json();
+  if (payload?.schemaVersion !== "wayon-trip-read-v1" || !payload.trip) {
+    throw new Error("server_trip_schema");
+  }
+  return payload.trip;
 }
 
 function parseTripSyncCursor(value) {
@@ -1747,19 +1818,32 @@ async function handleTrips(request, env, pathname) {
 
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length === 3) {
+    try {
+      return tripHistoryJson(await fetchServerTrip(env, parts[2]), "server");
+    } catch (error) {
+      console.warn("Wayon server trip detail unavailable; using D1", error?.message || error);
+    }
+
     const trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ?`)
       .bind(parts[2])
       .first();
     if (!trip) return json({ error: "not_found" }, 404);
 
-    return json({
+    return tripHistoryJson({
       ...trip,
       route: JSON.parse(trip.route_json || "[]"),
-    });
+    }, "d1");
   }
 
   const url = new URL(request.url);
-  const limit = boundedLimit(url.searchParams.get("limit"), 100, 1000);
+  const requestedLimit = boundedLimit(url.searchParams.get("limit"), 100, 5000);
+  try {
+    return tripHistoryJson({ trips: await fetchServerTripList(env, requestedLimit) }, "server");
+  } catch (error) {
+    console.warn("Wayon server trip list unavailable; using D1", error?.message || error);
+  }
+
+  const limit = Math.min(requestedLimit, 1000);
   const trips = await env.DB.prepare(`
     SELECT id, device_id, started_at, ended_at, duration_s, distance_m,
            start_lat, start_lon, end_lat, end_lon, route_point_count,
@@ -1771,7 +1855,7 @@ async function handleTrips(request, env, pathname) {
     FROM trips ORDER BY ended_at DESC LIMIT ?
   `).bind(limit).all();
 
-  return json({ trips: (trips.results || []).map(parseTripSummary) });
+  return tripHistoryJson({ trips: (trips.results || []).map(parseTripSummary) }, "d1");
 }
 
 async function handleSnapshotImage(request, env) {

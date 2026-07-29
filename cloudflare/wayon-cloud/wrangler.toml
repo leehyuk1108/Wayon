@@ -26,3 +26,8 @@ id = "f66d9a8906494da3a3a254e340d205ae"
 binding = "COMMA_NETWORK"
 tunnel_id = "449bf488-e41f-4d08-908e-7db6f3d32a28"
 remote = true
+
+[[vpc_services]]
+binding = "WAYON_SERVER_API"
+service_id = "019fad0d-99b9-7473-adf9-3abda60dfc8b"
+remote = true

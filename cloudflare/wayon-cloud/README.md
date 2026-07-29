@@ -76,6 +76,16 @@ Available read endpoints:
 - `GET /api/trips/:id`: one trip with route points
 - `GET /api/snapshot?key=...`: JPEG snapshot object
 
+Trip reads use the private HYUKLEE Server PostgreSQL mirror first. The Worker
+reaches it through a Cloudflare Tunnel VPC service and authenticates with the
+dedicated server-sync token. If the server, tunnel, response schema, or request
+fails within 5 seconds, the same endpoint automatically reads from D1 instead.
+Trip lists use a route-free server summary; a full route is fetched only when a
+specific trip is opened.
+The comma upload path never depends on the server, so collection continues
+during a server outage. Trip responses include `x-wayon-history-source:
+server|d1` for operational verification.
+
 GPS is used for current position and route history. Live speed is stored as
 `state.speed_mps` from the vehicle `carState` dashboard/cluster speed path, not
 from GPS speed.
@@ -98,6 +108,10 @@ The response uses schema `wayon-trip-sync-v1` and contains full trip records,
 including route points, `nextCursor`, and `hasMore`. A consumer must commit the
 whole page before persisting `nextCursor`. On any HTTP or database failure it
 must retry from the previous cursor. Trip IDs remain the idempotency key.
+
+The server mirror exposes its read API only through the private VPC service.
+PostgreSQL has no host or public port. Existing D1 data remains as the ingestion
+buffer and automatic read fallback.
 
 ## AI access
 

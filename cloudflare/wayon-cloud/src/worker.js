@@ -1703,7 +1703,8 @@ async function handleServerSyncTrips(request, env) {
   }
 
   const url = new URL(request.url);
-  const parsedCursor = parseTripSyncCursor(url.searchParams.get("cursor") || "");
+  const cursorValue = url.searchParams.get("cursor") || "";
+  const parsedCursor = parseTripSyncCursor(cursorValue);
   if (!parsedCursor.valid) return json({ error: "invalid_cursor" }, 400);
 
   const limit = boundedLimit(url.searchParams.get("limit"), 50, 100);
@@ -1737,7 +1738,7 @@ async function handleServerSyncTrips(request, env) {
     schemaVersion: "wayon-trip-sync-v1",
     generatedAt: nowIso(),
     trips: page.map(parseTripRoute),
-    nextCursor: page.length ? tripSyncCursor(page[page.length - 1]) : null,
+    nextCursor: page.length ? tripSyncCursor(page[page.length - 1]) : (cursorValue || null),
     hasMore,
   });
 }

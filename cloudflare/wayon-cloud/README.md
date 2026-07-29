@@ -108,6 +108,8 @@ The response uses schema `wayon-trip-sync-v1` and contains full trip records,
 including route points, `nextCursor`, and `hasMore`. A consumer must commit the
 whole page before persisting `nextCursor`. On any HTTP or database failure it
 must retry from the previous cursor. Trip IDs remain the idempotency key.
+When no newer rows exist, the endpoint returns the supplied cursor unchanged
+instead of resetting it to `null`.
 
 The server mirror exposes its read API only through the private VPC service.
 PostgreSQL has no host or public port. Existing D1 data remains as the ingestion

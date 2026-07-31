@@ -37,8 +37,9 @@ DECEL_TRIGGER_ACC = -0.35  # m/s^2
 DECEL_RELEASE_ACC = -0.10  # m/s^2
 DECEL_TRIGGER_TIME = 0.30
 DECEL_RELEASE_TIME = 0.60
-DECEL_TARGET_BUFFER = 2  # display units (km/h or mph)
-RESTORE_SPEED_WINDOW = 4  # display units (km/h or mph)
+FOLLOW_SPEED_BUFFER = 10  # display units (km/h or mph)
+DECEL_TARGET_BUFFER = FOLLOW_SPEED_BUFFER
+RESTORE_SPEED_WINDOW = FOLLOW_SPEED_BUFFER
 
 
 SEND_BUTTONS = {
@@ -78,6 +79,10 @@ class IntelligentCruiseButtonManagement:
   @property
   def v_cruise_equal(self) -> bool:
     return self.v_target == self.v_cruise_cluster
+
+  @property
+  def automatic_target_speed_kph(self) -> float:
+    return float(self.v_target if self.is_metric else self.v_target * CV.MPH_TO_KPH)
 
   def reset_temporary_control(self) -> None:
     self.decel_trigger_timer = 0

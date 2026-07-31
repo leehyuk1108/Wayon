@@ -91,15 +91,21 @@ def test_navdy_socket_returns_camera_limit_over_existing_usb_tunnel():
   assert "BufferedWriter;->flush()V" in service
 
 
-def test_navdy_hud_shows_physical_acc_target_in_orange():
-  receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
-             "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
+def test_navdy_hud_shows_physical_and_control_acc_targets():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  receiver = patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
   smali = receiver.read_text()
 
   assert 'const-string v0, "automaticAccActive"' in smali
   assert 'const-string v0, "actualAccSetKph"' in smali
+  assert 'const-string v0, "automaticAccTargetKph"' in smali
   assert "sActualAccSpeedTextView:Landroid/widget/TextView;" in smali
-  assert "const/16 v1, -0x7600" in smali
+  assert "sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;" in smali
+  assert "sAutomaticAccArrowView:Landroid/widget/ImageView;" in smali
+  assert 'const-string v4, "navdy_acc_control_arrow"' in smali
+  assert "Landroid/view/animation/AlphaAnimation;" in smali
+  assert "const/high16 v3, 0x41880000    # 17.0f" in smali
+  assert (patch / "res/drawable-nodpi/navdy_acc_control_arrow.png").is_file()
 
 
 def test_navdy_disengaged_music_sits_above_current_speed():
@@ -114,6 +120,20 @@ def test_navdy_disengaged_music_sits_above_current_speed():
   assert music_row.attrib[f"{android}layout_marginTop"] == "77.0dip"
   assert music_row.attrib[f"{android}layout_height"] == "26.0dip"
   assert music_view.attrib[f"{android}textSize"] == "16.0sp"
+
+
+def test_navdy_secondary_text_matches_engaged_music_weight():
+  layout = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+           "res/layout/screen_home_smartdash.xml"
+  root = ET.parse(layout).getroot()
+  android = "{http://schemas.android.com/apk/res/android}"
+  navdy = "{http://schemas.android.com/apk/res-auto}"
+  ids = ("@id/music_track_info", "@id/txt_time", "@id/si_temperature")
+
+  for view_id in ids:
+    view = next(view for view in root.iter() if view.attrib.get(f"{android}id") == view_id)
+    assert view.attrib.get("style") == "@style/Roboto"
+    assert f"{navdy}fontFile" not in view.attrib
 
 
 def test_payload_exports_standstill_and_op_available():
@@ -168,20 +188,24 @@ def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
   assert payload["setSpeedKph"] == 80.0
 
 
-def test_payload_keeps_restore_speed_and_adds_physical_acc_target():
+def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
   car_state = navdy_op_bridge.default_car_state()
   car_state.vCruise = 100.0
   car_state.vCruiseCluster = 100.0
   car_state.cruiseState.speedCluster = 60.0 / navdy_op_bridge.KPH_PER_MS
   selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
   selfdrive_state_sp = SimpleNamespace(
-    intelligentCruiseButtonManagement=SimpleNamespace(automaticControlActive=True))
+    intelligentCruiseButtonManagement=SimpleNamespace(
+      automaticControlActive=True,
+      automaticTargetSpeedKph=70.0,
+    ))
 
   payload = navdy_op_bridge.payload_from_messages(
     selfdrive_state, car_state, 8, selfdrive_state_sp=selfdrive_state_sp)
 
   assert payload["setSpeedKph"] == 100.0
   assert payload["actualAccSetKph"] == 60.0
+  assert payload["automaticAccTargetKph"] == 70.0
   assert payload["automaticAccActive"] is True
 
 

@@ -1012,6 +1012,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   lead_depart_alert = bool(getattr(e2e_alerts, "leadDepartAlert", False))
   icbm = getattr(selfdrive_state_sp, "intelligentCruiseButtonManagement", None)
   automatic_acc_active = bool(getattr(icbm, "automaticControlActive", False))
+  automatic_acc_target_kph = finite_float(getattr(icbm, "automaticTargetSpeedKph", 0.0))
   physical_acc_speed = finite_float(getattr(getattr(car_state, "cruiseState", None), "speedCluster", 0.0))
   physical_acc_speed_kph = physical_acc_speed * KPH_PER_MS if physical_acc_speed > 0.0 else 0.0
 
@@ -1030,6 +1031,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "cruiseStandstill": show_stop_icon,
     "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
     "actualAccSetKph": rounded(physical_acc_speed_kph) if automatic_acc_active else 0.0,
+    "automaticAccTargetKph": rounded(automatic_acc_target_kph) if automatic_acc_active else 0.0,
     "automaticAccActive": automatic_acc_active,
     "vEgoKph": rounded(v_ego_kph),
     "gear": gear_text(car_state, selfdrive_state),
@@ -1076,6 +1078,7 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "cruiseStandstill": args.synthetic_standstill,
     "setSpeedKph": 100.0,
     "actualAccSetKph": 60.0,
+    "automaticAccTargetKph": 70.0,
     "automaticAccActive": True,
     "vEgoKph": 82.0,
     "gear": args.synthetic_gear,
@@ -1434,6 +1437,7 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("cruiseStandstill"),
     payload.get("setSpeedKph"),
     payload.get("actualAccSetKph"),
+    payload.get("automaticAccTargetKph"),
     payload.get("automaticAccActive"),
     payload.get("vEgoKph"),
     payload.get("gear"),

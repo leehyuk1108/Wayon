@@ -10,6 +10,7 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.con
   DECEL_RELEASE_TIME,
   DECEL_TRIGGER_TIME,
   RESTORE_SPEED_WINDOW,
+  FOLLOW_SPEED_BUFFER,
   IntelligentCruiseButtonManagement,
 )
 from openpilot.common.realtime import DT_CTRL
@@ -61,17 +62,42 @@ def test_deceleration_lowers_stock_target_near_ego_then_restores_gradually(tmp_p
   for _ in range(int(DECEL_TRIGGER_TIME / DT_CTRL) + 1):
     controller.run(state, make_control(), make_plan(), True)
 
-  assert controller.v_target == 64
+  assert controller.v_target == 72
   assert controller.automatic_control_active
 
   state.aEgo = 0.0
   state.vEgo = state.vEgoCluster = 60 * CV.KPH_TO_MS
-  state.cruiseState.speedCluster = 64 * CV.KPH_TO_MS
+  state.cruiseState.speedCluster = 72 * CV.KPH_TO_MS
   for _ in range(int(DECEL_RELEASE_TIME / DT_CTRL) + 1):
     controller.run(state, make_control(), make_plan(), True)
 
   assert controller.v_target == 60 + RESTORE_SPEED_WINDOW
   assert controller.automatic_control_active
+
+
+def test_lead_slowdown_uses_ten_kph_moving_ceiling(tmp_path):
+  controller = make_controller(tmp_path)
+  state = make_state(ego_kph=70, stock_set_kph=100, restore_kph=100, accel=-0.5)
+
+  for _ in range(int(DECEL_TRIGGER_TIME / DT_CTRL) + 1):
+    controller.run(state, make_control(), make_plan(), True)
+
+  assert FOLLOW_SPEED_BUFFER == 10
+  assert controller.v_target == 80
+  assert controller.automatic_target_speed_kph == 80
+
+
+def test_moving_ceiling_tracks_ego_until_restore_target(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.restore_control_active = True
+  controller.v_cruise_cluster = 80
+
+  state = make_state(ego_kph=74, stock_set_kph=80, restore_kph=100)
+  assert controller.temporary_target(state, 100) == 84
+
+  state.vEgo = state.vEgoCluster = 95 * CV.KPH_TO_MS
+  controller.v_cruise_cluster = 96
+  assert controller.temporary_target(state, 100) == 100
 
 
 def test_manual_button_cancels_temporary_profile(tmp_path):
@@ -125,7 +151,9 @@ def test_stale_camera_state_is_ignored(tmp_path):
 def test_automatic_control_status_survives_car_control_conversion():
   message = custom.CarControlSP.new_message()
   message.intelligentCruiseButtonManagement.automaticControlActive = True
+  message.intelligentCruiseButtonManagement.automaticTargetSpeedKph = 80
 
   converted = convert_carControlSP(message)
 
   assert converted.intelligentCruiseButtonManagement.automaticControlActive
+  assert converted.intelligentCruiseButtonManagement.automaticTargetSpeedKph == 80

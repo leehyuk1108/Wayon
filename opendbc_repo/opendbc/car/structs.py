@@ -107,6 +107,7 @@ class IntelligentCruiseButtonManagement:
   )
   vTarget: float = auto_field()
   automaticControlActive: bool = auto_field()
+  automaticTargetSpeedKph: float = auto_field()
 
   class IntelligentCruiseButtonManagementState(StrEnum):
     inactive = auto()

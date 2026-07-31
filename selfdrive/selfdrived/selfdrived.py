@@ -656,6 +656,7 @@ class SelfdriveD(CruiseHelper):
     icbm.sendButton = self.icbm.cruise_button
     icbm.vTarget = self.icbm.v_target
     icbm.automaticControlActive = self.icbm.automatic_control_active
+    icbm.automaticTargetSpeedKph = self.icbm.automatic_target_speed_kph
 
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 

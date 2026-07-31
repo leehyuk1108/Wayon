@@ -45,6 +45,7 @@ class TestGMIntelligentCruiseButtonManagement(unittest.TestCase):
         pass
 
   def send_web_command(self, button):
+    self.assertTrue(self.controller.ensure_test_socket())
     try:
       os.unlink(BUTTON_TEST_ACK_SOCKET)
     except FileNotFoundError:

@@ -50,6 +50,11 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
     self.test_press_frames_remaining = 0
     self.test_command_id = ""
     self.test_socket = None
+
+  def ensure_test_socket(self) -> bool:
+    if self.test_socket is not None:
+      return True
+
     test_socket = None
     try:
       test_socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
@@ -61,9 +66,11 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
       test_socket.bind(BUTTON_TEST_SOCKET)
       os.chmod(BUTTON_TEST_SOCKET, 0o600)
       self.test_socket = test_socket
+      return True
     except OSError:
       if test_socket is not None:
         test_socket.close()
+      return False
 
   def close_test_socket(self) -> None:
     if self.test_socket is None:
@@ -147,6 +154,7 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
         continue
 
   def update(self, CS, CC_SP, packer, frame) -> list[CanData]:
+    self.ensure_test_socket()
     self.CC_SP = CC_SP
     self.ICBM = CC_SP.intelligentCruiseButtonManagement
     self.frame = frame

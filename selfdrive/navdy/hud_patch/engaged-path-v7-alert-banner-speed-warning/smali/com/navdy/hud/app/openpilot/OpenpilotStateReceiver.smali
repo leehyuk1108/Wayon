@@ -70,6 +70,12 @@
 
 .field private static sCurrentSpeedTextView:Landroid/widget/TextView;
 
+.field private static sActualAccSpeedTextView:Landroid/widget/TextView;
+
+.field private static sActualAccSpeedKph:D
+
+.field private static sAutomaticAccActive:Z
+
 .field private static sEngagedBodyMask:Landroid/view/View;
 
 .field private static sEngagedTopMask:Landroid/view/View;
@@ -895,6 +901,12 @@
 
     sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedTextView:Landroid/widget/TextView;
 
+    new-instance v3, Landroid/widget/TextView;
+
+    invoke-direct {v3, p0}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
+
+    sput-object v3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedTextView:Landroid/widget/TextView;
+
     .line 341
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedTextView:Landroid/widget/TextView;
 
@@ -946,8 +958,70 @@
 
     invoke-virtual {v0, p0, v1}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
 
+    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedTextView:Landroid/widget/TextView;
+
+    const/16 v1, -0x7600
+
+    invoke-virtual {p0, v1}, Landroid/widget/TextView;->setTextColor(I)V
+
+    const/4 v1, 0x0
+
+    const/high16 v3, 0x41900000    # 18.0f
+
+    invoke-virtual {p0, v1, v3}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    invoke-virtual {p0, v1}, Landroid/widget/TextView;->setIncludeFontPadding(Z)V
+
+    const/4 v1, 0x1
+
+    invoke-virtual {p0, v1}, Landroid/widget/TextView;->setSingleLine(Z)V
+
+    const/16 v1, 0x8
+
+    invoke-virtual {p0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    new-instance v1, Landroid/widget/LinearLayout$LayoutParams;
+
+    const/4 v3, -0x2
+
+    const/4 v4, -0x1
+
+    invoke-direct {v1, v3, v4}, Landroid/widget/LinearLayout$LayoutParams;-><init>(II)V
+
+    const/4 v3, 0x6
+
+    iput v3, v1, Landroid/widget/LinearLayout$LayoutParams;->leftMargin:I
+
+    invoke-virtual {v0, p0, v1}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
+
     .line 350
     return-object v0
+.end method
+
+.method private static updateActualAccState(Lorg/json/JSONObject;)V
+    .locals 4
+
+    const-string v0, "automaticAccActive"
+
+    const/4 v1, 0x0
+
+    invoke-virtual {p0, v0, v1}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
+
+    move-result v0
+
+    sput-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccActive:Z
+
+    const-string v0, "actualAccSetKph"
+
+    const-wide/16 v2, 0x0
+
+    invoke-virtual {p0, v0, v2, v3}, Lorg/json/JSONObject;->optDouble(Ljava/lang/String;D)D
+
+    move-result-wide v2
+
+    sput-wide v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedKph:D
+
+    return-void
 .end method
 
 .method private static ensureOverlay(Landroid/content/Context;)Z
@@ -1262,6 +1336,8 @@
     new-instance v4, Lorg/json/JSONObject;
 
     invoke-direct {v4, v0}, Lorg/json/JSONObject;-><init>(Ljava/lang/String;)V
+
+    invoke-static {v4}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateActualAccState(Lorg/json/JSONObject;)V
 
     .line 156
     const/4 v0, 0x0
@@ -2430,6 +2506,37 @@
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedRow:Landroid/widget/LinearLayout;
 
     invoke-virtual {p0, v0}, Landroid/widget/LinearLayout;->setVisibility(I)V
+
+    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedTextView:Landroid/widget/TextView;
+
+    sget-boolean p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccActive:Z
+
+    if-eqz p1, :cond_navdy_actual_acc_hidden
+
+    sget-wide p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedKph:D
+
+    const-wide/16 p3, 0x0
+
+    cmpl-double p3, p1, p3
+
+    if-lez p3, :cond_navdy_actual_acc_hidden
+
+    invoke-static {p1, p2}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->formatSetSpeed(D)Ljava/lang/String;
+
+    move-result-object p1
+
+    invoke-virtual {p0, p1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    invoke-virtual {p0, v0}, Landroid/widget/TextView;->setVisibility(I)V
+
+    goto :goto_navdy_actual_acc_done
+
+    :cond_navdy_actual_acc_hidden
+    const/16 p1, 0x8
+
+    invoke-virtual {p0, p1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    :goto_navdy_actual_acc_done
 
     .line 236
     return-void

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import socket
 import threading
 import types
 import xml.etree.ElementTree as ET
@@ -81,6 +82,26 @@ def test_navdy_socket_receiver_coalesces_frames_and_skips_payload_logs():
   assert "state active=" not in receiver
 
 
+def test_navdy_socket_returns_camera_limit_over_existing_usb_tunnel():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  service = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateService$ClientRunnable.smali").read_text()
+
+  assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in service
+  assert 'const-string v4, "{\\\"cameraSpeedKph\\\":"' in service
+  assert "BufferedWriter;->flush()V" in service
+
+
+def test_navdy_hud_shows_physical_acc_target_in_orange():
+  receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+             "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
+  smali = receiver.read_text()
+
+  assert 'const-string v0, "automaticAccActive"' in smali
+  assert 'const-string v0, "actualAccSetKph"' in smali
+  assert "sActualAccSpeedTextView:Landroid/widget/TextView;" in smali
+  assert "const/16 v1, -0x7600" in smali
+
+
 def test_navdy_disengaged_music_sits_above_current_speed():
   layout = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
            "res/layout/screen_home_smartdash.xml"
@@ -145,6 +166,23 @@ def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
   assert payload["standstill"] is True
   assert payload["cruiseStandstill"] is True
   assert payload["setSpeedKph"] == 80.0
+
+
+def test_payload_keeps_restore_speed_and_adds_physical_acc_target():
+  car_state = navdy_op_bridge.default_car_state()
+  car_state.vCruise = 100.0
+  car_state.vCruiseCluster = 100.0
+  car_state.cruiseState.speedCluster = 60.0 / navdy_op_bridge.KPH_PER_MS
+  selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+  selfdrive_state_sp = SimpleNamespace(
+    intelligentCruiseButtonManagement=SimpleNamespace(automaticControlActive=True))
+
+  payload = navdy_op_bridge.payload_from_messages(
+    selfdrive_state, car_state, 8, selfdrive_state_sp=selfdrive_state_sp)
+
+  assert payload["setSpeedKph"] == 100.0
+  assert payload["actualAccSetKph"] == 60.0
+  assert payload["automaticAccActive"] is True
 
 
 def test_payload_hides_stop_icon_while_disengaged_at_standstill():
@@ -1204,6 +1242,21 @@ def test_socket_sender_keeps_only_latest_pending_payload():
   navdy_op_bridge.queue_socket({"seq": 2}, args)
 
   assert args._socket_sender_pending == {"seq": 2}
+
+
+def test_socket_feedback_publishes_camera_speed_without_wifi(tmp_path, monkeypatch):
+  camera_state = tmp_path / "navdy_camera_state.json"
+  monkeypatch.setattr(navdy_op_bridge, "NAVDY_CAMERA_STATE_PATH", str(camera_state))
+  sender, receiver = socket.socketpair()
+  args = SimpleNamespace(_socket_feedback_buffer=b"")
+  try:
+    receiver.sendall(b'{"cameraSpeedKph":60}\n')
+    navdy_op_bridge.read_navdy_feedback(sender, args)
+  finally:
+    sender.close()
+    receiver.close()
+
+  assert camera_state.read_text() == '{"cameraSpeedKph":60}'
 
 
 def test_emit_queues_socket_work_off_polling_thread():

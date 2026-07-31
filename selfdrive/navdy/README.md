@@ -322,6 +322,30 @@ payload는 세 값을 모두 포함한다.
 인게이지 중 일시적으로 0이 들어오면 마지막 양수 설정 속도를 유지한다. 이 유지 로직은 display
 안정화용이며 차량 제어 값에는 영향을 주지 않는다.
 
+ICBM 자동 제어 중에는 두 속도를 분리해 표시한다.
+
+- `setSpeedKph`: 운전자가 지정한 복귀 목표 속도. 기존 ACC SET 위치를 유지한다.
+- `actualAccSetKph`: 버튼 스니핑으로 바뀐 순정 ACC의 실제 설정 속도. 자동 제어 중에만 오른쪽에
+  주황색으로 표시한다.
+- `automaticAccActive`: 임시 감속 또는 복귀 제어가 동작 중인지 나타낸다.
+
+### TMAP 카메라 제한속도 반환
+
+카메라 정보에 Wi-Fi는 사용하지 않는다. CommANav가 TMAP SDI를 Navdy로 보내는 기존 Bluetooth
+알림에서 제한속도를 읽고, `OpenpilotStateService`가 comma와 이미 연결된 USB 데이터 포트 소켓의
+응답으로 `cameraSpeedKph`를 돌려준다. `navdy_op_bridge`는 이 값을
+`/dev/shm/navdy_camera_state.json`에 원자적으로 갱신하며, 1.5초 이상 새 응답이 없으면 제한속도를
+즉시 무효화한다.
+
+```text
+TMAP -> CommANav -> Bluetooth -> Navdy HUD -> USB data port -> navdy_op_bridge -> ICBM
+```
+
+ICBM은 해당 제한속도와 longitudinal planner 목표 중 더 낮은 값을 순정 ACC의 임시 목표로 사용한다.
+운전자의 ACC SET 값은 별도로 보존하며, 감속이 끝나면 현재 속도보다 4 km/h 또는 4 mph 높은 작은
+구간을 따라 순정 ACC 설정값을 단계적으로 복귀시킨다. 물리 버튼, 가속 페달 override, cancel,
+resume, 디스인게이지가 감지되면 자동 프로필을 즉시 해제한다.
+
 ### 기어
 
 기본값은 `carStateSP.navdyGearShifter`다. Reverse 진입으로 차량 process가 빠르게 Offroad가 되면서

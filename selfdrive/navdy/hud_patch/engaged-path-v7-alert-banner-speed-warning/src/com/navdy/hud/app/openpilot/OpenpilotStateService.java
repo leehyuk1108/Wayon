@@ -10,10 +10,14 @@ import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+
+import com.navdy.hud.app.maps.widget.TrafficIncidentWidgetPresenter;
 
 public final class OpenpilotStateService extends Service {
   private static final String TAG = "NavdyOpenpilotService";
@@ -98,10 +102,15 @@ public final class OpenpilotStateService extends Service {
       try {
         BufferedReader reader = new BufferedReader(
             new InputStreamReader(mSocket.getInputStream(), "UTF-8"));
+        BufferedWriter writer = new BufferedWriter(
+            new OutputStreamWriter(mSocket.getOutputStream(), "UTF-8"));
         String line;
         while ((line = reader.readLine()) != null) {
           if (line.length() != 0) {
             dispatchPayload(line);
+            writer.write("{\"cameraSpeedKph\":"
+                + TrafficIncidentWidgetPresenter.getLastCameraSpeedLimit() + "}\n");
+            writer.flush();
           }
         }
       } catch (Throwable t) {

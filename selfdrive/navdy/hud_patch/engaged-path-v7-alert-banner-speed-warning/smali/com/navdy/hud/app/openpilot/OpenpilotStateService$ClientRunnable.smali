@@ -83,7 +83,7 @@
 
 # virtual methods
 .method public run()V
-    .locals 5
+    .locals 7
 
     .line 101
     const-string v0, "NavdyOpenpilotService"
@@ -106,6 +106,22 @@
 
     invoke-direct {v1, v2}, Ljava/io/BufferedReader;-><init>(Ljava/io/Reader;)V
 
+    new-instance v5, Ljava/io/BufferedWriter;
+
+    new-instance v2, Ljava/io/OutputStreamWriter;
+
+    iget-object v3, p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateService$ClientRunnable;->mSocket:Ljava/net/Socket;
+
+    invoke-virtual {v3}, Ljava/net/Socket;->getOutputStream()Ljava/io/OutputStream;
+
+    move-result-object v3
+
+    const-string v4, "UTF-8"
+
+    invoke-direct {v2, v3, v4}, Ljava/io/OutputStreamWriter;-><init>(Ljava/io/OutputStream;Ljava/lang/String;)V
+
+    invoke-direct {v5, v2}, Ljava/io/BufferedWriter;-><init>(Ljava/io/Writer;)V
+
     .line 104
     :goto_0
     invoke-virtual {v1}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
@@ -127,6 +143,32 @@
     .line 109
     :cond_0
     invoke-direct {p0, v2}, Lcom/navdy/hud/app/openpilot/OpenpilotStateService$ClientRunnable;->dispatchPayload(Ljava/lang/String;)V
+
+    new-instance v3, Ljava/lang/StringBuilder;
+
+    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
+
+    const-string v4, "{\"cameraSpeedKph\":"
+
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-static {}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I
+
+    move-result v4
+
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+
+    const-string v4, "}\n"
+
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v3
+
+    invoke-virtual {v5, v3}, Ljava/io/BufferedWriter;->write(Ljava/lang/String;)V
+
+    invoke-virtual {v5}, Ljava/io/BufferedWriter;->flush()V
     :try_end_0
     .catchall {:try_start_0 .. :try_end_0} :catchall_0
 

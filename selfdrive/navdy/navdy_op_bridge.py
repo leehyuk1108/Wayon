@@ -11,6 +11,7 @@ import argparse
 import json
 import math
 import os
+import select
 import shlex
 import socket
 import subprocess
@@ -27,6 +28,7 @@ DEFAULT_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateReceiver"
 DEFAULT_SERVICE_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateService"
 DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
+NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 DISPLAY_ON_TEXT = "Display Power: state=ON"
 DISPLAY_OFF_TEXT = "Display Power: state=OFF"
 WAKEFULNESS_AWAKE_TEXT = "mWakefulness=Awake"
@@ -45,6 +47,7 @@ ONROAD_PROCESS_NAMES = (
 NAVDY_CAR_STATE_SERVICE = "carStateSP"
 NAVDY_FAST_SERVICES = (
   "selfdriveState",
+  "selfdriveStateSP",
   NAVDY_CAR_STATE_SERVICE,
   "controlsState",
   "starpilotPlan",
@@ -974,7 +977,8 @@ def create_navdy_radar_reader(messaging: Any, stdout: bool = False) -> NavdyRada
 def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
                           controls_state: Any = None, starpilot_plan: Any = None,
                           longitudinal_plan: Any = None, model_v2: Any = None,
-                          longitudinal_plan_sp: Any = None) -> dict[str, Any]:
+                          longitudinal_plan_sp: Any = None,
+                          selfdrive_state_sp: Any = None) -> dict[str, Any]:
   left_blinker = bool(getattr(car_state, "leftBlinker", False))
   right_blinker = bool(getattr(car_state, "rightBlinker", False))
   left_blindspot = bool(getattr(car_state, "leftBlindspot", False))
@@ -1006,6 +1010,10 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   e2e_alerts = getattr(longitudinal_plan_sp, "e2eAlerts", None)
   green_light_alert = bool(getattr(e2e_alerts, "greenLightAlert", False))
   lead_depart_alert = bool(getattr(e2e_alerts, "leadDepartAlert", False))
+  icbm = getattr(selfdrive_state_sp, "intelligentCruiseButtonManagement", None)
+  automatic_acc_active = bool(getattr(icbm, "automaticControlActive", False))
+  physical_acc_speed = finite_float(getattr(getattr(car_state, "cruiseState", None), "speedCluster", 0.0))
+  physical_acc_speed_kph = physical_acc_speed * KPH_PER_MS if physical_acc_speed > 0.0 else 0.0
 
   payload = {
     "schema": "navdy.openpilot.v1",
@@ -1021,6 +1029,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "standstill": show_stop_icon,
     "cruiseStandstill": show_stop_icon,
     "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
+    "actualAccSetKph": rounded(physical_acc_speed_kph) if automatic_acc_active else 0.0,
+    "automaticAccActive": automatic_acc_active,
     "vEgoKph": rounded(v_ego_kph),
     "gear": gear_text(car_state, selfdrive_state),
     "leftBlinker": left_blinker,
@@ -1065,6 +1075,8 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "standstill": args.synthetic_standstill,
     "cruiseStandstill": args.synthetic_standstill,
     "setSpeedKph": 100.0,
+    "actualAccSetKph": 60.0,
+    "automaticAccActive": True,
     "vEgoKph": 82.0,
     "gear": args.synthetic_gear,
     "leftBlinker": left,
@@ -1182,11 +1194,51 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
     return False
   json_payload = json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n"
   try:
-    getattr(args, "_socket_conn").sendall(json_payload.encode("utf-8"))
+    conn = getattr(args, "_socket_conn")
+    conn.sendall(json_payload.encode("utf-8"))
+    read_navdy_feedback(conn, args)
     return True
   except OSError:
     close_socket(args)
   return False
+
+
+def publish_navdy_camera_state(camera_speed_kph: Any, args: argparse.Namespace) -> None:
+  try:
+    speed = int(camera_speed_kph)
+  except (TypeError, ValueError):
+    return
+  speed = speed if 20 <= speed <= 140 else 0
+
+  previous = getattr(args, "_navdy_camera_speed_kph", None)
+  try:
+    if previous == speed and os.path.exists(NAVDY_CAMERA_STATE_PATH):
+      os.utime(NAVDY_CAMERA_STATE_PATH, None)
+      return
+    temp_path = NAVDY_CAMERA_STATE_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as state_file:
+      json.dump({"cameraSpeedKph": speed}, state_file, separators=(",", ":"))
+    os.replace(temp_path, NAVDY_CAMERA_STATE_PATH)
+    setattr(args, "_navdy_camera_speed_kph", speed)
+  except OSError:
+    pass
+
+
+def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> None:
+  try:
+    readable, _, _ = select.select([conn], [], [], 0.01)
+    if not readable:
+      return
+    buffer = getattr(args, "_socket_feedback_buffer", b"") + conn.recv(512)
+    lines = buffer.split(b"\n")
+    setattr(args, "_socket_feedback_buffer", lines.pop())
+    for line in lines:
+      if not line:
+        continue
+      feedback = json.loads(line)
+      publish_navdy_camera_state(feedback.get("cameraSpeedKph", 0), args)
+  except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    return
 
 
 def socket_sender_loop(args: argparse.Namespace) -> None:
@@ -1381,6 +1433,8 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("standstill"),
     payload.get("cruiseStandstill"),
     payload.get("setSpeedKph"),
+    payload.get("actualAccSetKph"),
+    payload.get("automaticAccActive"),
     payload.get("vEgoKph"),
     payload.get("gear"),
     payload.get("leftBlinker"),
@@ -1684,7 +1738,8 @@ def run_live(args: argparse.Namespace) -> None:
                                     sm_optional(sm, services, "controlsState"),
                                     sm_optional(sm, services, "starpilotPlan"),
                                     sm_optional(sm, services, "longitudinalPlan"),
-                                    longitudinal_plan_sp=sm_optional(sm, services, "longitudinalPlanSP"))
+                                    longitudinal_plan_sp=sm_optional(sm, services, "longitudinalPlanSP"),
+                                    selfdrive_state_sp=sm_optional(sm, services, "selfdriveStateSP"))
     if e2e_alert_reader is not None:
       captured_green, captured_lead = e2e_alert_reader.pending(
         now, consume=navdy_e2e_alert_allowed(payload))

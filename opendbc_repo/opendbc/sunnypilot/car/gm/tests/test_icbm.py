@@ -15,6 +15,7 @@ from opendbc.sunnypilot.car.gm.icbm import (
   BUTTON_TEST_ACK_SOCKET,
   BUTTON_TEST_SOCKET,
   IntelligentCruiseButtonManagementInterface,
+  button_test_socket_allowed,
 )
 
 SendButtonState = structs.IntelligentCruiseButtonManagement.SendButtonState
@@ -146,6 +147,11 @@ class TestGMIntelligentCruiseButtonManagement(unittest.TestCase):
 
   def test_main_web_command_is_rejected(self):
     self.assertFalse(self.controller.queue_test_button("main"))
+
+  def test_socket_is_restricted_to_card_process(self):
+    self.assertTrue(button_test_socket_allowed("selfdrive.car.card"))
+    self.assertFalse(button_test_socket_allowed("selfdrive.controls.controlsd"))
+    self.assertTrue(button_test_socket_allowed("pytest"))
 
 
 if __name__ == "__main__":

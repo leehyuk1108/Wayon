@@ -39,6 +39,19 @@ TEST_BUTTONS = {
 }
 
 
+def button_test_socket_allowed(process_name: str | None = None) -> bool:
+  if process_name is None:
+    try:
+      with open("/proc/self/cmdline", "rb") as cmdline_file:
+        process_name = cmdline_file.read().split(b"\0", 1)[0].decode(errors="replace").strip()
+    except OSError:
+      return True
+
+  if process_name.startswith("selfdrive."):
+    return process_name == "selfdrive.car.card"
+  return True
+
+
 class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManagementInterfaceBase):
   def __init__(self, CP, CP_SP):
     super().__init__(CP, CP_SP)
@@ -50,8 +63,11 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
     self.test_press_frames_remaining = 0
     self.test_command_id = ""
     self.test_socket = None
+    self.test_socket_allowed = button_test_socket_allowed()
 
   def ensure_test_socket(self) -> bool:
+    if not self.test_socket_allowed:
+      return False
     if self.test_socket is not None:
       return True
 

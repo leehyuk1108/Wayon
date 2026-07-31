@@ -3,7 +3,9 @@ import os
 from types import SimpleNamespace
 
 from cereal import car
+from cereal import custom
 from openpilot.common.constants import CV
+from openpilot.selfdrive.car.helpers import convert_carControlSP
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import (
   DECEL_RELEASE_TIME,
   DECEL_TRIGGER_TIME,
@@ -118,3 +120,12 @@ def test_stale_camera_state_is_ignored(tmp_path):
 
   assert controller.v_target == 100
   assert not controller.automatic_control_active
+
+
+def test_automatic_control_status_survives_car_control_conversion():
+  message = custom.CarControlSP.new_message()
+  message.intelligentCruiseButtonManagement.automaticControlActive = True
+
+  converted = convert_carControlSP(message)
+
+  assert converted.intelligentCruiseButtonManagement.automaticControlActive

@@ -172,6 +172,21 @@
     const cancel = document.querySelector("#cancel");
     let ready = false;
     let cancelTimer = null;
+    let lastMessageAt = 0;
+
+    const reasonLabels = {
+      controller_ack_timeout: "Controller ACK timeout",
+      control_socket_unavailable: "Control socket unavailable",
+      cruise_not_enabled: "Cruise is not enabled",
+      physical_button_pressed: "Physical button has priority",
+      stale_command: "Command expired",
+      superseded: "Command superseded",
+    };
+
+    function setActivity(message) {
+      messageEl.textContent = message;
+      lastMessageAt = Date.now();
+    }
 
     async function refreshStatus() {
       try {
@@ -181,7 +196,9 @@
         statusEl.textContent = ready ? "READY" : (state.onroad ? "CONNECTING" : "OFFROAD");
         statusEl.classList.toggle("ready", ready);
         [...commands, cancel].forEach(button => button.disabled = !ready);
-        messageEl.textContent = ready ? "Vehicle control ready" : (state.onroad ? "Control socket pending" : "Waiting for onroad");
+        if (!ready || Date.now() - lastMessageAt > 3000) {
+          messageEl.textContent = ready ? "Controller ACK ready" : (state.onroad ? "Waiting for controller ACK" : "Waiting for onroad");
+        }
       } catch {
         ready = false;
         statusEl.textContent = "OFFLINE";
@@ -192,7 +209,7 @@
 
     async function sendCommand(button) {
       if (!ready) return;
-      messageEl.textContent = `Sending ${button.toUpperCase()}`;
+      setActivity(`Sending ${button.toUpperCase()}`);
       try {
         const response = await fetch("/api/command", {
           method: "POST",
@@ -200,9 +217,13 @@
           body: JSON.stringify({button}),
         });
         const result = await response.json();
-        messageEl.textContent = result.ok ? `${button.toUpperCase()} queued` : result.error;
+        if (result.ok && result.transmitted) {
+          setActivity(`${button.toUpperCase()} transmitted / bus ${result.bus} / counter ${result.counter}`);
+        } else {
+          setActivity(reasonLabels[result.reason] || result.error || "Command rejected");
+        }
       } catch {
-        messageEl.textContent = "Request failed";
+        setActivity("Request failed");
       }
       setTimeout(refreshStatus, 250);
     }

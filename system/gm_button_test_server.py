@@ -2,8 +2,10 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import secrets
 import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import threading
 import time
 from typing import Protocol
 from urllib.parse import urlparse
@@ -11,9 +13,13 @@ from urllib.parse import urlparse
 HOST = "0.0.0.0"
 PORT = int(os.getenv("GM_BUTTON_TEST_PORT", "8844"))
 BUTTON_SOCKET = "/tmp/gm_button_test.sock"
+ACK_SOCKET = "/tmp/gm_button_test_web.sock"
 HTML_PATH = Path(__file__).with_name("gm_button_test.html")
 ALLOWED_BUTTONS = frozenset(("res", "set", "cancel", "unpress"))
+CONTROLLER_COMMANDS = ALLOWED_BUTTONS | {"ping"}
 COMMAND_INTERVAL = 0.2
+PING_TIMEOUT = 0.25
+COMMAND_TIMEOUT = 0.75
 
 
 class ParamsReader(Protocol):
@@ -29,18 +35,16 @@ def is_allowed_client(host: str) -> bool:
   return address.is_private or address.is_loopback or address.is_link_local
 
 
-def send_button_command(button: str, socket_path: str = BUTTON_SOCKET) -> None:
-  if button not in ALLOWED_BUTTONS:
+def build_button_command(button: str, command_id: str) -> bytes:
+  if button not in CONTROLLER_COMMANDS:
     raise ValueError("unsupported button")
 
-  payload = json.dumps({
-    "schema": "gm-button-test-v1",
+  return json.dumps({
+    "schema": "gm-button-test-v2",
+    "id": command_id,
     "button": button,
     "issuedAtMono": time.monotonic(),
   }, separators=(",", ":")).encode()
-
-  with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as command_socket:
-    command_socket.sendto(payload, socket_path)
 
 
 class GMButtonTestHandler(BaseHTTPRequestHandler):
@@ -85,12 +89,20 @@ class GMButtonTestHandler(BaseHTTPRequestHandler):
     elif self.path == "/api/status":
       onroad = self.server.params.get_bool("IsOnroad")
       socket_ready = os.path.exists(BUTTON_SOCKET)
+      controller_alive = False
+      if onroad and socket_ready:
+        try:
+          controller_alive = self.server.controller_request("ping", PING_TIMEOUT)["state"] == "pong"
+        except (OSError, TimeoutError, ValueError):
+          pass
       self._json(200, {
         "ok": True,
         "onroad": onroad,
         "socketReady": socket_ready,
-        "ready": onroad and socket_ready,
+        "controllerAlive": controller_alive,
+        "ready": onroad and controller_alive,
         "port": self.server.server_port,
+        "lastResult": self.server.last_result,
       })
     else:
       self._json(404, {"ok": False, "error": "not found"})
@@ -122,14 +134,28 @@ class GMButtonTestHandler(BaseHTTPRequestHandler):
       self._json(409, {"ok": False, "error": "vehicle control is not ready"})
       return
 
+    self.server.last_command_at = now
     try:
-      send_button_command(button)
+      result = self.server.controller_request(button, COMMAND_TIMEOUT)
+    except TimeoutError:
+      result = {"button": button, "state": "timeout", "reason": "controller_ack_timeout"}
+      self.server.record_result(result)
+      self._json(504, {"ok": False, "error": "controller did not acknowledge", **result})
+      return
     except OSError:
+      result = {"button": button, "state": "unavailable", "reason": "control_socket_unavailable"}
+      self.server.record_result(result)
       self._json(503, {"ok": False, "error": "control socket unavailable"})
       return
 
-    self.server.last_command_at = now
-    self._json(202, {"ok": True, "button": button, "queued": True})
+    result = {"button": button, **result}
+    self.server.record_result(result)
+    if result["state"] == "transmitted":
+      self._json(202, {"ok": True, "transmitted": True, **result})
+    elif result["state"] == "rejected":
+      self._json(409, {"ok": False, "error": result.get("reason", "controller rejected command"), **result})
+    else:
+      self._json(502, {"ok": False, "error": "unexpected controller response", **result})
 
 
 class GMButtonTestServer(ThreadingHTTPServer):
@@ -144,6 +170,53 @@ class GMButtonTestServer(ThreadingHTTPServer):
       params = Params()
     self.params = params
     self.last_command_at = 0.0
+    self.last_result = {}
+    self.command_lock = threading.Lock()
+    self.command_socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+      os.unlink(ACK_SOCKET)
+    except FileNotFoundError:
+      pass
+    self.command_socket.bind(ACK_SOCKET)
+    os.chmod(ACK_SOCKET, 0o600)
+
+  def controller_request(self, button: str, timeout: float) -> dict:
+    command_id = secrets.token_hex(8)
+    payload = build_button_command(button, command_id)
+    deadline = time.monotonic() + timeout
+
+    with self.command_lock:
+      self.command_socket.setblocking(False)
+      while True:
+        try:
+          self.command_socket.recv(1024)
+        except BlockingIOError:
+          break
+
+      self.command_socket.sendto(payload, BUTTON_SOCKET)
+      while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+          raise TimeoutError
+        self.command_socket.settimeout(remaining)
+        try:
+          result = json.loads(self.command_socket.recv(1024))
+        except (TypeError, ValueError, json.JSONDecodeError):
+          continue
+        if result.get("id") == command_id:
+          return result
+
+  def record_result(self, result: dict) -> None:
+    self.last_result = {**result, "recordedAtMono": time.monotonic()}
+    print(json.dumps({"event": "gm_button_test", **self.last_result}, separators=(",", ":")), flush=True)
+
+  def server_close(self) -> None:
+    self.command_socket.close()
+    try:
+      os.unlink(ACK_SOCKET)
+    except FileNotFoundError:
+      pass
+    super().server_close()
 
 
 def main() -> None:

@@ -24,6 +24,7 @@ BUTTON_PRESS_FRAMES = 4
 BUTTON_COOLDOWN_FRAMES = max(1, round(0.2 / DT_CTRL))
 BUTTON_TEST_COMMAND_MAX_AGE = 1.0
 BUTTON_TEST_SOCKET = "/tmp/gm_button_test.sock"
+BUTTON_TEST_ACK_SOCKET = "/tmp/gm_button_test_web.sock"
 
 BUTTONS = {
   SendButtonState.increase: CruiseButtons.RES_ACCEL,
@@ -47,6 +48,7 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
     self.cooldown_until = 0
     self.test_button = CruiseButtons.INIT
     self.test_press_frames_remaining = 0
+    self.test_command_id = ""
     self.test_socket = None
     test_socket = None
     try:
@@ -78,39 +80,71 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
     self.active_button = CruiseButtons.INIT
     self.press_frames_remaining = 0
 
-  def queue_test_button(self, button_name: str) -> bool:
+  def send_test_ack(self, command_id: str, state: str, reason: str = "", **details) -> None:
+    if self.test_socket is None or not command_id:
+      return
+
+    payload = json.dumps({
+      "schema": "gm-button-test-ack-v1",
+      "id": command_id,
+      "state": state,
+      "reason": reason,
+      "atMono": time.monotonic(),
+      **details,
+    }, separators=(",", ":")).encode()
+    try:
+      self.test_socket.sendto(payload, BUTTON_TEST_ACK_SOCKET)
+    except OSError:
+      pass
+
+  def reset_test_sequence(self, reason: str = "") -> None:
+    if reason:
+      self.send_test_ack(self.test_command_id, "rejected", reason)
+    self.test_button = CruiseButtons.INIT
+    self.test_press_frames_remaining = 0
+    self.test_command_id = ""
+
+  def queue_test_button(self, button_name: str, command_id: str = "") -> bool:
     button = TEST_BUTTONS.get(button_name, CruiseButtons.INIT)
     if button == CruiseButtons.INIT:
       return False
 
+    if self.test_command_id:
+      self.send_test_ack(self.test_command_id, "rejected", "superseded")
     self.reset_button_sequence()
     self.cooldown_until = 0
     self.test_button = button
     self.test_press_frames_remaining = 1 if button == CruiseButtons.UNPRESS else BUTTON_PRESS_FRAMES
+    self.test_command_id = command_id
     return True
 
-  def consume_test_command(self) -> None:
+  def consume_test_commands(self) -> None:
     if self.test_socket is None:
       return
 
-    latest_command = None
     for _ in range(8):
       try:
-        latest_command = self.test_socket.recv(256)
+        raw_command = self.test_socket.recv(512)
       except BlockingIOError:
         break
 
-    if latest_command is None:
-      return
+      try:
+        command = json.loads(raw_command)
+        command_id = str(command["id"])
+        button_name = str(command["button"]).lower()
+        issued_at = float(command["issuedAtMono"])
+        if not command_id or len(command_id) > 64:
+          continue
 
-    try:
-      command = json.loads(latest_command)
-      issued_at = float(command["issuedAtMono"])
-      age = time.monotonic() - issued_at
-      if -0.2 <= age <= BUTTON_TEST_COMMAND_MAX_AGE:
-        self.queue_test_button(str(command["button"]).lower())
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-      return
+        age = time.monotonic() - issued_at
+        if not -0.2 <= age <= BUTTON_TEST_COMMAND_MAX_AGE:
+          self.send_test_ack(command_id, "rejected", "stale_command")
+        elif button_name == "ping":
+          self.send_test_ack(command_id, "pong")
+        elif not self.queue_test_button(button_name, command_id):
+          self.send_test_ack(command_id, "rejected", "unsupported_button")
+      except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        continue
 
   def update(self, CS, CC_SP, packer, frame) -> list[CanData]:
     self.CC_SP = CC_SP
@@ -122,19 +156,21 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
     if not stock_frame_updated:
       return []
     self.last_stock_counter = stock_counter
-    self.consume_test_command()
+    self.consume_test_commands()
 
     physical_button_pressed = int(CS.cruise_buttons) != CruiseButtons.UNPRESS
     cruise_enabled = bool(CS.out.cruiseState.enabled)
 
     if physical_button_pressed or not cruise_enabled:
       self.reset_button_sequence()
-      self.test_button = CruiseButtons.INIT
-      self.test_press_frames_remaining = 0
+      self.reset_test_sequence("physical_button_pressed" if physical_button_pressed else "cruise_not_enabled")
       return []
 
     if self.test_press_frames_remaining > 0:
       can_sends = [gmcan.create_buttons(packer, CanBus.CAMERA, stock_counter, self.test_button)]
+      self.send_test_ack(self.test_command_id, "transmitted", buttonCode=int(self.test_button),
+                         bus=CanBus.CAMERA, counter=stock_counter)
+      self.test_command_id = ""
       self.test_press_frames_remaining -= 1
       if self.test_press_frames_remaining == 0:
         self.test_button = CruiseButtons.INIT

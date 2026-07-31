@@ -14,3 +14,4 @@ class GMFlagsSP(IntFlag):
 
 class GMSafetyFlagsSP:
   NON_ACC = 1
+  ICBM = 2

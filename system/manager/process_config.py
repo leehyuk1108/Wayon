@@ -196,6 +196,8 @@ procs = [
   PythonProcess("wayon_live", "system.wayon_live_stream", wayon_remote_ready, restart_if_crash=True),
   PythonProcess("wayon_remote_installer", "system.wayon_remote_installer", wayon_remote_ready,
                 enabled=not PC, restart_if_crash=True),
+  PythonProcess("gm_button_test_web", "system.gm_button_test_server", always_run,
+                enabled=not PC, restart_if_crash=True),
   PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", only_offroad, enabled=not PC),
   PythonProcess("statsd", "system.statsd", always_run),
   PythonProcess("feedbackd", "selfdrive.ui.feedback.feedbackd", only_onroad),

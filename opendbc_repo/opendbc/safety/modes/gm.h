@@ -35,6 +35,7 @@ typedef enum {
 static GmHardware gm_hw = GM_ASCM;
 static bool gm_pcm_cruise = false;
 static bool gm_non_acc = false;
+static bool gm_icbm = false;
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
@@ -162,8 +163,11 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
   if ((msg->addr == 0x1E1U) && gm_pcm_cruise) {
     int button = (msg->data[5] >> 4) & 0x7U;
 
-    bool allowed_cancel = (button == 6) && cruise_engaged_prev;
-    if (!allowed_cancel) {
+    bool allowed_button = (button == GM_BTN_CANCEL) && cruise_engaged_prev;
+    if (gm_icbm && controls_allowed && cruise_engaged_prev) {
+      allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_SET) || (button == GM_BTN_UNPRESS);
+    }
+    if (!allowed_button) {
       tx = false;
     }
   }
@@ -242,7 +246,9 @@ static safety_config gm_init(uint16_t param) {
   gm_pcm_cruise = (gm_hw == GM_CAM) && !gm_cam_long;
 
   const uint16_t GM_PARAM_SP_NON_ACC = 1;
+  const uint16_t GM_PARAM_SP_ICBM = 2;
   gm_non_acc = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_NON_ACC);
+  gm_icbm = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_ICBM);
 
   safety_config ret;
   if (gm_hw == GM_CAM) {

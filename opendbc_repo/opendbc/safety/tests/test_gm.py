@@ -185,6 +185,7 @@ class TestGmCameraSafety(TestGmCameraSafetyBase):
     self.packer = CANPackerSafety("gm_global_a_powertrain_generated")
     self.packer_chassis = CANPackerSafety("gm_global_a_chassis")
     self.safety = libsafety_py.libsafety
+    self.safety.set_current_safety_param_sp(0)
     self.safety.set_safety_hooks(CarParams.SafetyModel.gm, GMSafetyFlags.HW_CAM | self.EXTRA_SAFETY_PARAM)
     self.safety.init_tests()
 
@@ -201,6 +202,43 @@ class TestGmCameraSafety(TestGmCameraSafetyBase):
     for enabled in (True, False):
       self._rx(self._pcm_status_msg(enabled))
       self.assertEqual(enabled, self._tx(self._button_msg(Buttons.CANCEL)))
+
+
+class TestGmCameraICBMButtons(common.SafetyTestBase):
+  TX_MSGS = None
+
+  def setUp(self):
+    self.packer = CANPackerSafety("gm_global_a_powertrain_generated")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.ICBM)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.gm, GMSafetyFlags.HW_CAM)
+    self.safety.init_tests()
+
+  def tearDown(self):
+    self.safety.set_current_safety_param_sp(0)
+
+  def _pcm_status_msg(self, enable):
+    values = {"CruiseState": enable}
+    return self.packer.make_can_msg_safety("AcceleratorPedal2", 0, values)
+
+  def _button_msg(self, button):
+    values = {"ACCButtons": button}
+    return self.packer.make_can_msg_safety("ASCMSteeringButton", 2, values)
+
+  def test_buttons(self):
+    self._rx(self._pcm_status_msg(False))
+    for btn in range(8):
+      self.assertFalse(self._tx(self._button_msg(btn)))
+
+    self._rx(self._pcm_status_msg(True))
+    self.safety.set_controls_allowed(False)
+    for btn in range(8):
+      self.assertEqual(btn == Buttons.CANCEL, self._tx(self._button_msg(btn)))
+
+    self.safety.set_controls_allowed(True)
+    allowed_buttons = (Buttons.UNPRESS, Buttons.RES_ACCEL, Buttons.DECEL_SET, Buttons.CANCEL)
+    for btn in range(8):
+      self.assertEqual(btn in allowed_buttons, self._tx(self._button_msg(btn)))
 
 
 class TestGmCameraEVSafety(TestGmCameraSafety, TestGmEVSafetyBase):

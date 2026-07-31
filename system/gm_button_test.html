@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <title>GM Button Lab</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b0c0e;
+      color: #f5f5f7;
+    }
+    * { box-sizing: border-box; letter-spacing: 0; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0b0c0e;
+    }
+    main {
+      width: min(100%, 520px);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: max(24px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.1;
+      font-weight: 680;
+    }
+    .kicker {
+      margin: 7px 0 0;
+      color: #90939a;
+      font-size: 14px;
+    }
+    .status {
+      flex: 0 0 auto;
+      min-width: 92px;
+      padding: 8px 10px;
+      border: 1px solid #2b2e33;
+      border-radius: 6px;
+      color: #a5a8ae;
+      font-size: 12px;
+      font-weight: 650;
+      text-align: center;
+    }
+    .status.ready {
+      border-color: #245a3a;
+      background: #10271a;
+      color: #72d592;
+    }
+    .speed-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    button {
+      appearance: none;
+      border: 1px solid #30333a;
+      border-radius: 8px;
+      background: #17191d;
+      color: #f5f5f7;
+      font: inherit;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:active { background: #24272d; transform: translateY(1px); }
+    button:disabled { cursor: not-allowed; opacity: .35; }
+    .speed-button {
+      height: 152px;
+      display: grid;
+      place-content: center;
+      gap: 7px;
+    }
+    .symbol {
+      font-size: 42px;
+      line-height: 1;
+      font-weight: 500;
+    }
+    .label {
+      color: #b5b8bf;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .secondary-controls {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 12px;
+    }
+    .secondary-controls button {
+      min-height: 64px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .cancel {
+      border-color: #673034;
+      background: #2b1518;
+      color: #ff8d92;
+    }
+    .cancel.arming { background: #532126; }
+    .activity {
+      margin-top: auto;
+      border-top: 1px solid #24272c;
+      padding-top: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      color: #777b83;
+      font-size: 13px;
+    }
+    #message {
+      color: #c9cbd0;
+      text-align: right;
+    }
+    @media (max-width: 360px) {
+      main { padding-left: 14px; padding-right: 14px; }
+      h1 { font-size: 24px; }
+      .speed-button { height: 132px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>GM Button Lab</h1>
+        <p class="kicker">0x1E1 / camera bus</p>
+      </div>
+      <div id="status" class="status">CHECKING</div>
+    </header>
+
+    <section class="speed-controls" aria-label="Cruise speed">
+      <button class="speed-button command" data-button="set" disabled>
+        <span class="symbol">-</span>
+        <span class="label">SET</span>
+      </button>
+      <button class="speed-button command" data-button="res" disabled>
+        <span class="symbol">+</span>
+        <span class="label">RES</span>
+      </button>
+    </section>
+
+    <section class="secondary-controls" aria-label="Cruise actions">
+      <button id="cancel" class="cancel" disabled>HOLD CANCEL</button>
+      <button class="command" data-button="unpress" disabled>RELEASE</button>
+    </section>
+
+    <div class="activity">
+      <span>Port 8844</span>
+      <span id="message">Waiting for vehicle</span>
+    </div>
+  </main>
+
+  <script>
+    const statusEl = document.querySelector("#status");
+    const messageEl = document.querySelector("#message");
+    const commands = [...document.querySelectorAll(".command")];
+    const cancel = document.querySelector("#cancel");
+    let ready = false;
+    let cancelTimer = null;
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch("/api/status", {cache: "no-store"});
+        const state = await response.json();
+        ready = Boolean(state.ready);
+        statusEl.textContent = ready ? "READY" : (state.onroad ? "CONNECTING" : "OFFROAD");
+        statusEl.classList.toggle("ready", ready);
+        [...commands, cancel].forEach(button => button.disabled = !ready);
+        messageEl.textContent = ready ? "Vehicle control ready" : (state.onroad ? "Control socket pending" : "Waiting for onroad");
+      } catch {
+        ready = false;
+        statusEl.textContent = "OFFLINE";
+        statusEl.classList.remove("ready");
+        [...commands, cancel].forEach(button => button.disabled = true);
+      }
+    }
+
+    async function sendCommand(button) {
+      if (!ready) return;
+      messageEl.textContent = `Sending ${button.toUpperCase()}`;
+      try {
+        const response = await fetch("/api/command", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({button}),
+        });
+        const result = await response.json();
+        messageEl.textContent = result.ok ? `${button.toUpperCase()} queued` : result.error;
+      } catch {
+        messageEl.textContent = "Request failed";
+      }
+      setTimeout(refreshStatus, 250);
+    }
+
+    commands.forEach(button => {
+      button.addEventListener("click", () => sendCommand(button.dataset.button));
+    });
+
+    function cancelStart(event) {
+      if (!ready) return;
+      event.preventDefault();
+      cancel.classList.add("arming");
+      cancel.textContent = "KEEP HOLDING";
+      cancelTimer = setTimeout(() => {
+        cancelTimer = null;
+        cancel.classList.remove("arming");
+        cancel.textContent = "HOLD CANCEL";
+        sendCommand("cancel");
+      }, 700);
+    }
+
+    function cancelEnd() {
+      if (cancelTimer !== null) clearTimeout(cancelTimer);
+      cancelTimer = null;
+      cancel.classList.remove("arming");
+      cancel.textContent = "HOLD CANCEL";
+    }
+
+    cancel.addEventListener("pointerdown", cancelStart);
+    cancel.addEventListener("pointerup", cancelEnd);
+    cancel.addEventListener("pointercancel", cancelEnd);
+    cancel.addEventListener("pointerleave", cancelEnd);
+
+    refreshStatus();
+    setInterval(refreshStatus, 1500);
+  </script>
+</body>
+</html>

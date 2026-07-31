@@ -146,7 +146,7 @@ class IntelligentCruiseButtonManagement:
       camera_target = round(camera_target * CV.KPH_TO_MPH)
 
     limiter_targets = [target for target in (planner_target, camera_target)
-                       if self.v_cruise_min <= target < restore_target]
+                       if target > 0 and self.v_cruise_min <= target < restore_target]
     limiter_target = min(limiter_targets, default=restore_target)
 
     self.update_deceleration_profile(CS)

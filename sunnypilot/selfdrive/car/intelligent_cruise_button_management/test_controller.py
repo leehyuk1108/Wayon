@@ -89,6 +89,8 @@ def test_lead_slowdown_uses_ten_kph_moving_ceiling(tmp_path):
 
 def test_moving_ceiling_tracks_ego_until_restore_target(tmp_path):
   controller = make_controller(tmp_path)
+  controller.is_metric = True
+  controller.v_cruise_min = 30
   controller.restore_control_active = True
   controller.v_cruise_cluster = 80
 

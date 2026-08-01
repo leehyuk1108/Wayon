@@ -48,7 +48,17 @@ class VCruiseHelper(VCruiseHelperSP):
 
     self.get_minimum_set_speed(is_metric)
 
+    enabled_prev = self.enabled_prev
     _enabled = self.update_enabled_state(CS, enabled)
+    preserve_pre_engage_speed = (
+      self.CP.pcmCruise and not self.CP_SP.pcmCruiseSpeed and enabled and not enabled_prev and
+      0.0 < self.v_cruise_kph < V_CRUISE_UNSET and
+      0.0 < self.v_cruise_cluster_kph < V_CRUISE_UNSET
+    )
+    if preserve_pre_engage_speed:
+      # Non-PCM target tracking operates in the driver's displayed speed
+      # space. Promote the last valid cluster target before taking ownership.
+      self.v_cruise_kph = self.v_cruise_cluster_kph
 
     if CS.cruiseState.available:
       if not self.CP.pcmCruise or (not self.CP_SP.pcmCruiseSpeed and _enabled):
@@ -57,14 +67,18 @@ class VCruiseHelper(VCruiseHelperSP):
         self.update_speed_limit_assist_v_cruise_non_pcm()
         self.v_cruise_cluster_kph = self.v_cruise_kph
       else:
-        self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
-        self.v_cruise_cluster_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH
-        if CS.cruiseState.speed == 0:
-          self.v_cruise_kph = V_CRUISE_UNSET
-          self.v_cruise_cluster_kph = V_CRUISE_UNSET
-        elif CS.cruiseState.speed == -1:
-          self.v_cruise_kph = -1
-          self.v_cruise_cluster_kph = -1
+        # Some stock ACCs briefly publish a lower set speed on the exact frame
+        # openpilot engages. Keep the valid pre-engage target while non-PCM
+        # target tracking takes ownership.
+        if not preserve_pre_engage_speed:
+          self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
+          self.v_cruise_cluster_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH
+          if CS.cruiseState.speed == 0:
+            self.v_cruise_kph = V_CRUISE_UNSET
+            self.v_cruise_cluster_kph = V_CRUISE_UNSET
+          elif CS.cruiseState.speed == -1:
+            self.v_cruise_kph = -1
+            self.v_cruise_cluster_kph = -1
     else:
       self.v_cruise_kph = V_CRUISE_UNSET
       self.v_cruise_cluster_kph = V_CRUISE_UNSET

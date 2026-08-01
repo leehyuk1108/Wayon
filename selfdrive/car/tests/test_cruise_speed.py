@@ -151,3 +151,36 @@ class TestVCruiseHelper:
           self.enable(float(v_ego), experimental_mode, dynamic_experimental_control)
           assert V_CRUISE_INITIAL <= self.v_cruise_helper.v_cruise_kph <= V_CRUISE_MAX
           assert self.v_cruise_helper.v_cruise_initialized
+
+
+def test_non_pcm_speed_tracking_preserves_pre_engage_cluster_target():
+  CP = car.CarParams(pcmCruise=True)
+  CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False)
+  helper = VCruiseHelper(CP, CP_SP)
+
+  pre_engage = car.CarState(cruiseState={
+    "available": True,
+    "speed": 66 * CV.KPH_TO_MS,
+    "speedCluster": 70 * CV.KPH_TO_MS,
+  })
+  helper.update_v_cruise(pre_engage, enabled=False, is_metric=True)
+  assert helper.v_cruise_cluster_kph == pytest.approx(70)
+
+  transient_engage = car.CarState(cruiseState={
+    "available": True,
+    "speed": 62 * CV.KPH_TO_MS,
+    "speedCluster": 66 * CV.KPH_TO_MS,
+  })
+  helper.update_v_cruise(transient_engage, enabled=True, is_metric=True)
+
+  assert helper.v_cruise_kph == pytest.approx(70)
+  assert helper.v_cruise_cluster_kph == pytest.approx(70)
+
+  settled = car.CarState(cruiseState={
+    "available": True,
+    "speed": 66 * CV.KPH_TO_MS,
+    "speedCluster": 70 * CV.KPH_TO_MS,
+  })
+  helper.update_v_cruise(settled, enabled=True, is_metric=True)
+  assert helper.v_cruise_kph == pytest.approx(70)
+  assert helper.v_cruise_cluster_kph == pytest.approx(70)

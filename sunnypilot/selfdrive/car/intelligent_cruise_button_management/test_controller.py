@@ -13,6 +13,7 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.con
   FOLLOW_SPEED_BUFFER,
   IntelligentCruiseButtonManagement,
 )
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.common.realtime import DT_CTRL
 
 
@@ -42,6 +43,11 @@ def make_control():
 
 def make_plan(target_kph=100.0):
   return SimpleNamespace(vTarget=target_kph * CV.KPH_TO_MS)
+
+
+def test_metric_minimum_set_speed_matches_vehicle_limit():
+  assert get_minimum_set_speed(True) == 25
+  assert get_minimum_set_speed(False) == 20
 
 
 def test_camera_speed_becomes_temporary_target(tmp_path):

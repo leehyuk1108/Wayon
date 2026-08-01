@@ -102,8 +102,19 @@ def test_navdy_hud_shows_physical_and_control_acc_targets():
   assert "sActualAccSpeedTextView:Landroid/widget/TextView;" in smali
   assert "sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;" in smali
   assert "sAutomaticAccArrowView:Landroid/widget/ImageView;" in smali
+  assert "sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;" in smali
   assert 'const-string v4, "navdy_acc_control_arrow"' in smali
   assert "Landroid/view/animation/AlphaAnimation;" in smali
+  assert "->getAnimation()Landroid/view/animation/Animation;" in smali
+  assert "->clearAnimation()V" in smali
+  hidden_block = smali.rsplit(":cond_navdy_actual_acc_hidden", 1)[1].split(
+      ":goto_navdy_actual_acc_done", 1)[0]
+  assert (
+    "sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;"
+    "->sAutomaticAccArrowView:Landroid/widget/ImageView;\n\n"
+    "    invoke-virtual {p0}, Landroid/widget/ImageView;->clearAnimation()V\n\n"
+    "    invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setVisibility(I)V"
+  ) in hidden_block
   assert "Landroid/view/Space;" not in smali
   assert "new-instance v2, Landroid/view/View;" in smali
   assert "const/high16 v3, 0x41880000    # 17.0f" in smali
@@ -209,6 +220,29 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
   assert payload["actualAccSetKph"] == 60.0
   assert payload["automaticAccTargetKph"] == 70.0
   assert payload["automaticAccActive"] is True
+
+
+def test_payload_prefers_cluster_corrected_vehicle_and_acc_speeds():
+  car_state = navdy_op_bridge.default_car_state()
+  car_state.vEgo = 95.0 / navdy_op_bridge.KPH_PER_MS
+  car_state.vEgoCluster = 100.0 / navdy_op_bridge.KPH_PER_MS
+  car_state.vCruise = 95.0
+  car_state.vCruiseCluster = 100.0
+  car_state.cruiseState.speed = 95.0 / navdy_op_bridge.KPH_PER_MS
+  car_state.cruiseState.speedCluster = 100.0 / navdy_op_bridge.KPH_PER_MS
+  selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+  selfdrive_state_sp = SimpleNamespace(
+    intelligentCruiseButtonManagement=SimpleNamespace(
+      automaticControlActive=True,
+      automaticTargetSpeedKph=90.0,
+    ))
+
+  payload = navdy_op_bridge.payload_from_messages(
+    selfdrive_state, car_state, 9, selfdrive_state_sp=selfdrive_state_sp)
+
+  assert payload["vEgoKph"] == 100.0
+  assert payload["setSpeedKph"] == 100.0
+  assert payload["actualAccSetKph"] == 100.0
 
 
 def test_payload_hides_stop_icon_while_disengaged_at_standstill():

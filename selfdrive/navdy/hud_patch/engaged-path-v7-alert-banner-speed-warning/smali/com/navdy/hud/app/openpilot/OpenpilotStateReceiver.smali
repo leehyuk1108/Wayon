@@ -76,6 +76,8 @@
 
 .field private static sAutomaticAccArrowView:Landroid/widget/ImageView;
 
+.field private static sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;
+
 .field private static sAutomaticAccActive:Z
 
 .field private static sAutomaticAccTargetSpeedKph:D
@@ -965,9 +967,7 @@
 
     invoke-virtual {v2, v3}, Landroid/view/animation/AlphaAnimation;->setRepeatMode(I)V
 
-    sget-object v3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
-
-    invoke-virtual {v3, v2}, Landroid/widget/ImageView;->startAnimation(Landroid/view/animation/Animation;)V
+    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;
 
     new-instance v4, Landroid/widget/TextView;
 
@@ -2691,6 +2691,18 @@
 
     invoke-virtual {p0, v0}, Landroid/widget/ImageView;->setVisibility(I)V
 
+    invoke-virtual {p0}, Landroid/widget/ImageView;->getAnimation()Landroid/view/animation/Animation;
+
+    move-result-object p1
+
+    if-nez p1, :goto_navdy_actual_acc_done
+
+    sget-object p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;
+
+    if-eqz p1, :goto_navdy_actual_acc_done
+
+    invoke-virtual {p0, p1}, Landroid/widget/ImageView;->startAnimation(Landroid/view/animation/Animation;)V
+
     goto :goto_navdy_actual_acc_done
 
     :cond_navdy_actual_acc_hidden
@@ -2703,6 +2715,8 @@
     invoke-virtual {p0, p1}, Landroid/widget/TextView;->setVisibility(I)V
 
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
+
+    invoke-virtual {p0}, Landroid/widget/ImageView;->clearAnimation()V
 
     invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setVisibility(I)V
 

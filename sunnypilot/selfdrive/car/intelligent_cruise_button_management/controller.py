@@ -30,9 +30,9 @@ INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 1.5
 
-# Stock ACC can accelerate abruptly after it has slowed behind traffic. Lower
-# its physical set speed while decelerating, then restore the driver's virtual
-# set speed with a small moving window above ego speed.
+# Stock ACC can accelerate abruptly after it has slowed behind traffic. Keep
+# its physical set speed in a moving window above ego speed, including from a
+# standstill, until the driver's virtual set speed is reached.
 DECEL_TRIGGER_ACC = -0.35  # m/s^2
 DECEL_RELEASE_ACC = -0.10  # m/s^2
 DECEL_TRIGGER_TIME = 0.30
@@ -160,9 +160,14 @@ class IntelligentCruiseButtonManagement:
       self.automatic_control_active = True
       return limiter_target
 
-    if self.restore_control_active and self.v_cruise_cluster < restore_target:
+    speed_window_target = min(
+      restore_target,
+      max(self.v_cruise_min, ego_speed + RESTORE_SPEED_WINDOW),
+    )
+    if speed_window_target < restore_target:
+      self.restore_control_active = True
       self.automatic_control_active = True
-      return min(restore_target, max(self.v_cruise_min, ego_speed + RESTORE_SPEED_WINDOW))
+      return speed_window_target
 
     self.restore_control_active = False
     self.automatic_control_active = False

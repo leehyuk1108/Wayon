@@ -108,6 +108,74 @@ def test_moving_ceiling_tracks_ego_until_restore_target(tmp_path):
   assert controller.temporary_target(state, 100) == 100
 
 
+def test_standstill_arms_continuous_speed_window_at_vehicle_minimum(tmp_path):
+  controller = make_controller(tmp_path)
+  state = make_state(ego_kph=0, stock_set_kph=70, restore_kph=100)
+
+  controller.run(state, make_control(), make_plan(), True)
+
+  assert controller.v_target == 25
+  assert controller.restore_control_active
+  assert controller.automatic_control_active
+
+
+def test_speed_window_reactivates_without_a_new_deceleration_trigger(tmp_path):
+  controller = make_controller(tmp_path)
+  restored = make_state(ego_kph=100, stock_set_kph=100, restore_kph=100)
+
+  controller.run(restored, make_control(), make_plan(), True)
+  assert controller.v_target == 100
+  assert not controller.automatic_control_active
+
+  slowed = make_state(ego_kph=70, stock_set_kph=100, restore_kph=100, accel=0.0)
+  controller.run(slowed, make_control(), make_plan(), True)
+
+  assert controller.v_target == 80
+  assert controller.restore_control_active
+  assert controller.automatic_control_active
+
+
+def test_continuous_speed_window_tracks_reacceleration(tmp_path):
+  controller = make_controller(tmp_path)
+
+  state = make_state(ego_kph=0, stock_set_kph=25, restore_kph=100)
+  controller.run(state, make_control(), make_plan(), True)
+  assert controller.v_target == 25
+
+  state.vEgo = state.vEgoCluster = 22 * CV.KPH_TO_MS
+  state.cruiseState.speedCluster = 25 * CV.KPH_TO_MS
+  controller.run(state, make_control(), make_plan(), True)
+  assert controller.v_target == 32
+
+  state.vEgo = state.vEgoCluster = 55 * CV.KPH_TO_MS
+  state.cruiseState.speedCluster = 32 * CV.KPH_TO_MS
+  controller.run(state, make_control(), make_plan(), True)
+  assert controller.v_target == 65
+
+  state.vEgo = state.vEgoCluster = 90 * CV.KPH_TO_MS
+  state.cruiseState.speedCluster = 65 * CV.KPH_TO_MS
+  controller.run(state, make_control(), make_plan(), True)
+  assert controller.v_target == 100
+
+
+def test_state_machine_restarts_control_after_speed_drops_from_holding(tmp_path):
+  controller = make_controller(tmp_path)
+  state = make_state(ego_kph=70, stock_set_kph=80, restore_kph=100)
+
+  for _ in range(50):
+    controller.run(state, make_control(), make_plan(), True)
+  assert controller.v_target == 80
+  assert controller.state == custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState.holding
+
+  state.vEgo = state.vEgoCluster = 50 * CV.KPH_TO_MS
+  controller.run(state, make_control(), make_plan(), True)
+  controller.run(state, make_control(), make_plan(), True)
+
+  assert controller.v_target == 60
+  assert controller.state == custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState.decreasing
+  assert controller.cruise_button == custom.IntelligentCruiseButtonManagement.SendButtonState.decrease
+
+
 def test_manual_button_cancels_temporary_profile(tmp_path):
   controller = make_controller(tmp_path)
   controller.restore_control_active = True
@@ -150,7 +218,7 @@ def test_stale_camera_state_is_ignored(tmp_path):
   os.utime(camera_path, (1, 1))
   controller = make_controller(tmp_path)
 
-  controller.run(make_state(), make_control(), make_plan(), True)
+  controller.run(make_state(ego_kph=100), make_control(), make_plan(), True)
 
   assert controller.v_target == 100
   assert not controller.automatic_control_active

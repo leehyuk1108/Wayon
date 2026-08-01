@@ -104,6 +104,8 @@ def test_navdy_hud_shows_physical_and_control_acc_targets():
   assert "sAutomaticAccArrowView:Landroid/widget/ImageView;" in smali
   assert 'const-string v4, "navdy_acc_control_arrow"' in smali
   assert "Landroid/view/animation/AlphaAnimation;" in smali
+  assert "Landroid/view/Space;" not in smali
+  assert "new-instance v2, Landroid/view/View;" in smali
   assert "const/high16 v3, 0x41880000    # 17.0f" in smali
   assert (patch / "res/drawable-nodpi/navdy_acc_control_arrow.png").is_file()
 

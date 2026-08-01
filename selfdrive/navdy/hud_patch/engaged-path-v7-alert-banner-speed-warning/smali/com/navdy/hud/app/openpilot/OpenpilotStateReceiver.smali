@@ -867,9 +867,9 @@
 
     invoke-virtual {v0, v2}, Landroid/widget/LinearLayout;->setGravity(I)V
 
-    new-instance v2, Landroid/view/Space;
+    new-instance v2, Landroid/view/View;
 
-    invoke-direct {v2, p0}, Landroid/view/Space;-><init>(Landroid/content/Context;)V
+    invoke-direct {v2, p0}, Landroid/view/View;-><init>(Landroid/content/Context;)V
 
     new-instance v3, Landroid/widget/LinearLayout$LayoutParams;
 

@@ -86,16 +86,16 @@ def test_narrow_target_requires_consecutive_frames_and_latches(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state)
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
-  narrow = model(right_width=2.35)
+  narrow = model(right_width=0.9)
 
   for _ in range(TARGET_LANE_WIDTH_CONFIRM_FRAMES - 1):
     assert not gate.update(Direction.right, narrow)
   assert gate.update(Direction.right, narrow)
   assert gate.block_reason == "narrowTargetLane"
 
-  assert gate.update(Direction.right, model(right_width=3.2))
+  assert gate.update(Direction.right, model(right_width=1.0))
   gate.reset()
-  assert not gate.update(Direction.right, model(right_width=3.2))
+  assert not gate.update(Direction.right, model(right_width=1.0))
 
 
 def test_stale_centerline_state_is_ignored(tmp_path):

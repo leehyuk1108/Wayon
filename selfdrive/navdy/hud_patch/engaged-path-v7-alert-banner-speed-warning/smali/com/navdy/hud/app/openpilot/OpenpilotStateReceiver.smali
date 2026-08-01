@@ -1038,6 +1038,10 @@
 
     invoke-virtual {p0, v1, v3}, Landroid/widget/TextView;->setTextSize(IF)V
 
+    const/16 v3, 0x10
+
+    invoke-virtual {p0, v3}, Landroid/widget/TextView;->setGravity(I)V
+
     invoke-virtual {p0, v1}, Landroid/widget/TextView;->setIncludeFontPadding(Z)V
 
     const/4 v1, 0x1
@@ -1099,6 +1103,10 @@
     const/high16 v3, 0x41880000    # 17.0f
 
     invoke-virtual {p0, v1, v3}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    const/16 v3, 0x10
+
+    invoke-virtual {p0, v3}, Landroid/widget/TextView;->setGravity(I)V
 
     invoke-virtual {p0, v1}, Landroid/widget/TextView;->setIncludeFontPadding(Z)V
 

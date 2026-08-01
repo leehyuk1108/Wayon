@@ -118,6 +118,8 @@ def test_navdy_hud_shows_physical_and_control_acc_targets():
   assert "Landroid/view/Space;" not in smali
   assert "new-instance v2, Landroid/view/View;" in smali
   assert "const/high16 v3, 0x41880000    # 17.0f" in smali
+  set_speed_builder = smali.split(".method private static buildSetSpeedRow", 1)[1].split(".end method", 1)[0]
+  assert set_speed_builder.count("Landroid/widget/TextView;->setGravity(I)V") == 3
   assert (patch / "res/drawable-nodpi/navdy_acc_control_arrow.png").is_file()
 
 

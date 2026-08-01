@@ -438,6 +438,14 @@
       "subtitle": "사각지대 차량 감지됨",
       "titleFontPx": 77
     },
+    "EVENTS.laneChangeUnavailable.WARNING": {
+      "eventName": "laneChangeUnavailable",
+      "eventType": "WARNING",
+      "source": "EVENTS",
+      "title": "차선 변경 일시정지",
+      "subtitle": "차선 변경 불가 구역 감지됨",
+      "titleFontPx": 72
+    },
     "EVENTS.excessiveActuation.NO_ENTRY": {
       "eventName": "excessiveActuation",
       "eventType": "NO_ENTRY",

@@ -82,6 +82,7 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     commIssueAvgFreq @44;
     tooDistracted @45;
     posenetInvalid @46;
+    laneChangeUnavailable @100;
     preLaneChangeLeft @48;
     preLaneChangeRight @49;
     laneChange @50;
@@ -951,6 +952,7 @@ struct DrivingModelData {
   struct MetaData {
     laneChangeState @0 :LaneChangeState;
     laneChangeDirection @1 :LaneChangeDirection;
+    laneChangeBlockedBySafety @2 :Bool;
   }
 }
 
@@ -1038,6 +1040,7 @@ struct ModelDataV2 {
     hardBrakePredicted @7 :Bool;
     laneChangeState @8 :LaneChangeState;
     laneChangeDirection @9 :LaneChangeDirection;
+    laneChangeBlockedBySafety @10 :Bool;
 
 
     deprecated :group {

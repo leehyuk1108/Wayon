@@ -55,6 +55,22 @@ PHONE_FORWARD_RISK_COOLDOWN = 4.0
 LANE_INTRUSION_COOLDOWN = 4.0
 
 
+def lane_change_warning_event(model_meta, car_state):
+  if model_meta.laneChangeState != LaneChangeState.preLaneChange:
+    return None
+
+  direction = model_meta.laneChangeDirection
+  blindspot_detected = (
+    (car_state.leftBlindspot and direction == LaneChangeDirection.left) or
+    (car_state.rightBlindspot and direction == LaneChangeDirection.right)
+  )
+  if blindspot_detected:
+    return EventName.laneChangeBlocked
+  if getattr(model_meta, "laneChangeBlockedBySafety", False):
+    return EventName.laneChangeUnavailable
+  return EventName.preLaneChangeLeft if direction == LaneChangeDirection.left else EventName.preLaneChangeRight
+
+
 class SelfdriveD(CruiseHelper):
   def __init__(self, CP=None, CP_SP=None):
     self.params = Params()
@@ -383,16 +399,9 @@ class SelfdriveD(CruiseHelper):
     # ******************************************************************************************
 
     # Handle lane change
-    if self.sm['modelV2'].meta.laneChangeState == LaneChangeState.preLaneChange:
-      direction = self.sm['modelV2'].meta.laneChangeDirection
-      if (CS.leftBlindspot and direction == LaneChangeDirection.left) or \
-         (CS.rightBlindspot and direction == LaneChangeDirection.right):
-        self.events.add(EventName.laneChangeBlocked)
-      else:
-        if direction == LaneChangeDirection.left:
-          self.events.add(EventName.preLaneChangeLeft)
-        else:
-          self.events.add(EventName.preLaneChangeRight)
+    lane_change_warning = lane_change_warning_event(self.sm['modelV2'].meta, CS)
+    if lane_change_warning is not None:
+      self.events.add(lane_change_warning)
     elif self.sm['modelV2'].meta.laneChangeState in (LaneChangeState.laneChangeStarting,
                                                     LaneChangeState.laneChangeFinishing):
       self.events.add(EventName.laneChange)

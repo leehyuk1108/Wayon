@@ -433,6 +433,14 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .1),
   },
 
+  EventName.laneChangeUnavailable: {
+    ET.WARNING: Alert(
+      "Lane Change Paused",
+      "Lane Change Unavailable Area Detected",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
+  },
+
   EventName.laneChange: {
     ET.WARNING: Alert(
       "Changing Lanes",
@@ -1150,6 +1158,13 @@ if HARDWARE.get_device_type() == 'mici':
         "",
         AlertStatus.userPrompt, AlertSize.small,
         Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .1),
+    },
+    EventName.laneChangeUnavailable: {
+      ET.WARNING: Alert(
+        "차선 변경 일시정지",
+        "차선 변경 불가 구역 감지됨",
+        AlertStatus.userPrompt, AlertSize.mid,
+        Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
     },
     EventName.steerSaturated: {
       ET.WARNING: Alert(

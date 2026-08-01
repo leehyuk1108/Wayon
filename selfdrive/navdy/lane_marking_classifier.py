@@ -1,7 +1,8 @@
 """Low-rate lane-marking classification for the Navdy HUD.
 
 This module only reads existing model geometry and a shared VisionIPC road
-frame. It never publishes into controls or planning services.
+frame. It does not modify model or planning messages; the Navdy bridge exposes
+its stabilized adjacent-boundary types to the lane-change safety gate.
 """
 
 from __future__ import annotations

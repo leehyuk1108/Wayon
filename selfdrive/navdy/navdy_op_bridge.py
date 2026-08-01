@@ -29,6 +29,7 @@ DEFAULT_SERVICE_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateService"
 DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
+NAVDY_LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
 DISPLAY_ON_TEXT = "Display Power: state=ON"
 DISPLAY_OFF_TEXT = "Display Power: state=OFF"
 WAKEFULNESS_AWAKE_TEXT = "mWakefulness=Awake"
@@ -112,6 +113,25 @@ def create_navdy_lane_marking_classifier(args: argparse.Namespace) -> Any:
     if args.stdout:
       print(f"navdy lane classifier unavailable: {error}", flush=True)
     return None
+
+
+def publish_navdy_lane_marking_state(markings: dict[str, str],
+                                     path: str = NAVDY_LANE_MARKING_STATE_PATH) -> None:
+  state = {
+    "leftType": str(markings.get("navLaneLeftType", "unknown")),
+    "rightType": str(markings.get("navLaneRightType", "unknown")),
+    "updatedAtMonotonic": time.monotonic(),
+  }
+  temp_path = path + ".tmp"
+  try:
+    with open(temp_path, "w", encoding="utf-8") as state_file:
+      json.dump(state, state_file, separators=(",", ":"))
+    os.replace(temp_path, path)
+  except OSError:
+    try:
+      os.unlink(temp_path)
+    except OSError:
+      pass
 
 
 def navdy_lane_risk_values(detector: Any) -> dict[str, float]:
@@ -1703,6 +1723,8 @@ def run_live(args: argparse.Namespace) -> None:
         lane_marking_classifier = None
       else:
         lane_marking_classifier.set_active(active)
+        if not active:
+          publish_navdy_lane_marking_state({})
     if radar_reader is not None and not radar_reader.is_alive():
       radar_reader = None
     if args.radar_overlay and radar_reader is None and \
@@ -1723,7 +1745,9 @@ def run_live(args: argparse.Namespace) -> None:
             if service_recent(model_sm, NAVDY_CALIBRATION_SERVICE, now):
               lane_marking_classifier.submit(
                 model_v2, model_sm[NAVDY_CALIBRATION_SERVICE], now)
-            path_geometry.update(lane_marking_classifier.snapshot(now))
+            lane_markings = lane_marking_classifier.snapshot(now)
+            path_geometry.update(lane_markings)
+            publish_navdy_lane_marking_state(lane_markings)
           radar_points = radar_reader.snapshot(now) if radar_reader is not None else []
           path_geometry.update(navdy_vehicle_geometry(model_v2, radar_points))
           lane_risks, intrusion = evaluate_navdy_lane_risk(

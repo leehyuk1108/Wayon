@@ -2,6 +2,7 @@ from cereal import log, custom
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLaneChangeController, AutoLaneChangeMode
+from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_safety import LaneChangeSafetyGate
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_turn_desire import LaneTurnController
 
 LaneChangeState = log.LaneChangeState
@@ -51,12 +52,13 @@ class DesireHelper:
     self.alc = AutoLaneChangeController(self)
     self.lane_turn_controller = LaneTurnController(self)
     self.lane_turn_direction = TurnDirection.none
+    self.lane_change_safety = LaneChangeSafetyGate()
 
   @staticmethod
   def get_lane_change_direction(CS):
     return LaneChangeDirection.left if CS.leftBlinker else LaneChangeDirection.right
 
-  def update(self, carstate, lateral_active, lane_change_prob):
+  def update(self, carstate, lateral_active, lane_change_prob, model_v2=None):
     self.alc.update_params()
     self.lane_turn_controller.update_params()
     v_ego = carstate.vEgo
@@ -92,11 +94,13 @@ class DesireHelper:
                               (carstate.rightBlindspot and self.lane_change_direction == LaneChangeDirection.right))
 
         self.alc.update_lane_change(blindspot_detected, carstate.brakePressed)
+        lane_change_blocked = self.lane_change_safety.update(self.lane_change_direction, model_v2)
 
         if not one_blinker or below_lane_change_speed:
           self.lane_change_state = LaneChangeState.off
           self.lane_change_direction = LaneChangeDirection.none
-        elif (torque_applied or self.alc.auto_lane_change_allowed) and not blindspot_detected:
+          self.lane_change_safety.reset()
+        elif (torque_applied or self.alc.auto_lane_change_allowed) and not blindspot_detected and not lane_change_blocked:
           self.lane_change_state = LaneChangeState.laneChangeStarting
 
       # LaneChangeState.laneChangeStarting
@@ -126,6 +130,9 @@ class DesireHelper:
       self.lane_change_timer += DT_MDL
 
     self.prev_one_blinker = one_blinker
+
+    if not one_blinker and self.lane_change_state == LaneChangeState.off:
+      self.lane_change_safety.reset()
 
     if self.lane_turn_direction != TurnDirection.none:
       self.desire = TURN_DESIRES[self.lane_turn_direction]

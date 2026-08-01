@@ -83,6 +83,19 @@ class DummyCarState:
     self.brakePressed = brakePressed
 
 
+class DummyLaneChangeSafetyGate:
+  def __init__(self, blocked):
+    self.blocked = blocked
+    self.update_calls = 0
+
+  def update(self, direction, model_v2):
+    self.update_calls += 1
+    return self.blocked
+
+  def reset(self):
+    pass
+
+
 @pytest.fixture
 def set_lane_turn_params():
   params = Params()
@@ -111,3 +124,33 @@ def test_desire_helper_integration(carstate, lateral_active, lane_change_prob, e
   for _ in range(10):
     dh.update(carstate, lateral_active, lane_change_prob)
   assert dh.desire == expected_desire  # The first four tests were unit tests to test the controller, where this tests the integration in desire helpers
+
+
+def test_lane_change_safety_gate_blocks_start_but_not_an_active_maneuver():
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGE
+  gate = DummyLaneChangeSafetyGate(blocked=True)
+  dh.lane_change_safety = gate
+  carstate = DummyCarState(
+    vEgo=15.0,
+    leftBlinker=True,
+    steeringPressed=True,
+    steeringTorque=1.0,
+  )
+
+  dh.update(carstate, True, 1.0, object())
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+
+  dh.update(carstate, True, 1.0, object())
+  assert gate.update_calls == 1
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+
+  gate.blocked = False
+  dh.update(carstate, True, 1.0, object())
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+
+  gate.blocked = True
+  dh.update(carstate, True, 1.0, object())
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting

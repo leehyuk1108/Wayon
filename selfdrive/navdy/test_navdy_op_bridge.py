@@ -255,7 +255,7 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
     intelligentCruiseButtonManagement=SimpleNamespace(
       automaticControlActive=True,
       automaticTargetSpeedKph=70.0,
-      state="increasing",
+      state="holding",
     ))
 
   payload = navdy_op_bridge.payload_from_messages(
@@ -268,7 +268,7 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
   assert payload["automaticAccAtTarget"] is False
 
 
-def test_payload_marks_icbm_target_reached_from_controller_holding_state():
+def test_payload_marks_icbm_target_reached_from_matching_cluster_values():
   car_state = navdy_op_bridge.default_car_state()
   car_state.cruiseState.speedCluster = 49.6 / navdy_op_bridge.KPH_PER_MS
   selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
@@ -276,7 +276,7 @@ def test_payload_marks_icbm_target_reached_from_controller_holding_state():
     intelligentCruiseButtonManagement=SimpleNamespace(
       automaticControlActive=True,
       automaticTargetSpeedKph=50.0,
-      state="holding",
+      state="decreasing",
     ))
 
   payload = navdy_op_bridge.payload_from_messages(

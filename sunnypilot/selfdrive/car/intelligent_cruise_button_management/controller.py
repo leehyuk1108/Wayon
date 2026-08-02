@@ -9,7 +9,7 @@ import os
 import time
 
 from cereal import car, custom
-from opendbc.car import structs, apply_hysteresis
+from opendbc.car import structs
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
@@ -20,26 +20,12 @@ from openpilot.sunnypilot.selfdrive.car.cruise_ext import (
   update_manual_button_timers,
 )
 
-LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 State = custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState
 SendButtonState = custom.IntelligentCruiseButtonManagement.SendButtonState
 
-ALLOWED_SPEED_THRESHOLD = 1.8  # m/s, ~4 MPH
-HYST_GAP = 0.0  # currently disabled; TODO-SP: might need to be brand-specific
 INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 1.5
-
-# Stock ACC can accelerate abruptly after it has slowed behind traffic. Keep
-# its physical set speed in a moving window above ego speed, including from a
-# standstill, until the driver's virtual set speed is reached.
-DECEL_TRIGGER_ACC = -0.35  # m/s^2
-DECEL_RELEASE_ACC = -0.10  # m/s^2
-DECEL_TRIGGER_TIME = 0.30
-DECEL_RELEASE_TIME = 0.60
-FOLLOW_SPEED_BUFFER = 10  # display units (km/h or mph)
-DECEL_TARGET_BUFFER = FOLLOW_SPEED_BUFFER
-RESTORE_SPEED_WINDOW = FOLLOW_SPEED_BUFFER
 
 
 SEND_BUTTONS = {
@@ -64,15 +50,11 @@ class IntelligentCruiseButtonManagement:
 
     self.is_ready = False
     self.is_ready_prev = False
-    self.v_target_ms_last = 0.0
     self.is_metric = False
     self.camera_state_path = camera_state_path
     self.camera_speed = 0
     self.camera_state_checked_at = 0.0
-    self.decel_trigger_timer = 0
-    self.decel_release_timer = 0
-    self.decel_control_active = False
-    self.restore_control_active = False
+    self.camera_control_active = False
 
     self.cruise_button_timers = CRUISE_BUTTON_TIMER
 
@@ -85,10 +67,7 @@ class IntelligentCruiseButtonManagement:
     return float(self.v_target if self.is_metric else self.v_target * CV.MPH_TO_KPH)
 
   def reset_temporary_control(self) -> None:
-    self.decel_trigger_timer = 0
-    self.decel_release_timer = 0
-    self.decel_control_active = False
-    self.restore_control_active = False
+    self.camera_control_active = False
     self.automatic_control_active = False
 
   def read_camera_speed(self) -> int:
@@ -110,32 +89,7 @@ class IntelligentCruiseButtonManagement:
       self.camera_speed = 0
     return self.camera_speed
 
-  def update_deceleration_profile(self, CS: car.CarState) -> None:
-    minimum_speed_ms = self.v_cruise_min * (CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS)
-    moving = CS.vEgo > minimum_speed_ms
-
-    if moving and CS.aEgo <= DECEL_TRIGGER_ACC:
-      self.decel_trigger_timer += 1
-    else:
-      self.decel_trigger_timer = 0
-
-    if self.decel_control_active:
-      if CS.aEgo >= DECEL_RELEASE_ACC:
-        self.decel_release_timer += 1
-      else:
-        self.decel_release_timer = 0
-      if self.decel_release_timer >= int(DECEL_RELEASE_TIME / DT_CTRL):
-        self.decel_control_active = False
-        self.restore_control_active = True
-        self.decel_release_timer = 0
-    elif self.decel_trigger_timer >= int(DECEL_TRIGGER_TIME / DT_CTRL):
-      self.decel_control_active = True
-      self.restore_control_active = False
-      self.decel_trigger_timer = 0
-
-  def temporary_target(self, CS: car.CarState, planner_target: int) -> int:
-    speed_conv = CV.MS_TO_KPH if self.is_metric else CV.MS_TO_MPH
-    ego_speed = round(CS.vEgoCluster * speed_conv if CS.vEgoCluster > 0.0 else CS.vEgo * speed_conv)
+  def camera_target(self, CS: car.CarState) -> int:
     restore_speed = CS.vCruiseCluster if 0.0 < CS.vCruiseCluster < V_CRUISE_UNSET else CS.vCruise
     if not 0.0 < restore_speed < V_CRUISE_UNSET:
       restore_speed = max(self.v_cruise_min, self.v_cruise_cluster)
@@ -145,44 +99,26 @@ class IntelligentCruiseButtonManagement:
     if camera_target > 0 and not self.is_metric:
       camera_target = round(camera_target * CV.KPH_TO_MPH)
 
-    limiter_targets = [target for target in (planner_target, camera_target)
-                       if target > 0 and self.v_cruise_min <= target < restore_target]
-    limiter_target = min(limiter_targets, default=restore_target)
-
-    self.update_deceleration_profile(CS)
-    if self.decel_control_active:
-      decel_target = max(self.v_cruise_min, ego_speed + DECEL_TARGET_BUFFER)
-      limiter_target = min(limiter_target, decel_target)
-
-    limiting = limiter_target < restore_target
-    if limiting:
-      self.restore_control_active = True
+    if self.v_cruise_min <= camera_target < restore_target:
+      self.camera_control_active = True
       self.automatic_control_active = True
-      return limiter_target
+      return camera_target
 
-    speed_window_target = min(
-      restore_target,
-      max(self.v_cruise_min, ego_speed + RESTORE_SPEED_WINDOW),
-    )
-    if speed_window_target < restore_target:
-      self.restore_control_active = True
+    # Once a camera has lowered the physical ACC set speed, restore the
+    # driver's virtual set speed before ending the camera-control session.
+    if self.camera_control_active and self.v_cruise_cluster != restore_target:
       self.automatic_control_active = True
-      return speed_window_target
+      return restore_target
 
-    self.restore_control_active = False
+    self.camera_control_active = False
     self.automatic_control_active = False
     return restore_target
 
-  def update_calculations(self, CS: car.CarState, LP_SP: custom.LongitudinalPlanSP) -> None:
+  def update_calculations(self, CS: car.CarState) -> None:
     speed_conv = CV.MS_TO_KPH if self.is_metric else CV.MS_TO_MPH
-    ms_conv = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
-
-    self.v_target_ms_last = apply_hysteresis(LP_SP.vTarget, self.v_target_ms_last, HYST_GAP * ms_conv)
-
-    planner_target = round(self.v_target_ms_last * speed_conv)
     self.v_cruise_min = get_minimum_set_speed(self.is_metric)
     self.v_cruise_cluster = round(CS.cruiseState.speedCluster * speed_conv)
-    self.v_target = self.temporary_target(CS, planner_target)
+    self.v_target = self.camera_target(CS)
 
   def update_state_machine(self) -> custom.IntelligentCruiseButtonManagement.SendButtonState:
     self.pre_active_timer = max(0, self.pre_active_timer - 1)
@@ -233,21 +169,22 @@ class IntelligentCruiseButtonManagement:
   def update_readiness(self, CS: car.CarState, CC: car.CarControl) -> None:
     update_manual_button_timers(CS, self.cruise_button_timers)
 
-    ready = CC.enabled and not CC.cruiseControl.override and not CC.cruiseControl.cancel and not CC.cruiseControl.resume
+    ready = (self.automatic_control_active and CC.enabled and not CC.cruiseControl.override and
+             not CC.cruiseControl.cancel and not CC.cruiseControl.resume)
     button_pressed = any(self.cruise_button_timers[k] > 0 for k in self.cruise_button_timers)
 
     self.is_ready = ready and not button_pressed
     if not CC.enabled or button_pressed or CC.cruiseControl.override or CC.cruiseControl.cancel or CC.cruiseControl.resume:
       self.reset_temporary_control()
 
-  def run(self, CS: car.CarState, CC: car.CarControl, LP_SP: custom.LongitudinalPlanSP, is_metric: bool) -> None:
+  def run(self, CS: car.CarState, CC: car.CarControl, _LP_SP: custom.LongitudinalPlanSP, is_metric: bool) -> None:
     if self.CP_SP.pcmCruiseSpeed:
       self.reset_temporary_control()
       return
 
     self.is_metric = is_metric
 
-    self.update_calculations(CS, LP_SP)
+    self.update_calculations(CS)
     self.update_readiness(CS, CC)
 
     self.cruise_button = self.update_state_machine()

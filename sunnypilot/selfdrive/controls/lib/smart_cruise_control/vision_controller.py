@@ -27,9 +27,15 @@ _TURNING_LAT_ACC_TH = 1.6  # Lat Acc threshold to trigger turning state.
 _LEAVING_LAT_ACC_TH = 1.3  # Lat Acc threshold to trigger leaving turn state.
 _FINISH_LAT_ACC_TH = 1.1  # Lat Acc threshold to trigger the end of the turn cycle.
 
-_A_LAT_REG_MAX = 2.  # Maximum lateral acceleration
-
-_NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on a_target when not overshooting.
+_A_LAT_REG_MAX = 2.  # Comfortable maximum lateral acceleration.
+_COMFORTABLE_DECEL = 1.2  # m/s^2. Maximum planned longitudinal deceleration.
+_REACTION_TIME = 0.7  # s. Account for controller and vehicle response delay.
+_CURVATURE_FLOOR = 1e-4
+_CURVATURE_FILTER_WINDOW = 5
+_TARGET_ENTER_TAU = 0.35  # s. React promptly to a curve ahead.
+_TARGET_EXIT_TAU = 1.5  # s. Restore speed slowly after the curve clears.
+_CURVE_CONFIRM_TIME = 0.25  # s. Reject short-lived model predictions.
+_CURVE_RELEASE_TIME = 0.5  # s. Avoid toggling off between adjacent curve samples.
 
 # Lookup table for the minimum smooth deceleration during the ENTERING state
 # depending on the actual maximum absolute lateral acceleration predicted on the turn ahead.
@@ -65,13 +71,16 @@ class SmartCruiseControlVision:
     self.state = VisionState.disabled
     self.current_lat_acc = 0.
     self.max_pred_lat_acc = 0.
+    self.raw_v_target = V_CRUISE_UNSET
+    self.curve_confirm_frames = 0
+    self.curve_release_frames = 0
 
   def get_a_target_from_control(self) -> float:
     return self.a_target
 
   def get_v_target_from_control(self) -> float:
     if self.is_active:
-      return max(self.v_target, MIN_V) + self.a_target * _NO_OVERSHOOT_TIME_HORIZON
+      return max(self.v_target, MIN_V)
 
     return V_CRUISE_UNSET
 
@@ -79,25 +88,70 @@ class SmartCruiseControlVision:
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
       self.enabled = self.params.get_bool("SmartCruiseControlVision")
 
+  @staticmethod
+  def _smooth_curvature(curvature: np.ndarray) -> np.ndarray:
+    if len(curvature) < 3:
+      return curvature
+
+    radius = _CURVATURE_FILTER_WINDOW // 2
+    padded = np.pad(curvature, (radius, radius), mode="edge")
+    return np.array([
+      np.median(padded[i:i + _CURVATURE_FILTER_WINDOW])
+      for i in range(len(curvature))
+    ])
+
+  def _distance_speed_profile(self, sm: messaging.SubMaster) -> tuple[float, float]:
+    model = sm['modelV2']
+    count = min(len(model.position.x), len(model.orientationRate.z), len(model.velocity.x))
+    if count < 3:
+      return V_CRUISE_UNSET, 0.
+
+    distance = np.asarray(model.position.x, dtype=float)[:count]
+    yaw_rate = np.abs(np.asarray(model.orientationRate.z, dtype=float)[:count])
+    velocity = np.abs(np.asarray(model.velocity.x, dtype=float)[:count])
+    valid = np.isfinite(distance) & np.isfinite(yaw_rate) & np.isfinite(velocity) & (distance >= 0.) & (velocity > 1.)
+    if np.count_nonzero(valid) < 3:
+      return V_CRUISE_UNSET, 0.
+
+    distance = distance[valid]
+    curvature = self._smooth_curvature(yaw_rate[valid] / velocity[valid])
+    predicted_lat_acc = curvature * self.v_ego ** 2
+    max_pred_lat_acc = float(np.max(predicted_lat_acc))
+
+    safe_curve_speed = np.sqrt(_A_LAT_REG_MAX / np.maximum(curvature, _CURVATURE_FLOOR))
+    effective_distance = np.maximum(distance - self.v_ego * _REACTION_TIME, 0.)
+    allowed_speed_now = np.sqrt(safe_curve_speed ** 2 + 2. * _COMFORTABLE_DECEL * effective_distance)
+    return float(np.min(allowed_speed_now)), max_pred_lat_acc
+
+  def _filter_target(self, raw_target: float) -> None:
+    if not np.isfinite(raw_target) or raw_target >= V_CRUISE_UNSET:
+      raw_target = self.v_cruise_setpoint if self.v_cruise_setpoint > 0. else V_CRUISE_UNSET
+
+    if self.v_target <= 0. or self.v_target >= V_CRUISE_UNSET:
+      self.v_target = raw_target
+      return
+
+    tau = _TARGET_ENTER_TAU if raw_target < self.v_target else _TARGET_EXIT_TAU
+    alpha = DT_MDL / (tau + DT_MDL)
+    self.v_target += alpha * (raw_target - self.v_target)
+
   def _update_calculations(self, sm: messaging.SubMaster) -> None:
     if not self.long_enabled:
       return
+
+    self.current_lat_acc = self.v_ego ** 2 * abs(sm['controlsState'].curvature)
+    profile_target, self.max_pred_lat_acc = self._distance_speed_profile(sm)
+    cruise_target = self.v_cruise_setpoint if self.v_cruise_setpoint > 0. else V_CRUISE_UNSET
+    self.raw_v_target = min(profile_target, cruise_target)
+    self._filter_target(self.raw_v_target)
+
+    curve_predicted = self.v_ego > MIN_V and self.max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH
+    if curve_predicted:
+      self.curve_confirm_frames = min(self.curve_confirm_frames + 1, int(_CURVE_CONFIRM_TIME / DT_MDL) + 1)
+      self.curve_release_frames = 0
     else:
-      rate_plan = np.array(np.abs(sm['modelV2'].orientationRate.z))
-      vel_plan = np.array(sm['modelV2'].velocity.x)
-
-      self.current_lat_acc = self.v_ego ** 2 * abs(sm['controlsState'].curvature)
-
-      # get the maximum lat accel from the model
-      predicted_lat_accels = rate_plan * vel_plan
-      self.max_pred_lat_acc = np.percentile(predicted_lat_accels, 97)
-
-      # get the maximum curve based on the current velocity
-      v_ego = max(self.v_ego, 0.1)  # ensure a value greater than 0 for calculations
-      max_curve = self.max_pred_lat_acc / (v_ego**2)
-
-      # Get the target velocity for the maximum curve
-      self.v_target = (_A_LAT_REG_MAX / max_curve) ** 0.5
+      self.curve_confirm_frames = 0
+      self.curve_release_frames += 1
 
   def _update_state_machine(self) -> tuple[bool, bool]:
     # ENABLED, ENTERING, TURNING, LEAVING, OVERRIDING
@@ -115,7 +169,7 @@ class SmartCruiseControlVision:
           if self.v_ego <= MIN_V:
             pass
           # If significant lateral acceleration is predicted ahead, then move to Entering turn state.
-          elif self.max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH:
+          elif self.curve_confirm_frames >= int(_CURVE_CONFIRM_TIME / DT_MDL):
             self.state = VisionState.entering
 
         # OVERRIDING
@@ -129,7 +183,8 @@ class SmartCruiseControlVision:
           if self.current_lat_acc >= _TURNING_LAT_ACC_TH:
             self.state = VisionState.turning
           # Abort if the predicted lateral acceleration drops
-          elif self.max_pred_lat_acc < _ABORT_ENTERING_PRED_LAT_ACC_TH:
+          elif (self.max_pred_lat_acc < _ABORT_ENTERING_PRED_LAT_ACC_TH and
+                self.curve_release_frames >= int(_CURVE_RELEASE_TIME / DT_MDL)):
             self.state = VisionState.enabled
 
         # TURNING
@@ -168,8 +223,11 @@ class SmartCruiseControlVision:
       a_target = self.a_ego
     # ENTERING
     elif self.state == VisionState.entering:
-      # when not overshooting, target a smooth deceleration in preparation for a sharp turn to come.
-      a_target = np.interp(self.max_pred_lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
+      # The distance profile already determines when to slow. This acceleration
+      # only shapes the direct longitudinal-control response toward that target.
+      profile_accel = (self.v_target - self.v_ego) / max(_REACTION_TIME, 0.1)
+      smooth_decel = np.interp(self.max_pred_lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
+      a_target = float(np.clip(min(profile_accel, smooth_decel), -_COMFORTABLE_DECEL, 0.))
     # TURNING
     elif self.state == VisionState.turning:
       # When turning, we provide a target acceleration that is comfortable for the lateral acceleration felt.

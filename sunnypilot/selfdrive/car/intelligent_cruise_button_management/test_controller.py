@@ -36,8 +36,13 @@ def make_control():
   )
 
 
-def make_plan(target_kph=100.0):
-  return SimpleNamespace(vTarget=target_kph * CV.KPH_TO_MS)
+def make_plan(target_kph=100.0, *, vision_target_kph=0.0, vision_active=False):
+  return SimpleNamespace(
+    vTarget=target_kph * CV.KPH_TO_MS,
+    smartCruiseControl=SimpleNamespace(
+      vision=SimpleNamespace(vTarget=vision_target_kph * CV.KPH_TO_MS, active=vision_active),
+    ),
+  )
 
 
 def test_metric_minimum_set_speed_matches_vehicle_limit():
@@ -61,7 +66,7 @@ def test_planner_target_is_ignored_without_camera(tmp_path):
   controller.run(make_state(stock_set_kph=100), make_control(), make_plan(40), True)
 
   assert controller.v_target == 100
-  assert not controller.camera_control_active
+  assert not controller.automatic_speed_control_active
   assert not controller.automatic_control_active
   assert controller.cruise_button == custom.IntelligentCruiseButtonManagement.SendButtonState.none
 
@@ -74,6 +79,26 @@ def test_lead_slowdown_does_not_activate_without_camera(tmp_path):
 
   assert controller.v_target == 100
   assert not controller.automatic_control_active
+  assert controller.cruise_button == custom.IntelligentCruiseButtonManagement.SendButtonState.none
+
+
+def test_active_vision_curve_becomes_temporary_target(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.run(make_state(stock_set_kph=100), make_control(),
+                 make_plan(100, vision_target_kph=70, vision_active=True), True)
+
+  assert controller.v_target == 70
+  assert controller.automatic_speed_control_active
+  assert controller.automatic_control_active
+
+
+def test_inactive_vision_target_is_ignored(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.run(make_state(stock_set_kph=100), make_control(),
+                 make_plan(100, vision_target_kph=70, vision_active=False), True)
+
+  assert controller.v_target == 100
+  assert not controller.automatic_speed_control_active
   assert controller.cruise_button == custom.IntelligentCruiseButtonManagement.SendButtonState.none
 
 
@@ -95,20 +120,20 @@ def test_camera_session_restores_driver_target_after_camera_clears(tmp_path):
 
   controller.run(state, make_control(), make_plan(), True)
   assert controller.v_target == 50
-  assert controller.camera_control_active
+  assert controller.automatic_speed_control_active
 
   camera_path.write_text(json.dumps({"cameraSpeedKph": 0}))
   controller.camera_state_checked_at = 0.0
   state.cruiseState.speedCluster = 50 * CV.KPH_TO_MS
   controller.run(state, make_control(), make_plan(), True)
   assert controller.v_target == 100
-  assert controller.camera_control_active
+  assert controller.automatic_speed_control_active
   assert controller.automatic_control_active
 
   state.cruiseState.speedCluster = 100 * CV.KPH_TO_MS
   controller.run(state, make_control(), make_plan(), True)
   assert controller.v_target == 100
-  assert not controller.camera_control_active
+  assert not controller.automatic_speed_control_active
   assert not controller.automatic_control_active
 
 
@@ -137,7 +162,7 @@ def test_camera_session_sends_decrease_then_restore_increase(tmp_path):
 
 def test_manual_button_cancels_temporary_profile(tmp_path):
   controller = make_controller(tmp_path)
-  controller.camera_control_active = True
+  controller.automatic_speed_control_active = True
   controller.automatic_control_active = True
   state = make_state(stock_set_kph=60)
   button_type = car.CarState.ButtonEvent.Type.decelCruise
@@ -145,20 +170,20 @@ def test_manual_button_cancels_temporary_profile(tmp_path):
 
   controller.run(state, make_control(), make_plan(), True)
 
-  assert not controller.camera_control_active
+  assert not controller.automatic_speed_control_active
   assert not controller.automatic_control_active
 
 
 def test_disengage_cancels_temporary_profile(tmp_path):
   controller = make_controller(tmp_path)
-  controller.camera_control_active = True
+  controller.automatic_speed_control_active = True
   controller.automatic_control_active = True
   control = make_control()
   control.enabled = False
 
   controller.run(make_state(stock_set_kph=60), control, make_plan(), True)
 
-  assert not controller.camera_control_active
+  assert not controller.automatic_speed_control_active
   assert not controller.automatic_control_active
 
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import sys
 import socket
 import threading
@@ -20,6 +21,21 @@ sys.modules.setdefault("openpilot.common", openpilot_common_module)
 sys.modules.setdefault("openpilot.common.realtime", openpilot_realtime_module)
 
 import navdy_power_bridge
+
+
+def test_navdy_lane_marking_state_is_written_atomically(tmp_path):
+  state_path = tmp_path / "lane_markings.json"
+
+  navdy_op_bridge.publish_navdy_lane_marking_state({
+    "navLaneLeftType": "centerSolid",
+    "navLaneRightType": "dashed",
+  }, str(state_path))
+
+  state = json.loads(state_path.read_text())
+  assert state["leftType"] == "centerSolid"
+  assert state["rightType"] == "dashed"
+  assert state["updatedAtMonotonic"] > 0.0
+  assert not (tmp_path / "lane_markings.json.tmp").exists()
 
 
 def test_navdy_disengaged_speed_uses_engaged_system_typeface():
@@ -91,12 +107,13 @@ def test_navdy_socket_returns_camera_limit_over_existing_usb_tunnel():
   assert "BufferedWriter;->flush()V" in service
 
 
-def test_navdy_hud_shows_physical_and_control_acc_targets():
+def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
   receiver = patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
   smali = receiver.read_text()
 
   assert 'const-string v0, "automaticAccActive"' in smali
+  assert 'const-string v0, "automaticAccAtTarget"' in smali
   assert 'const-string v0, "actualAccSetKph"' in smali
   assert 'const-string v0, "automaticAccTargetKph"' in smali
   assert "sActualAccSpeedTextView:Landroid/widget/TextView;" in smali
@@ -107,6 +124,21 @@ def test_navdy_hud_shows_physical_and_control_acc_targets():
   assert "Landroid/view/animation/AlphaAnimation;" in smali
   assert "->getAnimation()Landroid/view/animation/Animation;" in smali
   assert "->clearAnimation()V" in smali
+  assert "->setRotation(F)V" in smali
+  assert "const/high16 p1, -0x3d4c0000    # -90.0f" in smali
+  assert "const/high16 p1, 0x42b40000    # 90.0f" in smali
+  assert ":cond_navdy_actual_acc_complete" in smali
+  reached_check = (
+    "sget-boolean v1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccAtTarget:Z\n\n"
+    "    if-nez v1, :cond_navdy_actual_acc_complete"
+  )
+  assert reached_check in smali
+  overlay_update = smali.split(".method private static updateOpenpilotOverlay", 1)[1].split(".end method", 1)[0]
+  actual_acc_update = overlay_update.split("->sActualAccSpeedKph:D", 1)[1]
+  speed_compare = actual_acc_update.index("cmpl-double p5, p1, p3")
+  speed_format = actual_acc_update.index("->formatSetSpeed(D)Ljava/lang/String;")
+  reached_state = actual_acc_update.index("->sAutomaticAccAtTarget:Z")
+  assert speed_compare < speed_format < reached_state
   hidden_block = smali.rsplit(":cond_navdy_actual_acc_hidden", 1)[1].split(
       ":goto_navdy_actual_acc_done", 1)[0]
   assert (
@@ -117,9 +149,19 @@ def test_navdy_hud_shows_physical_and_control_acc_targets():
   ) in hidden_block
   assert "Landroid/view/Space;" not in smali
   assert "new-instance v2, Landroid/view/View;" in smali
-  assert "const/high16 v3, 0x41880000    # 17.0f" in smali
+  assert "const/high16 v3, 0x41980000    # 19.0f" in smali
   set_speed_builder = smali.split(".method private static buildSetSpeedRow", 1)[1].split(".end method", 1)[0]
+  overlay_builder = smali.split(".method private static buildOverlayView", 1)[1].split(".end method", 1)[0]
   assert set_speed_builder.count("Landroid/widget/TextView;->setGravity(I)V") == 3
+  assert "const/16 v4, 0x46" not in set_speed_builder
+  assert overlay_builder.count("Landroid/widget/LinearLayout;->removeView(Landroid/view/View;)V") == 3
+  assert "const/16 v4, 0x15c" in overlay_builder
+  assert "const/16 v4, 0x129" in overlay_builder
+  assert "const/16 v4, 0x17f" in overlay_builder
+  assert "const/16 v4, 0x131" in overlay_builder
+  assert "const/16 v4, 0x16c" in overlay_builder
+  assert "const/16 v4, 0x142" in overlay_builder
+  assert "Landroid/widget/TextView;->setBackgroundColor(I)V" in overlay_builder
   assert (patch / "res/drawable-nodpi/navdy_acc_control_arrow.png").is_file()
 
 
@@ -213,6 +255,7 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
     intelligentCruiseButtonManagement=SimpleNamespace(
       automaticControlActive=True,
       automaticTargetSpeedKph=70.0,
+      state="increasing",
     ))
 
   payload = navdy_op_bridge.payload_from_messages(
@@ -222,6 +265,26 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
   assert payload["actualAccSetKph"] == 60.0
   assert payload["automaticAccTargetKph"] == 70.0
   assert payload["automaticAccActive"] is True
+  assert payload["automaticAccAtTarget"] is False
+
+
+def test_payload_marks_icbm_target_reached_from_controller_holding_state():
+  car_state = navdy_op_bridge.default_car_state()
+  car_state.cruiseState.speedCluster = 49.6 / navdy_op_bridge.KPH_PER_MS
+  selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+  selfdrive_state_sp = SimpleNamespace(
+    intelligentCruiseButtonManagement=SimpleNamespace(
+      automaticControlActive=True,
+      automaticTargetSpeedKph=50.0,
+      state="holding",
+    ))
+
+  payload = navdy_op_bridge.payload_from_messages(
+    selfdrive_state, car_state, 8, selfdrive_state_sp=selfdrive_state_sp)
+
+  assert payload["actualAccSetKph"] == 49.6
+  assert payload["automaticAccTargetKph"] == 50.0
+  assert payload["automaticAccAtTarget"] is True
 
 
 def test_payload_prefers_cluster_corrected_vehicle_and_acc_speeds():
@@ -237,6 +300,7 @@ def test_payload_prefers_cluster_corrected_vehicle_and_acc_speeds():
     intelligentCruiseButtonManagement=SimpleNamespace(
       automaticControlActive=True,
       automaticTargetSpeedKph=90.0,
+      state="increasing",
     ))
 
   payload = navdy_op_bridge.payload_from_messages(

@@ -1033,6 +1033,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   icbm = getattr(selfdrive_state_sp, "intelligentCruiseButtonManagement", None)
   automatic_acc_active = bool(getattr(icbm, "automaticControlActive", False))
   automatic_acc_target_kph = finite_float(getattr(icbm, "automaticTargetSpeedKph", 0.0))
+  automatic_acc_at_target = automatic_acc_active and enum_text(getattr(icbm, "state", "inactive")) == "holding"
   physical_acc_speed = finite_float(getattr(getattr(car_state, "cruiseState", None), "speedCluster", 0.0))
   physical_acc_speed_kph = physical_acc_speed * KPH_PER_MS if physical_acc_speed > 0.0 else 0.0
 
@@ -1053,6 +1054,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "actualAccSetKph": rounded(physical_acc_speed_kph) if automatic_acc_active else 0.0,
     "automaticAccTargetKph": rounded(automatic_acc_target_kph) if automatic_acc_active else 0.0,
     "automaticAccActive": automatic_acc_active,
+    "automaticAccAtTarget": automatic_acc_at_target,
     "vEgoKph": rounded(v_ego_kph),
     "gear": gear_text(car_state, selfdrive_state),
     "leftBlinker": left_blinker,

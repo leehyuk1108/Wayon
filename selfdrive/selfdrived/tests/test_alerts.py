@@ -123,8 +123,11 @@ class TestAlerts:
       # set the alert
       a = random.choice(list(self.offroad_alerts))
       alert = self.offroad_alerts[a]
-      set_offroad_alert(a, True, extra_text="a"*i)
+      try:
+        set_offroad_alert(a, True, extra_text="a"*i)
 
-      written_alert = params.get(a)
-      assert "a"*i == written_alert['extra']
-      assert alert["text"] == written_alert['text']
+        written_alert = params.get(a)
+        assert "a"*i == written_alert['extra']
+        assert alert["text"] == written_alert['text']
+      finally:
+        set_offroad_alert(a, False)

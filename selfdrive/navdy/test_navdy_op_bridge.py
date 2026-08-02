@@ -931,6 +931,18 @@ def test_navdy_payload_signature_tracks_lane_marking_type_changes():
   assert navdy_op_bridge.payload_signature(dashed) != navdy_op_bridge.payload_signature(solid)
 
 
+def test_navdy_payload_signature_tracks_automatic_acc_completion():
+  adjusting = {
+    "automaticAccActive": True,
+    "automaticAccAtTarget": False,
+    "actualAccSetKph": 30.0,
+    "automaticAccTargetKph": 30.0,
+  }
+  complete = dict(adjusting, automaticAccAtTarget=True)
+
+  assert navdy_op_bridge.payload_signature(adjusting) != navdy_op_bridge.payload_signature(complete)
+
+
 def test_navdy_lane_risk_payload_forwards_detector_sides():
   class FakeDetector:
     def __init__(self):

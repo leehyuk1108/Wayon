@@ -1464,6 +1464,7 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("actualAccSetKph"),
     payload.get("automaticAccTargetKph"),
     payload.get("automaticAccActive"),
+    payload.get("automaticAccAtTarget"),
     payload.get("vEgoKph"),
     payload.get("gear"),
     payload.get("leftBlinker"),

@@ -437,7 +437,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.WARNING: Alert(
       "Lane Change Paused",
       "Lane Change Unavailable Area Detected",
-      AlertStatus.userPrompt, AlertSize.mid,
+      AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
   },
 
@@ -1163,7 +1163,7 @@ if HARDWARE.get_device_type() == 'mici':
       ET.WARNING: Alert(
         "차선 변경 일시정지",
         "차선 변경 불가 구역 감지됨",
-        AlertStatus.userPrompt, AlertSize.mid,
+        AlertStatus.normal, AlertSize.mid,
         Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
     },
     EventName.steerSaturated: {

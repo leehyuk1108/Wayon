@@ -27,6 +27,7 @@ SendButtonState = custom.IntelligentCruiseButtonManagement.SendButtonState
 INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 1.5
+NAVDY_CAMERA_SOURCE = "trafficNotification"
 
 
 SEND_BUTTONS = {
@@ -85,7 +86,8 @@ class IntelligentCruiseButtonManagement:
         with open(self.camera_state_path, encoding="utf-8") as state_file:
           state = json.load(state_file)
         speed = int(state.get("cameraSpeedKph", 0))
-        self.camera_speed = speed if 20 <= speed <= 140 else 0
+        source_valid = state.get("cameraSource") == NAVDY_CAMERA_SOURCE
+        self.camera_speed = speed if source_valid and 20 <= speed <= 140 else 0
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
       self.camera_speed = 0
     return self.camera_speed

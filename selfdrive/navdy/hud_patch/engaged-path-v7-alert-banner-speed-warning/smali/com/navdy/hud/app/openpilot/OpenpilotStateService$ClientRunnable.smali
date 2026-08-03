@@ -158,7 +158,7 @@
 
     invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
 
-    const-string v4, "}\n"
+    const-string v4, ",\"cameraSource\":\"trafficNotification\"}\n"
 
     invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 

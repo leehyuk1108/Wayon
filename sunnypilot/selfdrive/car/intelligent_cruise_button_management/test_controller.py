@@ -8,6 +8,7 @@ from openpilot.common.constants import CV
 from openpilot.selfdrive.car.helpers import convert_carControlSP
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import (
   IntelligentCruiseButtonManagement,
+  NAVDY_CAMERA_SOURCE,
 )
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 
@@ -45,6 +46,10 @@ def make_plan(target_kph=100.0, *, vision_target_kph=0.0, vision_active=False):
   )
 
 
+def write_camera_state(path, speed):
+  path.write_text(json.dumps({"cameraSpeedKph": speed, "cameraSource": NAVDY_CAMERA_SOURCE}))
+
+
 def test_metric_minimum_set_speed_matches_vehicle_limit():
   assert get_minimum_set_speed(True) == 25
   assert get_minimum_set_speed(False) == 20
@@ -52,7 +57,7 @@ def test_metric_minimum_set_speed_matches_vehicle_limit():
 
 def test_camera_speed_becomes_temporary_target(tmp_path):
   camera_path = tmp_path / "camera.json"
-  camera_path.write_text(json.dumps({"cameraSpeedKph": 60}))
+  write_camera_state(camera_path, 60)
   controller = make_controller(tmp_path)
 
   controller.run(make_state(), make_control(), make_plan(), True)
@@ -114,7 +119,7 @@ def test_standstill_does_not_activate_without_camera(tmp_path):
 
 def test_camera_session_restores_driver_target_after_camera_clears(tmp_path):
   camera_path = tmp_path / "camera.json"
-  camera_path.write_text(json.dumps({"cameraSpeedKph": 50}))
+  write_camera_state(camera_path, 50)
   controller = make_controller(tmp_path)
   state = make_state(stock_set_kph=100, restore_kph=100)
 
@@ -122,7 +127,7 @@ def test_camera_session_restores_driver_target_after_camera_clears(tmp_path):
   assert controller.v_target == 50
   assert controller.automatic_speed_control_active
 
-  camera_path.write_text(json.dumps({"cameraSpeedKph": 0}))
+  write_camera_state(camera_path, 0)
   controller.camera_state_checked_at = 0.0
   state.cruiseState.speedCluster = 50 * CV.KPH_TO_MS
   controller.run(state, make_control(), make_plan(), True)
@@ -139,7 +144,7 @@ def test_camera_session_restores_driver_target_after_camera_clears(tmp_path):
 
 def test_camera_session_sends_decrease_then_restore_increase(tmp_path):
   camera_path = tmp_path / "camera.json"
-  camera_path.write_text(json.dumps({"cameraSpeedKph": 50}))
+  write_camera_state(camera_path, 50)
   controller = make_controller(tmp_path)
   state = make_state(stock_set_kph=100, restore_kph=100)
 
@@ -152,7 +157,7 @@ def test_camera_session_sends_decrease_then_restore_increase(tmp_path):
     controller.run(state, make_control(), make_plan(), True)
   assert controller.state == custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState.holding
 
-  camera_path.write_text(json.dumps({"cameraSpeedKph": 0}))
+  write_camera_state(camera_path, 0)
   controller.camera_state_checked_at = 0.0
   for _ in range(50):
     controller.run(state, make_control(), make_plan(), True)
@@ -198,13 +203,25 @@ def test_unset_restore_speed_never_requests_255(tmp_path):
 
 def test_stale_camera_state_is_ignored(tmp_path):
   camera_path = tmp_path / "camera.json"
-  camera_path.write_text(json.dumps({"cameraSpeedKph": 60}))
+  write_camera_state(camera_path, 60)
   os.utime(camera_path, (1, 1))
   controller = make_controller(tmp_path)
 
   controller.run(make_state(ego_kph=100), make_control(), make_plan(), True)
 
   assert controller.v_target == 100
+  assert not controller.automatic_control_active
+
+
+def test_untagged_notification_number_is_not_a_camera_target(tmp_path):
+  camera_path = tmp_path / "camera.json"
+  camera_path.write_text(json.dumps({"cameraSpeedKph": 30}))
+  controller = make_controller(tmp_path)
+
+  controller.run(make_state(ego_kph=20, stock_set_kph=70, restore_kph=70),
+                 make_control(), make_plan(), True)
+
+  assert controller.v_target == 70
   assert not controller.automatic_control_active
 
 

@@ -104,7 +104,18 @@ def test_navdy_socket_returns_camera_limit_over_existing_usb_tunnel():
 
   assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in service
   assert 'const-string v4, "{\\\"cameraSpeedKph\\\":"' in service
+  assert 'cameraSource\\\":\\\"trafficNotification' in service
   assert "BufferedWriter;->flush()V" in service
+
+
+def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+          "patch_camera_notification_filter.py"
+  camera_filter = patch.read_text()
+
+  assert 'for origin in ("carrot", "comma")' in camera_filter
+  assert "if method.count(block) != 2" in camera_filter
+  assert 'block.rsplit("\\n", 1)[0] + "\\n\\n    nop"' in camera_filter
 
 
 def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
@@ -1388,13 +1399,28 @@ def test_socket_feedback_publishes_camera_speed_without_wifi(tmp_path, monkeypat
   sender, receiver = socket.socketpair()
   args = SimpleNamespace(_socket_feedback_buffer=b"")
   try:
-    receiver.sendall(b'{"cameraSpeedKph":60}\n')
+    receiver.sendall(b'{"cameraSpeedKph":60,"cameraSource":"trafficNotification"}\n')
     navdy_op_bridge.read_navdy_feedback(sender, args)
   finally:
     sender.close()
     receiver.close()
 
-  assert camera_state.read_text() == '{"cameraSpeedKph":60}'
+  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification"}'
+
+
+def test_socket_feedback_rejects_untagged_notification_number(tmp_path, monkeypatch):
+  camera_state = tmp_path / "navdy_camera_state.json"
+  monkeypatch.setattr(navdy_op_bridge, "NAVDY_CAMERA_STATE_PATH", str(camera_state))
+  sender, receiver = socket.socketpair()
+  args = SimpleNamespace(_socket_feedback_buffer=b"")
+  try:
+    receiver.sendall(b'{"cameraSpeedKph":30}\n')
+    navdy_op_bridge.read_navdy_feedback(sender, args)
+  finally:
+    sender.close()
+    receiver.close()
+
+  assert camera_state.read_text() == '{"cameraSpeedKph":0,"cameraSource":""}'
 
 
 def test_emit_queues_socket_work_off_polling_thread():

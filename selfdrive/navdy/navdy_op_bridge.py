@@ -29,6 +29,7 @@ DEFAULT_SERVICE_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateService"
 DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
+NAVDY_CAMERA_SOURCE = "trafficNotification"
 NAVDY_LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
 DISPLAY_ON_TEXT = "Display Power: state=ON"
 DISPLAY_OFF_TEXT = "Display Power: state=OFF"
@@ -1231,12 +1232,15 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   return False
 
 
-def publish_navdy_camera_state(camera_speed_kph: Any, args: argparse.Namespace) -> None:
+def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any,
+                               args: argparse.Namespace) -> None:
   try:
     speed = int(camera_speed_kph)
   except (TypeError, ValueError):
     return
-  speed = speed if 20 <= speed <= 140 else 0
+  source = str(camera_source) if camera_source is not None else ""
+  source_valid = source == NAVDY_CAMERA_SOURCE
+  speed = speed if source_valid and 20 <= speed <= 140 else 0
 
   previous = getattr(args, "_navdy_camera_speed_kph", None)
   try:
@@ -1245,7 +1249,8 @@ def publish_navdy_camera_state(camera_speed_kph: Any, args: argparse.Namespace) 
       return
     temp_path = NAVDY_CAMERA_STATE_PATH + ".tmp"
     with open(temp_path, "w", encoding="utf-8") as state_file:
-      json.dump({"cameraSpeedKph": speed}, state_file, separators=(",", ":"))
+      json.dump({"cameraSpeedKph": speed, "cameraSource": source if source_valid else ""},
+                state_file, separators=(",", ":"))
     os.replace(temp_path, NAVDY_CAMERA_STATE_PATH)
     setattr(args, "_navdy_camera_speed_kph", speed)
   except OSError:
@@ -1264,7 +1269,8 @@ def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> None:
       if not line:
         continue
       feedback = json.loads(line)
-      publish_navdy_camera_state(feedback.get("cameraSpeedKph", 0), args)
+      publish_navdy_camera_state(feedback.get("cameraSpeedKph", 0),
+                                 feedback.get("cameraSource"), args)
   except (OSError, TypeError, ValueError, json.JSONDecodeError):
     return
 

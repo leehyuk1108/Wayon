@@ -326,8 +326,8 @@ ICBM 자동 제어 중에는 세 속도를 구분해 관리한다.
 
 - `setSpeedKph`: 운전자가 지정한 복귀 목표 속도. 기존 ACC SET 위치를 유지한다.
 - `actualAccSetKph`: 버튼 스니핑으로 바뀐 순정 ACC의 현재 실제 설정 속도.
-- `automaticAccTargetKph`: comma가 버튼 입력으로 맞추려는 제어 목표 속도. 전방 차량 등으로 순정
-  ACC가 감속하면 `min(복귀 목표, 현재 속도 + 10 km/h)`의 움직이는 천장을 사용한다.
+- `automaticAccTargetKph`: comma가 버튼 입력으로 맞추려는 제어 목표 속도. 유효한 TMAP 카메라
+  제한속도 또는 활성화된 Vision 커브 목표 중 더 낮은 값을 사용한다.
 - `automaticAccActive`: 임시 감속 또는 복귀 제어가 동작 중인지 나타낸다.
 
 HUD에서는 복귀 목표를 기존 초록색 ACC SET 아이콘과 함께 현재 속도 아래 중앙에 유지한다. 자동
@@ -340,18 +340,20 @@ HUD에서는 복귀 목표를 기존 초록색 ACC SET 아이콘과 함께 현�
 
 카메라 정보에 Wi-Fi는 사용하지 않는다. CommANav가 TMAP SDI를 Navdy로 보내는 기존 Bluetooth
 알림에서 제한속도를 읽고, `OpenpilotStateService`가 comma와 이미 연결된 USB 데이터 포트 소켓의
-응답으로 `cameraSpeedKph`를 돌려준다. `navdy_op_bridge`는 이 값을
-`/dev/shm/navdy_camera_state.json`에 원자적으로 갱신하며, 1.5초 이상 새 응답이 없으면 제한속도를
-즉시 무효화한다.
+응답으로 `cameraSpeedKph`와 `cameraSource=trafficNotification`을 돌려준다. 알림 발신자 이름에
+`comma` 또는 `carrot`이 있다는 이유만으로 카메라로 분류하지 않으며, 제목·부제·본문에 카메라
+키워드가 있는 실제 교통 알림만 허용한다. `navdy_op_bridge`와 ICBM은 출처 표식이 없는 숫자를
+거부한다. 유효한 값은 `/dev/shm/navdy_camera_state.json`에 원자적으로 갱신되며, 1.5초 이상 새
+응답이 없으면 제한속도를 즉시 무효화한다.
 
 ```text
 TMAP -> CommANav -> Bluetooth -> Navdy HUD -> USB data port -> navdy_op_bridge -> ICBM
 ```
 
-ICBM은 해당 제한속도와 longitudinal planner 목표 중 더 낮은 값을 순정 ACC의 임시 목표로 사용한다.
-운전자의 ACC SET 값은 별도로 보존하며, 감속이 끝나면 현재 속도보다 4 km/h 또는 4 mph 높은 작은
-구간을 따라 순정 ACC 설정값을 단계적으로 복귀시킨다. 물리 버튼, 가속 페달 override, cancel,
-resume, 디스인게이지가 감지되면 자동 프로필을 즉시 해제한다.
+ICBM은 해당 제한속도와 활성화된 Vision 커브 목표 중 더 낮은 값을 순정 ACC의 임시 목표로 사용한다.
+일반 longitudinal planner 목표, 전방차량 감속, 현재속도 기반 이동 목표는 사용하지 않는다. 운전자의
+ACC SET 값은 별도로 보존하며 카메라 또는 커브 제한이 끝나면 해당 값으로 복귀한다. 물리 버튼,
+가속 페달 override, cancel, resume, 디스인게이지가 감지되면 자동 프로필을 즉시 해제한다.
 
 ### 기어
 

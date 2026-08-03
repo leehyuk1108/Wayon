@@ -118,6 +118,46 @@ def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   assert 'block.rsplit("\\n", 1)[0] + "\\n\\n    nop"' in camera_filter
 
 
+def test_navdy_camera_clear_hides_camera_widget():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+          "patch_camera_notification_filter.py"
+  namespace = {}
+  exec(compile(patch.read_text(), str(patch), "exec"), namespace)
+
+  broken_method = """.method private static isCameraClearNotification(Lcom/navdy/service/library/events/notification/NotificationEvent;)Z
+    .locals 3
+    const-string v1, "Camera Clear"
+    nop
+    const-string v1, "No camera"
+    nop
+    const/4 v0, 0x0
+    return v0
+.end method"""
+  fixed = namespace["restore_camera_clear_match"](broken_method)
+
+  assert fixed.count("equalsIgnoreCase") == 2
+  assert 'const-string v1, "Camera Clear"' in fixed
+  assert 'const-string v1, "No camera"' in fixed
+  assert "if-nez v2, :cond_clear_true" in fixed
+  assert ":cond_clear_true" in fixed
+
+  clear_action = """.method private clearCameraText()V
+    .locals 5
+    const/4 v3, 0x4
+    invoke-virtual {v2, v3}, Landroid/view/View;->setVisibility(I)V
+.end method"""
+  namespace["validate_camera_clear_action"](clear_action)
+
+  presenter = Path("/Users/ijonghyeog/Documents/navdy/build_work/"
+                   "moving-acc-ceiling-v2-compat-20260801/smali/com/navdy/hud/app/"
+                   "maps/widget/TrafficIncidentWidgetPresenter.smali")
+  if presenter.is_file():
+    clear_camera_text = presenter.read_text().split(".method private clearCameraText", 1)[1].split(
+      ".end method", 1)[0]
+    assert "const/4 v3, 0x4" in clear_camera_text
+    assert "Landroid/view/View;->setVisibility(I)V" in clear_camera_text
+
+
 def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
   receiver = patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"

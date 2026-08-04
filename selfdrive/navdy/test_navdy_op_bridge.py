@@ -158,6 +158,29 @@ def test_navdy_camera_clear_hides_camera_widget():
     assert "Landroid/view/View;->setVisibility(I)V" in clear_camera_text
 
 
+def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+          "patch_ambient_gatt_recovery.py"
+  namespace = {}
+  exec(compile(patch.read_text(), str(patch), "exec"), namespace)
+
+  stale = """.method private flushNext()V
+    .locals 6
+    .line 423
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->connectIfNeeded()V
+.end method"""
+  fixed = namespace["patch_flush_next"](stale)
+
+  assert "->mConnected:Z" in fixed
+  assert "->mNotifyReady:Z" in fixed
+  assert "->mStartQueued:Z" in fixed
+  assert "->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;" in fixed
+  assert "->mNotifyCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;" in fixed
+  assert "->closeGatt()V" in fixed
+  assert "->scheduleReconnect()V" in fixed
+  assert "->connectIfNeeded()V" not in fixed
+
+
 def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
   receiver = patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"

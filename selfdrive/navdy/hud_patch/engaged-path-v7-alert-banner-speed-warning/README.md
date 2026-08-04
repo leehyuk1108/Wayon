@@ -81,3 +81,6 @@ Behavior:
   queue keeps only the newest vehicle state instead of replaying stale frames.
 - Omits full per-frame payload/state logging to reduce allocation and log I/O on
   the Navdy hardware.
+- Recovers from a dead Android Bluetooth GATT binder by discarding the stale
+  connection and characteristics, preserving the pending ambient command, and
+  scheduling a fresh scan instead of remaining falsely connected.

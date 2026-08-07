@@ -21,6 +21,9 @@ VISION_STREAMS = {
   "wideRoadCameraState": VisionStreamType.VISION_STREAM_WIDE_ROAD,
 }
 
+DEFAULT_SNAPSHOT_TIMEOUT_S = 30.0
+SNAPSHOT_POLL_MS = 100
+
 
 def jpeg_write(fn, dat):
   img = Image.fromarray(dat)
@@ -57,30 +60,50 @@ def extract_image(buf):
   return yuv_to_rgb(y, u, v)
 
 
+def _remaining_timeout_ms(deadline: float, stage: str) -> int:
+  remaining_s = deadline - time.monotonic()
+  if remaining_s <= 0.0:
+    raise TimeoutError(f"camera snapshot timed out while {stage}")
+  return max(1, min(SNAPSHOT_POLL_MS, int(remaining_s * 1000)))
+
+
 def get_snapshots(frame="roadCameraState", front_frame="driverCameraState",
-                  warmup_s=4.0, front_warmup_s=None):
+                  warmup_s=4.0, front_warmup_s=None,
+                  timeout_s: float = DEFAULT_SNAPSHOT_TIMEOUT_S):
   sockets = [s for s in (frame, front_frame) if s is not None]
+  if not sockets:
+    return None, None
+
+  deadline = time.monotonic() + max(1.0, float(timeout_s))
   sm = messaging.SubMaster(sockets)
   vipc_clients = {s: VisionIpcClient("camerad", VISION_STREAMS[s], True) for s in sockets}
 
   def wait_for_warmup(service, seconds):
     target_frame = int(max(0.0, float(seconds)) / DT_MDL)
     while sm[service].frameId < target_frame:
-      sm.update()
+      sm.update(_remaining_timeout_ms(deadline, f"waiting for {service} exposure"))
+
+  def connect(service):
+    client = vipc_clients[service]
+    while not client.connect(False):
+      _remaining_timeout_ms(deadline, f"connecting to {service}")
+      time.sleep(0.02)
+    return client
+
+  def receive(service):
+    client = connect(service)
+    buffer = None
+    while buffer is None:
+      buffer = client.recv(timeout_ms=_remaining_timeout_ms(deadline, f"receiving {service}"))
+    return buffer
 
   rear, front = None, None
   if frame is not None:
     wait_for_warmup(frame, warmup_s)
-    c = vipc_clients[frame]
-    c.connect(True)
-    buffer = c.recv()
-    rear = extract_image(buffer) if buffer is not None else None
+    rear = extract_image(receive(frame))
   if front_frame is not None:
     wait_for_warmup(front_frame, warmup_s if front_warmup_s is None else front_warmup_s)
-    c = vipc_clients[front_frame]
-    c.connect(True)
-    buffer = c.recv()
-    front = extract_image(buffer) if buffer is not None else None
+    front = extract_image(receive(front_frame))
   return rear, front
 
 

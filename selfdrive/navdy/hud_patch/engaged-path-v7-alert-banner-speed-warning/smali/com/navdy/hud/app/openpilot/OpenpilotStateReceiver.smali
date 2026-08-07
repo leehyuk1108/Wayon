@@ -1909,6 +1909,12 @@
 
     move-result v1
 
+    if-gez v1, :camera_overspeed_limit_ready
+
+    neg-int v1, v1
+
+    :camera_overspeed_limit_ready
+
     if-lez v1, :cond_navdy_camera_speed_white
 
     int-to-double v8, v1
@@ -1942,11 +1948,26 @@
 
     move-result v1
 
+    if-gez v1, :camera_display_regular
+
+    neg-int v1, v1
+
+    const v2, 0x7f02029f
+
+    goto :camera_display_type_ready
+
+    :camera_display_regular
+    const v2, 0x7f020286
+
+    :camera_display_type_ready
+
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraSpeedTextView:Landroid/widget/TextView;
 
     if-eqz v0, :camera_display_done
 
     if-lez v1, :camera_display_hide
+
+    invoke-virtual {v0, v2}, Landroid/widget/TextView;->setBackgroundResource(I)V
 
     invoke-static {v1}, Ljava/lang/Integer;->toString(I)Ljava/lang/String;
 

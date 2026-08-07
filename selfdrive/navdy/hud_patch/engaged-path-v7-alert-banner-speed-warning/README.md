@@ -81,6 +81,12 @@ Behavior:
   hidden dashboard widget, while camera-clear events still hide both rows.
 - Uses 32sp for one- and two-digit camera limits and 26sp for three-digit
   limits so 100 and 110 remain centered inside the 62px speed-sign circle.
+- Detects CommANav mobile-enforcement notifications from their explicit
+  `Tmap Mobile Camera SDI`/`이동식` type marker and changes both HUD camera
+  circles from a red rim to a blue rim.
+- Returns the detected `cameraType` through the existing USB socket feedback;
+  ICBM ignores `mobile` cameras while fixed, box, rear-enforcement, and section
+  camera limits continue to use automatic cruise-button speed control.
 - Retains the last valid path while fast state-only payloads update icons,
   speed, set speed, alerts, and music independently.
 - Coalesces socket updates on the Android main looper so an overloaded frame

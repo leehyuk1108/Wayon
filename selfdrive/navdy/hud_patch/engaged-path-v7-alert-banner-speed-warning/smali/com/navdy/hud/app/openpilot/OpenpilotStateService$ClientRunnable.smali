@@ -156,9 +156,35 @@
 
     move-result v4
 
+    const/4 v6, 0x0
+
+    if-gez v4, :camera_feedback_speed_ready
+
+    neg-int v4, v4
+
+    const/4 v6, 0x1
+
+    :camera_feedback_speed_ready
+
     invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
 
-    const-string v4, ",\"cameraSource\":\"trafficNotification\"}\n"
+    const-string v4, ",\"cameraSource\":\"trafficNotification\",\"cameraType\":\""
+
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    if-eqz v6, :camera_type_fixed
+
+    const-string v4, "mobile"
+
+    goto :camera_type_ready
+
+    :camera_type_fixed
+    const-string v4, "fixed"
+
+    :camera_type_ready
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    const-string v4, "\"}\n"
 
     invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 

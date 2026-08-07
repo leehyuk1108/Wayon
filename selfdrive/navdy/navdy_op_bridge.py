@@ -1234,7 +1234,7 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   return False
 
 
-def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any,
+def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any, camera_type: Any,
                                args: argparse.Namespace) -> None:
   try:
     speed = int(camera_speed_kph)
@@ -1243,18 +1243,22 @@ def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any,
   source = str(camera_source) if camera_source is not None else ""
   source_valid = source == NAVDY_CAMERA_SOURCE
   speed = speed if source_valid and 20 <= speed <= 140 else 0
+  normalized_type = "mobile" if str(camera_type).lower() == "mobile" else "fixed"
+  normalized_type = normalized_type if source_valid else ""
 
-  previous = getattr(args, "_navdy_camera_speed_kph", None)
+  state_signature = (speed, normalized_type)
+  previous = getattr(args, "_navdy_camera_state_signature", None)
   try:
-    if previous == speed and os.path.exists(NAVDY_CAMERA_STATE_PATH):
+    if previous == state_signature and os.path.exists(NAVDY_CAMERA_STATE_PATH):
       os.utime(NAVDY_CAMERA_STATE_PATH, None)
       return
     temp_path = NAVDY_CAMERA_STATE_PATH + ".tmp"
     with open(temp_path, "w", encoding="utf-8") as state_file:
-      json.dump({"cameraSpeedKph": speed, "cameraSource": source if source_valid else ""},
+      json.dump({"cameraSpeedKph": speed, "cameraSource": source if source_valid else "",
+                 "cameraType": normalized_type},
                 state_file, separators=(",", ":"))
     os.replace(temp_path, NAVDY_CAMERA_STATE_PATH)
-    setattr(args, "_navdy_camera_speed_kph", speed)
+    setattr(args, "_navdy_camera_state_signature", state_signature)
   except OSError:
     pass
 
@@ -1276,7 +1280,7 @@ def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> bool:
         continue
       feedback = json.loads(line)
       publish_navdy_camera_state(feedback.get("cameraSpeedKph", 0),
-                                 feedback.get("cameraSource"), args)
+                                 feedback.get("cameraSource"), feedback.get("cameraType"), args)
     return True
   except (OSError, TypeError, ValueError, json.JSONDecodeError):
     return False

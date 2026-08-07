@@ -105,6 +105,11 @@ def test_navdy_socket_returns_camera_limit_over_existing_usb_tunnel():
   assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in service
   assert 'const-string v4, "{\\\"cameraSpeedKph\\\":"' in service
   assert 'cameraSource\\\":\\\"trafficNotification' in service
+  assert 'cameraType\\\":\\\"' in service
+  assert "neg-int v4, v4" in service
+  assert "if-eqz v6, :camera_type_fixed" in service
+  assert 'const-string v4, "mobile"' in service
+  assert 'const-string v4, "fixed"' in service
   assert "BufferedWriter;->flush()V" in service
 
 
@@ -116,6 +121,16 @@ def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   assert 'for origin in ("carrot", "comma")' in camera_filter
   assert "if method.count(block) == 2" in camera_filter
   assert "elif method.count(disabled_block) != 2" in camera_filter
+  assert "lastCameraIsMobile" in camera_filter
+  assert "MOBILE_DETECTION" in camera_filter
+  assert "patch_camera_background" in camera_filter
+  assert "patch_encoded_camera_speed" in camera_filter
+  assert "patch_mobile_notification_state" in camera_filter
+  assert "register_mobile_camera_resource" in camera_filter
+  assert "neg-int v0, v0" in camera_filter
+  assert "0x7f02029f" in camera_filter
+  assert 'const-string v3, "mobile"' in camera_filter
+  assert 'const-string/jumbo v3, "\\uc774\\ub3d9\\uc2dd"' in camera_filter
 
 
 def test_navdy_camera_clear_hides_camera_widget():
@@ -171,6 +186,9 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert "->setBackgroundResource(I)V" in receiver
   assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in receiver
   assert "TrafficIncidentWidgetPresenter;->lastCameraDistance:Ljava/lang/String;" in receiver
+  assert "const v2, 0x7f02029f" in receiver
+  assert "const v2, 0x7f020286" in receiver
+  assert "neg-int v1, v1" in receiver
   assert ":camera_display_hide" in receiver
   assert ":camera_speed_two_digits" in receiver
   assert "const/high16 v4, 0x41d00000    # 26.0f" in receiver
@@ -1480,13 +1498,28 @@ def test_socket_feedback_publishes_camera_speed_without_wifi(tmp_path, monkeypat
   sender, receiver = socket.socketpair()
   args = SimpleNamespace(_socket_feedback_buffer=b"")
   try:
-    receiver.sendall(b'{"cameraSpeedKph":60,"cameraSource":"trafficNotification"}\n')
+    receiver.sendall(b'{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"fixed"}\n')
     assert navdy_op_bridge.read_navdy_feedback(sender, args)
   finally:
     sender.close()
     receiver.close()
 
-  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification"}'
+  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"fixed"}'
+
+
+def test_socket_feedback_marks_mobile_camera_for_icbm_filter(tmp_path, monkeypatch):
+  camera_state = tmp_path / "navdy_camera_state.json"
+  monkeypatch.setattr(navdy_op_bridge, "NAVDY_CAMERA_STATE_PATH", str(camera_state))
+  sender, receiver = socket.socketpair()
+  args = SimpleNamespace(_socket_feedback_buffer=b"")
+  try:
+    receiver.sendall(b'{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"mobile"}\n')
+    assert navdy_op_bridge.read_navdy_feedback(sender, args)
+  finally:
+    sender.close()
+    receiver.close()
+
+  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"mobile"}'
 
 
 def test_socket_feedback_rejects_untagged_notification_number(tmp_path, monkeypatch):
@@ -1501,7 +1534,7 @@ def test_socket_feedback_rejects_untagged_notification_number(tmp_path, monkeypa
     sender.close()
     receiver.close()
 
-  assert camera_state.read_text() == '{"cameraSpeedKph":0,"cameraSource":""}'
+  assert camera_state.read_text() == '{"cameraSpeedKph":0,"cameraSource":"","cameraType":""}'
 
 
 def test_socket_feedback_detects_closed_navdy_tunnel():

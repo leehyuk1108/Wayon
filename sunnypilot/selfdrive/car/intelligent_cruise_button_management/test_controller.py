@@ -46,8 +46,9 @@ def make_plan(target_kph=100.0, *, vision_target_kph=0.0, vision_active=False):
   )
 
 
-def write_camera_state(path, speed):
-  path.write_text(json.dumps({"cameraSpeedKph": speed, "cameraSource": NAVDY_CAMERA_SOURCE}))
+def write_camera_state(path, speed, camera_type="fixed"):
+  path.write_text(json.dumps({"cameraSpeedKph": speed, "cameraSource": NAVDY_CAMERA_SOURCE,
+                              "cameraType": camera_type}))
 
 
 def test_metric_minimum_set_speed_matches_vehicle_limit():
@@ -64,6 +65,18 @@ def test_camera_speed_becomes_temporary_target(tmp_path):
 
   assert controller.v_target == 60
   assert controller.automatic_control_active
+
+
+def test_mobile_camera_does_not_activate_icbm(tmp_path):
+  camera_path = tmp_path / "camera.json"
+  write_camera_state(camera_path, 60, "mobile")
+  controller = make_controller(tmp_path)
+
+  controller.run(make_state(), make_control(), make_plan(), True)
+
+  assert controller.v_target == 100
+  assert not controller.automatic_speed_control_active
+  assert not controller.automatic_control_active
 
 
 def test_planner_target_is_ignored_without_camera(tmp_path):

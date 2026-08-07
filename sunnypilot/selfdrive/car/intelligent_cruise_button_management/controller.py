@@ -87,7 +87,8 @@ class IntelligentCruiseButtonManagement:
           state = json.load(state_file)
         speed = int(state.get("cameraSpeedKph", 0))
         source_valid = state.get("cameraSource") == NAVDY_CAMERA_SOURCE
-        self.camera_speed = speed if source_valid and 20 <= speed <= 140 else 0
+        camera_is_mobile = str(state.get("cameraType", "fixed")).lower() == "mobile"
+        self.camera_speed = speed if source_valid and not camera_is_mobile and 20 <= speed <= 140 else 0
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
       self.camera_speed = 0
     return self.camera_speed

@@ -108,9 +108,13 @@ public final class OpenpilotStateService extends Service {
         while ((line = reader.readLine()) != null) {
           if (line.length() != 0) {
             dispatchPayload(line);
+            int encodedCameraSpeed = TrafficIncidentWidgetPresenter.getLastCameraSpeedLimit();
+            boolean mobileCamera = encodedCameraSpeed < 0;
             writer.write("{\"cameraSpeedKph\":"
-                + TrafficIncidentWidgetPresenter.getLastCameraSpeedLimit()
-                + ",\"cameraSource\":\"trafficNotification\"}\n");
+                + Math.abs(encodedCameraSpeed)
+                + ",\"cameraSource\":\"trafficNotification\",\"cameraType\":\""
+                + (mobileCamera ? "mobile" : "fixed")
+                + "\"}\n");
             writer.flush();
           }
         }

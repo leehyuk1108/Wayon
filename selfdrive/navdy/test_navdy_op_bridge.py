@@ -192,6 +192,9 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert ":camera_display_hide" in receiver
   assert ":camera_speed_two_digits" in receiver
   assert "const/high16 v4, 0x41d00000    # 26.0f" in receiver
+  assert "const/high16 v4, 0x41f00000    # 30.0f" in receiver
+  assert 'const-string v6, "fonts/FSElliot-Heavy.ttf"' in receiver
+  assert "FontTextView;->createFromAsset" in receiver
 
 
 def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():

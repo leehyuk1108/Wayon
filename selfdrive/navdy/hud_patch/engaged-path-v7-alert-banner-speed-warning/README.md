@@ -79,8 +79,11 @@ Behavior:
   openpilot overlay at the stock dashboard position. This keeps the camera card
   visible even when the legacy traffic-widget presenter is attached to a
   hidden dashboard widget, while camera-clear events still hide both rows.
-- Uses 32sp for one- and two-digit camera limits and 26sp for three-digit
+- Uses the stock camera card's FSElliot Heavy typeface at 30sp for one- and
+  two-digit camera limits and 26sp for three-digit
   limits so 100 and 110 remain centered inside the 62px speed-sign circle.
+- Uses the same FSElliot Heavy typeface and 16sp size for the mirrored camera
+  distance, matching the stock traffic widget instead of Android's default font.
 - Detects CommANav mobile-enforcement notifications from their explicit
   `Tmap Mobile Camera SDI`/`이동식` type marker and changes both HUD camera
   circles from a red rim to a blue rim.

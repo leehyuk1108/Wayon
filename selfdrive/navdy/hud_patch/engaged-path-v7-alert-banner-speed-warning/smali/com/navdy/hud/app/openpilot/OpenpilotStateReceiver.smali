@@ -664,7 +664,7 @@
 
     const/4 v3, 0x0
 
-    const/high16 v4, 0x42000000    # 32.0f
+    const/high16 v4, 0x41f00000    # 30.0f
 
     invoke-virtual {v2, v3, v4}, Landroid/widget/TextView;->setTextSize(IF)V
 
@@ -678,7 +678,15 @@
 
     invoke-virtual {v2, v4}, Landroid/widget/TextView;->setSingleLine(Z)V
 
-    sget-object v5, Landroid/graphics/Typeface;->DEFAULT_BOLD:Landroid/graphics/Typeface;
+    invoke-virtual {p0}, Landroid/content/Context;->getAssets()Landroid/content/res/AssetManager;
+
+    move-result-object v5
+
+    const-string v6, "fonts/FSElliot-Heavy.ttf"
+
+    invoke-static {v5, v6}, Lcom/navdy/hud/app/view/FontTextView;->createFromAsset(Landroid/content/res/AssetManager;Ljava/lang/String;)Landroid/graphics/Typeface;
+
+    move-result-object v5
 
     invoke-virtual {v2, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
 
@@ -720,7 +728,7 @@
 
     const/4 v3, 0x0
 
-    const/high16 v4, 0x41700000    # 15.0f
+    const/high16 v4, 0x41800000    # 16.0f
 
     invoke-virtual {v2, v3, v4}, Landroid/widget/TextView;->setTextSize(IF)V
 
@@ -733,6 +741,18 @@
     const/4 v4, 0x1
 
     invoke-virtual {v2, v4}, Landroid/widget/TextView;->setSingleLine(Z)V
+
+    invoke-virtual {p0}, Landroid/content/Context;->getAssets()Landroid/content/res/AssetManager;
+
+    move-result-object v5
+
+    const-string v6, "fonts/FSElliot-Heavy.ttf"
+
+    invoke-static {v5, v6}, Lcom/navdy/hud/app/view/FontTextView;->createFromAsset(Landroid/content/res/AssetManager;Ljava/lang/String;)Landroid/graphics/Typeface;
+
+    move-result-object v5
+
+    invoke-virtual {v2, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
 
     new-instance v4, Landroid/widget/FrameLayout$LayoutParams;
 
@@ -1986,7 +2006,7 @@
     goto :camera_speed_size_ready
 
     :camera_speed_two_digits
-    const/high16 v4, 0x42000000    # 32.0f
+    const/high16 v4, 0x41f00000    # 30.0f
 
     :camera_speed_size_ready
     const/4 v2, 0x0

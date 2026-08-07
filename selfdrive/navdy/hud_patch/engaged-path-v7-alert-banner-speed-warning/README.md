@@ -79,6 +79,8 @@ Behavior:
   openpilot overlay at the stock dashboard position. This keeps the camera card
   visible even when the legacy traffic-widget presenter is attached to a
   hidden dashboard widget, while camera-clear events still hide both rows.
+- Uses 32sp for one- and two-digit camera limits and 26sp for three-digit
+  limits so 100 and 110 remain centered inside the 62px speed-sign circle.
 - Retains the last valid path while fast state-only payloads update icons,
   speed, set speed, alerts, and music independently.
 - Coalesces socket updates on the Android main looper so an overloaded frame

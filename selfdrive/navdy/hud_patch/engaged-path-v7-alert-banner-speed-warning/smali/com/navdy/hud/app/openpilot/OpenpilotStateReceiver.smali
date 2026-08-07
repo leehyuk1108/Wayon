@@ -1952,6 +1952,26 @@
 
     move-result-object v1
 
+    invoke-virtual {v1}, Ljava/lang/String;->length()I
+
+    move-result v4
+
+    const/4 v2, 0x2
+
+    if-le v4, v2, :camera_speed_two_digits
+
+    const/high16 v4, 0x41d00000    # 26.0f
+
+    goto :camera_speed_size_ready
+
+    :camera_speed_two_digits
+    const/high16 v4, 0x42000000    # 32.0f
+
+    :camera_speed_size_ready
+    const/4 v2, 0x0
+
+    invoke-virtual {v0, v2, v4}, Landroid/widget/TextView;->setTextSize(IF)V
+
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 
     const/4 v1, 0x0

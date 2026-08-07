@@ -193,8 +193,10 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert ":camera_speed_two_digits" in receiver
   assert "const/high16 v4, 0x41d00000    # 26.0f" in receiver
   assert "const/high16 v4, 0x41f00000    # 30.0f" in receiver
-  assert 'const-string v6, "fonts/FSElliot-Heavy.ttf"' in receiver
-  assert "FontTextView;->createFromAsset" in receiver
+  assert "LayoutInflater;->inflate(ILandroid/view/ViewGroup;)Landroid/view/View;" in receiver
+  assert "const v3, 0x7f030032" in receiver  # maps_traffic_incident_widget
+  assert "const v3, 0x7f0e0142" in receiver  # incidentInfo
+  assert "const v3, 0x7f0e0111" in receiver  # distance textView
 
 
 def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():

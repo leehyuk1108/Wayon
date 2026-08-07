@@ -652,113 +652,23 @@
 
     invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
 
-    new-instance v2, Landroid/widget/TextView;
+    invoke-static {p0}, Landroid/view/LayoutInflater;->from(Landroid/content/Context;)Landroid/view/LayoutInflater;
 
-    invoke-direct {v2, p0}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
+    move-result-object v2
 
-    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraSpeedTextView:Landroid/widget/TextView;
+    const v3, 0x7f030032
 
-    const/high16 v3, -0x1000000
+    const/4 v4, 0x0
 
-    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setTextColor(I)V
+    invoke-virtual {v2, v3, v4}, Landroid/view/LayoutInflater;->inflate(ILandroid/view/ViewGroup;)Landroid/view/View;
 
-    const/4 v3, 0x0
-
-    const/high16 v4, 0x41f00000    # 30.0f
-
-    invoke-virtual {v2, v3, v4}, Landroid/widget/TextView;->setTextSize(IF)V
-
-    const/16 v4, 0x11
-
-    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setGravity(I)V
-
-    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setIncludeFontPadding(Z)V
-
-    const/4 v4, 0x1
-
-    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setSingleLine(Z)V
-
-    invoke-virtual {p0}, Landroid/content/Context;->getAssets()Landroid/content/res/AssetManager;
-
-    move-result-object v5
-
-    const-string v6, "fonts/FSElliot-Heavy.ttf"
-
-    invoke-static {v5, v6}, Lcom/navdy/hud/app/view/FontTextView;->createFromAsset(Landroid/content/res/AssetManager;Ljava/lang/String;)Landroid/graphics/Typeface;
-
-    move-result-object v5
-
-    invoke-virtual {v2, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
-
-    const v5, 0x7f020286
-
-    invoke-virtual {v2, v5}, Landroid/widget/TextView;->setBackgroundResource(I)V
-
-    new-instance v4, Landroid/widget/FrameLayout$LayoutParams;
-
-    const/16 v5, 0x3e
-
-    const/16 v6, 0x3e
-
-    invoke-direct {v4, v5, v6}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
-
-    const/16 v5, 0x201
-
-    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
-
-    const/16 v5, 0x68
-
-    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
-
-    invoke-virtual {v1, v2, v4}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
-
-    const/16 v4, 0x8
-
-    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
-
-    new-instance v2, Landroid/widget/TextView;
-
-    invoke-direct {v2, p0}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
-
-    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
-
-    const/4 v3, -0x1
-
-    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setTextColor(I)V
-
-    const/4 v3, 0x0
-
-    const/high16 v4, 0x41800000    # 16.0f
-
-    invoke-virtual {v2, v3, v4}, Landroid/widget/TextView;->setTextSize(IF)V
-
-    const/16 v4, 0x11
-
-    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setGravity(I)V
-
-    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setIncludeFontPadding(Z)V
-
-    const/4 v4, 0x1
-
-    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setSingleLine(Z)V
-
-    invoke-virtual {p0}, Landroid/content/Context;->getAssets()Landroid/content/res/AssetManager;
-
-    move-result-object v5
-
-    const-string v6, "fonts/FSElliot-Heavy.ttf"
-
-    invoke-static {v5, v6}, Lcom/navdy/hud/app/view/FontTextView;->createFromAsset(Landroid/content/res/AssetManager;Ljava/lang/String;)Landroid/graphics/Typeface;
-
-    move-result-object v5
-
-    invoke-virtual {v2, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
+    move-result-object v2
 
     new-instance v4, Landroid/widget/FrameLayout$LayoutParams;
 
     const/16 v5, 0x68
 
-    const/16 v6, 0x16
+    const/16 v6, 0x54
 
     invoke-direct {v4, v5, v6}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
 
@@ -766,13 +676,35 @@
 
     iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
-    const/16 v5, 0xa9
+    const/16 v5, 0x68
 
     iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 
     invoke-virtual {v1, v2, v4}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
 
+    const v3, 0x7f0e0142
+
+    invoke-virtual {v2, v3}, Landroid/view/View;->findViewById(I)Landroid/view/View;
+
+    move-result-object v3
+
+    check-cast v3, Landroid/widget/TextView;
+
+    sput-object v3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraSpeedTextView:Landroid/widget/TextView;
+
     const/16 v4, 0x8
+
+    invoke-virtual {v3, v4}, Landroid/widget/TextView;->setVisibility(I)V
+
+    const v3, 0x7f0e0111
+
+    invoke-virtual {v2, v3}, Landroid/view/View;->findViewById(I)Landroid/view/View;
+
+    move-result-object v2
+
+    check-cast v2, Landroid/widget/TextView;
+
+    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
 
     invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
 

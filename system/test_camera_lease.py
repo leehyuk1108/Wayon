@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from openpilot.system.camera_lease import CameraLease
 
 
@@ -30,6 +32,23 @@ def test_camera_lease_context_releases_after_exception(tmp_path):
   except RuntimeError:
     pass
 
+  replacement = CameraLease("snapshot", 30, path)
+  assert replacement.acquire()
+  replacement.release()
+
+
+def test_camera_lease_releases_when_metadata_write_fails(tmp_path, monkeypatch):
+  path = tmp_path / "camera.lease"
+  broken = CameraLease("live", 30, path)
+
+  def fail_renew():
+    raise OSError(28, "No space left on device")
+
+  monkeypatch.setattr(broken, "renew", fail_renew)
+  with pytest.raises(OSError, match="No space left on device"):
+    broken.acquire()
+
+  assert not broken.acquired
   replacement = CameraLease("snapshot", 30, path)
   assert replacement.acquire()
   replacement.release()

@@ -33,7 +33,15 @@ class CameraLease:
       return False
 
     self.fd = fd
-    self.renew()
+    try:
+      self.renew()
+    except Exception:
+      self.fd = None
+      try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+      finally:
+        os.close(fd)
+      raise
     return True
 
   def renew(self) -> None:

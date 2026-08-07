@@ -124,8 +124,14 @@ def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   assert "lastCameraIsMobile" in camera_filter
   assert "MOBILE_DETECTION" in camera_filter
   assert "patch_camera_background" in camera_filter
+  assert "patch_camera_distance_bold" in camera_filter
+  assert 'const-string v2, "fonts/FSElliot-Heavy.ttf"' in camera_filter
+  assert "setTypeface(Landroid/graphics/Typeface;I)V" in camera_filter
   assert "patch_encoded_camera_speed" in camera_filter
   assert "patch_mobile_notification_state" in camera_filter
+  assert "DISTANCE_FORMATTING" in camera_filter
+  assert "patch_camera_distance_formatting" in camera_filter
+  assert ":camera_distance_format_done" in camera_filter
   assert "register_mobile_camera_resource" in camera_filter
   assert "neg-int v0, v0" in camera_filter
   assert "0x7f02029f" in camera_filter
@@ -197,6 +203,11 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert "const v3, 0x7f030032" in receiver  # maps_traffic_incident_widget
   assert "const v3, 0x7f0e0142" in receiver  # incidentInfo
   assert "const v3, 0x7f0e0111" in receiver  # distance textView
+  assert "Landroid/text/TextPaint;->setFakeBoldText(Z)V" in receiver
+  assert "formatCameraDistance(Ljava/lang/String;)Ljava/lang/String;" in receiver
+  assert 'const-string v0, "km"' in receiver
+  assert "const/16 v1, 0x3e8" in receiver
+  assert "div-int/lit8 v0, v0, 0x64" in receiver
 
 
 def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():

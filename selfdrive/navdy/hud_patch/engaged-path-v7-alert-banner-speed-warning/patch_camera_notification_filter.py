@@ -123,6 +123,79 @@ MOBILE_DETECTION = r'''    const/4 v4, 0x0
 
     :mobile_camera_ready'''
 
+DISTANCE_FORMATTING = r'''    invoke-virtual {v2}, Ljava/lang/String;->toLowerCase()Ljava/lang/String;
+
+    move-result-object v0
+
+    const-string v1, "km"
+
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+
+    move-result v3
+
+    if-nez v3, :camera_distance_format_done
+
+    const-string v0, "[^0-9]"
+
+    const-string v1, ""
+
+    invoke-virtual {v2, v0, v1}, Ljava/lang/String;->replaceAll(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v0
+
+    invoke-virtual {v0}, Ljava/lang/String;->length()I
+
+    move-result v1
+
+    if-lez v1, :camera_distance_format_done
+
+    invoke-static {v0}, Ljava/lang/Integer;->parseInt(Ljava/lang/String;)I
+
+    move-result v0
+
+    const/16 v1, 0x3e8
+
+    if-lt v0, v1, :camera_distance_format_done
+
+    add-int/lit8 v0, v0, 0x32
+
+    div-int/lit8 v0, v0, 0x64
+
+    div-int/lit8 v1, v0, 0xa
+
+    rem-int/lit8 v0, v0, 0xa
+
+    new-instance v3, Ljava/lang/StringBuilder;
+
+    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
+
+    invoke-virtual {v3, v1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+
+    move-result-object v3
+
+    const-string v1, "."
+
+    invoke-virtual {v3, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v3
+
+    invoke-virtual {v3, v0}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+
+    move-result-object v3
+
+    const-string v0, "km"
+
+    invoke-virtual {v3, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v3
+
+    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v2
+
+    :camera_distance_format_done
+'''
+
 
 def restore_camera_clear_match(smali: str) -> str:
   start = smali.index(CLEAR_METHOD_START)
@@ -189,6 +262,21 @@ def add_mobile_field(smali: str) -> str:
   return smali.replace(LAST_SPEED_FIELD, LAST_SPEED_FIELD + "\n\n" + MOBILE_FIELD, 1)
 
 
+def patch_camera_distance_formatting(smali: str) -> str:
+  start = smali.index(".method public onNotificationEvent(")
+  end = smali.index(METHOD_END, start)
+  method = smali[start:end]
+  if ":camera_distance_format_done" in method:
+    return smali
+  anchor = """    :goto_0
+    invoke-static {p1}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->extractCameraSpeed(Lcom/navdy/service/library/events/notification/NotificationEvent;)Ljava/lang/String;"""
+  replacement = "    :goto_0\n" + DISTANCE_FORMATTING + "\n" + anchor.split("\n", 1)[1]
+  if anchor not in method:
+    raise ValueError("camera distance formatting anchor not found")
+  method = method.replace(anchor, replacement, 1)
+  return smali[:start] + method + smali[end:]
+
+
 def patch_camera_background(smali: str) -> str:
   start = smali.index(".method private applyCameraText(")
   end = smali.index(METHOD_END, start)
@@ -230,6 +318,46 @@ def patch_camera_background(smali: str) -> str:
     match.group(3),
     method,
   )
+  return smali[:start] + method + smali[end:]
+
+
+def patch_camera_distance_bold(smali: str) -> str:
+  start = smali.index(".method private applyCameraText(")
+  end = smali.index(METHOD_END, start)
+  method = smali[start:end]
+  if "fonts/FSElliot-Heavy.ttf" in method:
+    return smali
+  anchor = """    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->distanceTextView:Landroid/widget/TextView;
+
+    if-eqz v0, :cond_0
+
+    const/4 v1, -0x1"""
+  replacement = """    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->distanceTextView:Landroid/widget/TextView;
+
+    if-eqz v0, :cond_0
+
+    invoke-virtual {v0}, Landroid/view/View;->getContext()Landroid/content/Context;
+
+    move-result-object v1
+
+    invoke-virtual {v1}, Landroid/content/Context;->getAssets()Landroid/content/res/AssetManager;
+
+    move-result-object v1
+
+    const-string v2, "fonts/FSElliot-Heavy.ttf"
+
+    invoke-static {v1, v2}, Lcom/navdy/hud/app/view/FontTextView;->createFromAsset(Landroid/content/res/AssetManager;Ljava/lang/String;)Landroid/graphics/Typeface;
+
+    move-result-object v1
+
+    const/4 v2, 0x1
+
+    invoke-virtual {v0, v1, v2}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
+
+    const/4 v1, -0x1"""
+  if anchor not in method:
+    raise ValueError("camera distance typeface anchor not found")
+  method = method.replace(anchor, replacement, 1)
   return smali[:start] + method + smali[end:]
 
 
@@ -327,7 +455,9 @@ def main() -> int:
   smali = expose_camera_distance(smali)
   smali = restore_camera_clear_match(smali)
   smali = add_mobile_field(smali)
+  smali = patch_camera_distance_formatting(smali)
   smali = patch_camera_background(smali)
+  smali = patch_camera_distance_bold(smali)
   smali = patch_encoded_camera_speed(smali)
   smali = patch_mobile_notification_state(smali)
   path.write_text(disable_broad_origin_matches(smali))

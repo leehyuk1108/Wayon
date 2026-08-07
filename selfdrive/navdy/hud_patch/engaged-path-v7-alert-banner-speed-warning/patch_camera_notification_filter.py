@@ -7,6 +7,8 @@ METHOD_START = ".method public static isCameraNotification("
 CLEAR_METHOD_START = ".method private static isCameraClearNotification("
 CLEAR_ACTION_START = ".method private clearCameraText()V"
 METHOD_END = ".end method"
+PRIVATE_DISTANCE_FIELD = ".field private static lastCameraDistance:Ljava/lang/String;"
+PUBLIC_DISTANCE_FIELD = ".field public static lastCameraDistance:Ljava/lang/String;"
 
 
 CLEAR_METHOD = """.method private static isCameraClearNotification(Lcom/navdy/service/library/events/notification/NotificationEvent;)Z
@@ -61,6 +63,14 @@ def validate_camera_clear_action(smali: str) -> None:
     raise ValueError("camera clear action does not hide the camera widget")
 
 
+def expose_camera_distance(smali: str) -> str:
+  if PUBLIC_DISTANCE_FIELD in smali:
+    return smali
+  if PRIVATE_DISTANCE_FIELD not in smali:
+    raise ValueError("camera distance field not found")
+  return smali.replace(PRIVATE_DISTANCE_FIELD, PUBLIC_DISTANCE_FIELD, 1)
+
+
 def disable_broad_origin_matches(smali: str) -> str:
   start = smali.index(METHOD_START)
   end = smali.index(METHOD_END, start)
@@ -74,9 +84,11 @@ def disable_broad_origin_matches(smali: str) -> str:
       "    move-result v2\n\n",
       "    if-nez v2, :cond_1",
     ))
-    if method.count(block) != 2:
+    disabled_block = block.rsplit("    if-nez v2, :cond_1", 1)[0] + "    nop"
+    if method.count(block) == 2:
+      method = method.replace(block, disabled_block)
+    elif method.count(disabled_block) != 2:
       raise ValueError(f"expected two {origin} origin checks")
-    method = method.replace(block, block.rsplit("\n", 1)[0] + "\n\n    nop")
 
   return smali[:start] + method + smali[end:]
 
@@ -88,6 +100,7 @@ def main() -> int:
   path = Path(sys.argv[1])
   smali = path.read_text()
   validate_camera_clear_action(smali)
+  smali = expose_camera_distance(smali)
   smali = restore_camera_clear_match(smali)
   path.write_text(disable_broad_origin_matches(smali))
   return 0

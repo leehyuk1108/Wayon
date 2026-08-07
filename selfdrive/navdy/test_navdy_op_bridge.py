@@ -114,8 +114,8 @@ def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   camera_filter = patch.read_text()
 
   assert 'for origin in ("carrot", "comma")' in camera_filter
-  assert "if method.count(block) != 2" in camera_filter
-  assert 'block.rsplit("\\n", 1)[0] + "\\n\\n    nop"' in camera_filter
+  assert "if method.count(block) == 2" in camera_filter
+  assert "elif method.count(disabled_block) != 2" in camera_filter
 
 
 def test_navdy_camera_clear_hides_camera_widget():
@@ -148,6 +148,10 @@ def test_navdy_camera_clear_hides_camera_widget():
 .end method"""
   namespace["validate_camera_clear_action"](clear_action)
 
+  private_field = ".field private static lastCameraDistance:Ljava/lang/String;"
+  exposed = namespace["expose_camera_distance"](private_field)
+  assert exposed == ".field public static lastCameraDistance:Ljava/lang/String;"
+
   presenter = Path("/Users/ijonghyeog/Documents/navdy/build_work/"
                    "moving-acc-ceiling-v2-compat-20260801/smali/com/navdy/hud/app/"
                    "maps/widget/TrafficIncidentWidgetPresenter.smali")
@@ -156,6 +160,18 @@ def test_navdy_camera_clear_hides_camera_widget():
       ".end method", 1)[0]
     assert "const/4 v3, 0x4" in clear_camera_text
     assert "Landroid/view/View;->setVisibility(I)V" in clear_camera_text
+
+
+def test_navdy_camera_card_is_mirrored_into_attached_overlay():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  receiver = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+
+  assert "sCameraSpeedTextView:Landroid/widget/TextView;" in receiver
+  assert "sCameraDistanceTextView:Landroid/widget/TextView;" in receiver
+  assert "->setBackgroundResource(I)V" in receiver
+  assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in receiver
+  assert "TrafficIncidentWidgetPresenter;->lastCameraDistance:Ljava/lang/String;" in receiver
+  assert ":camera_display_hide" in receiver
 
 
 def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():

@@ -75,6 +75,10 @@ Behavior:
   speed shown while openpilot is disengaged.
 - Keeps the camera-speed comparison double in `v8/v9` so Android 5 verifies
   `OpenpilotStateReceiver` without clobbering the log tag in `v3`.
+- Mirrors the latest camera speed and distance into the always-attached
+  openpilot overlay at the stock dashboard position. This keeps the camera card
+  visible even when the legacy traffic-widget presenter is attached to a
+  hidden dashboard widget, while camera-clear events still hide both rows.
 - Retains the last valid path while fast state-only payloads update icons,
   speed, set speed, alerts, and music independently.
 - Coalesces socket updates on the Android main looper so an overloaded frame

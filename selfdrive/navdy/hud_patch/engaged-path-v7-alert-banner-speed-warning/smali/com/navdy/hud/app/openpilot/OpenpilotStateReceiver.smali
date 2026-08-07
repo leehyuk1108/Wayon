@@ -86,6 +86,10 @@
 
 .field private static sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;
 
+.field private static sCameraDistanceTextView:Landroid/widget/TextView;
+
+.field private static sCameraSpeedTextView:Landroid/widget/TextView;
+
 .field private static sEngagedBodyMask:Landroid/view/View;
 
 .field private static sEngagedTopMask:Landroid/view/View;
@@ -639,6 +643,110 @@
     iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
     const/16 v5, 0x148
+
+    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v1, v2, v4}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
+
+    const/16 v4, 0x8
+
+    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
+
+    new-instance v2, Landroid/widget/TextView;
+
+    invoke-direct {v2, p0}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
+
+    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraSpeedTextView:Landroid/widget/TextView;
+
+    const/high16 v3, -0x1000000
+
+    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setTextColor(I)V
+
+    const/4 v3, 0x0
+
+    const/high16 v4, 0x42000000    # 32.0f
+
+    invoke-virtual {v2, v3, v4}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    const/16 v4, 0x11
+
+    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setGravity(I)V
+
+    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setIncludeFontPadding(Z)V
+
+    const/4 v4, 0x1
+
+    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setSingleLine(Z)V
+
+    sget-object v5, Landroid/graphics/Typeface;->DEFAULT_BOLD:Landroid/graphics/Typeface;
+
+    invoke-virtual {v2, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
+
+    const v5, 0x7f020286
+
+    invoke-virtual {v2, v5}, Landroid/widget/TextView;->setBackgroundResource(I)V
+
+    new-instance v4, Landroid/widget/FrameLayout$LayoutParams;
+
+    const/16 v5, 0x3e
+
+    const/16 v6, 0x3e
+
+    invoke-direct {v4, v5, v6}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
+
+    const/16 v5, 0x201
+
+    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    const/16 v5, 0x68
+
+    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v1, v2, v4}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
+
+    const/16 v4, 0x8
+
+    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
+
+    new-instance v2, Landroid/widget/TextView;
+
+    invoke-direct {v2, p0}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
+
+    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
+
+    const/4 v3, -0x1
+
+    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setTextColor(I)V
+
+    const/4 v3, 0x0
+
+    const/high16 v4, 0x41700000    # 15.0f
+
+    invoke-virtual {v2, v3, v4}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    const/16 v4, 0x11
+
+    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setGravity(I)V
+
+    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setIncludeFontPadding(Z)V
+
+    const/4 v4, 0x1
+
+    invoke-virtual {v2, v4}, Landroid/widget/TextView;->setSingleLine(Z)V
+
+    new-instance v4, Landroid/widget/FrameLayout$LayoutParams;
+
+    const/16 v5, 0x68
+
+    const/16 v6, 0x16
+
+    invoke-direct {v4, v5, v6}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
+
+    const/16 v5, 0x1ec
+
+    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    const/16 v5, 0xa9
 
     iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 
@@ -1830,6 +1938,57 @@
 
     .line 185
     :cond_7
+    invoke-static {}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I
+
+    move-result v1
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraSpeedTextView:Landroid/widget/TextView;
+
+    if-eqz v0, :camera_display_done
+
+    if-lez v1, :camera_display_hide
+
+    invoke-static {v1}, Ljava/lang/Integer;->toString(I)Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    const/4 v1, 0x0
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
+
+    if-eqz v0, :camera_display_done
+
+    sget-object v1, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraDistance:Ljava/lang/String;
+
+    if-nez v1, :camera_distance_ready
+
+    const-string v1, ""
+
+    :camera_distance_ready
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    const/4 v1, 0x0
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    goto :camera_display_done
+
+    :camera_display_hide
+    const/16 v1, 0x8
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
+
+    if-eqz v0, :camera_display_done
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    :camera_display_done
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sHaveActive:Z
 
     if-eqz v0, :cond_8

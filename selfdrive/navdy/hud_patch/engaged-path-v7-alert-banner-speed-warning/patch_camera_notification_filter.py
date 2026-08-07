@@ -321,11 +321,11 @@ def patch_camera_background(smali: str) -> str:
   return smali[:start] + method + smali[end:]
 
 
-def patch_camera_distance_bold(smali: str) -> str:
+def patch_camera_distance_music_typeface(smali: str) -> str:
   start = smali.index(".method private applyCameraText(")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if "fonts/FSElliot-Heavy.ttf" in method:
+  if ":camera_distance_music_typeface" in method:
     return smali
   anchor = """    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->distanceTextView:Landroid/widget/TextView;
 
@@ -336,21 +336,10 @@ def patch_camera_distance_bold(smali: str) -> str:
 
     if-eqz v0, :cond_0
 
-    invoke-virtual {v0}, Landroid/view/View;->getContext()Landroid/content/Context;
+    :camera_distance_music_typeface
+    sget-object v1, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
 
-    move-result-object v1
-
-    invoke-virtual {v1}, Landroid/content/Context;->getAssets()Landroid/content/res/AssetManager;
-
-    move-result-object v1
-
-    const-string v2, "fonts/FSElliot-Heavy.ttf"
-
-    invoke-static {v1, v2}, Lcom/navdy/hud/app/view/FontTextView;->createFromAsset(Landroid/content/res/AssetManager;Ljava/lang/String;)Landroid/graphics/Typeface;
-
-    move-result-object v1
-
-    const/4 v2, 0x1
+    const/4 v2, 0x0
 
     invoke-virtual {v0, v1, v2}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
 
@@ -457,7 +446,7 @@ def main() -> int:
   smali = add_mobile_field(smali)
   smali = patch_camera_distance_formatting(smali)
   smali = patch_camera_background(smali)
-  smali = patch_camera_distance_bold(smali)
+  smali = patch_camera_distance_music_typeface(smali)
   smali = patch_encoded_camera_speed(smali)
   smali = patch_mobile_notification_state(smali)
   path.write_text(disable_broad_origin_matches(smali))

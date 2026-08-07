@@ -706,13 +706,9 @@
 
     sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
 
-    invoke-virtual {v2}, Landroid/widget/TextView;->getPaint()Landroid/text/TextPaint;
+    sget-object v3, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
 
-    move-result-object v3
-
-    const/4 v5, 0x1
-
-    invoke-virtual {v3, v5}, Landroid/text/TextPaint;->setFakeBoldText(Z)V
+    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
 
     invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
 

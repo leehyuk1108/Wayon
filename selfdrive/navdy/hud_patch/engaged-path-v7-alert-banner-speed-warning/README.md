@@ -83,8 +83,8 @@ Behavior:
   camera card, so its FSElliot Heavy font metrics, spacing, and alignment are
   identical to the original widget. Three-digit limits still shrink to 26sp so
   100 and 110 remain centered inside the 62px speed-sign circle.
-- Adds a subtle synthetic bold pass to the remaining-distance row for better
-  HUD legibility without changing its stock 16sp size or position.
+- Uses the same Android system typeface and normal weight as the music-title row
+  for camera distance, without changing its stock 16sp size or position.
 - Displays camera distances below 1000m in meters and converts 1000m or more
   to a rounded one-decimal kilometre value, such as `1340m` to `1.3km`.
 - Detects CommANav mobile-enforcement notifications from their explicit

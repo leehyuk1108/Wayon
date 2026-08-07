@@ -11,7 +11,6 @@ import argparse
 import json
 import math
 import os
-import select
 import shlex
 import socket
 import subprocess
@@ -1175,6 +1174,7 @@ def ensure_socket_forward(args: argparse.Namespace) -> None:
 def close_socket(args: argparse.Namespace) -> None:
   conn = getattr(args, "_socket_conn", None)
   setattr(args, "_socket_conn", None)
+  setattr(args, "_socket_feedback_buffer", b"")
   if conn is not None:
     try:
       conn.close()
@@ -1202,6 +1202,7 @@ def connect_socket(args: argparse.Namespace, force: bool = False) -> bool:
     close_socket(args)
     return False
   setattr(args, "_socket_conn", conn)
+  setattr(args, "_socket_feedback_buffer", b"")
   return True
 
 
@@ -1225,7 +1226,8 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   try:
     conn = getattr(args, "_socket_conn")
     conn.sendall(json_payload.encode("utf-8"))
-    read_navdy_feedback(conn, args)
+    if not read_navdy_feedback(conn, args):
+      raise ConnectionError("Navdy socket acknowledgement timed out")
     return True
   except OSError:
     close_socket(args)
@@ -1257,12 +1259,16 @@ def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any,
     pass
 
 
-def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> None:
+def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> bool:
   try:
-    readable, _, _ = select.select([conn], [], [], 0.01)
-    if not readable:
-      return
-    buffer = getattr(args, "_socket_feedback_buffer", b"") + conn.recv(512)
+    buffer = getattr(args, "_socket_feedback_buffer", b"")
+    while b"\n" not in buffer:
+      chunk = conn.recv(512)
+      if not chunk:
+        return False
+      buffer += chunk
+      if len(buffer) > 4096:
+        return False
     lines = buffer.split(b"\n")
     setattr(args, "_socket_feedback_buffer", lines.pop())
     for line in lines:
@@ -1271,8 +1277,9 @@ def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> None:
       feedback = json.loads(line)
       publish_navdy_camera_state(feedback.get("cameraSpeedKph", 0),
                                  feedback.get("cameraSource"), args)
+    return True
   except (OSError, TypeError, ValueError, json.JSONDecodeError):
-    return
+    return False
 
 
 def socket_sender_loop(args: argparse.Namespace) -> None:
@@ -1878,6 +1885,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
   args = parse_args()
   setattr(args, "_last_adb_recover_at", 0.0)
+  setattr(args, "_socket_feedback_buffer", b"")
   args._adb_recover_lock = threading.Lock()
   setattr(args, "_last_power_on_ensure_at", 0.0)
   setattr(args, "_last_power_off_ensure_at", 0.0)

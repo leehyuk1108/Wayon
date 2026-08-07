@@ -1463,7 +1463,7 @@ def test_socket_feedback_publishes_camera_speed_without_wifi(tmp_path, monkeypat
   args = SimpleNamespace(_socket_feedback_buffer=b"")
   try:
     receiver.sendall(b'{"cameraSpeedKph":60,"cameraSource":"trafficNotification"}\n')
-    navdy_op_bridge.read_navdy_feedback(sender, args)
+    assert navdy_op_bridge.read_navdy_feedback(sender, args)
   finally:
     sender.close()
     receiver.close()
@@ -1478,12 +1478,22 @@ def test_socket_feedback_rejects_untagged_notification_number(tmp_path, monkeypa
   args = SimpleNamespace(_socket_feedback_buffer=b"")
   try:
     receiver.sendall(b'{"cameraSpeedKph":30}\n')
-    navdy_op_bridge.read_navdy_feedback(sender, args)
+    assert navdy_op_bridge.read_navdy_feedback(sender, args)
   finally:
     sender.close()
     receiver.close()
 
   assert camera_state.read_text() == '{"cameraSpeedKph":0,"cameraSource":""}'
+
+
+def test_socket_feedback_detects_closed_navdy_tunnel():
+  sender, receiver = socket.socketpair()
+  args = SimpleNamespace(_socket_feedback_buffer=b"")
+  receiver.close()
+  try:
+    assert not navdy_op_bridge.read_navdy_feedback(sender, args)
+  finally:
+    sender.close()
 
 
 def test_emit_queues_socket_work_off_polling_thread():

@@ -150,9 +150,11 @@ def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   assert "patch_camera_distance_music_typeface" in camera_filter
   assert "patch_section_legacy_card_visibility" in camera_filter
   assert ":section_legacy_camera_visibility_ready" in camera_filter
+  assert ":camera_speed_music_typeface" in camera_filter
   assert ":camera_distance_music_typeface" in camera_filter
   assert "Typeface;->DEFAULT:Landroid/graphics/Typeface;" in camera_filter
   assert "setTypeface(Landroid/graphics/Typeface;I)V" in camera_filter
+  assert "const/high16 v2, 0x41880000    # 17.0f" in camera_filter
   assert "patch_encoded_camera_speed" in camera_filter
   assert "patch_camera_type_notification_state" in camera_filter
   assert "DISTANCE_FORMATTING" in camera_filter
@@ -212,6 +214,8 @@ def test_navdy_camera_clear_hides_camera_widget():
 def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
   receiver = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+  overlay_builder = receiver.split(".method private static buildOverlayView", 1)[1].split(
+    ".end method", 1)[0]
 
   assert "sCameraSpeedTextView:Landroid/widget/TextView;" in receiver
   assert "sCameraDistanceTextView:Landroid/widget/TextView;" in receiver
@@ -229,7 +233,10 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert "const v3, 0x7f030032" in receiver  # maps_traffic_incident_widget
   assert "const v3, 0x7f0e0142" in receiver  # incidentInfo
   assert "const v3, 0x7f0e0111" in receiver  # distance textView
-  assert "Typeface;->DEFAULT:Landroid/graphics/Typeface;" in receiver
+  assert overlay_builder.count("Typeface;->DEFAULT:Landroid/graphics/Typeface;") == 2
+  assert overlay_builder.count(
+    "TextView;->setTypeface(Landroid/graphics/Typeface;I)V") == 2
+  assert "const/high16 v5, 0x41880000    # 17.0f" in overlay_builder
   assert "formatCameraDistance(Ljava/lang/String;)Ljava/lang/String;" in receiver
   assert 'const-string v0, "km"' in receiver
   assert "const/16 v1, 0x3e8" in receiver

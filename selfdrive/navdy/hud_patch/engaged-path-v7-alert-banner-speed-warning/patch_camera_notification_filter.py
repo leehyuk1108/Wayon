@@ -396,28 +396,49 @@ def patch_camera_distance_music_typeface(smali: str) -> str:
   start = smali.index(".method private applyCameraText(")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if ":camera_distance_music_typeface" in method or "Typeface;->DEFAULT:Landroid/graphics/Typeface;" in method:
-    return smali
-  anchor = """    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->distanceTextView:Landroid/widget/TextView;
-
-    if-eqz v0, :cond_0
-
-    const/4 v1, -0x1"""
-  replacement = """    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->distanceTextView:Landroid/widget/TextView;
-
-    if-eqz v0, :cond_0
-
-    :camera_distance_music_typeface
+  speed_typeface = """    :camera_speed_music_typeface
     sget-object v1, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
 
     const/4 v2, 0x0
 
     invoke-virtual {v0, v1, v2}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
 
-    const/4 v1, -0x1"""
-  if anchor not in method:
-    raise ValueError("camera distance typeface anchor not found")
-  method = method.replace(anchor, replacement, 1)
+"""
+  if ":camera_speed_music_typeface" not in method:
+    method, count = re.subn(
+      r"(    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->textView:Landroid/widget/TextView;\n\n+"
+      r"    if-eqz v0, :cond_\d+\n\n+)",
+      lambda match: match.group(1) + speed_typeface,
+      method,
+      count=1,
+    )
+    if count != 1:
+      raise ValueError("camera speed typeface anchor not found")
+
+  distance_typeface = """    :camera_distance_music_typeface
+    sget-object v1, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
+
+    const/4 v2, 0x0
+
+    invoke-virtual {v0, v1, v2}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
+
+    const/4 v1, 0x0
+
+    const/high16 v2, 0x41880000    # 17.0f
+
+    invoke-virtual {v0, v1, v2}, Landroid/widget/TextView;->setTextSize(IF)V
+
+"""
+  if ":camera_distance_music_typeface" not in method:
+    method, count = re.subn(
+      r"(    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->distanceTextView:Landroid/widget/TextView;\n\n+"
+      r"    if-eqz v0, :cond_\d+\n\n+)",
+      lambda match: match.group(1) + distance_typeface,
+      method,
+      count=1,
+    )
+    if count != 1:
+      raise ValueError("camera distance typeface anchor not found")
   return smali[:start] + method + smali[end:]
 
 

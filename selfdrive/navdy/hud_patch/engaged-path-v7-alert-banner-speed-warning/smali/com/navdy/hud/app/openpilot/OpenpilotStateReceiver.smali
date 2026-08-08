@@ -900,6 +900,12 @@
 
     sput-object v3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraSpeedTextView:Landroid/widget/TextView;
 
+    sget-object v4, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
+
+    const/4 v5, 0x0
+
+    invoke-virtual {v3, v4, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
+
     const/16 v4, 0x8
 
     invoke-virtual {v3, v4}, Landroid/widget/TextView;->setVisibility(I)V
@@ -916,7 +922,15 @@
 
     sget-object v3, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
 
-    invoke-virtual {v2, v3}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
+    const/4 v5, 0x0
+
+    invoke-virtual {v2, v3, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
+
+    const/4 v3, 0x0
+
+    const/high16 v5, 0x41880000    # 17.0f
+
+    invoke-virtual {v2, v3, v5}, Landroid/widget/TextView;->setTextSize(IF)V
 
     invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
 

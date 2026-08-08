@@ -31,6 +31,11 @@ struct IntelligentCruiseButtonManagement {
   vTarget @2 :Float32;
   automaticControlActive @3 :Bool;
   automaticTargetSpeedKph @4 :Float32;
+  sectionPhase @5 :Text;
+  sectionLimitKph @6 :Float32;
+  sectionAverageKph @7 :Float32;
+  sectionProgress @8 :Float32;
+  sectionRemainingM @9 :Float32;
 
   enum IntelligentCruiseButtonManagementState {
     inactive @0;      # No button press or default state

@@ -88,6 +88,13 @@ class IntelligentCruiseButtonManagement:
   def automatic_target_speed_kph(self) -> float:
     return float(self.v_target if self.is_metric else self.v_target * CV.MPH_TO_KPH)
 
+  @property
+  def section_progress(self) -> float:
+    if self.section_total_distance_m <= 0.0:
+      return 0.0
+    travelled_m = self.section_total_distance_m - self.section_remaining_m
+    return max(0.0, min(1.0, travelled_m / self.section_total_distance_m))
+
   def reset_temporary_control(self) -> None:
     self.automatic_speed_control_active = False
     self.automatic_control_active = False

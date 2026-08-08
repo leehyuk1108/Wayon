@@ -1035,6 +1035,11 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   icbm = getattr(selfdrive_state_sp, "intelligentCruiseButtonManagement", None)
   automatic_acc_active = bool(getattr(icbm, "automaticControlActive", False))
   automatic_acc_target_kph = finite_float(getattr(icbm, "automaticTargetSpeedKph", 0.0))
+  section_phase = str(getattr(icbm, "sectionPhase", "inactive"))
+  section_limit_kph = finite_float(getattr(icbm, "sectionLimitKph", 0.0))
+  section_average_kph = finite_float(getattr(icbm, "sectionAverageKph", 0.0))
+  section_progress = max(0.0, min(1.0, finite_float(getattr(icbm, "sectionProgress", 0.0))))
+  section_remaining_m = max(0.0, finite_float(getattr(icbm, "sectionRemainingM", 0.0)))
   physical_acc_speed = finite_float(getattr(getattr(car_state, "cruiseState", None), "speedCluster", 0.0))
   physical_acc_speed_kph = physical_acc_speed * KPH_PER_MS if physical_acc_speed > 0.0 else 0.0
   automatic_acc_at_target = (
@@ -1060,6 +1065,11 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "automaticAccTargetKph": rounded(automatic_acc_target_kph) if automatic_acc_active else 0.0,
     "automaticAccActive": automatic_acc_active,
     "automaticAccAtTarget": automatic_acc_at_target,
+    "sectionPhase": section_phase,
+    "sectionLimitKph": rounded(section_limit_kph),
+    "sectionAverageKph": rounded(section_average_kph),
+    "sectionProgress": rounded(section_progress, 2),
+    "sectionRemainingM": rounded(section_remaining_m),
     "vEgoKph": rounded(v_ego_kph),
     "gear": gear_text(car_state, selfdrive_state),
     "leftBlinker": left_blinker,
@@ -1107,6 +1117,12 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "actualAccSetKph": 60.0,
     "automaticAccTargetKph": 70.0,
     "automaticAccActive": True,
+    "automaticAccAtTarget": False,
+    "sectionPhase": "cruise",
+    "sectionLimitKph": 100.0,
+    "sectionAverageKph": 92.0,
+    "sectionProgress": 0.64,
+    "sectionRemainingM": 1300.0,
     "vEgoKph": 82.0,
     "gear": args.synthetic_gear,
     "leftBlinker": left,
@@ -1505,6 +1521,11 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("automaticAccTargetKph"),
     payload.get("automaticAccActive"),
     payload.get("automaticAccAtTarget"),
+    payload.get("sectionPhase"),
+    payload.get("sectionLimitKph"),
+    payload.get("sectionAverageKph"),
+    payload.get("sectionProgress"),
+    payload.get("sectionRemainingM"),
     payload.get("vEgoKph"),
     payload.get("gear"),
     payload.get("leftBlinker"),

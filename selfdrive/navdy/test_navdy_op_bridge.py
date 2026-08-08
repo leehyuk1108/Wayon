@@ -68,8 +68,9 @@ def test_navdy_outside_temperature_view_binds_and_throttles_obd_pid():
   assert "sOutsideTempTextView" not in overlay_builder
   assert "const/16 v5, 0x46" in temp_updater
   assert "const-wide/16 v4, 0x1388" in temp_updater
-  assert "if-ltz v6, :cond_temp_throttled" in temp_updater
-  assert "if-gez v6, :cond_temp_throttled" not in temp_updater
+  assert "cmp-long v6, v2, v4" in temp_updater
+  assert "if-ltz v6," in temp_updater
+  assert "if-gez v6," not in temp_updater
 
 
 def test_navdy_music_uses_artist_title_and_refreshes_recreated_dash():
@@ -116,6 +117,23 @@ def test_navdy_socket_returns_camera_limit_over_existing_usb_tunnel():
   assert "BufferedWriter;->flush()V" in service
 
 
+def test_navdy_section_camera_view_matches_approved_hud_contract():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  receiver = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+  section_view = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotSectionCameraView.smali").read_text()
+
+  assert "sSectionCameraView:Lcom/navdy/hud/app/openpilot/OpenpilotSectionCameraView;" in receiver
+  assert "const/16 v5, 0x1ec" in receiver  # stock camera-card x
+  assert "const/16 v5, 0xd3" in receiver   # physical SmartDash y
+  assert "->updatePayload(Lorg/json/JSONObject;IZ)V" in receiver
+  assert '"sectionAverageKph"' in section_view
+  assert '"sectionProgress"' in section_view
+  assert '"sectionRemainingM"' in section_view
+  assert '"\\uad6c\\uac04\\ub2e8\\uc18d"' in section_view
+  assert "->drawCircle(FFFLandroid/graphics/Paint;)V" in section_view
+  assert "->drawRoundRect(Landroid/graphics/RectF;FFLandroid/graphics/Paint;)V" in section_view
+
+
 def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
           "patch_camera_notification_filter.py"
@@ -130,6 +148,8 @@ def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   assert "SECTION_DETECTION" in camera_filter
   assert "patch_camera_background" in camera_filter
   assert "patch_camera_distance_music_typeface" in camera_filter
+  assert "patch_section_legacy_card_visibility" in camera_filter
+  assert ":section_legacy_camera_visibility_ready" in camera_filter
   assert ":camera_distance_music_typeface" in camera_filter
   assert "Typeface;->DEFAULT:Landroid/graphics/Typeface;" in camera_filter
   assert "setTypeface(Landroid/graphics/Typeface;I)V" in camera_filter
@@ -201,8 +221,8 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert "const v2, 0x7f02029f" in receiver
   assert "const v2, 0x7f020286" in receiver
   assert "neg-int v1, v1" in receiver
-  assert ":camera_display_hide" in receiver
-  assert ":camera_speed_two_digits" in receiver
+  assert "const/16 v1, 0x8" in receiver
+  assert "invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V" in receiver
   assert "const/high16 v4, 0x41d00000    # 26.0f" in receiver
   assert "const/high16 v4, 0x41f00000    # 30.0f" in receiver
   assert "LayoutInflater;->inflate(ILandroid/view/ViewGroup;)Landroid/view/View;" in receiver
@@ -280,10 +300,10 @@ def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
   assert "->setRotation(F)V" in smali
   assert "const/high16 p1, -0x3d4c0000    # -90.0f" in smali
   assert "const/high16 p1, 0x42b40000    # 90.0f" in smali
-  assert ":cond_navdy_actual_acc_complete" in smali
+  assert "if-nez v1, :cond_9" in smali
   reached_check = (
     "sget-boolean v1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccAtTarget:Z\n\n"
-    "    if-nez v1, :cond_navdy_actual_acc_complete"
+    "    if-nez v1, :cond_9"
   )
   assert reached_check in smali
   overlay_update = smali.split(".method private static updateOpenpilotOverlay", 1)[1].split(".end method", 1)[0]
@@ -292,8 +312,7 @@ def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
   speed_format = actual_acc_update.index("->formatSetSpeed(D)Ljava/lang/String;")
   reached_state = actual_acc_update.index("->sAutomaticAccAtTarget:Z")
   assert speed_compare < speed_format < reached_state
-  hidden_block = smali.rsplit(":cond_navdy_actual_acc_hidden", 1)[1].split(
-      ":goto_navdy_actual_acc_done", 1)[0]
+  hidden_block = smali.rsplit(":cond_a", 1)[1].split(":goto_6", 1)[0]
   assert (
     "sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;"
     "->sAutomaticAccArrowView:Landroid/widget/ImageView;\n\n"
@@ -419,6 +438,30 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
   assert payload["automaticAccTargetKph"] == 70.0
   assert payload["automaticAccActive"] is True
   assert payload["automaticAccAtTarget"] is False
+
+
+def test_payload_exposes_section_enforcement_metrics_to_navdy():
+  car_state = navdy_op_bridge.default_car_state()
+  selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+  selfdrive_state_sp = SimpleNamespace(
+    intelligentCruiseButtonManagement=SimpleNamespace(
+      automaticControlActive=True,
+      automaticTargetSpeedKph=105.0,
+      sectionPhase="cruise",
+      sectionLimitKph=100.0,
+      sectionAverageKph=92.4,
+      sectionProgress=0.64,
+      sectionRemainingM=1300.0,
+    ))
+
+  payload = navdy_op_bridge.payload_from_messages(
+    selfdrive_state, car_state, 8, selfdrive_state_sp=selfdrive_state_sp)
+
+  assert payload["sectionPhase"] == "cruise"
+  assert payload["sectionLimitKph"] == 100.0
+  assert payload["sectionAverageKph"] == 92.4
+  assert payload["sectionProgress"] == 0.64
+  assert payload["sectionRemainingM"] == 1300.0
 
 
 def test_payload_marks_icbm_target_reached_from_matching_cluster_values():
@@ -728,7 +771,7 @@ def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
 
   assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in smali
   assert "cmpl-double v4, v16, v8" in smali
-  assert ":cond_navdy_camera_speed_white" in smali
+  assert "if-lez v4, :cond_8" in smali
   assert "const/high16 v1, -0x10000" in smali
   assert "const/4 v1, -0x1" in smali
 
@@ -776,10 +819,10 @@ def test_navdy_hud_patch_keeps_status_icons_while_disengaged():
   for field in ("sLeftTurnView", "sRightTurnView", "sLeftBsmView", "sRightBsmView",
                 "sStandstillView", "sOpReadyView", "sSetSpeedRow"):
     assert f"->{field}:" in layout_method
-  assert "cond_standstill_disengaged" in layout_method
+  assert "if-eqz p0, :cond_4" in layout_method
   assert "const/16 v3, 0xeb" in layout_method
   assert "const/16 v3, 0x112" in layout_method
-  assert "cond_set_speed_disengaged" in layout_method
+  assert "if-eqz p0, :cond_6" in layout_method
   assert "const/16 v3, 0x12f" in layout_method
   assert "const/16 v3, 0x128" in layout_method
   assert "->applyStatusLayout(Z)V" in update_method

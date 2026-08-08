@@ -666,6 +666,11 @@ class SelfdriveD(CruiseHelper):
     icbm.vTarget = self.icbm.v_target
     icbm.automaticControlActive = self.icbm.automatic_control_active
     icbm.automaticTargetSpeedKph = self.icbm.automatic_target_speed_kph
+    icbm.sectionPhase = self.icbm.section_phase
+    icbm.sectionLimitKph = self.icbm.section_limit_kph
+    icbm.sectionAverageKph = self.icbm.section_average_kph
+    icbm.sectionProgress = self.icbm.section_progress
+    icbm.sectionRemainingM = self.icbm.section_remaining_m
 
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 

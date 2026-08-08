@@ -421,6 +421,39 @@ def patch_camera_distance_music_typeface(smali: str) -> str:
   return smali[:start] + method + smali[end:]
 
 
+def patch_section_legacy_card_visibility(smali: str) -> str:
+  start = smali.index(".method private applyCameraText(")
+  end = smali.index(METHOD_END, start)
+  method = smali[start:end]
+  if ":section_legacy_camera_visibility_ready" in method:
+    return smali
+
+  anchor = """    if-eqz v2, :cond_3
+
+    const/4 v3, 0x0
+
+    invoke-virtual {v2, v3}, Landroid/view/View;->setVisibility(I)V"""
+  replacement = """    if-eqz v2, :cond_3
+
+    sget-boolean v3, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
+
+    if-eqz v3, :section_legacy_camera_regular
+
+    const/16 v3, 0x8
+
+    goto :section_legacy_camera_visibility_ready
+
+    :section_legacy_camera_regular
+    const/4 v3, 0x0
+
+    :section_legacy_camera_visibility_ready
+    invoke-virtual {v2, v3}, Landroid/view/View;->setVisibility(I)V"""
+  if anchor not in method:
+    raise ValueError("stock camera container visibility anchor not found")
+  method = method.replace(anchor, replacement, 1)
+  return smali[:start] + method + smali[end:]
+
+
 def patch_encoded_camera_speed(smali: str) -> str:
   start = smali.index(".method public static getLastCameraSpeedLimit()I")
   end = smali.index(METHOD_END, start)
@@ -452,7 +485,11 @@ def patch_camera_type_notification_state(smali: str) -> str:
   start = smali.index(".method public onNotificationEvent(")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if ":mobile_camera_ready" in method and ":section_camera_ready" in method:
+  if (
+    "sput-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z" in method and
+    "sput-boolean v5, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z" in method and
+    'const-string/jumbo v3, "section"' in method
+  ):
     return smali
 
   has_existing_mobile_state = (
@@ -584,6 +621,7 @@ def main() -> int:
   smali = patch_camera_distance_formatting(smali)
   smali = patch_camera_background(smali)
   smali = patch_camera_distance_music_typeface(smali)
+  smali = patch_section_legacy_card_visibility(smali)
   smali = patch_encoded_camera_speed(smali)
   smali = patch_camera_type_notification_state(smali)
   path.write_text(disable_broad_origin_matches(smali))

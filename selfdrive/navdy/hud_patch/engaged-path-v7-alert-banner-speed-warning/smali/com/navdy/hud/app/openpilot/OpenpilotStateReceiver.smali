@@ -68,17 +68,17 @@
 
 .field private static final TURN_Y:I = 0xf2
 
-.field private static sCurrentSpeedTextView:Landroid/widget/TextView;
+.field private static sActualAccSpeedKph:D
 
 .field private static sActualAccSpeedTextView:Landroid/widget/TextView;
 
-.field private static sActualAccSpeedKph:D
+.field private static sAlertBannerView:Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;
 
-.field private static sAutomaticAccArrowView:Landroid/widget/ImageView;
+.field private static sAutomaticAccActive:Z
 
 .field private static sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;
 
-.field private static sAutomaticAccActive:Z
+.field private static sAutomaticAccArrowView:Landroid/widget/ImageView;
 
 .field private static sAutomaticAccAtTarget:Z
 
@@ -89,6 +89,10 @@
 .field private static sCameraDistanceTextView:Landroid/widget/TextView;
 
 .field private static sCameraSpeedTextView:Landroid/widget/TextView;
+
+.field private static sSectionCameraView:Lcom/navdy/hud/app/openpilot/OpenpilotSectionCameraView;
+
+.field private static sCurrentSpeedTextView:Landroid/widget/TextView;
 
 .field private static sEngagedBodyMask:Landroid/view/View;
 
@@ -129,8 +133,6 @@
 .field private static sOutsideTempTextView:Landroid/widget/TextView;
 
 .field private static sOverlayView:Landroid/widget/FrameLayout;
-
-.field private static sAlertBannerView:Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;
 
 .field private static sPathView:Lcom/navdy/hud/app/openpilot/OpenpilotPathView;
 
@@ -196,20 +198,6 @@
 
     .line 28
     invoke-direct {p0}, Landroid/content/BroadcastReceiver;-><init>()V
-
-    return-void
-.end method
-
-.method public static bindOutsideTempView(Landroid/widget/TextView;)V
-    .locals 2
-
-    sput-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOutsideTempTextView:Landroid/widget/TextView;
-
-    const-wide/16 v0, 0x0
-
-    sput-wide v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOutsideTempUpdateMs:J
-
-    invoke-static {}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateOutsideTemp()V
 
     return-void
 .end method
@@ -311,6 +299,184 @@
     return-object v0
 .end method
 
+.method private static applyStatusLayout(Z)V
+    .locals 4
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftTurnView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_0
+
+    const/16 v2, 0x80
+
+    const/16 v3, 0xf2
+
+    goto :goto_0
+
+    :cond_0
+    const/16 v2, 0x86
+
+    const/16 v3, 0xf0
+
+    :goto_0
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sRightTurnView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_1
+
+    const/16 v2, 0x1e8
+
+    const/16 v3, 0xf2
+
+    goto :goto_1
+
+    :cond_1
+    const/16 v2, 0x1e2
+
+    const/16 v3, 0xf0
+
+    :goto_1
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftBsmView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_2
+
+    const/16 v2, 0xa7
+
+    goto :goto_2
+
+    :cond_2
+    const/16 v2, 0xad
+
+    :goto_2
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sRightBsmView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_3
+
+    const/16 v2, 0x1b7
+
+    goto :goto_3
+
+    :cond_3
+    const/16 v2, 0x1b1
+
+    :goto_3
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sStandstillView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_4
+
+    const/16 v2, 0xe2
+
+    const/16 v3, 0x112
+
+    goto :goto_4
+
+    :cond_4
+    const/16 v2, 0xe4
+
+    const/16 v3, 0xeb
+
+    :goto_4
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOpReadyView:Landroid/widget/ImageView;
+
+    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_5
+
+    const/16 v3, 0x113
+
+    goto :goto_5
+
+    :cond_5
+    const/16 v3, 0xf0
+
+    :goto_5
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedRow:Landroid/widget/LinearLayout;
+
+    invoke-virtual {v0}, Landroid/widget/LinearLayout;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_6
+
+    const/16 v3, 0x128
+
+    goto :goto_6
+
+    :cond_6
+    const/16 v3, 0x12f
+
+    :goto_6
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Landroid/widget/LinearLayout;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    return-void
+.end method
+
 .method private static applyTurnBlinkVisibility()V
     .locals 4
 
@@ -371,6 +537,20 @@
 
     .line 272
     :cond_3
+    return-void
+.end method
+
+.method public static bindOutsideTempView(Landroid/widget/TextView;)V
+    .locals 2
+
+    sput-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOutsideTempTextView:Landroid/widget/TextView;
+
+    const-wide/16 v0, 0x0
+
+    sput-wide v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOutsideTempUpdateMs:J
+
+    invoke-static {}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateOutsideTemp()V
+
     return-void
 .end method
 
@@ -599,6 +779,30 @@
     const/16 v4, 0x8
 
     invoke-virtual {v2, v4}, Landroid/widget/TextView;->setVisibility(I)V
+
+    new-instance v2, Lcom/navdy/hud/app/openpilot/OpenpilotSectionCameraView;
+
+    invoke-direct {v2, p0}, Lcom/navdy/hud/app/openpilot/OpenpilotSectionCameraView;-><init>(Landroid/content/Context;)V
+
+    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSectionCameraView:Lcom/navdy/hud/app/openpilot/OpenpilotSectionCameraView;
+
+    new-instance v4, Landroid/widget/FrameLayout$LayoutParams;
+
+    const/16 v5, 0x68
+
+    const/16 v6, 0x68
+
+    invoke-direct {v4, v5, v6}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
+
+    const/16 v5, 0x1ec
+
+    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    const/16 v5, 0xd3
+
+    iput v5, v4, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v1, v2, v4}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
 
     new-instance v2, Landroid/widget/TextView;
 
@@ -1288,50 +1492,6 @@
     return-object v0
 .end method
 
-.method private static updateActualAccState(Lorg/json/JSONObject;)V
-    .locals 4
-
-    const-string v0, "automaticAccActive"
-
-    const/4 v1, 0x0
-
-    invoke-virtual {p0, v0, v1}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
-
-    move-result v0
-
-    sput-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccActive:Z
-
-    const-string v0, "automaticAccAtTarget"
-
-    invoke-virtual {p0, v0, v1}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
-
-    move-result v0
-
-    sput-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccAtTarget:Z
-
-    const-string v0, "actualAccSetKph"
-
-    const-wide/16 v2, 0x0
-
-    invoke-virtual {p0, v0, v2, v3}, Lorg/json/JSONObject;->optDouble(Ljava/lang/String;D)D
-
-    move-result-wide v2
-
-    sput-wide v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedKph:D
-
-    const-string v0, "automaticAccTargetKph"
-
-    const-wide/16 v2, 0x0
-
-    invoke-virtual {p0, v0, v2, v3}, Lorg/json/JSONObject;->optDouble(Ljava/lang/String;D)D
-
-    move-result-wide v2
-
-    sput-wide v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedKph:D
-
-    return-void
-.end method
-
 .method private static ensureOverlay(Landroid/content/Context;)Z
     .locals 4
 
@@ -1415,6 +1575,94 @@
     return v1
 .end method
 
+.method private static formatCameraDistance(Ljava/lang/String;)Ljava/lang/String;
+    .locals 4
+    .param p0, "distance"    # Ljava/lang/String;
+
+    if-eqz p0, :cond_0
+
+    :try_start_0
+    invoke-virtual {p0}, Ljava/lang/String;->toLowerCase()Ljava/lang/String;
+
+    move-result-object v0
+
+    const-string v1, "km"
+
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+
+    move-result v2
+
+    if-nez v2, :cond_0
+
+    const-string v1, "[^0-9]"
+
+    const-string v2, ""
+
+    invoke-virtual {p0, v1, v2}, Ljava/lang/String;->replaceAll(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v0
+
+    invoke-virtual {v0}, Ljava/lang/String;->length()I
+
+    move-result v1
+
+    if-lez v1, :cond_0
+
+    invoke-static {v0}, Ljava/lang/Integer;->parseInt(Ljava/lang/String;)I
+
+    move-result v0
+
+    const/16 v1, 0x3e8
+
+    if-lt v0, v1, :cond_0
+
+    add-int/lit8 v0, v0, 0x32
+
+    div-int/lit8 v0, v0, 0x64
+
+    div-int/lit8 v1, v0, 0xa
+
+    rem-int/lit8 v0, v0, 0xa
+
+    new-instance v2, Ljava/lang/StringBuilder;
+
+    invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
+
+    invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    const-string v1, "."
+
+    invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    invoke-virtual {v2, v0}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    const-string v0, "km"
+
+    invoke-virtual {v2, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v0
+
+    return-object v0
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    :catch_0
+    move-exception v0
+
+    :cond_0
+    return-object p0
+.end method
+
 .method private static formatCurrentSpeed(D)Ljava/lang/String;
     .locals 2
 
@@ -1494,94 +1742,6 @@
     :goto_0
     const-string p0, "--"
 
-    return-object p0
-.end method
-
-.method private static formatCameraDistance(Ljava/lang/String;)Ljava/lang/String;
-    .locals 4
-    .param p0, "distance"    # Ljava/lang/String;
-
-    if-eqz p0, :camera_distance_return_original
-
-    :try_start_0
-    invoke-virtual {p0}, Ljava/lang/String;->toLowerCase()Ljava/lang/String;
-
-    move-result-object v0
-
-    const-string v1, "km"
-
-    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v2
-
-    if-nez v2, :camera_distance_return_original
-
-    const-string v1, "[^0-9]"
-
-    const-string v2, ""
-
-    invoke-virtual {p0, v1, v2}, Ljava/lang/String;->replaceAll(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
-
-    move-result-object v0
-
-    invoke-virtual {v0}, Ljava/lang/String;->length()I
-
-    move-result v1
-
-    if-lez v1, :camera_distance_return_original
-
-    invoke-static {v0}, Ljava/lang/Integer;->parseInt(Ljava/lang/String;)I
-
-    move-result v0
-
-    const/16 v1, 0x3e8
-
-    if-lt v0, v1, :camera_distance_return_original
-
-    add-int/lit8 v0, v0, 0x32
-
-    div-int/lit8 v0, v0, 0x64
-
-    div-int/lit8 v1, v0, 0xa
-
-    rem-int/lit8 v0, v0, 0xa
-
-    new-instance v2, Ljava/lang/StringBuilder;
-
-    invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
-
-    invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
-
-    move-result-object v2
-
-    const-string v1, "."
-
-    invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    move-result-object v2
-
-    invoke-virtual {v2, v0}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
-
-    move-result-object v2
-
-    const-string v0, "km"
-
-    invoke-virtual {v2, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    move-result-object v2
-
-    invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
-
-    move-result-object v0
-
-    return-object v0
-    :try_end_0
-    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
-
-    :catch_0
-    move-exception v0
-
-    :camera_distance_return_original
     return-object p0
 .end method
 
@@ -1707,7 +1867,7 @@
 .end method
 
 .method public static handleOpenpilotPayload(Landroid/content/Context;Ljava/lang/String;)V
-    .locals 18
+    .locals 19
 
     .line 149
     move-object/from16 v0, p1
@@ -1717,8 +1877,6 @@
     const-string v2, "active"
 
     const-string v3, "NavdyOpenpilot"
-
-    invoke-static/range {p0 .. p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onOpenpilotPayload(Landroid/content/Context;Ljava/lang/String;)V
 
     .line 150
     if-nez v0, :cond_0
@@ -1733,7 +1891,15 @@
 
     invoke-direct {v4, v0}, Lorg/json/JSONObject;-><init>(Ljava/lang/String;)V
 
+    move-object/from16 v18, v4
+
+    move-object/from16 v5, p0
+
+    invoke-static {v5, v4}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onOpenpilotPayload(Landroid/content/Context;Lorg/json/JSONObject;)V
+
     invoke-static {v4}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateActualAccState(Lorg/json/JSONObject;)V
+
+    invoke-static {v4}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->updateSectionCameraView(Lorg/json/JSONObject;)V
 
     .line 156
     const/4 v0, 0x0
@@ -1927,25 +2093,25 @@
 
     if-eqz v0, :cond_5
 
-    move-object/from16 v1, p1
+    move-object/from16 v1, v18
 
     move v2, v5
 
-    invoke-virtual {v0, v1, v2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->updatePayload(Ljava/lang/String;Z)V
+    invoke-virtual {v0, v1, v2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->updatePayload(Lorg/json/JSONObject;Z)V
 
     :cond_5
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAlertBannerView:Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;
 
-    if-eqz v0, :cond_alert_banner
+    if-eqz v0, :cond_6
 
-    move-object/from16 v1, p1
+    move-object/from16 v1, v18
 
-    invoke-virtual {v0, v1}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->updatePayload(Ljava/lang/String;)V
+    invoke-virtual {v0, v1}, Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;->updatePayload(Lorg/json/JSONObject;)V
 
-    :cond_alert_banner
+    :cond_6
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCurrentSpeedTextView:Landroid/widget/TextView;
 
-    if-eqz v0, :cond_7
+    if-eqz v0, :cond_a
 
     invoke-static/range {v16 .. v17}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->formatCurrentSpeed(D)Ljava/lang/String;
 
@@ -1957,63 +2123,61 @@
 
     move-result v1
 
-    if-gez v1, :camera_overspeed_limit_ready
+    if-gez v1, :cond_7
 
     neg-int v1, v1
 
-    :camera_overspeed_limit_ready
-
-    if-lez v1, :cond_navdy_camera_speed_white
+    :cond_7
+    if-lez v1, :cond_8
 
     int-to-double v8, v1
 
     cmpl-double v4, v16, v8
 
-    if-lez v4, :cond_navdy_camera_speed_white
+    if-lez v4, :cond_8
 
     const/high16 v1, -0x10000
 
-    goto :goto_navdy_camera_speed_color
+    goto :goto_3
 
-    :cond_navdy_camera_speed_white
+    :cond_8
     const/4 v1, -0x1
 
-    :goto_navdy_camera_speed_color
+    :goto_3
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setTextColor(I)V
 
     const/16 v1, 0x8
 
-    if-eqz v5, :cond_6
+    if-eqz v5, :cond_9
 
     const/4 v1, 0x0
 
-    :cond_6
+    :cond_9
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
 
     .line 185
-    :cond_7
+    :cond_a
     invoke-static {}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I
 
     move-result v1
 
-    if-gez v1, :camera_display_regular
+    if-gez v1, :cond_b
 
     neg-int v1, v1
 
     const v2, 0x7f02029f
 
-    goto :camera_display_type_ready
+    goto :goto_4
 
-    :camera_display_regular
+    :cond_b
     const v2, 0x7f020286
 
-    :camera_display_type_ready
-
+    :goto_4
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraSpeedTextView:Landroid/widget/TextView;
 
-    if-eqz v0, :camera_display_done
+    if-eqz v0, :cond_f
 
-    if-lez v1, :camera_display_hide
+    if-lez v1, :cond_e
 
     invoke-virtual {v0, v2}, Landroid/widget/TextView;->setBackgroundResource(I)V
 
@@ -2027,16 +2191,16 @@
 
     const/4 v2, 0x2
 
-    if-le v4, v2, :camera_speed_two_digits
+    if-le v4, v2, :cond_c
 
     const/high16 v4, 0x41d00000    # 26.0f
 
-    goto :camera_speed_size_ready
+    goto :goto_5
 
-    :camera_speed_two_digits
+    :cond_c
     const/high16 v4, 0x41f00000    # 30.0f
 
-    :camera_speed_size_ready
+    :goto_5
     const/4 v2, 0x0
 
     invoke-virtual {v0, v2, v4}, Landroid/widget/TextView;->setTextSize(IF)V
@@ -2049,15 +2213,15 @@
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
 
-    if-eqz v0, :camera_display_done
+    if-eqz v0, :cond_f
 
     sget-object v1, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraDistance:Ljava/lang/String;
 
-    if-nez v1, :camera_distance_ready
+    if-nez v1, :cond_d
 
     const-string v1, ""
 
-    :camera_distance_ready
+    :cond_d
     invoke-static {v1}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->formatCameraDistance(Ljava/lang/String;)Ljava/lang/String;
 
     move-result-object v1
@@ -2068,40 +2232,41 @@
 
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
 
-    goto :camera_display_done
+    goto :goto_6
 
-    :camera_display_hide
+    :cond_e
     const/16 v1, 0x8
 
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sCameraDistanceTextView:Landroid/widget/TextView;
 
-    if-eqz v0, :camera_display_done
+    if-eqz v0, :cond_f
 
     invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
 
-    :camera_display_done
+    :cond_f
+    :goto_6
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sHaveActive:Z
 
-    if-eqz v0, :cond_8
+    if-eqz v0, :cond_10
 
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastActive:Z
 
-    if-eq v0, v5, :cond_a
+    if-eq v0, v5, :cond_12
 
     .line 186
-    :cond_8
-    if-eqz v5, :cond_9
+    :cond_10
+    if-eqz v5, :cond_11
 
     const-string v0, "OP ENGAGED"
 
-    goto :goto_3
+    goto :goto_7
 
-    :cond_9
+    :cond_11
     const-string v0, "OP DISENGAGED"
 
-    :goto_3
+    :goto_7
     invoke-static {v3, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
     .line 187
@@ -2111,7 +2276,7 @@
     sput-boolean v5, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastActive:Z
 
     .line 191
-    :cond_a
+    :cond_12
     invoke-static {v15}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->normalizeGear(Ljava/lang/String;)Ljava/lang/String;
 
     move-result-object v0
@@ -2121,7 +2286,7 @@
 
     move-result v1
 
-    if-lez v1, :cond_b
+    if-lez v1, :cond_13
 
     sget-object v1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastGear:Ljava/lang/String;
 
@@ -2129,7 +2294,7 @@
 
     move-result v1
 
-    if-nez v1, :cond_b
+    if-nez v1, :cond_13
 
     .line 193
     new-instance v1, Ljava/lang/StringBuilder;
@@ -2160,21 +2325,21 @@
     sput-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastGear:Ljava/lang/String;
 
     .line 197
-    :cond_b
+    :cond_13
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sHaveBlinker:Z
 
-    if-eqz v0, :cond_c
+    if-eqz v0, :cond_14
 
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastLeftBlinker:Z
 
-    if-ne v0, v10, :cond_c
+    if-ne v0, v10, :cond_14
 
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastRightBlinker:Z
 
-    if-eq v0, v11, :cond_d
+    if-eq v0, v11, :cond_15
 
     .line 198
-    :cond_c
+    :cond_14
     invoke-static {v10, v11}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->blinkerLabel(ZZ)Ljava/lang/String;
 
     move-result-object v0
@@ -2191,36 +2356,36 @@
     sput-boolean v11, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastRightBlinker:Z
 
     .line 204
-    :cond_d
+    :cond_15
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sHaveBlindspot:Z
 
-    if-eqz v0, :cond_e
+    if-eqz v0, :cond_16
 
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastLeftBlindspot:Z
 
-    if-ne v0, v12, :cond_e
+    if-ne v0, v12, :cond_16
 
     sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastRightBlindspot:Z
 
-    if-eq v0, v13, :cond_11
+    if-eq v0, v13, :cond_19
 
     .line 205
-    :cond_e
-    if-nez v12, :cond_10
+    :cond_16
+    if-nez v12, :cond_18
 
-    if-eqz v13, :cond_f
+    if-eqz v13, :cond_17
 
-    goto :goto_4
+    goto :goto_8
 
     .line 207
-    :cond_f
+    :cond_17
     const-string v0, "BSM CLEAR"
 
-    goto :goto_5
+    goto :goto_9
 
     .line 206
-    :cond_10
-    :goto_4
+    :cond_18
+    :goto_8
     new-instance v0, Ljava/lang/StringBuilder;
 
     invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
@@ -2250,7 +2415,7 @@
     move-result-object v0
 
     .line 205
-    :goto_5
+    :goto_9
     invoke-static {v3, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
     .line 208
@@ -2265,8 +2430,8 @@
     .catch Ljava/lang/Exception; {:try_start_1 .. :try_end_1} :catch_0
 
     .line 214
-    :cond_11
-    goto :goto_6
+    :cond_19
+    goto :goto_a
 
     .line 212
     :catch_0
@@ -2278,7 +2443,7 @@
     invoke-static {v3, v1, v0}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
 
     .line 215
-    :goto_6
+    :goto_a
     return-void
 .end method
 
@@ -2670,180 +2835,69 @@
     return-void
 .end method
 
-.method private static applyStatusLayout(Z)V
+.method private static updateSectionCameraView(Lorg/json/JSONObject;)V
+    .locals 3
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSectionCameraView:Lcom/navdy/hud/app/openpilot/OpenpilotSectionCameraView;
+
+    if-eqz v0, :cond_0
+
+    invoke-static {}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I
+
+    move-result v1
+
+    invoke-static {v1}, Ljava/lang/Math;->abs(I)I
+
+    move-result v1
+
+    sget-boolean v2, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
+
+    invoke-virtual {v0, p0, v1, v2}, Lcom/navdy/hud/app/openpilot/OpenpilotSectionCameraView;->updatePayload(Lorg/json/JSONObject;IZ)V
+
+    :cond_0
+    return-void
+.end method
+
+.method private static updateActualAccState(Lorg/json/JSONObject;)V
     .locals 4
 
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftTurnView:Landroid/widget/ImageView;
+    const-string v0, "automaticAccActive"
 
-    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+    const/4 v1, 0x0
 
-    move-result-object v1
+    invoke-virtual {p0, v0, v1}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
 
-    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+    move-result v0
 
-    if-eqz p0, :cond_left_turn_disengaged
+    sput-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccActive:Z
 
-    const/16 v2, 0x80
+    const-string v0, "automaticAccAtTarget"
 
-    const/16 v3, 0xf2
+    invoke-virtual {p0, v0, v1}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
 
-    goto :goto_left_turn
+    move-result v0
 
-    :cond_left_turn_disengaged
-    const/16 v2, 0x86
+    sput-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccAtTarget:Z
 
-    const/16 v3, 0xf0
+    const-string v0, "actualAccSetKph"
 
-    :goto_left_turn
-    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+    const-wide/16 v2, 0x0
 
-    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+    invoke-virtual {p0, v0, v2, v3}, Lorg/json/JSONObject;->optDouble(Ljava/lang/String;D)D
 
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+    move-result-wide v2
 
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sRightTurnView:Landroid/widget/ImageView;
+    sput-wide v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedKph:D
 
-    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+    const-string v0, "automaticAccTargetKph"
 
-    move-result-object v1
+    const-wide/16 v2, 0x0
 
-    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+    invoke-virtual {p0, v0, v2, v3}, Lorg/json/JSONObject;->optDouble(Ljava/lang/String;D)D
 
-    if-eqz p0, :cond_right_turn_disengaged
+    move-result-wide v2
 
-    const/16 v2, 0x1e8
-
-    const/16 v3, 0xf2
-
-    goto :goto_right_turn
-
-    :cond_right_turn_disengaged
-    const/16 v2, 0x1e2
-
-    const/16 v3, 0xf0
-
-    :goto_right_turn
-    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
-
-    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
-
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
-
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLeftBsmView:Landroid/widget/ImageView;
-
-    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
-
-    move-result-object v1
-
-    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
-
-    if-eqz p0, :cond_left_bsm_disengaged
-
-    const/16 v2, 0xa7
-
-    goto :goto_left_bsm
-
-    :cond_left_bsm_disengaged
-    const/16 v2, 0xad
-
-    :goto_left_bsm
-    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
-
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
-
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sRightBsmView:Landroid/widget/ImageView;
-
-    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
-
-    move-result-object v1
-
-    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
-
-    if-eqz p0, :cond_right_bsm_disengaged
-
-    const/16 v2, 0x1b7
-
-    goto :goto_right_bsm
-
-    :cond_right_bsm_disengaged
-    const/16 v2, 0x1b1
-
-    :goto_right_bsm
-    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
-
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
-
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sStandstillView:Landroid/widget/ImageView;
-
-    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
-
-    move-result-object v1
-
-    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
-
-    if-eqz p0, :cond_standstill_disengaged
-
-    const/16 v2, 0xe2
-
-    const/16 v3, 0x112
-
-    goto :goto_standstill
-
-    :cond_standstill_disengaged
-    const/16 v2, 0xe4
-
-    const/16 v3, 0xeb
-
-    :goto_standstill
-    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
-
-    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
-
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
-
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOpReadyView:Landroid/widget/ImageView;
-
-    invoke-virtual {v0}, Landroid/widget/ImageView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
-
-    move-result-object v1
-
-    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
-
-    if-eqz p0, :cond_op_ready_disengaged
-
-    const/16 v3, 0x113
-
-    goto :goto_op_ready
-
-    :cond_op_ready_disengaged
-    const/16 v3, 0xf0
-
-    :goto_op_ready
-    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
-
-    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
-
-    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sSetSpeedRow:Landroid/widget/LinearLayout;
-
-    invoke-virtual {v0}, Landroid/widget/LinearLayout;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
-
-    move-result-object v1
-
-    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
-
-    if-eqz p0, :cond_set_speed_disengaged
-
-    const/16 v3, 0x128
-
-    goto :goto_set_speed
-
-    :cond_set_speed_disengaged
-    const/16 v3, 0x12f
-
-    :goto_set_speed
-    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
-
-    invoke-virtual {v0, v1}, Landroid/widget/LinearLayout;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+    sput-wide v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedKph:D
 
     return-void
 .end method
@@ -3003,7 +3057,7 @@
 
     sget-boolean p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccActive:Z
 
-    if-eqz p1, :cond_navdy_actual_acc_hidden
+    if-eqz p1, :cond_a
 
     sget-wide p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedKph:D
 
@@ -3011,7 +3065,7 @@
 
     cmpl-double p3, p1, p3
 
-    if-lez p3, :cond_navdy_actual_acc_hidden
+    if-lez p3, :cond_a
 
     sget-wide p3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedKph:D
 
@@ -3019,7 +3073,7 @@
 
     cmpl-double p5, p3, p5
 
-    if-lez p5, :cond_navdy_actual_acc_hidden
+    if-lez p5, :cond_a
 
     cmpl-double p5, p1, p3
 
@@ -3033,7 +3087,7 @@
 
     sget-boolean v1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccAtTarget:Z
 
-    if-nez v1, :cond_navdy_actual_acc_complete
+    if-nez v1, :cond_9
 
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;
 
@@ -3043,16 +3097,16 @@
 
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
 
-    if-gez p5, :cond_navdy_actual_acc_decreasing
+    if-gez p5, :cond_8
 
     const/high16 p1, -0x3d4c0000    # -90.0f
 
-    goto :goto_navdy_actual_acc_rotation
+    goto :goto_5
 
-    :cond_navdy_actual_acc_decreasing
+    :cond_8
     const/high16 p1, 0x42b40000    # 90.0f
 
-    :goto_navdy_actual_acc_rotation
+    :goto_5
     invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setRotation(F)V
 
     invoke-virtual {p0, v0}, Landroid/widget/ImageView;->setVisibility(I)V
@@ -3061,17 +3115,17 @@
 
     move-result-object p1
 
-    if-nez p1, :goto_navdy_actual_acc_done
+    if-nez p1, :cond_b
 
     sget-object p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;
 
-    if-eqz p1, :goto_navdy_actual_acc_done
+    if-eqz p1, :cond_b
 
     invoke-virtual {p0, p1}, Landroid/widget/ImageView;->startAnimation(Landroid/view/animation/Animation;)V
 
-    goto :goto_navdy_actual_acc_done
+    goto :goto_6
 
-    :cond_navdy_actual_acc_complete
+    :cond_9
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
 
     invoke-virtual {p0}, Landroid/widget/ImageView;->clearAnimation()V
@@ -3084,9 +3138,9 @@
 
     invoke-virtual {p0, v0}, Landroid/widget/TextView;->setVisibility(I)V
 
-    goto :goto_navdy_actual_acc_done
+    goto :goto_6
 
-    :cond_navdy_actual_acc_hidden
+    :cond_a
     const/4 p1, 0x4
 
     invoke-virtual {p0, p1}, Landroid/widget/TextView;->setVisibility(I)V
@@ -3101,9 +3155,9 @@
 
     invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setVisibility(I)V
 
-    :goto_navdy_actual_acc_done
-
     .line 236
+    :cond_b
+    :goto_6
     return-void
 .end method
 
@@ -3129,7 +3183,7 @@
 
     cmp-long v6, v2, v4
 
-    if-ltz v6, :cond_temp_throttled
+    if-ltz v6, :cond_2
 
     sput-wide v7, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOutsideTempUpdateMs:J
 
@@ -3213,7 +3267,7 @@
 
     goto :goto_0
 
-    :cond_temp_throttled
+    :cond_2
     return-void
 .end method
 

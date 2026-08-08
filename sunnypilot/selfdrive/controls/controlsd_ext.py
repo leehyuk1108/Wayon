@@ -113,6 +113,11 @@ class ControlsExt(ModelStateBase):
     CC_SP.intelligentCruiseButtonManagement.vTarget = icbm_src.vTarget
     CC_SP.intelligentCruiseButtonManagement.automaticControlActive = icbm_src.automaticControlActive
     CC_SP.intelligentCruiseButtonManagement.automaticTargetSpeedKph = icbm_src.automaticTargetSpeedKph
+    CC_SP.intelligentCruiseButtonManagement.sectionPhase = icbm_src.sectionPhase
+    CC_SP.intelligentCruiseButtonManagement.sectionLimitKph = icbm_src.sectionLimitKph
+    CC_SP.intelligentCruiseButtonManagement.sectionAverageKph = icbm_src.sectionAverageKph
+    CC_SP.intelligentCruiseButtonManagement.sectionProgress = icbm_src.sectionProgress
+    CC_SP.intelligentCruiseButtonManagement.sectionRemainingM = icbm_src.sectionRemainingM
 
     return CC_SP
 

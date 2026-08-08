@@ -664,6 +664,10 @@
 
     move-result-object v2
 
+    const/16 v3, 0x8
+
+    invoke-virtual {v2, v3}, Landroid/view/View;->setVisibility(I)V
+
     new-instance v4, Landroid/widget/FrameLayout$LayoutParams;
 
     const/16 v5, 0x68

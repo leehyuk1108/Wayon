@@ -179,9 +179,31 @@
     goto :camera_type_ready
 
     :camera_type_fixed
+    sget-boolean v6, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
+
+    if-eqz v6, :camera_type_regular
+
+    const-string v4, "section"
+
+    goto :camera_type_ready
+
+    :camera_type_regular
     const-string v4, "fixed"
 
     :camera_type_ready
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    const-string v4, "\",\"cameraDistance\":\""
+
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    sget-object v4, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraDistance:Ljava/lang/String;
+
+    if-nez v4, :camera_distance_ready
+
+    const-string v4, ""
+
+    :camera_distance_ready
     invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
     const-string v4, "\"}\n"

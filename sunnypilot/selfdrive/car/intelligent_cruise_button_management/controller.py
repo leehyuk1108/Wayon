@@ -28,6 +28,13 @@ INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 1.5
 NAVDY_CAMERA_SOURCE = "trafficNotification"
+SECTION_TARGET_OFFSET_KPH = 5
+SECTION_MAX_OFFSET_KPH = 20
+SECTION_EXIT_DISTANCE_M = 300.0
+SECTION_ENTRY_ARM_DISTANCE_M = 350.0
+SECTION_ENTRY_MIN_REMAINING_M = 500.0
+SECTION_ENTRY_MIN_JUMP_M = 250.0
+SECTION_FEEDBACK_HOLD_FRAMES = round(3.0 / DT_CTRL)
 
 
 SEND_BUTTONS = {
@@ -55,8 +62,21 @@ class IntelligentCruiseButtonManagement:
     self.is_metric = False
     self.camera_state_path = camera_state_path
     self.camera_speed = 0
+    self.camera_type = ""
+    self.camera_distance_m = 0.0
     self.camera_state_checked_at = 0.0
     self.automatic_speed_control_active = False
+
+    self.section_phase = "inactive"
+    self.section_limit_kph = 0
+    self.section_total_distance_m = 0.0
+    self.section_remaining_m = 0.0
+    self.section_last_remaining_m = 0.0
+    self.section_elapsed_s = 0.0
+    self.section_distance_travelled_m = 0.0
+    self.section_average_kph = 0.0
+    self.section_last_target_kph = 0
+    self.section_feedback_hold_frames = 0
 
     self.cruise_button_timers = CRUISE_BUTTON_TIMER
 
@@ -72,6 +92,18 @@ class IntelligentCruiseButtonManagement:
     self.automatic_speed_control_active = False
     self.automatic_control_active = False
 
+  def reset_section_control(self) -> None:
+    self.section_phase = "inactive"
+    self.section_limit_kph = 0
+    self.section_total_distance_m = 0.0
+    self.section_remaining_m = 0.0
+    self.section_last_remaining_m = 0.0
+    self.section_elapsed_s = 0.0
+    self.section_distance_travelled_m = 0.0
+    self.section_average_kph = 0.0
+    self.section_last_target_kph = 0
+    self.section_feedback_hold_frames = 0
+
   def read_camera_speed(self) -> int:
     now = time.monotonic()
     if now - self.camera_state_checked_at < 0.1:
@@ -82,16 +114,89 @@ class IntelligentCruiseButtonManagement:
       stat = os.stat(self.camera_state_path)
       if time.time() - stat.st_mtime > NAVDY_CAMERA_STATE_MAX_AGE:  # noqa: TID251
         self.camera_speed = 0
+        self.camera_type = ""
+        self.camera_distance_m = 0.0
       else:
         with open(self.camera_state_path, encoding="utf-8") as state_file:
           state = json.load(state_file)
         speed = int(state.get("cameraSpeedKph", 0))
         source_valid = state.get("cameraSource") == NAVDY_CAMERA_SOURCE
-        camera_is_mobile = str(state.get("cameraType", "fixed")).lower() == "mobile"
+        camera_type = str(state.get("cameraType", "fixed")).lower()
+        camera_is_mobile = camera_type == "mobile"
         self.camera_speed = speed if source_valid and not camera_is_mobile and 20 <= speed <= 140 else 0
+        self.camera_type = camera_type if self.camera_speed > 0 else ""
+        distance_m = float(state.get("cameraDistanceM", 0.0))
+        self.camera_distance_m = distance_m if math.isfinite(distance_m) and distance_m >= 0.0 else 0.0
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
       self.camera_speed = 0
+      self.camera_type = ""
+      self.camera_distance_m = 0.0
     return self.camera_speed
+
+  def start_section_cruise(self, remaining_m: float) -> None:
+    self.section_phase = "cruise"
+    self.section_total_distance_m = remaining_m
+    self.section_remaining_m = remaining_m
+    self.section_elapsed_s = 0.0
+    self.section_distance_travelled_m = 0.0
+    self.section_average_kph = 0.0
+
+  def update_section_target(self, CS: car.CarState, restore_target: int, limit_kph: int,
+                            remaining_m: float) -> int:
+    if self.section_phase == "inactive" or self.section_limit_kph != limit_kph:
+      self.reset_section_control()
+      self.section_phase = "approach"
+      self.section_limit_kph = limit_kph
+
+    previous_remaining = self.section_last_remaining_m
+    self.section_last_remaining_m = remaining_m
+    self.section_remaining_m = remaining_m
+    self.section_feedback_hold_frames = SECTION_FEEDBACK_HOLD_FRAMES
+
+    if self.section_phase == "approach":
+      entered_section = (
+        0.0 < previous_remaining <= SECTION_ENTRY_ARM_DISTANCE_M and
+        remaining_m >= SECTION_ENTRY_MIN_REMAINING_M and
+        remaining_m - previous_remaining >= SECTION_ENTRY_MIN_JUMP_M
+      )
+      if entered_section:
+        self.start_section_cruise(remaining_m)
+      else:
+        self.section_last_target_kph = min(limit_kph, restore_target)
+        return self.section_last_target_kph
+
+    if self.section_phase == "cruise":
+      self.section_elapsed_s += DT_CTRL
+      self.section_distance_travelled_m += max(0.0, float(CS.vEgo)) * DT_CTRL
+      if self.section_elapsed_s > 0.0:
+        self.section_average_kph = self.section_distance_travelled_m / self.section_elapsed_s * CV.MS_TO_KPH
+
+      if remaining_m <= SECTION_EXIT_DISTANCE_M:
+        self.section_phase = "exit"
+
+    if self.section_phase == "exit":
+      self.section_last_target_kph = min(limit_kph, restore_target)
+      return self.section_last_target_kph
+
+    target_average_kph = limit_kph + SECTION_TARGET_OFFSET_KPH
+    target_total_time_s = self.section_total_distance_m / (target_average_kph * CV.KPH_TO_MS)
+    remaining_time_s = target_total_time_s - self.section_elapsed_s
+    if remaining_time_s <= DT_CTRL:
+      required_speed_kph = limit_kph + SECTION_MAX_OFFSET_KPH
+    else:
+      required_speed_kph = remaining_m / remaining_time_s * CV.MS_TO_KPH
+
+    required_speed_kph = max(limit_kph, min(limit_kph + SECTION_MAX_OFFSET_KPH, required_speed_kph))
+    self.section_last_target_kph = min(restore_target, round(required_speed_kph))
+    return self.section_last_target_kph
+
+  def held_section_target(self, restore_target: int) -> int:
+    if self.section_phase == "inactive" or self.section_feedback_hold_frames <= 0:
+      self.reset_section_control()
+      return restore_target
+    self.section_feedback_hold_frames -= 1
+    held_target = self.section_last_target_kph or self.section_limit_kph
+    return min(restore_target, held_target)
 
   def automatic_target(self, CS: car.CarState, LP_SP: custom.LongitudinalPlanSP) -> int:
     speed_conv = CV.MS_TO_KPH if self.is_metric else CV.MS_TO_MPH
@@ -101,6 +206,17 @@ class IntelligentCruiseButtonManagement:
     restore_target = max(self.v_cruise_min, min(V_CRUISE_MAX, round(restore_speed)))
 
     camera_target = self.read_camera_speed()
+    camera_target_kph = camera_target
+    if self.camera_type == "section" and camera_target_kph > 0:
+      camera_target_kph = self.update_section_target(CS, round(restore_target if self.is_metric else restore_target * CV.MPH_TO_KPH),
+                                                     camera_target_kph, self.camera_distance_m)
+    elif self.section_phase != "inactive" and camera_target_kph == 0:
+      camera_target_kph = self.held_section_target(
+        round(restore_target if self.is_metric else restore_target * CV.MPH_TO_KPH))
+    elif self.camera_type != "section":
+      self.reset_section_control()
+
+    camera_target = camera_target_kph
     if camera_target > 0 and not self.is_metric:
       camera_target = round(camera_target * CV.KPH_TO_MPH)
 

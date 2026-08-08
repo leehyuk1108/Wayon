@@ -75,16 +75,13 @@ Behavior:
   speed shown while openpilot is disengaged.
 - Keeps the camera-speed comparison double in `v8/v9` so Android 5 verifies
   `OpenpilotStateReceiver` without clobbering the log tag in `v3`.
-- Mirrors the latest camera speed and distance into the always-attached
-  openpilot overlay at the stock dashboard position. This keeps the camera card
-  visible even when the legacy traffic-widget presenter is attached to a
-  hidden dashboard widget, while camera-clear events still hide both rows.
-- Keeps the legacy dashboard camera container at zero size so camera
-  notifications cannot display a second card below the attached overlay.
-- Inflates Navdy's stock `maps_traffic_incident_widget` layout for the mirrored
-  camera card, so its FSElliot Heavy font metrics, spacing, and alignment are
-  identical to the original widget. Three-digit limits still shrink to 26sp so
-  100 and 110 remain centered inside the 62px speed-sign circle.
+- Keeps the stock SmartDash camera card at its original dashboard-relative
+  position. The full-screen openpilot mirror remains attached but its parent is
+  hidden, preventing a duplicate card from appearing higher on the physical
+  640x480 panel.
+- The hidden mirror still tracks the latest camera speed and distance for
+  protocol compatibility. Three-digit limits shrink to 26sp so 100 and 110
+  remain centered inside the stock 62px speed-sign circle.
 - Uses the same Android system typeface and normal weight as the music-title row
   for camera distance, without changing its stock 16sp size or position.
 - Displays camera distances below 1000m in meters and converts 1000m or more

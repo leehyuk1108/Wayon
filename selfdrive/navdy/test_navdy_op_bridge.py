@@ -106,8 +106,11 @@ def test_navdy_socket_returns_camera_limit_over_existing_usb_tunnel():
   assert 'const-string v4, "{\\\"cameraSpeedKph\\\":"' in service
   assert 'cameraSource\\\":\\\"trafficNotification' in service
   assert 'cameraType\\\":\\\"' in service
+  assert 'cameraDistance\\\":\\\"' in service
   assert "neg-int v4, v4" in service
   assert "if-eqz v6, :camera_type_fixed" in service
+  assert "lastCameraIsSection:Z" in service
+  assert 'const-string v4, "section"' in service
   assert 'const-string v4, "mobile"' in service
   assert 'const-string v4, "fixed"' in service
   assert "BufferedWriter;->flush()V" in service
@@ -122,14 +125,16 @@ def test_navdy_camera_filter_does_not_treat_all_comma_alerts_as_cameras():
   assert "if method.count(block) == 2" in camera_filter
   assert "elif method.count(disabled_block) != 2" in camera_filter
   assert "lastCameraIsMobile" in camera_filter
+  assert "lastCameraIsSection" in camera_filter
   assert "MOBILE_DETECTION" in camera_filter
+  assert "SECTION_DETECTION" in camera_filter
   assert "patch_camera_background" in camera_filter
   assert "patch_camera_distance_music_typeface" in camera_filter
   assert ":camera_distance_music_typeface" in camera_filter
   assert "Typeface;->DEFAULT:Landroid/graphics/Typeface;" in camera_filter
   assert "setTypeface(Landroid/graphics/Typeface;I)V" in camera_filter
   assert "patch_encoded_camera_speed" in camera_filter
-  assert "patch_mobile_notification_state" in camera_filter
+  assert "patch_camera_type_notification_state" in camera_filter
   assert "DISTANCE_FORMATTING" in camera_filter
   assert "patch_camera_distance_formatting" in camera_filter
   assert ":camera_distance_format_done" in camera_filter
@@ -211,7 +216,7 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert "div-int/lit8 v0, v0, 0x64" in receiver
 
 
-def test_navdy_legacy_camera_card_cannot_render_below_overlay():
+def test_navdy_camera_card_uses_original_smartdash_position():
   layout = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
            "res/layout/screen_home_smartdash.xml"
   root = ET.parse(layout).getroot()
@@ -219,9 +224,17 @@ def test_navdy_legacy_camera_card_cannot_render_below_overlay():
   legacy_card = next(view for view in root.iter()
                      if view.attrib.get(f"{android}id") == "@id/take_snapshot_smart_dash")
 
-  assert legacy_card.attrib[f"{android}visibility"] == "gone"
-  assert legacy_card.attrib[f"{android}layout_width"] == "0.0dip"
-  assert legacy_card.attrib[f"{android}layout_height"] == "0.0dip"
+  assert legacy_card.attrib[f"{android}visibility"] == "invisible"
+  assert legacy_card.attrib[f"{android}layout_width"] == "104.0dip"
+  assert legacy_card.attrib[f"{android}layout_height"] == "96.0dip"
+  assert legacy_card.attrib[f"{android}layout_marginLeft"] == "492.0dip"
+  assert legacy_card.attrib[f"{android}layout_marginTop"] == "104.0dip"
+
+  receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+             "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
+  mirror_setup = receiver.read_text().split("const v3, 0x7f030032", 1)[1].split(
+    "new-instance v4, Landroid/widget/FrameLayout$LayoutParams;", 1)[0]
+  assert "Landroid/view/View;->setVisibility(I)V" in mirror_setup
 
 
 def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():
@@ -1528,13 +1541,13 @@ def test_socket_feedback_publishes_camera_speed_without_wifi(tmp_path, monkeypat
   sender, receiver = socket.socketpair()
   args = SimpleNamespace(_socket_feedback_buffer=b"")
   try:
-    receiver.sendall(b'{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"fixed"}\n')
+    receiver.sendall(b'{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"fixed","cameraDistance":"850 m"}\n')
     assert navdy_op_bridge.read_navdy_feedback(sender, args)
   finally:
     sender.close()
     receiver.close()
 
-  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"fixed"}'
+  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"fixed","cameraDistanceM":850.0}'
 
 
 def test_socket_feedback_marks_mobile_camera_for_icbm_filter(tmp_path, monkeypatch):
@@ -1549,7 +1562,46 @@ def test_socket_feedback_marks_mobile_camera_for_icbm_filter(tmp_path, monkeypat
     sender.close()
     receiver.close()
 
-  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"mobile"}'
+  assert camera_state.read_text() == '{"cameraSpeedKph":60,"cameraSource":"trafficNotification","cameraType":"mobile","cameraDistanceM":0.0}'
+
+
+def test_socket_feedback_preserves_section_camera_and_kilometer_distance(tmp_path, monkeypatch):
+  camera_state = tmp_path / "navdy_camera_state.json"
+  monkeypatch.setattr(navdy_op_bridge, "NAVDY_CAMERA_STATE_PATH", str(camera_state))
+  sender, receiver = socket.socketpair()
+  args = SimpleNamespace(_socket_feedback_buffer=b"")
+  try:
+    receiver.sendall(b'{"cameraSpeedKph":100,"cameraSource":"trafficNotification","cameraType":"section","cameraDistance":"1.3km"}\n')
+    assert navdy_op_bridge.read_navdy_feedback(sender, args)
+  finally:
+    sender.close()
+    receiver.close()
+
+  assert camera_state.read_text() == \
+    '{"cameraSpeedKph":100,"cameraSource":"trafficNotification","cameraType":"section","cameraDistanceM":1300.0}'
+
+
+def test_camera_distance_parser_supports_navdy_formats():
+  assert navdy_op_bridge.parse_camera_distance_m("320 m") == 320
+  assert navdy_op_bridge.parse_camera_distance_m("1.3km") == 1300
+  assert navdy_op_bridge.parse_camera_distance_m("--") == 0
+
+
+def test_duplicate_camera_feedback_refreshes_heartbeat_at_bounded_rate(tmp_path, monkeypatch):
+  camera_state = tmp_path / "navdy_camera_state.json"
+  monkeypatch.setattr(navdy_op_bridge, "NAVDY_CAMERA_STATE_PATH", str(camera_state))
+  clock = iter((10.0, 10.2, 10.6))
+  monkeypatch.setattr(navdy_op_bridge.time, "monotonic", lambda: next(clock))
+  touches = []
+  real_utime = navdy_op_bridge.os.utime
+  monkeypatch.setattr(navdy_op_bridge.os, "utime", lambda path, times: (touches.append(path), real_utime(path, times)))
+  args = SimpleNamespace()
+
+  navdy_op_bridge.publish_navdy_camera_state(100, "trafficNotification", "section", "5.0km", args)
+  navdy_op_bridge.publish_navdy_camera_state(100, "trafficNotification", "section", "5.0km", args)
+  navdy_op_bridge.publish_navdy_camera_state(100, "trafficNotification", "section", "5.0km", args)
+
+  assert touches == [str(camera_state)]
 
 
 def test_socket_feedback_rejects_untagged_notification_number(tmp_path, monkeypatch):
@@ -1564,7 +1616,8 @@ def test_socket_feedback_rejects_untagged_notification_number(tmp_path, monkeypa
     sender.close()
     receiver.close()
 
-  assert camera_state.read_text() == '{"cameraSpeedKph":0,"cameraSource":"","cameraType":""}'
+  assert camera_state.read_text() == \
+    '{"cameraSpeedKph":0,"cameraSource":"","cameraType":"","cameraDistanceM":0.0}'
 
 
 def test_socket_feedback_detects_closed_navdy_tunnel():

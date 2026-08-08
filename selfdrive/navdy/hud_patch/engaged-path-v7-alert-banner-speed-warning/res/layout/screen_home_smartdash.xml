@@ -45,7 +45,7 @@
                 </LinearLayout>
             </LinearLayout>
             <com.navdy.hud.app.view.DashboardWidgetView android:id="@id/drive_score_events" android:visibility="invisible" android:layout_width="98.0dip" android:layout_height="90.0dip" android:layout_marginLeft="501.0dip" android:layout_marginTop="109.0dip" />
-            <LinearLayout android:gravity="center" android:orientation="vertical" android:id="@id/take_snapshot_smart_dash" android:visibility="gone" android:layout_width="0.0dip" android:layout_height="0.0dip" android:layout_marginLeft="0.0dip" android:layout_marginTop="0.0dip">
+            <LinearLayout android:gravity="center" android:orientation="vertical" android:id="@id/take_snapshot_smart_dash" android:visibility="invisible" android:layout_width="104.0dip" android:layout_height="96.0dip" android:layout_marginLeft="492.0dip" android:layout_marginTop="104.0dip">
                 <FrameLayout android:background="@drawable/carrot_camera_speed_sign_background" android:layout_width="62.0dip" android:layout_height="62.0dip">
                     <com.navdy.hud.app.view.FontTextView android:textSize="32.0sp" android:textColor="@android:color/black" android:gravity="center" android:id="@id/txt_speed_limit" android:layout_width="fill_parent" android:layout_height="fill_parent" android:text="60" android:singleLine="true" android:includeFontPadding="false" navdy:fontFile="fonts/FSElliot-Heavy.ttf" />
                 </FrameLayout>

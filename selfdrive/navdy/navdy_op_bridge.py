@@ -11,6 +11,7 @@ import argparse
 import json
 import math
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -28,6 +29,7 @@ DEFAULT_SERVICE_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateService"
 DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
+NAVDY_CAMERA_HEARTBEAT_INTERVAL_S = 0.5
 NAVDY_CAMERA_SOURCE = "trafficNotification"
 NAVDY_LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
 DISPLAY_ON_TEXT = "Display Power: state=ON"
@@ -1234,7 +1236,20 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   return False
 
 
+def parse_camera_distance_m(camera_distance: Any) -> float:
+  if camera_distance is None:
+    return 0.0
+  match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(km|m)?", str(camera_distance).strip().lower())
+  if match is None:
+    return 0.0
+  distance = float(match.group(1))
+  if match.group(2) == "km":
+    distance *= 1000.0
+  return distance if math.isfinite(distance) and distance >= 0.0 else 0.0
+
+
 def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any, camera_type: Any,
+                               camera_distance: Any,
                                args: argparse.Namespace) -> None:
   try:
     speed = int(camera_speed_kph)
@@ -1243,22 +1258,29 @@ def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any, camera
   source = str(camera_source) if camera_source is not None else ""
   source_valid = source == NAVDY_CAMERA_SOURCE
   speed = speed if source_valid and 20 <= speed <= 140 else 0
-  normalized_type = "mobile" if str(camera_type).lower() == "mobile" else "fixed"
+  raw_type = str(camera_type).lower()
+  normalized_type = raw_type if raw_type in ("fixed", "mobile", "section") else "fixed"
   normalized_type = normalized_type if source_valid else ""
+  distance_m = parse_camera_distance_m(camera_distance) if source_valid else 0.0
 
-  state_signature = (speed, normalized_type)
+  state_signature = (speed, normalized_type, distance_m)
   previous = getattr(args, "_navdy_camera_state_signature", None)
   try:
     if previous == state_signature and os.path.exists(NAVDY_CAMERA_STATE_PATH):
-      os.utime(NAVDY_CAMERA_STATE_PATH, None)
+      now = time.monotonic()
+      last_touch = getattr(args, "_navdy_camera_state_touched_at", 0.0)
+      if now - last_touch >= NAVDY_CAMERA_HEARTBEAT_INTERVAL_S:
+        os.utime(NAVDY_CAMERA_STATE_PATH, None)
+        setattr(args, "_navdy_camera_state_touched_at", now)
       return
     temp_path = NAVDY_CAMERA_STATE_PATH + ".tmp"
     with open(temp_path, "w", encoding="utf-8") as state_file:
       json.dump({"cameraSpeedKph": speed, "cameraSource": source if source_valid else "",
-                 "cameraType": normalized_type},
+                 "cameraType": normalized_type, "cameraDistanceM": distance_m},
                 state_file, separators=(",", ":"))
     os.replace(temp_path, NAVDY_CAMERA_STATE_PATH)
     setattr(args, "_navdy_camera_state_signature", state_signature)
+    setattr(args, "_navdy_camera_state_touched_at", time.monotonic())
   except OSError:
     pass
 
@@ -1280,7 +1302,8 @@ def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> bool:
         continue
       feedback = json.loads(line)
       publish_navdy_camera_state(feedback.get("cameraSpeedKph", 0),
-                                 feedback.get("cameraSource"), feedback.get("cameraType"), args)
+                                 feedback.get("cameraSource"), feedback.get("cameraType"),
+                                 feedback.get("cameraDistance"), args)
     return True
   except (OSError, TypeError, ValueError, json.JSONDecodeError):
     return False

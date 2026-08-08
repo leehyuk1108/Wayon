@@ -9,6 +9,7 @@ const connectTimeoutMs = Number.parseInt(process.env.WAYON_SSH_CONNECT_TIMEOUT_M
 const credentialsPath = process.env.WAYON_SSH_CREDENTIALS_FILE
   || join(homedir(), ".config", "wayon", "ssh.credentials.json");
 const debug = process.env.WAYON_SSH_DEBUG === "1";
+const highWaterBytes = Number.parseInt(process.env.WAYON_SSH_HIGH_WATER_BYTES || "262144", 10);
 
 function debugLog(message) {
   if (debug) process.stderr.write(`wayon ssh debug ${new Date().toISOString()}: ${message}\n`);
@@ -60,6 +61,7 @@ process.stdin.pause();
 let stdinEnded = false;
 let remoteReady = false;
 const pendingInput = [];
+let pumpTimer = null;
 const connectTimeout = setTimeout(() => exitWithError("connection timed out"), connectTimeoutMs);
 
 function fail(message) {
@@ -74,9 +76,29 @@ function sendInput(chunk) {
   if (debug) setTimeout(() => debugLog(`buffered after send=${websocket.bufferedAmount}`), 100);
 }
 
+function scheduleInputPump() {
+  if (pumpTimer === null) pumpTimer = setTimeout(pumpInput, 10);
+}
+
+function pumpInput() {
+  pumpTimer = null;
+  if (!remoteReady || websocket.readyState !== 1) return;
+  while (pendingInput.length && websocket.bufferedAmount < highWaterBytes) {
+    sendInput(pendingInput.shift());
+  }
+  if (pendingInput.length || websocket.bufferedAmount >= highWaterBytes) {
+    process.stdin.pause();
+    scheduleInputPump();
+  } else if (stdinEnded) {
+    if (websocket.bufferedAmount === 0) websocket.close(1000, "stdin closed");
+    else scheduleInputPump();
+  } else {
+    process.stdin.resume();
+  }
+}
+
 websocket.addEventListener("open", () => {
   debugLog("websocket open");
-  if (stdinEnded) websocket.close(1000, "stdin closed");
 });
 websocket.addEventListener("message", (event) => {
   const bytes = event.data instanceof ArrayBuffer
@@ -87,8 +109,9 @@ websocket.addEventListener("message", (event) => {
     debugLog(`origin ready; flushing ${pendingInput.length} chunks`);
     remoteReady = true;
     clearTimeout(connectTimeout);
-    for (const chunk of pendingInput.splice(0)) sendInput(chunk);
-    if (!stdinEnded) process.stdin.resume();
+    pumpInput();
+  } else if (pendingInput.length || websocket.bufferedAmount >= highWaterBytes) {
+    scheduleInputPump();
   }
 });
 websocket.addEventListener("error", () => fail("remote tunnel unavailable"));
@@ -100,12 +123,12 @@ websocket.addEventListener("close", (event) => {
 
 process.stdin.on("data", (chunk) => {
   debugLog(`stdin ${chunk.length} bytes; ready=${remoteReady}`);
-  if (remoteReady && websocket.readyState === 1) sendInput(chunk);
-  else pendingInput.push(Buffer.from(chunk));
+  pendingInput.push(Buffer.from(chunk));
+  pumpInput();
 });
 process.stdin.on("end", () => {
   stdinEnded = true;
-  if (websocket.readyState === 1) websocket.close(1000, "stdin closed");
+  pumpInput();
 });
 process.on("SIGTERM", () => process.exit(143));
 process.on("SIGINT", () => process.exit(130));

@@ -46,9 +46,9 @@ def make_plan(target_kph=100.0, *, vision_target_kph=0.0, vision_active=False):
   )
 
 
-def write_camera_state(path, speed, camera_type="fixed"):
+def write_camera_state(path, speed, camera_type="fixed", distance_m=0.0):
   path.write_text(json.dumps({"cameraSpeedKph": speed, "cameraSource": NAVDY_CAMERA_SOURCE,
-                              "cameraType": camera_type}))
+                              "cameraType": camera_type, "cameraDistanceM": distance_m}))
 
 
 def test_metric_minimum_set_speed_matches_vehicle_limit():
@@ -77,6 +77,116 @@ def test_mobile_camera_does_not_activate_icbm(tmp_path):
   assert controller.v_target == 100
   assert not controller.automatic_speed_control_active
   assert not controller.automatic_control_active
+
+
+def test_section_approach_uses_posted_limit_before_entry(tmp_path):
+  camera_path = tmp_path / "camera.json"
+  write_camera_state(camera_path, 100, "section", 1200)
+  controller = make_controller(tmp_path)
+
+  controller.run(make_state(ego_kph=110, stock_set_kph=130, restore_kph=130),
+                 make_control(), make_plan(), True)
+
+  assert controller.section_phase == "approach"
+  assert controller.v_target == 100
+
+
+def test_section_distance_jump_starts_average_control(tmp_path):
+  camera_path = tmp_path / "camera.json"
+  write_camera_state(camera_path, 100, "section", 100)
+  controller = make_controller(tmp_path)
+  state = make_state(ego_kph=100, stock_set_kph=100, restore_kph=130)
+  controller.run(state, make_control(), make_plan(), True)
+
+  write_camera_state(camera_path, 100, "section", 5000)
+  controller.camera_state_checked_at = 0.0
+  controller.run(state, make_control(), make_plan(), True)
+
+  assert controller.section_phase == "cruise"
+  assert controller.section_total_distance_m == 5000
+  assert controller.v_target == 105
+
+
+def test_section_low_average_can_use_limit_plus_twenty(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.is_metric = True
+  controller.v_cruise_min = 25
+  controller.section_phase = "cruise"
+  controller.section_limit_kph = 100
+  controller.section_total_distance_m = 5000
+  controller.section_elapsed_s = 100
+  controller.section_distance_travelled_m = 80 * CV.KPH_TO_MS * 100
+
+  target = controller.update_section_target(
+    make_state(ego_kph=80, restore_kph=130), 130, 100, 2778)
+
+  assert round(controller.section_average_kph) == 80
+  assert target == 120
+
+
+def test_section_target_settles_at_target_average(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.is_metric = True
+  controller.v_cruise_min = 25
+  controller.section_phase = "cruise"
+  controller.section_limit_kph = 100
+  controller.section_total_distance_m = 5000
+  controller.section_elapsed_s = 100
+  controller.section_distance_travelled_m = 105 * CV.KPH_TO_MS * 100
+
+  target = controller.update_section_target(
+    make_state(ego_kph=105, restore_kph=130), 130, 100, 2083)
+
+  assert round(controller.section_average_kph) == 105
+  assert target == 105
+
+
+def test_section_exit_starts_at_exactly_three_hundred_meters(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.is_metric = True
+  controller.v_cruise_min = 25
+  controller.section_phase = "cruise"
+  controller.section_limit_kph = 100
+  controller.section_total_distance_m = 5000
+
+  target = controller.update_section_target(
+    make_state(ego_kph=120, restore_kph=130), 130, 100, 300)
+
+  assert controller.section_phase == "exit"
+  assert target == 100
+
+
+def test_section_target_never_exceeds_driver_restore_speed(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.is_metric = True
+  controller.v_cruise_min = 25
+  controller.section_phase = "cruise"
+  controller.section_limit_kph = 100
+  controller.section_total_distance_m = 5000
+  controller.section_elapsed_s = 100
+  controller.section_distance_travelled_m = 80 * CV.KPH_TO_MS * 100
+
+  target = controller.update_section_target(
+    make_state(ego_kph=80, restore_kph=110), 110, 100, 2778)
+
+  assert target == 110
+
+
+def test_section_feedback_gap_holds_last_dynamic_target(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.is_metric = True
+  controller.v_cruise_min = 25
+  controller.section_phase = "cruise"
+  controller.section_limit_kph = 100
+  controller.section_total_distance_m = 5000
+  controller.section_elapsed_s = 100
+  controller.section_distance_travelled_m = 80 * CV.KPH_TO_MS * 100
+
+  target = controller.update_section_target(
+    make_state(ego_kph=80, restore_kph=130), 130, 100, 2778)
+
+  assert target == 120
+  assert controller.held_section_target(130) == 120
 
 
 def test_planner_target_is_ignored_without_camera(tmp_path):

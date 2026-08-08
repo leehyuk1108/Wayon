@@ -12,6 +12,7 @@ PRIVATE_DISTANCE_FIELD = ".field private static lastCameraDistance:Ljava/lang/St
 PUBLIC_DISTANCE_FIELD = ".field public static lastCameraDistance:Ljava/lang/String;"
 LAST_SPEED_FIELD = ".field private static lastCameraSpeed:Ljava/lang/String;"
 MOBILE_FIELD = ".field private static lastCameraIsMobile:Z"
+SECTION_FIELD = ".field public static lastCameraIsSection:Z"
 MOBILE_RESOURCE = (
   '    <public type="drawable" name="carrot_mobile_camera_speed_sign_background" id="0x7f02029f" />'
 )
@@ -122,6 +123,73 @@ MOBILE_DETECTION = r'''    const/4 v4, 0x0
     const/4 v4, 0x1
 
     :mobile_camera_ready'''
+
+SECTION_DETECTION = r'''    const/4 v5, 0x0
+
+    iget-object v0, p1, Lcom/navdy/service/library/events/notification/NotificationEvent;->title:Ljava/lang/String;
+
+    const-string v3, "section"
+
+    invoke-static {v0, v3}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->containsIgnoreCase(Ljava/lang/String;Ljava/lang/String;)Z
+
+    move-result v0
+
+    if-nez v0, :section_camera_detected
+
+    const-string/jumbo v3, "\uad6c\uac04"
+
+    iget-object v0, p1, Lcom/navdy/service/library/events/notification/NotificationEvent;->title:Ljava/lang/String;
+
+    invoke-static {v0, v3}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->containsIgnoreCase(Ljava/lang/String;Ljava/lang/String;)Z
+
+    move-result v0
+
+    if-nez v0, :section_camera_detected
+
+    iget-object v0, p1, Lcom/navdy/service/library/events/notification/NotificationEvent;->subtitle:Ljava/lang/String;
+
+    const-string v3, "section"
+
+    invoke-static {v0, v3}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->containsIgnoreCase(Ljava/lang/String;Ljava/lang/String;)Z
+
+    move-result v0
+
+    if-nez v0, :section_camera_detected
+
+    const-string/jumbo v3, "\uad6c\uac04"
+
+    iget-object v0, p1, Lcom/navdy/service/library/events/notification/NotificationEvent;->subtitle:Ljava/lang/String;
+
+    invoke-static {v0, v3}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->containsIgnoreCase(Ljava/lang/String;Ljava/lang/String;)Z
+
+    move-result v0
+
+    if-nez v0, :section_camera_detected
+
+    iget-object v0, p1, Lcom/navdy/service/library/events/notification/NotificationEvent;->message:Ljava/lang/String;
+
+    const-string v3, "section"
+
+    invoke-static {v0, v3}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->containsIgnoreCase(Ljava/lang/String;Ljava/lang/String;)Z
+
+    move-result v0
+
+    if-nez v0, :section_camera_detected
+
+    const-string/jumbo v3, "\uad6c\uac04"
+
+    iget-object v0, p1, Lcom/navdy/service/library/events/notification/NotificationEvent;->message:Ljava/lang/String;
+
+    invoke-static {v0, v3}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->containsIgnoreCase(Ljava/lang/String;Ljava/lang/String;)Z
+
+    move-result v0
+
+    if-eqz v0, :section_camera_ready
+
+    :section_camera_detected
+    const/4 v5, 0x1
+
+    :section_camera_ready'''
 
 DISTANCE_FORMATTING = r'''    invoke-virtual {v2}, Ljava/lang/String;->toLowerCase()Ljava/lang/String;
 
@@ -254,19 +322,20 @@ def disable_broad_origin_matches(smali: str) -> str:
   return smali[:start] + method + smali[end:]
 
 
-def add_mobile_field(smali: str) -> str:
-  if MOBILE_FIELD in smali:
+def add_camera_type_fields(smali: str) -> str:
+  if MOBILE_FIELD in smali and SECTION_FIELD in smali:
     return smali
   if LAST_SPEED_FIELD not in smali:
     raise ValueError("camera speed field not found")
-  return smali.replace(LAST_SPEED_FIELD, LAST_SPEED_FIELD + "\n\n" + MOBILE_FIELD, 1)
+  fields = [field for field in (MOBILE_FIELD, SECTION_FIELD) if field not in smali]
+  return smali.replace(LAST_SPEED_FIELD, LAST_SPEED_FIELD + "\n\n" + "\n\n".join(fields), 1)
 
 
 def patch_camera_distance_formatting(smali: str) -> str:
   start = smali.index(".method public onNotificationEvent(")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if ":camera_distance_format_done" in method:
+  if ":camera_distance_format_done" in method or 'const-string v0, "[^0-9]"' in method:
     return smali
   anchor = """    :goto_0
     invoke-static {p1}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->extractCameraSpeed(Lcom/navdy/service/library/events/notification/NotificationEvent;)Ljava/lang/String;"""
@@ -281,7 +350,9 @@ def patch_camera_background(smali: str) -> str:
   start = smali.index(".method private applyCameraText(")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if ":camera_background_ready" in method:
+  if ":camera_background_ready" in method or (
+    "lastCameraIsMobile:Z" in method and "->setBackgroundResource(I)V" in method
+  ):
     return smali
 
   method = method.replace("    .locals 4", "    .locals 5", 1)
@@ -325,7 +396,7 @@ def patch_camera_distance_music_typeface(smali: str) -> str:
   start = smali.index(".method private applyCameraText(")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if ":camera_distance_music_typeface" in method:
+  if ":camera_distance_music_typeface" in method or "Typeface;->DEFAULT:Landroid/graphics/Typeface;" in method:
     return smali
   anchor = """    iget-object v0, p0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->distanceTextView:Landroid/widget/TextView;
 
@@ -354,7 +425,9 @@ def patch_encoded_camera_speed(smali: str) -> str:
   start = smali.index(".method public static getLastCameraSpeedLimit()I")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if ":camera_speed_positive" in method:
+  if ":camera_speed_positive" in method or (
+    "lastCameraIsMobile:Z" in method and "neg-int v0, v0" in method
+  ):
     return smali
   anchor = """    move-result v0
 
@@ -375,14 +448,70 @@ def patch_encoded_camera_speed(smali: str) -> str:
   return smali[:start] + method + smali[end:]
 
 
-def patch_mobile_notification_state(smali: str) -> str:
+def patch_camera_type_notification_state(smali: str) -> str:
   start = smali.index(".method public onNotificationEvent(")
   end = smali.index(METHOD_END, start)
   method = smali[start:end]
-  if ":mobile_camera_ready" in method:
+  if ":mobile_camera_ready" in method and ":section_camera_ready" in method:
     return smali
 
-  method = method.replace("    .locals 4", "    .locals 5", 1)
+  has_existing_mobile_state = (
+    "sput-boolean v4, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsMobile:Z" in method
+  )
+  if ":mobile_camera_ready" in method or has_existing_mobile_state:
+    method = method.replace("    .locals 5", "    .locals 6", 1)
+    clear_anchor = """    sput-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsMobile:Z
+
+    invoke-direct {p0}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->clearCameraText()V"""
+    clear_replacement = """    sput-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsMobile:Z
+
+    sput-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
+
+    invoke-direct {p0}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->clearCameraText()V"""
+    if clear_anchor not in method:
+      raise ValueError("existing mobile clear anchor not found")
+    method = method.replace(clear_anchor, clear_replacement, 1)
+
+    detection_pattern = re.compile(
+      r"(    :(?:mobile_camera_ready|cond_\d+)\n)(    sget-object v0, "
+      r"Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraSpeed:Ljava/lang/String;)"
+    )
+    method, count = detection_pattern.subn(
+      lambda match: match.group(1) + "\n" + SECTION_DETECTION + "\n\n" + match.group(2),
+      method,
+      count=1,
+    )
+    if count != 1:
+      raise ValueError("existing mobile detection anchor not found")
+
+    dedup_pattern = re.compile(
+      r"(    sget-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;"
+      r"->lastCameraIsMobile:Z\n\n    if-ne v0, v4, (:\w+)\n)"
+    )
+    method, count = dedup_pattern.subn(
+      lambda match: match.group(1) + "\n"
+      "    sget-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z\n\n"
+      f"    if-ne v0, v5, {match.group(2)}\n",
+      method,
+      count=1,
+    )
+    if count != 1:
+      raise ValueError("existing mobile dedup anchor not found")
+
+    apply_anchor = """    sput-boolean v4, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsMobile:Z
+
+    invoke-direct {p0, v1, v2}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->applyCameraText(Ljava/lang/String;Ljava/lang/String;)V"""
+    apply_replacement = """    sput-boolean v4, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsMobile:Z
+
+    sput-boolean v5, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
+
+    invoke-direct {p0, v1, v2}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->applyCameraText(Ljava/lang/String;Ljava/lang/String;)V"""
+    if apply_anchor not in method:
+      raise ValueError("existing mobile apply anchor not found")
+    method = method.replace(apply_anchor, apply_replacement, 1)
+    return smali[:start] + method + smali[end:]
+
+  method = method.replace("    .locals 4", "    .locals 6", 1)
   clear_anchor = """    sput-object v1, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraDistance:Ljava/lang/String;
 
     invoke-direct {p0}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->clearCameraText()V"""
@@ -392,6 +521,8 @@ def patch_mobile_notification_state(smali: str) -> str:
 
     sput-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsMobile:Z
 
+    sput-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
+
     invoke-direct {p0}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->clearCameraText()V"""
   method = method.replace(clear_anchor, clear_replacement, 1)
 
@@ -400,7 +531,7 @@ def patch_mobile_notification_state(smali: str) -> str:
     sget-object v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraSpeed:Ljava/lang/String;"""
   speed_replacement = """    move-result-object v1
 
-""" + MOBILE_DETECTION + """
+""" + MOBILE_DETECTION + "\n\n" + SECTION_DETECTION + """
 
     sget-object v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraSpeed:Ljava/lang/String;"""
   if speed_anchor not in method:
@@ -416,6 +547,10 @@ def patch_mobile_notification_state(smali: str) -> str:
 
     if-ne v0, v4, :goto_1
 
+    sget-boolean v0, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
+
+    if-ne v0, v5, :goto_1
+
     :apply_camera_notification"""
   if same_distance not in method:
     raise ValueError("camera notification dedup anchor not found")
@@ -427,6 +562,8 @@ def patch_mobile_notification_state(smali: str) -> str:
   apply_replacement = """    sput-object v2, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraDistance:Ljava/lang/String;
 
     sput-boolean v4, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsMobile:Z
+
+    sput-boolean v5, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->lastCameraIsSection:Z
 
     invoke-direct {p0, v1, v2}, Lcom/navdy/hud/app/maps/widget/TrafficIncidentWidgetPresenter;->applyCameraText(Ljava/lang/String;Ljava/lang/String;)V"""
   method = method.replace(apply_anchor, apply_replacement, 1)
@@ -443,12 +580,12 @@ def main() -> int:
   validate_camera_clear_action(smali)
   smali = expose_camera_distance(smali)
   smali = restore_camera_clear_match(smali)
-  smali = add_mobile_field(smali)
+  smali = add_camera_type_fields(smali)
   smali = patch_camera_distance_formatting(smali)
   smali = patch_camera_background(smali)
   smali = patch_camera_distance_music_typeface(smali)
   smali = patch_encoded_camera_speed(smali)
-  smali = patch_mobile_notification_state(smali)
+  smali = patch_camera_type_notification_state(smali)
   path.write_text(disable_broad_origin_matches(smali))
   return 0
 

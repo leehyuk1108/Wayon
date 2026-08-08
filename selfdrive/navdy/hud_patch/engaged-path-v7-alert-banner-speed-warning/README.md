@@ -79,6 +79,8 @@ Behavior:
   openpilot overlay at the stock dashboard position. This keeps the camera card
   visible even when the legacy traffic-widget presenter is attached to a
   hidden dashboard widget, while camera-clear events still hide both rows.
+- Keeps the legacy dashboard camera container at zero size so camera
+  notifications cannot display a second card below the attached overlay.
 - Inflates Navdy's stock `maps_traffic_incident_widget` layout for the mirrored
   camera card, so its FSElliot Heavy font metrics, spacing, and alignment are
   identical to the original widget. Three-digit limits still shrink to 26sp so

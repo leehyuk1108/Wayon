@@ -211,6 +211,19 @@ def test_navdy_camera_card_is_mirrored_into_attached_overlay():
   assert "div-int/lit8 v0, v0, 0x64" in receiver
 
 
+def test_navdy_legacy_camera_card_cannot_render_below_overlay():
+  layout = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+           "res/layout/screen_home_smartdash.xml"
+  root = ET.parse(layout).getroot()
+  android = "{http://schemas.android.com/apk/res/android}"
+  legacy_card = next(view for view in root.iter()
+                     if view.attrib.get(f"{android}id") == "@id/take_snapshot_smart_dash")
+
+  assert legacy_card.attrib[f"{android}visibility"] == "gone"
+  assert legacy_card.attrib[f"{android}layout_width"] == "0.0dip"
+  assert legacy_card.attrib[f"{android}layout_height"] == "0.0dip"
+
+
 def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
           "patch_ambient_gatt_recovery.py"

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import subprocess
 import time
 
@@ -67,9 +68,20 @@ def _remaining_timeout_ms(deadline: float, stage: str) -> int:
   return max(1, min(SNAPSHOT_POLL_MS, int(remaining_s * 1000)))
 
 
+def exposure_near_target(frame_data, ready_ratio: float) -> bool:
+  measured = float(frame_data.measuredGreyFraction)
+  target = float(frame_data.targetGreyFraction)
+  ratio = max(0.0, min(1.0, float(ready_ratio)))
+  return (math.isfinite(measured) and math.isfinite(target) and target > 0.0 and
+          measured >= target * ratio)
+
+
 def get_snapshots(frame="roadCameraState", front_frame="driverCameraState",
                   warmup_s=4.0, front_warmup_s=None,
-                  timeout_s: float = DEFAULT_SNAPSHOT_TIMEOUT_S):
+                  timeout_s: float = DEFAULT_SNAPSHOT_TIMEOUT_S,
+                  exposure_ready_ratio: float | None = None,
+                  exposure_stable_frames: int = 3,
+                  exposure_max_wait_s: float = 5.0):
   sockets = [s for s in (frame, front_frame) if s is not None]
   if not sockets:
     return None, None
@@ -78,10 +90,51 @@ def get_snapshots(frame="roadCameraState", front_frame="driverCameraState",
   sm = messaging.SubMaster(sockets)
   vipc_clients = {s: VisionIpcClient("camerad", VISION_STREAMS[s], True) for s in sockets}
 
-  def wait_for_warmup(service, seconds):
-    target_frame = int(max(0.0, float(seconds)) / DT_MDL)
-    while sm[service].frameId < target_frame:
-      sm.update(_remaining_timeout_ms(deadline, f"waiting for {service} exposure"))
+  warmup_by_service = {
+    frame: max(0.0, float(warmup_s)) if frame is not None else 0.0,
+    front_frame: max(0.0, float(warmup_s if front_warmup_s is None else front_warmup_s)) if front_frame is not None else 0.0,
+  }
+
+  def wait_for_warmup():
+    first_frame_ids = {}
+    exposure_started_at = {}
+    stable_counts = {service: 0 for service in sockets}
+    ready = set()
+    required_stable_frames = max(1, int(exposure_stable_frames))
+    max_exposure_wait_s = max(0.0, float(exposure_max_wait_s))
+
+    while len(ready) < len(sockets):
+      pending = next(service for service in sockets if service not in ready)
+      sm.update(_remaining_timeout_ms(deadline, f"waiting for {pending} exposure"))
+      now = time.monotonic()
+
+      for service in sockets:
+        if service in ready:
+          continue
+
+        frame_id = int(sm[service].frameId)
+        if frame_id <= 0:
+          continue
+        if service not in first_frame_ids:
+          first_frame_ids[service] = frame_id
+          exposure_started_at[service] = now
+
+        minimum_frames = int(warmup_by_service[service] / DT_MDL)
+        if frame_id - first_frame_ids[service] < minimum_frames:
+          continue
+        if exposure_ready_ratio is None:
+          ready.add(service)
+          continue
+
+        if sm.updated[service]:
+          if exposure_near_target(sm[service], exposure_ready_ratio):
+            stable_counts[service] += 1
+          else:
+            stable_counts[service] = 0
+
+        waited_s = now - exposure_started_at[service]
+        if stable_counts[service] >= required_stable_frames or waited_s >= max_exposure_wait_s:
+          ready.add(service)
 
   def connect(service):
     client = vipc_clients[service]
@@ -98,11 +151,10 @@ def get_snapshots(frame="roadCameraState", front_frame="driverCameraState",
     return buffer
 
   rear, front = None, None
+  wait_for_warmup()
   if frame is not None:
-    wait_for_warmup(frame, warmup_s)
     rear = extract_image(receive(frame))
   if front_frame is not None:
-    wait_for_warmup(front_frame, warmup_s if front_warmup_s is None else front_warmup_s)
     front = extract_image(receive(front_frame))
   return rear, front
 

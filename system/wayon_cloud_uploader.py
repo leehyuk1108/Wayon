@@ -40,6 +40,9 @@ LAST_SUPPRESSED_VEHICLE_PAIR_PATH = Path(os.getenv(
 MAX_IMPACT_CAPTURE_ATTEMPTS = 3
 WAYON_WIDE_SNAPSHOT_WARMUP_S = 0.5
 WAYON_DRIVER_SNAPSHOT_WARMUP_S = 0.8
+WAYON_SNAPSHOT_EXPOSURE_READY_RATIO = 0.78
+WAYON_SNAPSHOT_EXPOSURE_STABLE_FRAMES = 3
+WAYON_SNAPSHOT_EXPOSURE_MAX_WAIT_S = 5.0
 OFFROAD_SNAPSHOT_TIMEOUT_S = 30.0
 DEFAULT_VEHICLE_STATUS_URL = (
   "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json"
@@ -1115,6 +1118,9 @@ def capture_offroad_images():
         warmup_s=WAYON_WIDE_SNAPSHOT_WARMUP_S,
         front_warmup_s=WAYON_DRIVER_SNAPSHOT_WARMUP_S,
         timeout_s=OFFROAD_SNAPSHOT_TIMEOUT_S,
+        exposure_ready_ratio=WAYON_SNAPSHOT_EXPOSURE_READY_RATIO,
+        exposure_stable_frames=WAYON_SNAPSHOT_EXPOSURE_STABLE_FRAMES,
+        exposure_max_wait_s=WAYON_SNAPSHOT_EXPOSURE_MAX_WAIT_S,
       )
     finally:
       if started_camerad:

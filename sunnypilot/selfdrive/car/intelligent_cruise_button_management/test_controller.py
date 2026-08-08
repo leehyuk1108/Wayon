@@ -352,8 +352,12 @@ def test_automatic_control_status_survives_car_control_conversion():
   message = custom.CarControlSP.new_message()
   message.intelligentCruiseButtonManagement.automaticControlActive = True
   message.intelligentCruiseButtonManagement.automaticTargetSpeedKph = 80
+  message.intelligentCruiseButtonManagement.sectionPhase = "cruise"
+  message.intelligentCruiseButtonManagement.sectionProgress = 0.64
 
   converted = convert_carControlSP(message)
 
   assert converted.intelligentCruiseButtonManagement.automaticControlActive
   assert converted.intelligentCruiseButtonManagement.automaticTargetSpeedKph == 80
+  assert converted.intelligentCruiseButtonManagement.sectionPhase == "cruise"
+  assert abs(converted.intelligentCruiseButtonManagement.sectionProgress - 0.64) < 1e-5

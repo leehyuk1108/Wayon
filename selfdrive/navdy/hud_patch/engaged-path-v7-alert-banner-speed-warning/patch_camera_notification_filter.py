@@ -442,6 +442,77 @@ def patch_camera_distance_music_typeface(smali: str) -> str:
   return smali[:start] + method + smali[end:]
 
 
+def patch_smartdash_camera_text_style(smali: str) -> str:
+  start = smali.index(".method private applyCameraText(")
+  end = smali.index(METHOD_END, start)
+  method = smali[start:end]
+  if ":smartdash_camera_speed_size_ready" in method:
+    return smali
+  method, locals_count = re.subn(r"    \.locals 5\n", "    .locals 6\n", method, count=1)
+  if locals_count != 1:
+    raise ValueError("SmartDash camera style requires five existing locals")
+
+  speed_anchor = """    check-cast v3, Landroid/widget/TextView;
+
+    invoke-virtual {v3, v4}, Landroid/view/View;->setBackgroundResource(I)V"""
+  speed_style = """    check-cast v3, Landroid/widget/TextView;
+
+    sget-object v1, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
+
+    const/4 v5, 0x0
+
+    invoke-virtual {v3, v1, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
+
+    invoke-virtual {p1}, Ljava/lang/String;->length()I
+
+    move-result v1
+
+    const/4 v5, 0x2
+
+    if-gt v1, v5, :smartdash_camera_speed_three_digit
+
+    const/high16 v1, 0x41f00000    # 30.0f
+
+    goto :smartdash_camera_speed_size_ready
+
+    :smartdash_camera_speed_three_digit
+    const/high16 v1, 0x41d00000    # 26.0f
+
+    :smartdash_camera_speed_size_ready
+    const/4 v5, 0x0
+
+    invoke-virtual {v3, v5, v1}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    invoke-virtual {v3, v4}, Landroid/view/View;->setBackgroundResource(I)V"""
+  if speed_anchor not in method:
+    raise ValueError("SmartDash camera speed style anchor not found")
+  method = method.replace(speed_anchor, speed_style, 1)
+
+  distance_start = method.index("    const v1, 0x7f0e01e1")
+  distance_anchor = """    check-cast v3, Landroid/widget/TextView;
+
+    const/4 v1, -0x1"""
+  distance_style = """    check-cast v3, Landroid/widget/TextView;
+
+    sget-object v1, Landroid/graphics/Typeface;->DEFAULT:Landroid/graphics/Typeface;
+
+    const/4 v5, 0x0
+
+    invoke-virtual {v3, v1, v5}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;I)V
+
+    const/high16 v1, 0x41880000    # 17.0f
+
+    invoke-virtual {v3, v5, v1}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    const/4 v1, -0x1"""
+  before_distance = method[:distance_start]
+  distance_method = method[distance_start:]
+  if distance_anchor not in distance_method:
+    raise ValueError("SmartDash camera distance style anchor not found")
+  method = before_distance + distance_method.replace(distance_anchor, distance_style, 1)
+  return smali[:start] + method + smali[end:]
+
+
 def patch_section_legacy_card_visibility(smali: str) -> str:
   start = smali.index(".method private applyCameraText(")
   end = smali.index(METHOD_END, start)
@@ -642,6 +713,7 @@ def main() -> int:
   smali = patch_camera_distance_formatting(smali)
   smali = patch_camera_background(smali)
   smali = patch_camera_distance_music_typeface(smali)
+  smali = patch_smartdash_camera_text_style(smali)
   smali = patch_section_legacy_card_visibility(smali)
   smali = patch_encoded_camera_speed(smali)
   smali = patch_camera_type_notification_state(smali)

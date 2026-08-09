@@ -248,20 +248,47 @@ def test_navdy_camera_card_uses_original_smartdash_position():
            "res/layout/screen_home_smartdash.xml"
   root = ET.parse(layout).getroot()
   android = "{http://schemas.android.com/apk/res/android}"
+  navdy = "{http://schemas.android.com/apk/res-auto}"
   legacy_card = next(view for view in root.iter()
                      if view.attrib.get(f"{android}id") == "@id/take_snapshot_smart_dash")
+  speed_limit = next(view for view in root.iter()
+                     if view.attrib.get(f"{android}id") == "@id/txt_speed_limit")
+  camera_distance = next(view for view in root.iter()
+                         if view.attrib.get(f"{android}id") == "@id/txt_speed_limit_unavailable")
 
   assert legacy_card.attrib[f"{android}visibility"] == "invisible"
   assert legacy_card.attrib[f"{android}layout_width"] == "104.0dip"
   assert legacy_card.attrib[f"{android}layout_height"] == "96.0dip"
   assert legacy_card.attrib[f"{android}layout_marginLeft"] == "492.0dip"
   assert legacy_card.attrib[f"{android}layout_marginTop"] == "104.0dip"
+  assert speed_limit.attrib[f"{android}textSize"] == "30.0sp"
+  assert speed_limit.attrib["style"] == "@style/Roboto"
+  assert f"{navdy}fontFile" not in speed_limit.attrib
+  assert camera_distance.attrib[f"{android}textSize"] == "17.0sp"
+  assert camera_distance.attrib["style"] == "@style/Roboto"
+  assert f"{navdy}fontFile" not in camera_distance.attrib
 
   receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
              "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
   mirror_setup = receiver.read_text().split("const v3, 0x7f030032", 1)[1].split(
     "new-instance v4, Landroid/widget/FrameLayout$LayoutParams;", 1)[0]
   assert "Landroid/view/View;->setVisibility(I)V" in mirror_setup
+
+
+def test_navdy_visible_smartdash_camera_card_gets_music_typeface_and_dynamic_size():
+  patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
+          "patch_camera_notification_filter.py"
+  script = patch.read_text()
+
+  assert "patch_smartdash_camera_text_style" in script
+  assert ":smartdash_camera_speed_three_digit" in script
+  assert ":smartdash_camera_speed_size_ready" in script
+  assert "if-gt v1, v5, :smartdash_camera_speed_three_digit" in script
+  assert "SmartDash camera style requires five existing locals" in script
+  assert "const/4 v5, 0x0" in script
+  assert "const/high16 v1, 0x41f00000    # 30.0f" in script
+  assert "const/high16 v1, 0x41d00000    # 26.0f" in script
+  assert "const/high16 v1, 0x41880000    # 17.0f" in script
 
 
 def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():

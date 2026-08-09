@@ -43,6 +43,8 @@ WAYON_DRIVER_SNAPSHOT_WARMUP_S = 0.8
 WAYON_SNAPSHOT_EXPOSURE_READY_RATIO = 0.78
 WAYON_SNAPSHOT_EXPOSURE_STABLE_FRAMES = 3
 WAYON_SNAPSHOT_EXPOSURE_MAX_WAIT_S = 5.0
+WAYON_WIDE_SNAPSHOT_TARGET_MEDIAN = 70.0
+WAYON_WIDE_SNAPSHOT_MIN_GAMMA = 0.62
 OFFROAD_SNAPSHOT_TIMEOUT_S = 30.0
 DEFAULT_VEHICLE_STATUS_URL = (
   "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json"
@@ -1055,6 +1057,34 @@ def jpeg_base64(array):
   return base64.b64encode(jpeg_bytes(array, quality=72)).decode("ascii")
 
 
+def enhance_wide_snapshot(image, target_median=WAYON_WIDE_SNAPSHOT_TARGET_MEDIAN,
+                          min_gamma=WAYON_WIDE_SNAPSHOT_MIN_GAMMA):
+  import numpy as np
+
+  if image is None:
+    return None
+
+  frame = np.asarray(image)
+  if frame.ndim != 3 or frame.shape[2] < 3 or frame.size == 0:
+    return image
+
+  rgb = frame[:, :, :3].astype(np.float32)
+  luma = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
+  median = float(np.median(luma))
+  target = max(1.0, min(254.0, float(target_median)))
+  if not math.isfinite(median) or median <= 0.0 or median >= target:
+    return image
+
+  gamma = math.log(target / 255.0) / math.log(max(1.0, median) / 255.0)
+  gamma = max(0.1, min(1.0, max(float(min_gamma), gamma)))
+  corrected_luma = 255.0 * np.power(np.clip(luma / 255.0, 0.0, 1.0), gamma)
+  gain = corrected_luma / np.maximum(luma, 1.0)
+
+  enhanced = frame.copy()
+  enhanced[:, :, :3] = np.clip(rgb * gain[:, :, None], 0.0, 255.0).astype(frame.dtype)
+  return enhanced
+
+
 def upload_offroad_snapshot(config, device_id):
   try:
     wide, driver = capture_offroad_images()
@@ -1112,7 +1142,7 @@ def capture_offroad_images():
       started_camerad = True
 
     try:
-      return get_snapshots(
+      wide, driver = get_snapshots(
         "wideRoadCameraState",
         "driverCameraState",
         warmup_s=WAYON_WIDE_SNAPSHOT_WARMUP_S,
@@ -1122,6 +1152,7 @@ def capture_offroad_images():
         exposure_stable_frames=WAYON_SNAPSHOT_EXPOSURE_STABLE_FRAMES,
         exposure_max_wait_s=WAYON_SNAPSHOT_EXPOSURE_MAX_WAIT_S,
       )
+      return enhance_wide_snapshot(wide), driver
     finally:
       if started_camerad:
         managed_processes["camerad"].stop()

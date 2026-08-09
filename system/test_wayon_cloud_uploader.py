@@ -10,7 +10,7 @@ import numpy as np
 # Direct execution starts inside system/, so add openpilot root explicitly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from openpilot.system.wayon_cloud_uploader import (device_details_payload, gps_payload, openpilot_details_payload,
+from openpilot.system.wayon_cloud_uploader import (device_details_payload, enhance_wide_snapshot, gps_payload, openpilot_details_payload,
                                                    panda_details_payload, resolve_onroad_state,
                                                    upload_pending_impacts, upload_pending_vehicle_events,
                                                    vehicle_details_payload)
@@ -23,6 +23,23 @@ class FakeSubMaster(dict):
     super().__init__(gpsLocation=gps, gpsLocationExternal=gps)
     self.seen = {"gpsLocation": seen, "gpsLocationExternal": seen}
     self.recv_time = {"gpsLocation": receive_time, "gpsLocationExternal": receive_time}
+
+
+def test_wide_snapshot_enhancement_lifts_dark_frames_without_clipping():
+  image = np.full((8, 12, 3), 32, dtype=np.uint8)
+  image[0, 0] = 255
+
+  enhanced = enhance_wide_snapshot(image)
+
+  assert enhanced.dtype == np.uint8
+  assert enhanced.shape == image.shape
+  assert np.median(enhanced) >= 68
+  assert np.array_equal(enhanced[0, 0], image[0, 0])
+
+
+def test_wide_snapshot_enhancement_leaves_bright_frames_unchanged():
+  image = np.full((8, 12, 3), 96, dtype=np.uint8)
+  assert enhance_wide_snapshot(image) is image
 
 
 def test_started_override_is_authoritative():

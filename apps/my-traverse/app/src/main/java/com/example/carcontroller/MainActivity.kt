@@ -1209,7 +1209,6 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         val state = feed.state
         if (state == null) {
             runJs("markWayonCloudUnavailable(${jsQuote("Wayon Cloud 상태 정보 없음")})")
-            runJs("updateWayonDriveUnavailable(${jsQuote("상태 정보 없음")})")
             runJs("onWayonCloudDataUpdated()")
             return
         }
@@ -1245,15 +1244,6 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 "${jsQuote(latestTrip?.topSpeed ?: "-- km/h")})",
         )
 
-        val telemetry = state.rawJson ?: JSONObject()
-        telemetry.put("cloudUpdatedAt", state.updatedAt)
-        telemetry.put("cloudLatitude", state.latitude)
-        telemetry.put("cloudLongitude", state.longitude)
-        telemetry.put("cloudVoltageV", state.voltageV)
-        telemetry.put("cloudSpeedMps", state.speedMps)
-        state.doorLocked?.let { telemetry.put("cloudDoorLocked", it) }
-        state.doorLockUpdatedAt?.let { telemetry.put("cloudDoorLockUpdatedAt", it) }
-        runJs("updateWayonDriveState(${jsQuote(telemetry.toString())})")
         runJs("onWayonCloudDataUpdated()")
     }
 

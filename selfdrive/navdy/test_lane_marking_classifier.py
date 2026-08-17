@@ -19,8 +19,9 @@ def model_line(lateral_m: float, probability: float = 0.9):
   )
 
 
-def request_for_lines():
+def request_for_lines(frame_id: int = -1):
   model = SimpleNamespace(
+    frameId=frame_id,
     laneLines=[
       model_line(-5.4),
       model_line(-1.8),
@@ -195,7 +196,8 @@ def test_unknown_pattern_with_sustained_yellow_renders_solid_yellow():
   yellow = classifier.LaneProfile("unknown", 0.0, 0.8)
   unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
 
-  worker._update_result((unknown, yellow, unknown, unknown), now=10.0, duration_ms=2.0)
+  for now in (10.0, 10.5, 11.0):
+    worker._update_result((unknown, yellow, unknown, unknown), now=now, duration_ms=2.0)
 
   assert worker._result["navLaneLeftType"] == "centerSolid"
 
@@ -214,16 +216,108 @@ def test_yellow_centerline_survives_short_color_detection_gaps():
   white_dashed = classifier.LaneProfile("dashed", 1.0, 0.0)
   unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
 
-  worker._update_result(
-    (unknown, yellow_solid, unknown, unknown), now=10.0, duration_ms=2.0)
-  for now in (10.5, 11.0, 11.5, 12.0):
+  for now in (10.0, 10.5, 11.0):
+    worker._update_result(
+      (unknown, yellow_solid, unknown, unknown), now=now, duration_ms=2.0)
+  for now in (11.5, 12.0, 12.5, 13.0):
     worker._update_result(
       (unknown, white_dashed, unknown, unknown), now=now, duration_ms=2.0)
     assert worker._result["navLaneLeftType"] == "centerSolid"
 
   worker._update_result(
-    (unknown, white_dashed, unknown, unknown), now=13.0, duration_ms=2.0)
+    (unknown, white_dashed, unknown, unknown), now=14.0, duration_ms=2.0)
   assert not worker._result["navLaneLeftType"].startswith("center")
+
+
+def test_warm_global_color_cast_does_not_turn_white_lines_yellow():
+  request = request_for_lines()
+  assert request is not None
+  frame = synthetic_nv12_frame(
+    request,
+    lane_patterns=("solid", "solid", "solid", "solid"),
+    yellow_lanes=set(),
+  )
+  raw = np.frombuffer(frame.data, dtype=np.uint8)
+  uv = raw[frame.uv_offset:].reshape((-1, frame.stride))
+  uv[:, 0::2] = 102
+  uv[:, 1::2] = 142
+
+  profiles = classifier.classify_frame(request, frame)
+
+  assert all(profile.yellow_confidence < 0.2 for profile in profiles)
+
+
+def test_local_contrast_keeps_markings_across_dark_and_bright_exposure():
+  request = request_for_lines()
+  assert request is not None
+
+  for background, paint in ((25, 47), (160, 190)):
+    frame = synthetic_nv12_frame(
+      request,
+      lane_patterns=("solid", "solid", "solid", "solid"),
+      yellow_lanes=set(),
+    )
+    y_plane = np.frombuffer(
+      frame.data, dtype=np.uint8, count=frame.uv_offset)
+    y_plane[y_plane == 58] = background
+    y_plane[y_plane == 225] = paint
+
+    profiles = classifier.classify_frame(request, frame)
+
+    assert all(profile.pattern == "solid" for profile in profiles)
+
+
+def test_lane_request_rejects_stale_or_older_camera_frames():
+  request = request_for_lines(frame_id=100)
+  assert request is not None
+
+  assert classifier.request_matches_frame(request, 100)
+  assert classifier.request_matches_frame(request, 102)
+  assert not classifier.request_matches_frame(request, 99)
+  assert not classifier.request_matches_frame(request, 103)
+
+
+def test_pattern_hysteresis_ignores_one_conflicting_frame():
+  worker = object.__new__(classifier.NavdyLaneMarkingClassifier)
+  worker._condition = threading.Condition()
+  worker._active = True
+  worker._result = dict(classifier.UNKNOWN_LANE_TYPES)
+  worker._result_at = 0.0
+  worker._pattern_scores = np.zeros(4, dtype=np.float32)
+  worker._center_scores = np.zeros(4, dtype=np.float32)
+  worker._center_last_seen_at = np.zeros(4, dtype=np.float64)
+  worker._last_duration_ms = 0.0
+  solid = classifier.LaneProfile("solid", 1.0, 0.0)
+  dashed = classifier.LaneProfile("dashed", 1.0, 0.0)
+  unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
+
+  for now in (10.0, 10.5, 11.0):
+    worker._update_result((unknown, solid, unknown, unknown), now, 2.0)
+  assert worker._result["navLaneLeftType"] == "solid"
+
+  worker._update_result((unknown, dashed, unknown, unknown), 11.5, 2.0)
+  assert worker._result["navLaneLeftType"] == "solid"
+
+
+def test_centerline_requires_repeated_color_evidence():
+  worker = object.__new__(classifier.NavdyLaneMarkingClassifier)
+  worker._condition = threading.Condition()
+  worker._active = True
+  worker._result = dict(classifier.UNKNOWN_LANE_TYPES)
+  worker._result_at = 0.0
+  worker._pattern_scores = np.zeros(4, dtype=np.float32)
+  worker._center_scores = np.zeros(4, dtype=np.float32)
+  worker._center_last_seen_at = np.zeros(4, dtype=np.float64)
+  worker._last_duration_ms = 0.0
+  yellow = classifier.LaneProfile("solid", 1.0, 0.8)
+  unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
+
+  worker._update_result((unknown, yellow, unknown, unknown), 10.0, 2.0)
+  assert worker._result["navLaneLeftType"] == "unknown"
+  worker._update_result((unknown, yellow, unknown, unknown), 10.5, 2.0)
+  assert worker._result["navLaneLeftType"] == "unknown"
+  worker._update_result((unknown, yellow, unknown, unknown), 11.0, 2.0)
+  assert worker._result["navLaneLeftType"] == "centerSolid"
 
 
 def test_projection_uses_c4_road_camera_without_full_frame_copy():

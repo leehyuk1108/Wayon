@@ -24,8 +24,15 @@ SAMPLE_START_M = 7.0
 SAMPLE_END_M = 42.0
 SAMPLE_STEP_M = 0.75
 PROFILE_HIT_THRESHOLD = 0.42
-YELLOW_HIT_THRESHOLD = 0.1
+YELLOW_HIT_THRESHOLD = 0.12
 YELLOW_HOLD_SEC = 2.5
+MAX_FRAME_ID_DELTA = 2
+PATTERN_FILTER_ALPHA = 0.20
+CENTER_FILTER_ALPHA = 0.24
+PATTERN_ENTER_THRESHOLD = 0.38
+PATTERN_EXIT_THRESHOLD = 0.14
+CENTER_ENTER_THRESHOLD = 0.42
+CENTER_EXIT_THRESHOLD = 0.14
 VISION_FRAME_TIMEOUT_MS = 120
 VISION_IMPORT_RETRY_SEC = 1.0
 
@@ -55,6 +62,7 @@ class LaneModelLine:
 class LaneMarkingRequest:
   lines: tuple[LaneModelLine, ...]
   rpy_calib: np.ndarray
+  frame_id: int = -1
 
 
 @dataclass(frozen=True)
@@ -130,7 +138,15 @@ def capture_request(model_v2: Any, live_calibration: Any) -> LaneMarkingRequest 
       z=points[:, 2].copy(),
       probability=clamp01(probability),
     ))
-  return LaneMarkingRequest(tuple(output), rpy.copy())
+  return LaneMarkingRequest(
+    tuple(output), rpy.copy(), int(getattr(model_v2, "frameId", -1)))
+
+
+def request_matches_frame(request: LaneMarkingRequest, frame_id: int) -> bool:
+  if request.frame_id < 0 or frame_id < 0:
+    return True
+  delta = frame_id - request.frame_id
+  return 0 <= delta <= MAX_FRAME_ID_DELTA
 
 
 def project_line(line: LaneModelLine, rpy_calib: np.ndarray,
@@ -207,19 +223,19 @@ def classify_yellow_marking(yellow_scores: np.ndarray) -> tuple[str, float]:
   # sustained run. Short transverse markings such as crosswalk bars do not.
   coverage_score = clamp01((hit_count - 12) / 12.0)
   continuity_score = clamp01((longest_hit - 5) / 5.0)
-  confidence = coverage_score * continuity_score
-  if confidence <= 0.0:
-    return "unknown", 0.0
-
   longest_gap = max(internal_gap_runs, default=0)
   # One interrupted solid line commonly becomes two runs when a lead vehicle,
   # shadow, or road repair hides part of it. Require a repeating pattern before
   # declaring a yellow marking dashed.
   if len(hit_runs) <= 2 or longest_gap <= 2:
-    return "solid", confidence
+    confidence = coverage_score * continuity_score
+    return ("solid", confidence) if confidence > 0.0 else ("unknown", 0.0)
   if len(hit_runs) >= 3 and longest_gap >= 3:
-    return "dashed", confidence
-  return "unknown", confidence
+    periodicity_score = clamp01((len(hit_runs) - 2) / 3.0)
+    gap_score = clamp01((longest_gap - 2) / 3.0)
+    confidence = coverage_score * max(0.55, periodicity_score * gap_score)
+    return ("dashed", confidence) if confidence > 0.0 else ("unknown", 0.0)
+  return "unknown", 0.0
 
 
 def classify_yellow_profile(yellow_scores: np.ndarray) -> float:
@@ -299,6 +315,8 @@ def sample_profile(frame: Any, line: LaneModelLine,
 
   strengths = np.zeros(distances.size, dtype=np.float32)
   yellow_scores = np.zeros(distances.size, dtype=np.float32)
+  peak_offsets = np.full(distances.size, np.nan, dtype=np.float32)
+  search_halves = np.zeros(distances.size, dtype=np.float32)
   for index, (distance, pixel) in enumerate(zip(distances, pixels, strict=True)):
     center_x = int(round(float(pixel[0])))
     center_y = int(round(float(pixel[1])))
@@ -311,13 +329,23 @@ def sample_profile(frame: Any, line: LaneModelLine,
     if patch.size < 6:
       continue
 
-    flat_index = int(np.argmax(patch))
-    patch_y, patch_x = np.unravel_index(flat_index, patch.shape)
-    max_luma = float(patch[patch_y, patch_x])
-    background = float(np.median(patch))
-    contrast_score = clamp01((max_luma - background - 10.0) / 35.0)
-    brightness_score = clamp01((max_luma - 55.0) / 110.0)
-    strengths[index] = 0.78 * contrast_score + 0.22 * brightness_score
+    # A lane stripe should occupy at least two rows. Using the second brightest
+    # pixel per column rejects isolated road sparkle and headlight noise while
+    # retaining slanted paint edges.
+    patch_float = patch.astype(np.float32)
+    if patch.shape[0] >= 2:
+      column_luma = np.partition(patch_float, -2, axis=0)[-2]
+    else:
+      column_luma = patch_float[0]
+    patch_x = int(np.argmax(column_luma))
+    max_luma = float(column_luma[patch_x])
+    background = float(np.median(column_luma))
+    contrast_floor = float(np.interp(background, [24.0, 180.0], [5.0, 12.0]))
+    contrast_span = float(np.interp(background, [24.0, 180.0], [18.0, 35.0]))
+    strengths[index] = clamp01(
+      (max_luma - background - contrast_floor) / contrast_span)
+    peak_offsets[index] = float(left + patch_x - center_x)
+    search_halves[index] = float(search_half)
 
     # Yellow paint is often darker than white paint at night, so inspect its
     # chroma independently instead of only checking the brightest pixel.
@@ -343,16 +371,39 @@ def sample_profile(frame: Any, line: LaneModelLine,
       yellow_top // 2,
       min(uv_height - 1, (yellow_bottom - 1) // 2) + 1,
     )
-    u = uv_plane[uv_rows[:, None], pair_x[None, :]].astype(np.float32)
-    v = uv_plane[uv_rows[:, None], (pair_x + 1)[None, :]].astype(np.float32)
-    chroma = np.max(
-      np.clip((v - u - 8.0) / 30.0, 0.0, 1.0) *
-      np.clip((132.0 - u) / 28.0, 0.0, 1.0),
-      axis=0,
-    )
+    u = np.median(
+      uv_plane[uv_rows[:, None], pair_x[None, :]].astype(np.float32), axis=0)
+    v = np.median(
+      uv_plane[uv_rows[:, None], (pair_x + 1)[None, :]].astype(np.float32), axis=0)
+    warmness = v - u
+    warm_background = float(np.median(warmness))
+    u_background = float(np.median(u))
+    relative_warmness = np.clip(
+      (warmness - warm_background - 5.0) / 24.0, 0.0, 1.0)
+    relative_blue_drop = np.clip(
+      (u_background - u - 1.0) / 18.0, 0.0, 1.0)
+    absolute_yellow = np.clip((warmness - 10.0) / 35.0, 0.0, 1.0)
+    chroma = relative_warmness * relative_blue_drop * absolute_yellow
     yellow_luma = np.clip(
       (pair_luma - yellow_background - 2.0) / 20.0, 0.0, 1.0)
     yellow_scores[index] = float(np.max(chroma * yellow_luma))
+
+  # Keep the selected paint ridge laterally coherent along the projected model
+  # line. Independent brightest-pixel picks otherwise jump to reflectors,
+  # guardrails, or tunnel lights when the real marking is inside a dash gap.
+  for index, strength in enumerate(strengths.copy()):
+    if strength <= 0.0 or not np.isfinite(peak_offsets[index]):
+      continue
+    start = max(0, index - 2)
+    end = min(strengths.size, index + 3)
+    valid = np.isfinite(peak_offsets[start:end]) & (strengths[start:end] >= 0.18)
+    if np.count_nonzero(valid) < 2:
+      continue
+    local_offset = float(np.median(peak_offsets[start:end][valid]))
+    tolerance = max(3.0, float(search_halves[index]) * 0.45)
+    deviation = abs(float(peak_offsets[index]) - local_offset)
+    consistency = math.exp(-((deviation / tolerance) ** 2))
+    strengths[index] *= 0.45 + 0.55 * consistency
 
   return classify_profile(strengths, yellow_scores)
 
@@ -435,7 +486,6 @@ class NavdyLaneMarkingClassifier:
       if not self._active:
         return
       result = {}
-      alpha = 0.45
       for index, suffix in enumerate(LANE_SUFFIXES):
         profile = profiles[index] if index < len(profiles) else LaneProfile("unknown", 0.0, 0.0)
         yellow_hit = profile.yellow_confidence >= 0.48
@@ -458,7 +508,8 @@ class NavdyLaneMarkingClassifier:
           self._pattern_scores[index] *= 0.98 if yellow_held else 0.88
         else:
           self._pattern_scores[index] = (
-            (1.0 - alpha) * self._pattern_scores[index] + alpha * pattern_target)
+            (1.0 - PATTERN_FILTER_ALPHA) * self._pattern_scores[index] +
+            PATTERN_FILTER_ALPHA * pattern_target)
 
         if yellow_hit:
           center_target = profile.yellow_confidence
@@ -472,12 +523,30 @@ class NavdyLaneMarkingClassifier:
           self._center_scores[index] *= 0.98 if yellow_held else 0.88
         else:
           self._center_scores[index] = (
-            (1.0 - alpha) * self._center_scores[index] + alpha * center_target)
+            (1.0 - CENTER_FILTER_ALPHA) * self._center_scores[index] +
+            CENTER_FILTER_ALPHA * center_target)
 
         pattern_score = float(self._pattern_scores[index])
-        pattern = "solid" if pattern_score >= 0.24 else (
-          "dashed" if pattern_score <= -0.24 else "unknown")
-        centerline = float(self._center_scores[index]) >= 0.28
+        key = f"navLane{suffix}Type"
+        previous_type = str(self._result.get(key, "unknown"))
+        previous_pattern = "solid" if previous_type.endswith("Solid") or previous_type == "solid" else (
+          "dashed" if previous_type.endswith("Dashed") or previous_type == "dashed" else "unknown")
+        if pattern_score >= PATTERN_ENTER_THRESHOLD:
+          pattern = "solid"
+        elif pattern_score <= -PATTERN_ENTER_THRESHOLD:
+          pattern = "dashed"
+        elif previous_pattern == "solid" and pattern_score >= PATTERN_EXIT_THRESHOLD:
+          pattern = "solid"
+        elif previous_pattern == "dashed" and pattern_score <= -PATTERN_EXIT_THRESHOLD:
+          pattern = "dashed"
+        else:
+          pattern = "unknown"
+
+        center_score = float(self._center_scores[index])
+        previous_centerline = previous_type.startswith("center")
+        centerline = center_score >= CENTER_ENTER_THRESHOLD or (
+          previous_centerline and
+          (yellow_held or center_score >= CENTER_EXIT_THRESHOLD))
         result[f"navLane{suffix}Type"] = lane_type(pattern, centerline)
 
       self._result = result
@@ -512,6 +581,8 @@ class NavdyLaneMarkingClassifier:
             continue
         frame = client.recv(timeout_ms=VISION_FRAME_TIMEOUT_MS)
         if frame is None:
+          continue
+        if not request_matches_frame(request, int(getattr(client, "frame_id", -1))):
           continue
         started_at = time.monotonic()
         profiles = classify_frame(request, frame)

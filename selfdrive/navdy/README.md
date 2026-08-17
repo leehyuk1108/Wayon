@@ -669,11 +669,13 @@ Android renderer:
 
 - VisionIPC의 기존 NV12 road frame을 zero-copy view로 읽음
 - 0.5초 간격, 최대 2 Hz
+- `modelV2.frameId`와 road frame ID 차이가 0에서 2인 영상만 사용
 - 7에서 42 m 구간만 0.75 m 간격으로 검사
-- 밝기 대비의 연속성으로 실선과 점선 분류
-- 어두운 노란 도색은 밝기 검사와 독립된 NV12 UV chroma ROI로 분류
+- ROI별 배경 밝기에 적응하는 국소 대비와 선 위치 연속성으로 실선과 점선 분류
+- 어두운 노란 도색은 주변 조명의 색온도를 뺀 상대 NV12 UV chroma로 분류
 - 넓은 거리 구간에서 이어지는 노란색만 통과시켜 짧은 횡단 표식은 제외
 - 노란색은 확인됐지만 형태가 불명확하면 노란 실선으로 유지
+- 단일 프레임 오검출로 형태나 중앙선 여부가 바뀌지 않도록 EMA와 진입·이탈 hysteresis 적용
 - 결과는 시간 필터를 통과한 뒤 `navLane*Type` 네 문자열로만 전송
 - 결과가 2초 이상 오래되거나 confidence가 낮으면 `unknown`
 - 색상과 형태가 모두 `unknown`이면 기존 점선 표시로 fallback

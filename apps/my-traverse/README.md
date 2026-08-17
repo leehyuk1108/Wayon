@@ -21,6 +21,7 @@ This is the source project for the current My Traverse Android app.
 - Impact snapshots and camera history
 - Offroad dual-camera 360 Live view, recording, and saved Live captures
 - Bluetooth-based local driving behavior retained for non-Cloud setups
+- Independent MultiPack account login and direct vehicle-status refresh
 
 The current UI assets are kept unchanged so layout, styling, animation, and
 interaction match the installed app. Native Live session handling that existed
@@ -45,6 +46,11 @@ or Wayon registration token is committed.
 The vehicle-control API URL is entered in the app settings at runtime and stored
 in the app's private preferences. It is intentionally absent from source and
 Gradle configuration. The Wayon Cloud view key is handled the same way.
+
+MultiPack credentials are separate from Wayon Cloud. The app verifies them
+directly against the official GMOne login endpoint, encrypts the password with
+an Android Keystore AES-GCM key, and stores no session token in source, Gradle
+configuration, Firebase, or Wayon Cloud.
 
 The following environment variables can be used instead of Gradle properties:
 

@@ -27,6 +27,9 @@ const LIVE_FRAME_HEADER_SIZE = 24;
 const LIVE_FRAME_MAX_PAYLOAD_SIZE = 4 * 1024 * 1024;
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GMONE_STATUS_ID = "primary";
+const GMONE_MAX_PAYLOAD_BYTES = 256 * 1024;
+const GMONE_STALE_AFTER_SECONDS = 24 * 60 * 60;
 let cachedFcmAccessToken = null;
 
 function json(data, status = 200) {
@@ -516,6 +519,11 @@ function authorize(request, env, write = false) {
   return constantTimeEqual(token, viewToken) || constantTimeEqual(token, uploadToken);
 }
 
+function authorizeGmoneUpload(request, env) {
+  const token = getBearerToken(request);
+  return constantTimeEqual(token, env.WAYON_GMONE_TOKEN || "") || authorize(request, env, true);
+}
+
 function authorizePushRegistration(request, env) {
   return constantTimeEqual(getBearerToken(request), env.WAYON_PUSH_REGISTRATION_TOKEN || "");
 }
@@ -623,6 +631,180 @@ async function fetchVehicleStatus() {
   } catch (err) {
     return { ok: false, error: String(err?.message || err) };
   }
+}
+
+const GMONE_SENSITIVE_KEY_PARTS = [
+  "access_token", "api_key", "auth_token", "door_password", "email", "iccid",
+  "imei", "password", "phone_number", "secret", "session_token", "ticket_uuid",
+  "token_key", "user_uuid", "uuid", "vin",
+];
+const GMONE_VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/i;
+const GMONE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function gmoneSensitiveKey(key) {
+  const normalized = String(key || "").toLowerCase();
+  return GMONE_SENSITIVE_KEY_PARTS.some((part) => normalized.includes(part));
+}
+
+export function sanitizeGmonePayload(value) {
+  if (Array.isArray(value)) return value.map(sanitizeGmonePayload);
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (gmoneSensitiveKey(key)) continue;
+      const safeKey = GMONE_VIN_PATTERN.test(key) || GMONE_UUID_PATTERN.test(key) ? "redacted" : key;
+      result[safeKey] = sanitizeGmonePayload(item);
+    }
+    return result;
+  }
+  if (typeof value === "string" && (GMONE_VIN_PATTERN.test(value) || GMONE_UUID_PATTERN.test(value))) {
+    return "<redacted>";
+  }
+  return value;
+}
+
+function validIsoOrNow(value) {
+  const timestamp = Date.parse(String(value || ""));
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : nowIso();
+}
+
+async function latestGmoneStatus(env) {
+  const row = await env.DB.prepare(`
+    SELECT source, collected_at, vehicle_updated_at, payload_json, updated_at
+    FROM gmone_latest WHERE id = ?
+  `).bind(GMONE_STATUS_ID).first();
+  if (!row) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(row.payload_json || "{}");
+  } catch {
+    return null;
+  }
+  const ageSeconds = isoAgeSeconds(row.collected_at);
+  return {
+    ok: true,
+    source: row.source || "gmone-direct",
+    updatedAt: row.vehicle_updated_at || row.collected_at,
+    collectedAt: row.collected_at,
+    receivedAt: row.updated_at,
+    ageSeconds,
+    stale: ageSeconds == null || ageSeconds > GMONE_STALE_AFTER_SECONDS,
+    data: payload.status && typeof payload.status === "object" ? payload.status : {},
+    health: payload.health && typeof payload.health === "object" ? payload.health : {},
+    module: payload.module && typeof payload.module === "object" ? payload.module : {},
+    diagnostic: payload.diagnostic && typeof payload.diagnostic === "object" ? payload.diagnostic : {},
+  };
+}
+
+export function mergeVehicleStatus(firebaseStatus, gmoneStatus) {
+  const firebaseOk = Boolean(firebaseStatus?.ok && firebaseStatus?.data);
+  const gmoneOk = Boolean(gmoneStatus?.ok && gmoneStatus?.data);
+  const useFreshGmone = gmoneOk && (!gmoneStatus.stale || !firebaseOk);
+  const data = {
+    ...(firebaseOk ? firebaseStatus.data : {}),
+    ...(useFreshGmone ? gmoneStatus.data : {}),
+  };
+  const preferred = useFreshGmone ? gmoneStatus : firebaseStatus;
+  const sourceNames = [firebaseOk ? "firebase" : null, useFreshGmone ? gmoneStatus.source : null]
+    .filter(Boolean);
+  return {
+    ok: firebaseOk || gmoneOk,
+    source: sourceNames.join("+") || gmoneStatus?.source || "unavailable",
+    updatedAt: preferred?.updatedAt || preferred?.collectedAt || nowIso(),
+    stale: useFreshGmone ? Boolean(gmoneStatus.stale) : false,
+    data,
+    sources: {
+      firebase: firebaseStatus,
+      gmone: gmoneStatus,
+    },
+  };
+}
+
+async function fetchMergedVehicleStatus(env) {
+  const [firebaseStatus, gmoneStatus] = await Promise.all([
+    fetchVehicleStatus(),
+    latestGmoneStatus(env),
+  ]);
+  return mergeVehicleStatus(firebaseStatus, gmoneStatus);
+}
+
+async function handleGmoneStatus(request, env) {
+  if (!authorizeGmoneUpload(request, env)) return json({ error: "unauthorized" }, 401);
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > GMONE_MAX_PAYLOAD_BYTES) return json({ error: "payload_too_large" }, 413);
+
+  const rawPayload = await request.json();
+  const payload = sanitizeGmonePayload(rawPayload);
+  if (payload?.schemaVersion !== "wayon-gmone-v1" || !payload.status || typeof payload.status !== "object") {
+    return json({ error: "invalid_gmone_payload" }, 400);
+  }
+  const encoded = JSON.stringify(payload);
+  if (new TextEncoder().encode(encoded).byteLength > GMONE_MAX_PAYLOAD_BYTES) {
+    return json({ error: "payload_too_large" }, 413);
+  }
+
+  const source = String(payload.source || payload.status.source || "gmone-direct").slice(0, 64);
+  const collectedAt = validIsoOrNow(payload.collectedAt);
+  const vehicleUpdatedAt = payload.vehicleUpdatedAt ? validIsoOrNow(payload.vehicleUpdatedAt) : null;
+  const receivedAt = nowIso();
+  await env.DB.prepare(`
+    INSERT INTO gmone_latest (
+      id, source, collected_at, vehicle_updated_at, payload_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      source = excluded.source,
+      collected_at = excluded.collected_at,
+      vehicle_updated_at = excluded.vehicle_updated_at,
+      payload_json = excluded.payload_json,
+      updated_at = excluded.updated_at
+  `).bind(
+    GMONE_STATUS_ID,
+    source,
+    collectedAt,
+    vehicleUpdatedAt,
+    encoded,
+    receivedAt,
+  ).run();
+  await env.DB.prepare(`
+    UPDATE gmone_refresh_requests SET completed_at = ?
+    WHERE id = ? AND requested_at <= ?
+  `).bind(receivedAt, GMONE_STATUS_ID, collectedAt).run();
+  return json({ ok: true, collectedAt, receivedAt });
+}
+
+async function handleGmoneRefreshRequest(request, env) {
+  if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
+  const existing = await env.DB.prepare(`
+    SELECT requested_at, completed_at FROM gmone_refresh_requests WHERE id = ?
+  `).bind(GMONE_STATUS_ID).first();
+  const ageSeconds = existing?.requested_at ? isoAgeSeconds(existing.requested_at) : null;
+  if (ageSeconds != null && ageSeconds < 15) {
+    return json({ ok: true, requestedAt: existing.requested_at, deduplicated: true });
+  }
+
+  const requestedAt = nowIso();
+  await env.DB.prepare(`
+    INSERT INTO gmone_refresh_requests (id, requested_at, completed_at)
+    VALUES (?, ?, NULL)
+    ON CONFLICT(id) DO UPDATE SET
+      requested_at = excluded.requested_at,
+      completed_at = NULL
+  `).bind(GMONE_STATUS_ID, requestedAt).run();
+  return json({ ok: true, requestedAt, deduplicated: false });
+}
+
+async function handleGmoneRefreshPoll(request, env) {
+  if (!authorizeGmoneUpload(request, env)) return json({ error: "unauthorized" }, 401);
+  const row = await env.DB.prepare(`
+    SELECT requested_at, completed_at FROM gmone_refresh_requests WHERE id = ?
+  `).bind(GMONE_STATUS_ID).first();
+  const pending = Boolean(row?.requested_at && (!row.completed_at || row.completed_at < row.requested_at));
+  return json({
+    pending,
+    requestedAt: row?.requested_at || null,
+    completedAt: row?.completed_at || null,
+  });
 }
 
 function base64ToBytes(value) {
@@ -1513,7 +1695,7 @@ async function handleState(request, env) {
         ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
       ORDER BY s.captured_at DESC LIMIT 12
     `).all(),
-    fetchVehicleStatus(),
+    fetchMergedVehicleStatus(env),
     latestVehicleLock(env),
   ]);
 
@@ -1589,7 +1771,7 @@ async function handleExport(request, env) {
     env.DB.prepare(`
       SELECT * FROM trips ORDER BY ended_at DESC LIMIT 25
     `).all(),
-    fetchVehicleStatus(),
+    fetchMergedVehicleStatus(env),
     latestVehicleLock(env),
   ]);
 
@@ -1818,7 +2000,7 @@ async function handleAiContext(request, env) {
     `).bind(eventLimit).all(),
     env.DB.prepare("SELECT * FROM trips ORDER BY ended_at DESC LIMIT 1").first(),
     env.DB.prepare(`${AI_SNAPSHOT_SELECT} ORDER BY s.captured_at DESC LIMIT ?`).bind(snapshotLimit).all(),
-    fetchVehicleStatus(),
+    fetchMergedVehicleStatus(env),
   ]);
 
   if (!state) return json({ error: "no_telemetry" }, 404);
@@ -2017,6 +2199,15 @@ export default {
 
     if (request.method === "POST" && pathname === "/api/telemetry") {
       return handleTelemetry(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/gmone/status") {
+      return handleGmoneStatus(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/gmone/refresh") {
+      return handleGmoneRefreshRequest(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/gmone/refresh") {
+      return handleGmoneRefreshPoll(request, env);
     }
     if (request.method === "POST" && pathname === "/api/snapshot") {
       return handleSnapshot(request, env);

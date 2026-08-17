@@ -409,7 +409,7 @@ function renderState(state, status = {}) {
   setText("speedSource", raw.vehicleSpeedSource ? `Comma · ${raw.vehicleSpeedSource}` : "Comma 차량 속도");
   setText("fuelValue", liters == null ? (fuel || "--") : String(Math.round(liters)));
   setText("fuelUnit", fuel.includes("%") ? "%" : "L");
-  setText("fuelHint", percent == null ? "Firebase 차량 정보" : `탱크 잔량 ${Math.round(percent)}%`);
+  setText("fuelHint", percent == null ? "통합 차량 정보" : `탱크 잔량 ${Math.round(percent)}%`);
   setText("odometerValue", odometer || "--");
   setText("vehicleDataAge", firebaseUpdated ? `차량 ${relativeTime(firebaseUpdated)}` : "차량 정보 대기");
 
@@ -825,7 +825,7 @@ async function refresh() {
     renderSnapshots();
     renderTrips(trips || []);
     renderChart(trips || []);
-    setConnection("online", "Wayon + Firebase");
+    setConnection("online", "Wayon + GMOne");
 
     if (!activeTripId && trips?.length) {
       await selectTrip(trips[0].id);

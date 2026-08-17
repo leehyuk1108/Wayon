@@ -122,3 +122,18 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 
 CREATE INDEX IF NOT EXISTS push_subscriptions_device_idx
   ON push_subscriptions(device_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS gmone_latest (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  collected_at TEXT NOT NULL,
+  vehicle_updated_at TEXT,
+  payload_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gmone_refresh_requests (
+  id TEXT PRIMARY KEY,
+  requested_at TEXT NOT NULL,
+  completed_at TEXT
+);

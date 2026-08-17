@@ -90,10 +90,18 @@ data class WayonCloudSnapshotItem(
     }
 }
 
+data class WayonVehicleStatus(
+    val source: String?,
+    val updatedAt: String?,
+    val stale: Boolean,
+    val data: JSONObject,
+)
+
 data class WayonCloudFeed(
     val state: WayonCloudState?,
     val history: List<WayonCloudHistoryItem>,
     val snapshots: List<WayonCloudSnapshotItem> = emptyList(),
+    val vehicleStatus: WayonVehicleStatus? = null,
 ) {
     val latestTrip: WayonCloudHistoryItem?
         get() = history.firstOrNull()
@@ -130,6 +138,7 @@ object WayonCloudFeedParser {
         val root = JSONObject(json)
         val vehicleLock = root.optJSONObject("vehicleLock")
         val state = root.optJSONObject("state")?.let { parseState(it, vehicleLock) }
+        val vehicleStatus = root.optJSONObject("vehicleStatus")?.let { parseVehicleStatus(it) }
         val trips = root.optJSONArray("trips") ?: JSONArray()
         val snapshots = root.optJSONArray("snapshots") ?: JSONArray()
 
@@ -145,7 +154,18 @@ object WayonCloudFeedParser {
             }
         }.sortedByDescending { it.capturedAtMillis }.map { it.item }
 
-        return WayonCloudFeed(state, history, snapshotItems)
+        return WayonCloudFeed(state, history, snapshotItems, vehicleStatus)
+    }
+
+    private fun parseVehicleStatus(status: JSONObject): WayonVehicleStatus? {
+        if (!status.optBooleanLike("ok")) return null
+        val data = status.optJSONObject("data") ?: return null
+        return WayonVehicleStatus(
+            source = status.optNullableString("source"),
+            updatedAt = status.optNullableString("updatedAt"),
+            stale = status.optBooleanLike("stale"),
+            data = data,
+        )
     }
 
     private fun parseState(state: JSONObject, vehicleLock: JSONObject?): WayonCloudState {

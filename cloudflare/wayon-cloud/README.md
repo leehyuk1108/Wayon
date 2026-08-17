@@ -5,7 +5,8 @@ device. The comma device pushes low-rate vehicle telemetry, GPS location for
 current position and route history, and occasional offroad snapshots. The Worker
 stores live state in D1 and JPEG snapshots in KV.
 
-The responsive dashboard combines Wayon telemetry and Firebase vehicle status
+The responsive dashboard combines Wayon telemetry with GMOne direct status and
+uses Firebase vehicle status only as a compatibility fallback
 in three views:
 
 - Overview: live position, driving state, range, fuel, odometer, vehicle health,

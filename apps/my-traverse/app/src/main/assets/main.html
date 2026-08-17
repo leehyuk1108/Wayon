@@ -588,6 +588,88 @@
             padding: 10px;
         }
 
+        .gmone-account-header,
+        .gmone-account-status {
+            display: flex;
+            align-items: center;
+        }
+
+        .gmone-account-header {
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .gmone-account-header h4 {
+            margin: 0;
+        }
+
+        .gmone-account-status {
+            min-height: 28px;
+            padding: 0 10px;
+            border: 1px solid #4b4b4b;
+            border-radius: 8px;
+            color: #b3b3b3;
+            background: #2d2d2d;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .gmone-account-status.connected {
+            border-color: rgba(63, 201, 116, 0.5);
+            color: #67d792;
+            background: rgba(40, 110, 68, 0.18);
+        }
+
+        .gmone-account-fields {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        .gmone-account-fields input {
+            box-sizing: border-box;
+            width: 100%;
+            height: 56px;
+            padding: 0 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #333;
+            color: var(--text-color);
+            font-size: 15px;
+        }
+
+        .gmone-account-actions {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .gmone-account-actions.authenticated {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+        }
+
+        .gmone-account-actions button {
+            height: 54px;
+            border: 1px solid var(--accent-border-color);
+            border-radius: 8px;
+            background: var(--accent-color);
+            color: #14100c;
+            font-size: 15px;
+            font-weight: 750;
+        }
+
+        .gmone-account-actions button.secondary {
+            border-color: var(--border-color);
+            background: #343434;
+            color: var(--text-color);
+        }
+
+        .gmone-account-actions button:disabled {
+            opacity: 0.5;
+        }
+
 
         /* === 대시보드 카드 스타일 === */
         #dashboard-card {
@@ -4249,6 +4331,24 @@
                         </div>
                     </div>
 
+                    <div class="control-group-card card-full" id="gmone-account-card">
+                        <div class="gmone-account-header">
+                            <h4>멀티팩 계정</h4>
+                            <span class="gmone-account-status" id="gmone-account-status">로그인 필요</span>
+                        </div>
+                        <div class="gmone-account-fields">
+                            <input type="email" id="gmone-email-input" placeholder="이메일" autocomplete="username"
+                                inputmode="email" autocapitalize="none" spellcheck="false">
+                            <input type="password" id="gmone-password-input" placeholder="비밀번호"
+                                autocomplete="current-password">
+                        </div>
+                        <div class="gmone-account-actions" id="gmone-account-actions">
+                            <button type="button" id="btnGmoneLogin">로그인</button>
+                            <button type="button" id="btnGmoneRefresh" hidden>차량 조회</button>
+                            <button type="button" class="secondary" id="btnGmoneLogout" hidden>로그아웃</button>
+                        </div>
+                    </div>
+
                     <div class="control-group-card card-full">
                         <h4>블루투스 설정 (최초 1회)</h4>
                         <p class="feature-description">
@@ -4592,6 +4692,13 @@
         const apiUrlInput = document.getElementById('api-url-input');
         const btnSaveWayonCloudKey = document.getElementById('btnSaveWayonCloudKey');
         const wayonCloudKeyInput = document.getElementById('wayon-cloud-key-input');
+        const gmoneEmailInput = document.getElementById('gmone-email-input');
+        const gmonePasswordInput = document.getElementById('gmone-password-input');
+        const gmoneAccountStatus = document.getElementById('gmone-account-status');
+        const gmoneAccountActions = document.getElementById('gmone-account-actions');
+        const btnGmoneLogin = document.getElementById('btnGmoneLogin');
+        const btnGmoneRefresh = document.getElementById('btnGmoneRefresh');
+        const btnGmoneLogout = document.getElementById('btnGmoneLogout');
         const btnGoToControlTab = document.getElementById('btnGoToControlTab');
         const btnSecretSettings = document.getElementById('btnSecretSettings');
         const btnSetupBluetooth = document.getElementById('btnSetupBluetooth');
@@ -5178,6 +5285,34 @@
             } else {
                 refreshDoorLockState(true);
             }
+        }
+
+        function updateGmoneAccountState(loggedIn, email, message, busy) {
+            if (gmoneAccountStatus) {
+                gmoneAccountStatus.textContent = message || (loggedIn ? '로그인됨' : '로그인 필요');
+                gmoneAccountStatus.classList.toggle('connected', !!loggedIn);
+            }
+            if (gmoneEmailInput && email) gmoneEmailInput.value = email;
+            if (gmoneEmailInput) gmoneEmailInput.disabled = !!loggedIn || !!busy;
+            if (gmonePasswordInput) {
+                gmonePasswordInput.value = '';
+                gmonePasswordInput.disabled = !!loggedIn || !!busy;
+            }
+            if (btnGmoneLogin) {
+                btnGmoneLogin.hidden = !!loggedIn;
+                btnGmoneLogin.disabled = !!busy;
+                btnGmoneLogin.textContent = busy ? '확인 중' : '로그인';
+            }
+            if (btnGmoneRefresh) {
+                btnGmoneRefresh.hidden = !loggedIn;
+                btnGmoneRefresh.disabled = !!busy;
+                btnGmoneRefresh.textContent = busy ? '조회 중' : '차량 조회';
+            }
+            if (btnGmoneLogout) {
+                btnGmoneLogout.hidden = !loggedIn;
+                btnGmoneLogout.disabled = !!busy;
+            }
+            gmoneAccountActions?.classList.toggle('authenticated', !!loggedIn);
         }
 
         // 10. ‼️ (수정) 저장된 위치 텍스트 업데이트 (6개 인자)
@@ -7276,6 +7411,28 @@
             if (window.Android) {
                 window.Android.saveWayonCloudKey(key);
             }
+        });
+
+        btnGmoneLogin?.addEventListener('click', () => {
+            const email = gmoneEmailInput?.value?.trim() || '';
+            const password = gmonePasswordInput?.value || '';
+            if (!email || !password) {
+                showStatus('멀티팩 아이디와 비밀번호를 입력하세요.', 'danger');
+                return;
+            }
+            window.Android?.loginGmone(email, password);
+        });
+
+        gmonePasswordInput?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') btnGmoneLogin?.click();
+        });
+
+        btnGmoneLogout?.addEventListener('click', () => {
+            window.Android?.logoutGmone();
+        });
+
+        btnGmoneRefresh?.addEventListener('click', () => {
+            window.Android?.refreshGmoneAccount();
         });
 
         // 5. (수정) 설정 탭 버튼 리스너

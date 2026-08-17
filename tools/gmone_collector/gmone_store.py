@@ -167,3 +167,40 @@ class GmoneStore:
     with self._connect() as connection:
       row = connection.execute("SELECT COUNT(*) AS count FROM running_cycles").fetchone()
     return int(row["count"])
+
+  def running_cycle_summary(self, recent_limit: int = 20) -> dict[str, Any]:
+    limit = max(0, min(int(recent_limit), 100))
+    with self._connect() as connection:
+      summary = connection.execute(
+        """
+        SELECT COUNT(*) AS count,
+               COALESCE(SUM(CAST(json_extract(payload_json, '$.dis') AS REAL)), 0) AS distance_km,
+               COALESCE(SUM(CAST(json_extract(payload_json, '$.drvTm') AS REAL)), 0) AS drive_seconds,
+               COALESCE(SUM(CAST(json_extract(payload_json, '$.fuse') AS REAL)), 0) AS fuel_used_liters,
+               MIN(server_time) AS first_time,
+               MAX(server_time) AS last_time
+        FROM running_cycles
+        """
+      ).fetchone()
+      recent_rows = connection.execute(
+        """
+        SELECT payload_json FROM running_cycles
+        ORDER BY server_time DESC LIMIT ?
+        """,
+        (limit,),
+      ).fetchall()
+
+    recent = []
+    for row in recent_rows:
+      payload = json.loads(row["payload_json"])
+      if isinstance(payload, dict):
+        recent.append(_without_sensitive_fields(payload))
+    return {
+      "count": int(summary["count"]),
+      "totalDistanceKm": round(float(summary["distance_km"]), 2),
+      "totalDriveSeconds": round(float(summary["drive_seconds"])),
+      "totalFuelUsedLiters": round(float(summary["fuel_used_liters"]), 2),
+      "firstCycleAt": summary["first_time"],
+      "lastCycleAt": summary["last_time"],
+      "recent": recent,
+    }

@@ -1281,6 +1281,11 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 "${jsQuote(mileage)}, ${jsQuote(fuel)}, ${jsQuote(lastUpdate)}, ${jsQuote(oil)}, " +
                 "${jsQuote(tirePressure)}, ${jsQuote(tirePressureAll)})",
         )
+        val gmoneDetails = data.optJSONObject("gmone_details")
+        runJs(
+            gmoneDetails?.let { "updateGmoneDetails(${jsQuote(it.toString())})" }
+                ?: "updateGmoneDetails(null)",
+        )
 
         lastFuel = fuel
         lastMileage = mileage

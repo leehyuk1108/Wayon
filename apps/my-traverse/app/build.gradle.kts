@@ -47,8 +47,8 @@ android {
         applicationId = "com.example.carcontroller"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.18"
+        versionCode = 5
+        versionName = "1.19"
 
         buildConfigField(
             "String",
@@ -101,6 +101,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))

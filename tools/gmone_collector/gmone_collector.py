@@ -177,6 +177,135 @@ def _tire_pressure_kpa(value: Any) -> str | None:
   return _compact_number(number)
 
 
+def _number_value(value: Any) -> int | float | None:
+  number = _as_number(value)
+  if number is None:
+    return None
+  return int(number) if number.is_integer() else number
+
+
+def _present_numbers(source: dict[str, Any], mapping: dict[str, str]) -> dict[str, int | float]:
+  result: dict[str, int | float] = {}
+  for destination, source_key in mapping.items():
+    value = _number_value(source.get(source_key))
+    if value is not None:
+      result[destination] = value
+  return result
+
+
+def _binary_state(value: Any) -> dict[str, Any] | None:
+  raw = _number_value(value)
+  if raw is None:
+    return None
+  return {"raw": raw, "active": raw != 0}
+
+
+def build_gmone_details(car_status: dict[str, Any]) -> dict[str, Any]:
+  """Preserve every non-secret status value while exposing stable UI groups."""
+  tires = {}
+  for destination, source_key in {
+    "frontLeftKpa": "trPrsLf",
+    "frontRightKpa": "trPrsRf",
+    "rearLeftKpa": "trPrsLr",
+    "rearRightKpa": "trPrsRr",
+  }.items():
+    value = _tire_pressure_kpa(car_status.get(source_key))
+    if value is not None:
+      tires[destination] = _number_value(value)
+
+  closures = {}
+  for destination, source_key in {
+    "doors": "door",
+    "hood": "hood",
+    "trunk": "trunk",
+    "sunroof": "srf",
+    "windowFrontLeft": "winLf",
+    "windowFrontRight": "winRf",
+    "windowRearLeft": "winLr",
+    "windowRearRight": "winRr",
+  }.items():
+    state = _binary_state(car_status.get(source_key))
+    if state is not None:
+      closures[destination] = state
+
+  dtc_records = car_status.get("dtc")
+  if not isinstance(dtc_records, list):
+    dtc_records = []
+  safe_dtc_records = [
+    {str(key): value for key, value in record.items() if isinstance(value, (str, int, float, bool))}
+    for record in dtc_records
+    if isinstance(record, dict)
+  ]
+  failed_dtc_count = sum(1 for record in safe_dtc_records if (_as_number(record.get("fail")) or 0) != 0)
+
+  raw_status = {
+    str(key): value
+    for key, value in car_status.items()
+    if key != "dtc" and isinstance(value, (str, int, float, bool))
+  }
+  ev_fields = _present_numbers(car_status, {
+    "chargerCouplerStatusRaw": "evChgrCplrStats",
+    "chargerPowerLevelRaw": "evChgrPwrLvl",
+    "chargerSystemStatusRaw": "evChgrSysStats",
+    "chargeCompleteTimeRaw": "evChrgCpltTm",
+    "chargeCompleteTimeSetRaw": "evChrgCpltTmSet",
+    "chargeStartTimeRaw": "evChrgStTm",
+    "chargeStartTimeSetRaw": "evChrgStTmSet",
+    "chargeStatusRaw": "evChrgStat",
+    "rangeAverageKm": "evRngAvg",
+    "rangeMaximumKm": "evRngMax",
+    "rangeMinimumKm": "evRngMin",
+  })
+  ev_meaningful = any(value not in (0, 4_294_934_896) for value in ev_fields.values())
+
+  details: dict[str, Any] = {
+    "schemaVersion": "gmone-details-v1",
+    "fuel": _present_numbers(car_status, {
+      "capacityLiters": "fCap",
+      "levelLiters": "fLvl",
+      "rangeKm": "fRng",
+    }),
+    "battery12v": _present_numbers(car_status, {
+      "voltageV": "volt",
+      "chargePercent": "btChrg",
+      "healthPercent": "btHlth",
+      "temperatureC": "btTmp",
+    }),
+    "tires": tires,
+    "closures": closures,
+    "vehicleState": {
+      **_present_numbers(car_status, {
+        "engineRaw": "eng",
+        "lightRaw": "light",
+        "hornRaw": "hrnStats",
+        "statusCounterRaw": "bCnt",
+      }),
+      "engineRunning": (_as_number(car_status.get("eng")) or 0) != 0,
+    },
+    "maintenance": _present_numbers(car_status, {
+      "oilLifePercent": "olLfe",
+      "defLevelPercent": "defLvl",
+      "defRemainingDistanceKm": "defRmngDis",
+    }),
+    "diagnostics": {
+      "reportedCount": int(_as_number(car_status.get("dtcCnt")) or len(safe_dtc_records)),
+      "failedCount": failed_dtc_count,
+      "records": safe_dtc_records,
+    },
+    "remoteStart": {
+      **_present_numbers(car_status, {
+        "levelRaw": "rsiLvl",
+        "remainingStarts": "rvsRmng",
+        "remainingTimeRaw": "rvsRmngTm",
+      }),
+      "remainingTimeValid": bool(car_status.get("rvsRmngTmVld", False)),
+    },
+    "ev": {"supported": ev_meaningful, **ev_fields},
+    "rawStatus": raw_status,
+  }
+  return details
+
+
 def normalize_car_status(
   car_status: dict[str, Any],
   response_timestamp: Any,
@@ -204,6 +333,8 @@ def normalize_car_status(
   if tire_pressure is not None:
     normalized["tire_pressure"] = tire_pressure
     normalized["tire_pressure_all"] = tire_pressure
+
+  normalized["gmone_details"] = build_gmone_details(car_status)
 
   normalized.update({
     "last_update": _timestamp_kst(response_timestamp),
@@ -562,12 +693,14 @@ def build_wayon_payload(
   store: GmoneStore | None,
 ) -> dict[str, Any]:
   timing = store.latest_snapshot("refresh_timing") if store is not None else None
+  status = dict(normalized)
+  details = dict(status.get("gmone_details") or {})
   payload: dict[str, Any] = {
     "schemaVersion": "wayon-gmone-v1",
     "source": normalized.get("source", "gmone-direct"),
     "collectedAt": datetime.now(UTC).isoformat(),
     "vehicleUpdatedAt": _utc_iso((timing or {}).get("response_server_time")),
-    "status": normalized,
+    "status": status,
     "diagnostic": diagnostic,
   }
   if store is None:
@@ -580,6 +713,17 @@ def build_wayon_payload(
   health = store.latest_snapshot("dtc")
   if health:
     payload["health"] = health
+    diagnostics = dict(details.get("diagnostics") or {})
+    diagnostics.update(health)
+    records = health.get("records")
+    if isinstance(records, list):
+      diagnostics["reportedCount"] = int(_as_number(health.get("count")) or len(records))
+      diagnostics["failedCount"] = sum(
+        1
+        for record in records
+        if isinstance(record, dict) and (_as_number(record.get("fail")) or 0) != 0
+      )
+    details["diagnostics"] = diagnostics
   module = {
     "option": store.latest_snapshot("multipack_option") or {},
     "info": store.latest_snapshot("multipack_info") or {},
@@ -587,6 +731,23 @@ def build_wayon_payload(
   }
   if any(module.values()):
     payload["module"] = module
+    option_body = module["option"].get("multipack_option") if isinstance(module["option"], dict) else None
+    info_body = module["info"].get("multipack_info") if isinstance(module["info"], dict) else None
+    firmware = None
+    if isinstance(info_body, dict):
+      firmware = next((value for value in info_body.values() if isinstance(value, dict)), None)
+    ev_charge_body = module["evCharge"].get("ev_charge_data") if isinstance(module["evCharge"], dict) else None
+    details["module"] = {
+      "settings": option_body if isinstance(option_body, dict) else {},
+      "firmware": firmware if isinstance(firmware, dict) else {},
+      "evChargeHistory": ev_charge_body if isinstance(ev_charge_body, list) else [],
+    }
+  details["runningCycles"] = store.running_cycle_summary()
+  details["refresh"] = {
+    "timing": timing or {},
+    "collector": diagnostic,
+  }
+  status["gmone_details"] = details
   return payload
 
 
@@ -934,14 +1095,15 @@ def main(argv: list[str] | None = None) -> int:
         async_timeout_seconds=args.async_timeout_seconds,
         result_poll_seconds=args.result_poll_seconds,
       )
-      payload = normalized if normalized is not None else diagnostic
+      wayon_payload = build_wayon_payload(normalized, diagnostic, store) if normalized is not None else None
+      payload = wayon_payload["status"] if wayon_payload is not None else diagnostic
       if not args.dry_run and not args.no_firebase:
         publish_firebase(args.firebase_url, payload)
       if not args.dry_run and args.wayon_url and wayon_upload_token and normalized is not None:
         publish_wayon(
           args.wayon_url,
           wayon_upload_token,
-          build_wayon_payload(normalized, diagnostic, store),
+          wayon_payload,
         )
       if args.json:
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True))

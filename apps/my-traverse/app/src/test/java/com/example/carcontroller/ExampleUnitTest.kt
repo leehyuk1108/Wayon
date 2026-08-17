@@ -1,5 +1,7 @@
 package com.example.carcontroller
 
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -30,6 +32,73 @@ class ExampleUnitTest {
         assertEquals(
             "타이어 정보\n268 kpa\n272 kpa",
             MainActivity.normalizeTirePressureText("타이어 정보\n268 kpa\n272 kpa"),
+        )
+    }
+
+    @Test
+    fun directGmoneDetails_preserveUsefulStatusAndRawFields() {
+        val details = GmoneAccountClient.normalizeDetails(
+            JSONObject()
+                .put("volt", 12.3)
+                .put("btChrg", 80)
+                .put("btHlth", 75)
+                .put("btTmp", 35)
+                .put("fCap", 82.1)
+                .put("fLvl", 77.3)
+                .put("door", 1)
+                .put("hood", 0)
+                .put("eng", 0)
+                .put("rvsRmng", 2)
+                .put("dtcCnt", 1)
+                .put("dtc", JSONArray().put(JSONObject()
+                    .put("addr", 16)
+                    .put("code", 123)
+                    .put("fail", 3)
+                    .put("stats", 16))),
+            JSONArray()
+                .put(JSONObject().put("time", 20).put("dis", 3.4).put("drvTm", 120).put("fuse", 0.3))
+                .put(JSONObject().put("time", 10).put("dis", 1.2).put("drvTm", 60).put("fuse", 0.1)),
+        )
+
+        assertEquals(35L, details.getJSONObject("battery12v").getLong("temperatureC"))
+        assertTrue(details.getJSONObject("closures").getJSONObject("doors").getBoolean("active"))
+        assertFalse(details.getJSONObject("closures").getJSONObject("hood").getBoolean("active"))
+        assertEquals(1, details.getJSONObject("diagnostics").getInt("failedCount"))
+        assertFalse(details.getJSONObject("rawStatus").has("dtc"))
+        assertEquals(4.6, details.getJSONObject("runningCycles").getDouble("totalDistanceKm"), 0.0)
+        assertEquals(20L, details.getJSONObject("runningCycles").getJSONArray("recent").getJSONObject(0).getLong("time"))
+    }
+
+    @Test
+    fun cloudFeed_prefersNewerVehicleTimestampInsteadOfCollectorArrivalTime() {
+        val firebaseData = JSONObject()
+            .put("last_update", "2026-08-18 08:42:09")
+            .put("source", "gmone-direct")
+            .put("battery_level", "80")
+            .put("gmone_details", JSONObject().put("battery12v", JSONObject().put("temperatureC", 34)))
+        val gmoneData = JSONObject()
+            .put("last_update", "2026-08-18 01:34:00")
+            .put("battery_level", "90")
+        val vehicleStatus = JSONObject()
+            .put("ok", true)
+            .put("source", "firebase+gmone-direct")
+            .put("updatedAt", "2026-08-18T01:34:00Z")
+            .put("data", JSONObject(gmoneData.toString()).put("gmone_details", firebaseData.getJSONObject("gmone_details")))
+            .put("sources", JSONObject()
+                .put("firebase", JSONObject().put("ok", true).put("updatedAt", "2026-08-18T08:42:15Z").put("data", firebaseData))
+                .put("gmone", JSONObject().put("ok", true).put("updatedAt", "2026-08-18T01:34:00Z").put("data", gmoneData)))
+        val feed = WayonCloudFeedParser.parse(JSONObject()
+            .put("vehicleStatus", vehicleStatus)
+            .put("trips", JSONArray())
+            .put("snapshots", JSONArray())
+            .toString())
+
+        assertEquals("gmone-direct", feed.vehicleStatus?.source)
+        assertEquals("80", feed.vehicleStatus?.data?.getString("battery_level"))
+        assertEquals("2026-08-18 08:42:09", feed.vehicleStatus?.updatedAt)
+        assertEquals(
+            34,
+            feed.vehicleStatus?.data?.getJSONObject("gmone_details")?.getJSONObject("battery12v")?.getInt("temperatureC"),
         )
     }
 }

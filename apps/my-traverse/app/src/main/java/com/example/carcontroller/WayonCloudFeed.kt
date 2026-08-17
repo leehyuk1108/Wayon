@@ -159,13 +159,95 @@ object WayonCloudFeedParser {
 
     private fun parseVehicleStatus(status: JSONObject): WayonVehicleStatus? {
         if (!status.optBooleanLike("ok")) return null
-        val data = status.optJSONObject("data") ?: return null
+        val sources = status.optJSONObject("sources")
+        val firebase = sources?.optJSONObject("firebase")
+        val gmone = sources?.optJSONObject("gmone")
+        val firebaseData = firebase?.optJSONObject("data")
+        val gmoneData = gmone?.optJSONObject("data")
+        val firebaseTime = vehicleDataTimestamp(firebaseData, firebase?.optNullableString("updatedAt"))
+        val gmoneTime = vehicleDataTimestamp(gmoneData, gmone?.optNullableString("updatedAt"))
+        val preferFirebase = firebaseData != null && firebaseTime != null && (gmoneTime == null || firebaseTime > gmoneTime)
+        val data = if (preferFirebase) {
+            JSONObject().apply {
+                gmoneData?.copyEntriesTo(this)
+                firebaseData.copyEntriesTo(this)
+            }
+        } else {
+            status.optJSONObject("data")?.let { JSONObject(it.toString()) }
+        } ?: return null
+        val preferredSource = if (preferFirebase) {
+            firebaseData?.optNullableString("source") ?: "firebase"
+        } else {
+            status.optNullableString("source")
+        }
+        val preferredUpdatedAt = if (preferFirebase) {
+            firebaseData?.optNullableString("last_update") ?: firebase?.optNullableString("updatedAt")
+        } else {
+            status.optNullableString("updatedAt")
+        }
+        val details = data.optJSONObject("gmone_details")?.let { JSONObject(it.toString()) }
+            ?: gmoneData?.optJSONObject("gmone_details")?.let { JSONObject(it.toString()) }
+            ?: JSONObject()
+        gmone?.optJSONObject("module")?.takeIf { it.length() > 0 }?.let { module ->
+            if (!details.has("module")) details.put("module", JSONObject(module.toString()))
+        }
+        gmone?.optJSONObject("health")?.takeIf { it.length() > 0 }?.let { health ->
+            val diagnostics = details.optJSONObject("diagnostics")?.let { JSONObject(it.toString()) }
+                ?: JSONObject()
+            health.keys().forEach { key -> diagnostics.put(key, health.opt(key)) }
+            details.put("diagnostics", diagnostics)
+        }
+        gmone?.optJSONObject("diagnostic")?.takeIf { it.length() > 0 }?.let { diagnostic ->
+            val refresh = details.optJSONObject("refresh")?.let { JSONObject(it.toString()) }
+                ?: JSONObject()
+            refresh.put("collector", JSONObject(diagnostic.toString()))
+            details.put("refresh", refresh)
+        }
+        if (details.length() > 0) {
+            details.put("meta", JSONObject()
+                .put("source", preferredSource)
+                .put("updatedAt", preferredUpdatedAt)
+                .put("collectedAt", gmone?.optNullableString("collectedAt"))
+                .put("stale", if (preferFirebase) false else status.optBooleanLike("stale")))
+            data.put("gmone_details", details)
+        }
         return WayonVehicleStatus(
-            source = status.optNullableString("source"),
-            updatedAt = status.optNullableString("updatedAt"),
-            stale = status.optBooleanLike("stale"),
+            source = preferredSource,
+            updatedAt = preferredUpdatedAt,
+            stale = if (preferFirebase) false else status.optBooleanLike("stale"),
             data = data,
         )
+    }
+
+    private fun JSONObject.copyEntriesTo(destination: JSONObject) {
+        val iterator = keys()
+        while (iterator.hasNext()) {
+            val key = iterator.next()
+            destination.put(key, opt(key))
+        }
+    }
+
+    private fun vehicleDataTimestamp(data: JSONObject?, fallback: String?): Long? =
+        parseVehicleTimestamp(data?.optNullableString("last_update"))
+            ?: parseVehicleTimestamp(fallback)
+
+    private fun parseVehicleTimestamp(value: String?): Long? {
+        if (value.isNullOrBlank()) return null
+        val formats = listOf(
+            Triple("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US, "UTC"),
+            Triple("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US, "UTC"),
+            Triple("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US, "UTC"),
+            Triple("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US, "UTC"),
+            Triple("yyyy-MM-dd HH:mm:ss", Locale.KOREA, "Asia/Seoul"),
+        )
+        return formats.firstNotNullOfOrNull { (pattern, locale, zone) ->
+            runCatching {
+                SimpleDateFormat(pattern, locale).apply {
+                    isLenient = false
+                    timeZone = TimeZone.getTimeZone(zone)
+                }.parse(value)?.time
+            }.getOrNull()
+        }
     }
 
     private fun parseState(state: JSONObject, vehicleLock: JSONObject?): WayonCloudState {

@@ -59,6 +59,42 @@ class TestNormalizeCarStatus:
     result = normalize_car_status({"trPrsLf": 252}, 1786960934000)
     assert result["tire_pressure"] == "타이어 정보\n252 kpa\n--\n--\n--"
 
+  def test_preserves_full_vehicle_details_for_the_app(self):
+    result = normalize_car_status({
+      "volt": 12.3,
+      "btChrg": 80,
+      "btHlth": 75,
+      "btTmp": 35,
+      "fCap": 82.1,
+      "fLvl": 77.3,
+      "door": 1,
+      "hood": 0,
+      "eng": 0,
+      "rvsRmng": 2,
+      "dtcCnt": 2,
+      "dtc": [
+        {"addr": 16, "code": 123, "fail": 0, "stats": 16, "type": 0},
+        {"addr": 17, "code": 456, "fail": 3, "stats": 16, "type": 0},
+      ],
+      "evChrgStat": 0,
+      "evChrgCpltTm": 4_294_934_896,
+    }, 1786960934000)
+    details = result["gmone_details"]
+    assert details["battery12v"] == {
+      "voltageV": 12.3,
+      "chargePercent": 80,
+      "healthPercent": 75,
+      "temperatureC": 35,
+    }
+    assert details["fuel"] == {"capacityLiters": 82.1, "levelLiters": 77.3}
+    assert details["closures"]["doors"] == {"raw": 1, "active": True}
+    assert details["closures"]["hood"] == {"raw": 0, "active": False}
+    assert details["diagnostics"]["reportedCount"] == 2
+    assert details["diagnostics"]["failedCount"] == 1
+    assert len(details["diagnostics"]["records"]) == 2
+    assert details["ev"]["supported"] is False
+    assert "dtc" not in details["rawStatus"]
+
 
 class TestWayonPublish:
   def test_builds_combined_payload_without_repeating_dtc_in_vehicle(self, tmp_path):
@@ -72,7 +108,7 @@ class TestWayonPublish:
     store.save_snapshot(
       "dtc",
       "gmone-direct",
-      {"count": 1, "records": [{"code": "P0001"}]},
+      {"count": 1, "records": [{"code": "P0001", "fail": 3}]},
       1_786_960_934,
     )
     store.save_snapshot(
@@ -89,6 +125,8 @@ class TestWayonPublish:
     )
     assert result["schemaVersion"] == "wayon-gmone-v1"
     assert result["status"]["fuel"] == "63"
+    assert result["status"]["gmone_details"]["runningCycles"]["count"] == 0
+    assert result["status"]["gmone_details"]["diagnostics"]["failedCount"] == 1
     assert "dtc" not in result["vehicle"]
     assert result["health"]["count"] == 1
     assert result["vehicleUpdatedAt"].endswith("+00:00")
@@ -458,3 +496,17 @@ class TestGmoneStore:
     assert store.save_running_cycles(cycles) == 2
     assert store.save_running_cycles(cycles) == 0
     assert store.running_cycle_count() == 2
+
+  def test_summarizes_and_limits_running_cycles_for_cloud_upload(self, tmp_path):
+    store = GmoneStore(tmp_path / "gmone.sqlite3")
+    store.save_running_cycles([
+      {"time": 10, "dis": 1.2, "drvTm": 60, "fuse": 0.1},
+      {"time": 20, "dis": 3.4, "drvTm": 120, "fuse": 0.3},
+      {"time": 30, "dis": 5.6, "drvTm": 180, "fuse": 0.5},
+    ])
+    summary = store.running_cycle_summary(recent_limit=2)
+    assert summary["count"] == 3
+    assert summary["totalDistanceKm"] == 10.2
+    assert summary["totalDriveSeconds"] == 360
+    assert summary["totalFuelUsedLiters"] == 0.9
+    assert [cycle["time"] for cycle in summary["recent"]] == [30, 20]

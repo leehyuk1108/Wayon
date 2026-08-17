@@ -156,6 +156,228 @@
             grid-column: span 2;
         }
 
+        .gmone-details-section {
+            display: none;
+            padding: 12px 15px 34px;
+        }
+
+        .gmone-details-section.visible {
+            display: block;
+            animation: fadeInUp 0.38s ease-out both;
+        }
+
+        .gmone-details-heading {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 4px 2px 13px;
+        }
+
+        .gmone-details-kicker {
+            display: block;
+            color: #f0f0f0;
+            font-size: 15px;
+            font-weight: 760;
+        }
+
+        .gmone-details-meta {
+            display: block;
+            margin-top: 3px;
+            color: #777;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .gmone-source-badge {
+            flex: 0 0 auto;
+            padding: 5px 8px;
+            border: 1px solid rgba(103, 215, 146, 0.26);
+            border-radius: 999px;
+            background: rgba(76, 196, 124, 0.1);
+            color: var(--good-strong-color);
+            font-size: 10px;
+            font-weight: 720;
+        }
+
+        .gmone-source-badge.stale {
+            border-color: var(--warning-border-color);
+            background: var(--warning-muted-color);
+            color: var(--warning-strong-color);
+        }
+
+        .gmone-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 9px;
+        }
+
+        .gmone-summary-item {
+            min-width: 0;
+            min-height: 78px;
+            padding: 13px;
+            border: 1px solid rgba(255, 255, 255, 0.075);
+            border-radius: 14px;
+            background: #151515;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .gmone-summary-label {
+            color: #777;
+            font-size: 10px;
+            font-weight: 680;
+        }
+
+        .gmone-summary-value {
+            overflow-wrap: anywhere;
+            color: #f2f2f2;
+            font-size: 18px;
+            font-weight: 760;
+            line-height: 1.1;
+        }
+
+        .gmone-summary-value small {
+            margin-left: 3px;
+            color: #777;
+            font-size: 10px;
+            font-weight: 620;
+        }
+
+        .gmone-detail-panel,
+        .gmone-detail-fold {
+            margin-top: 9px;
+            border: 1px solid rgba(255, 255, 255, 0.075);
+            border-radius: 14px;
+            background: #151515;
+            overflow: hidden;
+        }
+
+        .gmone-detail-panel {
+            padding: 13px;
+        }
+
+        .gmone-panel-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 11px;
+            color: #ededed;
+            font-size: 12px;
+            font-weight: 720;
+        }
+
+        .gmone-panel-title span {
+            color: #666;
+            font-size: 10px;
+            font-weight: 620;
+        }
+
+        .gmone-closure-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 7px;
+        }
+
+        .gmone-closure-item {
+            min-width: 0;
+            padding: 9px 4px;
+            border-radius: 10px;
+            background: #202020;
+            color: #a5a5a5;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 650;
+        }
+
+        .gmone-closure-item strong {
+            display: block;
+            margin-top: 4px;
+            color: var(--good-strong-color);
+            font-size: 11px;
+        }
+
+        .gmone-closure-item.active strong {
+            color: var(--warning-strong-color);
+        }
+
+        .gmone-kv-list {
+            display: grid;
+            gap: 0;
+        }
+
+        .gmone-kv-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            min-height: 35px;
+            padding: 9px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .gmone-kv-row:last-child {
+            border-bottom: 0;
+        }
+
+        .gmone-kv-key {
+            min-width: 0;
+            color: #858585;
+        }
+
+        .gmone-kv-value {
+            max-width: 58%;
+            color: #e4e4e4;
+            font-weight: 680;
+            overflow-wrap: anywhere;
+            text-align: right;
+        }
+
+        .gmone-detail-fold summary {
+            min-height: 48px;
+            padding: 0 13px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #e7e7e7;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .gmone-detail-fold summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .gmone-detail-fold summary::after {
+            content: "\f078";
+            font-family: "Font Awesome 6 Free";
+            color: #666;
+            font-size: 10px;
+            font-weight: 900;
+            transition: transform 0.2s ease;
+        }
+
+        .gmone-detail-fold[open] summary::after {
+            transform: rotate(180deg);
+        }
+
+        .gmone-fold-content {
+            padding: 0 13px 9px;
+            border-top: 1px solid rgba(255, 255, 255, 0.055);
+        }
+
+        .gmone-empty {
+            padding: 13px 0 7px;
+            color: #666;
+            font-size: 11px;
+            text-align: center;
+        }
+
         .card-header-row {
             display: flex;
             align-items: center;
@@ -4064,6 +4286,70 @@
                     </div>
 
                 </div>
+
+                <section class="gmone-details-section" id="gmone-details-section">
+                    <div class="gmone-details-heading">
+                        <div>
+                            <span class="gmone-details-kicker">MultiPack Connected</span>
+                            <span class="gmone-details-meta" id="gmone-details-meta">차량 상세 데이터 대기 중</span>
+                        </div>
+                        <span class="gmone-source-badge" id="gmone-source-badge">DIRECT</span>
+                    </div>
+
+                    <div class="gmone-summary-grid">
+                        <div class="gmone-summary-item">
+                            <span class="gmone-summary-label">배터리 건강도</span>
+                            <span class="gmone-summary-value" id="gmone-health-battery">--</span>
+                        </div>
+                        <div class="gmone-summary-item">
+                            <span class="gmone-summary-label">배터리 온도</span>
+                            <span class="gmone-summary-value" id="gmone-battery-temperature">--</span>
+                        </div>
+                        <div class="gmone-summary-item">
+                            <span class="gmone-summary-label">진단 기록</span>
+                            <span class="gmone-summary-value" id="gmone-dtc-summary">--</span>
+                        </div>
+                        <div class="gmone-summary-item">
+                            <span class="gmone-summary-label">멀티팩 누적 주행</span>
+                            <span class="gmone-summary-value" id="gmone-cycle-summary">--</span>
+                        </div>
+                    </div>
+
+                    <div class="gmone-detail-panel">
+                        <div class="gmone-panel-title">차량 개폐 상태 <span>멀티팩 모듈 기준</span></div>
+                        <div class="gmone-closure-grid" id="gmone-closure-grid"></div>
+                    </div>
+
+                    <div class="gmone-detail-panel">
+                        <div class="gmone-panel-title">차량 및 원격 시동</div>
+                        <div class="gmone-kv-list" id="gmone-vehicle-state-list"></div>
+                    </div>
+
+                    <div class="gmone-detail-panel" id="gmone-ev-panel" hidden>
+                        <div class="gmone-panel-title">EV / 충전 상태</div>
+                        <div class="gmone-kv-list" id="gmone-ev-list"></div>
+                    </div>
+
+                    <details class="gmone-detail-fold">
+                        <summary>모듈 펌웨어 및 설정</summary>
+                        <div class="gmone-fold-content gmone-kv-list" id="gmone-module-list"></div>
+                    </details>
+
+                    <details class="gmone-detail-fold">
+                        <summary>진단 코드 원문</summary>
+                        <div class="gmone-fold-content gmone-kv-list" id="gmone-dtc-list"></div>
+                    </details>
+
+                    <details class="gmone-detail-fold">
+                        <summary>멀티팩 최근 운행 사이클</summary>
+                        <div class="gmone-fold-content gmone-kv-list" id="gmone-cycle-list"></div>
+                    </details>
+
+                    <details class="gmone-detail-fold">
+                        <summary>전체 원시 차량 데이터</summary>
+                        <div class="gmone-fold-content gmone-kv-list" id="gmone-raw-list"></div>
+                    </details>
+                </section>
             </div>
 
             <div class="tab-panel" id="tab-extras">
@@ -7117,6 +7403,242 @@
                     console.log("Android.setAutoRefresh not found");
                 }
             });
+        }
+
+        function gmoneNumber(value) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        function gmoneFormatNumber(value, digits = 0) {
+            const parsed = gmoneNumber(value);
+            if (parsed === null) return "--";
+            return parsed.toLocaleString(undefined, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: digits
+            });
+        }
+
+        function gmoneFormatTime(value) {
+            const parsed = gmoneNumber(value);
+            if (parsed !== null) {
+                const millis = parsed < 10000000000 ? parsed * 1000 : parsed;
+                const date = new Date(millis);
+                if (!Number.isNaN(date.getTime())) {
+                    return date.toLocaleString('ko-KR', {
+                        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+                    });
+                }
+            }
+            if (typeof value === 'string' && value.trim()) {
+                const date = new Date(value);
+                if (!Number.isNaN(date.getTime())) {
+                    return date.toLocaleString('ko-KR', {
+                        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+                    });
+                }
+                return value;
+            }
+            return "--";
+        }
+
+        function renderGmoneRows(elementId, rows) {
+            const container = document.getElementById(elementId);
+            if (!container) return;
+            container.replaceChildren();
+            const usable = rows.filter(item => item && item.value !== undefined && item.value !== null && item.value !== '');
+            if (!usable.length) {
+                const empty = document.createElement('div');
+                empty.className = 'gmone-empty';
+                empty.textContent = '수신된 데이터 없음';
+                container.appendChild(empty);
+                return;
+            }
+            usable.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'gmone-kv-row';
+                const key = document.createElement('span');
+                key.className = 'gmone-kv-key';
+                key.textContent = item.label;
+                const value = document.createElement('span');
+                value.className = 'gmone-kv-value';
+                value.textContent = String(item.value);
+                row.append(key, value);
+                container.appendChild(row);
+            });
+        }
+
+        function gmoneFirmware(module) {
+            if (module?.firmware && typeof module.firmware === 'object') return module.firmware;
+            const info = module?.info?.multipack_info;
+            if (!info || typeof info !== 'object') return {};
+            return Object.values(info).find(value => value && typeof value === 'object') || {};
+        }
+
+        function gmoneSettings(module) {
+            if (module?.settings && typeof module.settings === 'object') return module.settings;
+            return module?.option?.multipack_option || {};
+        }
+
+        function updateGmoneDetails(rawDetails) {
+            const section = document.getElementById('gmone-details-section');
+            if (!section) return;
+            let details = rawDetails;
+            if (typeof rawDetails === 'string') {
+                try { details = JSON.parse(rawDetails); } catch (_) { details = null; }
+            }
+            if (!details || typeof details !== 'object') {
+                section.classList.remove('visible');
+                return;
+            }
+            section.classList.add('visible');
+
+            const battery = details.battery12v || {};
+            const fuel = details.fuel || {};
+            const maintenance = details.maintenance || {};
+            const diagnostics = details.diagnostics || {};
+            const vehicleState = details.vehicleState || {};
+            const remoteStart = details.remoteStart || {};
+            const cycles = details.runningCycles || {};
+            const meta = details.meta || {};
+            const refresh = details.refresh || {};
+
+            const health = gmoneNumber(battery.healthPercent);
+            document.getElementById('gmone-health-battery').textContent = health === null ? '--' : `${gmoneFormatNumber(health)}%`;
+            const temperature = gmoneNumber(battery.temperatureC);
+            document.getElementById('gmone-battery-temperature').textContent = temperature === null ? '--' : `${gmoneFormatNumber(temperature, 1)}°C`;
+            const reportedDtc = gmoneNumber(diagnostics.reportedCount);
+            const failedDtc = gmoneNumber(diagnostics.failedCount);
+            document.getElementById('gmone-dtc-summary').textContent = reportedDtc === null
+                ? '--'
+                : `${gmoneFormatNumber(failedDtc || 0)} / ${gmoneFormatNumber(reportedDtc)}`;
+            const totalDistance = gmoneNumber(cycles.totalDistanceKm);
+            document.getElementById('gmone-cycle-summary').textContent = totalDistance === null
+                ? '--'
+                : `${gmoneFormatNumber(totalDistance, 1)}km`;
+
+            const sourceBadge = document.getElementById('gmone-source-badge');
+            const stale = meta.stale === true;
+            if (sourceBadge) {
+                sourceBadge.textContent = stale ? 'STALE' : 'DIRECT';
+                sourceBadge.classList.toggle('stale', stale);
+            }
+            const updatedAt = meta.updatedAt || refresh?.timing?.response_received_at;
+            const source = meta.source || refresh?.collector?.collector_source || 'gmone-direct';
+            const metaElement = document.getElementById('gmone-details-meta');
+            if (metaElement) metaElement.textContent = `${source} · ${gmoneFormatTime(updatedAt)}`;
+
+            const closureLabels = {
+                doors: '도어', hood: '후드', trunk: '트렁크', sunroof: '선루프',
+                windowFrontLeft: '앞 좌', windowFrontRight: '앞 우',
+                windowRearLeft: '뒤 좌', windowRearRight: '뒤 우'
+            };
+            const closureGrid = document.getElementById('gmone-closure-grid');
+            if (closureGrid) {
+                closureGrid.replaceChildren();
+                Object.entries(closureLabels).forEach(([key, label]) => {
+                    const state = details.closures?.[key];
+                    if (!state) return;
+                    const item = document.createElement('div');
+                    item.className = `gmone-closure-item${state.active ? ' active' : ''}`;
+                    const title = document.createElement('span');
+                    title.textContent = label;
+                    const value = document.createElement('strong');
+                    value.textContent = state.active ? '열림' : '닫힘';
+                    value.title = `raw ${state.raw}`;
+                    item.append(title, value);
+                    closureGrid.appendChild(item);
+                });
+            }
+
+            const vehicleRows = [
+                { label: '엔진', value: vehicleState.engineRunning ? '시동 중' : '시동 꺼짐' },
+                { label: '원격 시동 남은 횟수', value: remoteStart.remainingStarts == null ? null : `${gmoneFormatNumber(remoteStart.remainingStarts)}회` },
+                { label: '원격 시동 남은 시간', value: remoteStart.remainingTimeValid ? `${gmoneFormatNumber(remoteStart.remainingTimeRaw)}분` : '미확인' },
+                { label: '원격 공조 단계', value: remoteStart.levelRaw == null ? null : `설정값 ${remoteStart.levelRaw}` },
+                { label: '연료탱크 용량', value: fuel.capacityLiters == null ? null : `${gmoneFormatNumber(fuel.capacityLiters, 1)}L` },
+                { label: '연료 잔량', value: fuel.levelLiters == null ? null : `${gmoneFormatNumber(fuel.levelLiters, 1)}L` },
+                { label: '주행가능거리', value: fuel.rangeKm == null ? null : `${gmoneFormatNumber(fuel.rangeKm)}km` },
+                { label: '오일 수명', value: maintenance.oilLifePercent == null ? null : `${gmoneFormatNumber(maintenance.oilLifePercent)}%` },
+                { label: 'DEF 잔량', value: gmoneNumber(maintenance.defLevelPercent) > 0 ? `${gmoneFormatNumber(maintenance.defLevelPercent)}%` : null },
+                { label: 'DEF 주행가능거리', value: gmoneNumber(maintenance.defRemainingDistanceKm) > 0 ? `${gmoneFormatNumber(maintenance.defRemainingDistanceKm)}km` : null },
+                { label: '상태 카운터', value: vehicleState.statusCounterRaw == null ? null : vehicleState.statusCounterRaw },
+                { label: '직전 수집 결과', value: refresh?.collector?.collector_status || null },
+                { label: '직접 조회 시간', value: refresh?.collector?.collector_last_attempt || null }
+            ];
+            renderGmoneRows('gmone-vehicle-state-list', vehicleRows);
+
+            const ev = details.ev || {};
+            const evPanel = document.getElementById('gmone-ev-panel');
+            if (evPanel) evPanel.hidden = ev.supported !== true;
+            if (ev.supported === true) {
+                renderGmoneRows('gmone-ev-list', [
+                    { label: '충전 상태', value: ev.chargeStatusRaw },
+                    { label: '커플러 상태', value: ev.chargerCouplerStatusRaw },
+                    { label: '충전 전력 레벨', value: ev.chargerPowerLevelRaw },
+                    { label: '충전 시스템', value: ev.chargerSystemStatusRaw },
+                    { label: '평균 주행가능거리', value: ev.rangeAverageKm == null ? null : `${gmoneFormatNumber(ev.rangeAverageKm)}km` },
+                    { label: '최대 주행가능거리', value: ev.rangeMaximumKm == null ? null : `${gmoneFormatNumber(ev.rangeMaximumKm)}km` },
+                    { label: '최소 주행가능거리', value: ev.rangeMinimumKm == null ? null : `${gmoneFormatNumber(ev.rangeMinimumKm)}km` }
+                ]);
+            }
+
+            const module = details.module || {};
+            const firmware = gmoneFirmware(module);
+            const settings = gmoneSettings(module);
+            const settingLabels = {
+                all_function_stop: '전체 기능 정지', auto_door_lock: '자동 도어 잠금',
+                door_lock_speed: '도어 잠금 속도', door_unlock_gear: '기어 연동 잠금 해제',
+                engine_cooldown_time: '엔진 쿨다운', engine_start_radio_mute: '원격 시동 라디오 음소거',
+                mirror_unfold: '미러 펼침', reverse_hazard: '후진 비상등',
+                shock_alarm_count: '충격 경보 횟수', shock_sensor_delay_enable: '충격 센서 지연',
+                shock_sensor_delay_seconds: '충격 지연 시간', shock_sensor_disable: '충격 센서 설정',
+                sunshade_close: '선셰이드 자동 닫기', windows_close: '창문 자동 닫기',
+                blind_alert_chime: '사각지대 경고음', blind_alert_chime_count: '사각지대 경고 횟수',
+                blind_alert_chime_sound: '사각지대 경고음 종류', blind_alert_speed: '사각지대 경고 속도'
+            };
+            const moduleRows = [
+                { label: '하드웨어 버전', value: firmware.ver_hardware },
+                { label: '앱 펌웨어', value: firmware.ver_app },
+                { label: '부트로더', value: firmware.ver_boot },
+                ...Object.keys(settings).sort().map(key => ({
+                    label: settingLabels[key] || key,
+                    value: `설정값 ${settings[key]}`
+                }))
+            ];
+            renderGmoneRows('gmone-module-list', moduleRows);
+
+            const dtcRecords = Array.isArray(diagnostics.records) ? diagnostics.records : [];
+            renderGmoneRows('gmone-dtc-list', dtcRecords.map((record, index) => {
+                const codeNumber = gmoneNumber(record.code);
+                const code = codeNumber === null ? String(record.code ?? '--') : `0x${Math.trunc(codeNumber).toString(16).toUpperCase()}`;
+                const address = gmoneNumber(record.addr);
+                const ecu = address === null ? '--' : `0x${Math.trunc(address).toString(16).toUpperCase()}`;
+                return {
+                    label: `#${index + 1} · ${code}`,
+                    value: `ECU ${ecu} · stats ${record.stats ?? '--'} · fail ${record.fail ?? '--'}`
+                };
+            }));
+
+            const recentCycles = Array.isArray(cycles.recent) ? cycles.recent : [];
+            renderGmoneRows('gmone-cycle-list', recentCycles.map(cycle => ({
+                label: gmoneFormatTime(cycle.time),
+                value: `${gmoneFormatNumber(cycle.dis, 1)}km · ${gmoneFormatNumber((gmoneNumber(cycle.drvTm) || 0) / 60)}분 · ${gmoneFormatNumber(cycle.fuse, 2)}L`
+            })));
+
+            const rawLabels = {
+                bCnt: '상태 카운터', btChrg: '배터리 충전량', btHlth: '배터리 건강도', btTmp: '배터리 온도',
+                defLvl: 'DEF 잔량', defRmngDis: 'DEF 남은 거리', door: '도어', eng: '엔진', fCap: '연료탱크 용량',
+                fLvl: '연료 잔량', fRng: '주행가능거리', hood: '후드', odo: '누적 주행거리', olLfe: '오일 수명',
+                rsiLvl: '원격 시동 공조 레벨', rvsRmng: '원격 시동 남은 횟수', rvsRmngTm: '원격 시동 남은 시간',
+                srf: '선루프', trunk: '트렁크', volt: '12V 전압', winLf: '운전석 창문', winRf: '조수석 창문',
+                winLr: '뒤 좌측 창문', winRr: '뒤 우측 창문'
+            };
+            const rawStatus = details.rawStatus || {};
+            renderGmoneRows('gmone-raw-list', Object.keys(rawStatus).sort().map(key => ({
+                label: rawLabels[key] ? `${rawLabels[key]} (${key})` : key,
+                value: rawStatus[key]
+            })));
         }
 
         // ‼️ (신규) 주차 위치 지도 업데이트 함수

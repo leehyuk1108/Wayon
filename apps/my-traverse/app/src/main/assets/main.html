@@ -7305,10 +7305,10 @@
             // --- Fuel ---
             if (document.getElementById('info-fuel')) {
                 const fuelVal = fuel || "--";
-                if (fuelVal !== '--') {
-                    // ‼️ Format: "45L" -> "45L / 82L" (with styled 82L)
-                    const cleanFuel = fuelVal.replace(/[^\d]/g, '');
-                    document.getElementById('info-fuel').innerHTML = `${cleanFuel}L<span style="font-size:12px; color:#aaa; margin-left:2px;"> / 82L</span>`;
+                const fuelNum = Number.parseFloat(String(fuelVal).replace(/[^\d.]/g, ''));
+                if (fuelVal !== '--' && Number.isFinite(fuelNum)) {
+                    const displayFuel = fuelNum.toLocaleString(undefined, { maximumFractionDigits: 1 });
+                    document.getElementById('info-fuel').innerHTML = `${displayFuel}L<span style="font-size:12px; color:#aaa; margin-left:2px;"> / 82L</span>`;
                 } else {
                     document.getElementById('info-fuel').textContent = "-- / 82L";
                 }
@@ -7316,8 +7316,7 @@
                 // Progress Bar (Estimate: Max 82L)
                 const progFuel = document.getElementById('prog-fuel');
                 if (progFuel) {
-                    const fuelNum = parseInt(fuelVal.replace('L', ''));
-                    if (!isNaN(fuelNum)) {
+                    if (Number.isFinite(fuelNum)) {
                         const percent = Math.min((fuelNum / 82) * 100, 100);
                         progFuel.style.width = percent + "%";
 

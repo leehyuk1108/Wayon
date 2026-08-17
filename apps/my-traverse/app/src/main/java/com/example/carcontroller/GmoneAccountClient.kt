@@ -124,16 +124,22 @@ object GmoneAccountClient {
         putNumberText(result, "battery_level", carStatus, "btChrg")
         putNumberText(result, "battery_life", carStatus, "btHlth")
         putNumberText(result, "fuel", carStatus, "fLvl")
-        putNumberText(result, "mileage", carStatus, "odo")
+        number(carStatus.opt("odo"))?.let { value ->
+            result.put("mileage", String.format(Locale.US, "%,.0f", value))
+        }
         putNumberText(result, "oil", carStatus, "olLfe")
         putNumberText(result, "range", carStatus, "fRng")
 
-        val tireKeys = listOf("trPrsLf", "trPrsRf", "trPrsLr", "trPrsRr")
-        val tireValues = tireKeys.map { key -> number(carStatus.opt(key))?.let(::compactNumber) ?: "--" }
+        val tireKeys = listOf("trPrsLf", "trPrsLr", "trPrsRf", "trPrsRr")
+        val tireValues = tireKeys.map { key ->
+            number(carStatus.opt(key))?.let(::normalizeTirePressureKpa)?.let(::compactNumber) ?: "--"
+        }
         if (tireValues.any { it != "--" }) {
             val tireText = buildString {
                 append("타이어 정보")
-                tireValues.forEach { append('\n').append(it) }
+                tireValues.forEach { value ->
+                    append('\n').append(value).also { if (value != "--") append(" kpa") }
+                }
             }
             result.put("tire_pressure", tireText)
             result.put("tire_pressure_all", tireText)
@@ -144,6 +150,9 @@ object GmoneAccountClient {
         result.put("refresh_status", "success")
         return result
     }
+
+    internal fun normalizeTirePressureKpa(value: Double): Double =
+        if (value > 0.0 && value < 100.0) value * 4.0 else value
 
     private fun putNumberText(
         destination: JSONObject,

@@ -56,6 +56,7 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.HttpsURLConnection
 import org.json.JSONObject
@@ -105,7 +106,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
     @JavascriptInterface
     fun requestWayonLiveSession() {
-        if (BuildConfig.WAYON_PUSH_REGISTRATION_TOKEN.isBlank() ||
+        if (BuildConfig.WAYON_LIVE_TOKEN.isBlank() ||
             BuildConfig.WAYON_DEVICE_ID.isBlank()
         ) {
             runJs("onWayonLiveSessionError('Live 인증 설정이 없습니다.')")
@@ -123,7 +124,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                     doOutput = true
                     setRequestProperty(
                         "Authorization",
-                        "Bearer ${BuildConfig.WAYON_PUSH_REGISTRATION_TOKEN}",
+                        "Bearer ${BuildConfig.WAYON_LIVE_TOKEN}",
                     )
                     setRequestProperty("Content-Type", "application/json")
                 }
@@ -174,6 +175,20 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         private val WAYON_CLOUD_TRIPS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/trips?limit=1000"
         private val WAYON_CLOUD_GMONE_REFRESH_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/gmone/refresh"
         private const val WAYON_CLOUD_AUTO_REFRESH_INTERVAL_MS = 15_000L
+
+        internal fun normalizeTirePressureText(raw: String): String {
+            val pressurePattern = Regex("""(?i)(\d+(?:\.\d+)?)\s*kpa""")
+            return pressurePattern.replace(raw) { match ->
+                val pressure = match.groupValues[1].toDoubleOrNull() ?: return@replace match.value
+                val kpa = if (pressure > 0.0 && pressure < 100.0) pressure * 4.0 else pressure
+                val formatted = if (kpa % 1.0 == 0.0) {
+                    kpa.toLong().toString()
+                } else {
+                    String.format(Locale.US, "%.1f", kpa).trimEnd('0').trimEnd('.')
+                }
+                "$formatted kpa"
+            }
+        }
     }
 
     private val PREF_KEY_ASKED_BACKGROUND_LOCATION = "ASKED_BACKGROUND_LOCATION"
@@ -185,6 +200,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     private var wayonCloudTripsRefreshJob: Job? = null
     private var wayonCloudAutoRefreshJob: Job? = null
     private var wayonCloudFullHistoryLoaded = false
+    private var latestVehicleStatusEpochMs = 0L
     private val wayonAddressCache = ConcurrentHashMap<String, String>()
 
     private fun carStatusReference(): com.google.firebase.database.DatabaseReference? {
@@ -240,9 +256,13 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 val fuel = it.child("fuel").getValue(String::class.java) ?: "--"
                 val lastUpdate = it.child("last_update").getValue(String::class.java) ?: "--"
                 val oil = it.child("oil").getValue(String::class.java) ?: "--"
-                val tirePressure = it.child("tire_pressure").getValue(String::class.java) ?: "--"
+                val tirePressure = normalizeTirePressureText(
+                    it.child("tire_pressure").getValue(String::class.java) ?: "--",
+                )
                 val rawTirePressureAll = it.child("tire_pressure_all").getValue(String::class.java) ?: "--"
-                val tirePressureAll = rawTirePressureAll.takeUnless { value -> value.isBlank() || value == "--" } ?: tirePressure
+                val tirePressureAll = normalizeTirePressureText(
+                    rawTirePressureAll.takeUnless { value -> value.isBlank() || value == "--" } ?: tirePressure,
+                )
 
                 runJs("updateCarStatus('$range', '$battery', '$batteryLevel', '$mileage', '$fuel', '$lastUpdate', '$oil', '$tirePressure', '$tirePressureAll')")
 
@@ -496,9 +516,13 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             val range = snapshot.child("range").getValue(String::class.java) ?: "--"
             val battery = snapshot.child("battery").getValue(String::class.java) ?: "--"
             val batteryLevel = snapshot.child("battery_level").getValue(String::class.java) ?: "--"
-            val tirePressure = snapshot.child("tire_pressure").getValue(String::class.java) ?: "--"
+            val tirePressure = normalizeTirePressureText(
+                snapshot.child("tire_pressure").getValue(String::class.java) ?: "--",
+            )
             val rawTirePressureAll = snapshot.child("tire_pressure_all").getValue(String::class.java) ?: "--" // [NEW] Read list
-            val tirePressureAll = rawTirePressureAll.takeUnless { it.isBlank() || it == "--" } ?: tirePressure
+            val tirePressureAll = normalizeTirePressureText(
+                rawTirePressureAll.takeUnless { it.isBlank() || it == "--" } ?: tirePressure,
+            )
             val lastUpdateStr = snapshot.child("last_update").getValue(String::class.java)
             val refreshStatus = snapshot.child("refresh_status").getValue(String::class.java) ?: ""
 
@@ -1236,6 +1260,16 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     private fun applyWayonVehicleStatus(vehicleStatus: WayonVehicleStatus?) {
         val status = vehicleStatus ?: return
         val data = status.data
+        val statusEpochMs = parseVehicleStatusEpoch(
+            data.optString("last_update", "").takeIf { it.isNotBlank() } ?: status.updatedAt,
+        )
+        if (statusEpochMs != null && statusEpochMs + 1_000L < latestVehicleStatusEpochMs) {
+            Log.d(
+                "MainActivity",
+                "Skipped older vehicle status from ${status.source}; latest=$latestVehicleStatusEpochMs candidate=$statusEpochMs",
+            )
+            return
+        }
         fun value(name: String): String = data.optString(name, "")
             .takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) }
             ?: "--"
@@ -1246,8 +1280,10 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         val mileage = value("mileage")
         val fuel = value("fuel")
         val oil = value("oil")
-        val tirePressure = value("tire_pressure")
-        val tirePressureAll = value("tire_pressure_all").takeUnless { it == "--" } ?: tirePressure
+        val tirePressure = normalizeTirePressureText(value("tire_pressure"))
+        val tirePressureAll = normalizeTirePressureText(
+            value("tire_pressure_all").takeUnless { it == "--" } ?: tirePressure,
+        )
         val lastUpdate = value("last_update").takeUnless { it == "--" }
             ?: status.updatedAt.orEmpty()
 
@@ -1279,7 +1315,30 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             tirePressure = tirePressure,
             tirePressureAll = tirePressureAll,
         )
+        if (statusEpochMs != null) {
+            latestVehicleStatusEpochMs = maxOf(latestVehicleStatusEpochMs, statusEpochMs)
+        }
         Log.d("MainActivity", "Applied vehicle status from ${status.source}; stale=${status.stale}")
+    }
+
+    private fun parseVehicleStatusEpoch(value: String?): Long? {
+        val text = value?.trim().orEmpty()
+        if (text.isBlank()) return null
+        val formats = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX" to TimeZone.getTimeZone("UTC"),
+            "yyyy-MM-dd'T'HH:mm:ssXXX" to TimeZone.getTimeZone("UTC"),
+            "yyyy-MM-dd HH:mm:ss" to TimeZone.getTimeZone("Asia/Seoul"),
+        )
+        for ((pattern, timeZone) in formats) {
+            val parsed = runCatching {
+                SimpleDateFormat(pattern, Locale.US).apply {
+                    isLenient = false
+                    this.timeZone = timeZone
+                }.parse(text)
+            }.getOrNull()
+            if (parsed != null) return parsed.time
+        }
+        return null
     }
 
     private fun checkApiCooldown(buttonId: String?): Boolean {

@@ -58,6 +58,7 @@ The following environment variables can be used instead of Gradle properties:
 WAYON_CLOUD_URL
 WAYON_DEVICE_ID
 WAYON_PUSH_REGISTRATION_TOKEN
+WAYON_LIVE_TOKEN
 FIREBASE_DATABASE_URL
 ```
 

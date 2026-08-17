@@ -154,16 +154,27 @@ def _timestamp_seconds(timestamp: Any) -> float | None:
 def _tire_pressure_text(car_status: dict[str, Any]) -> str | None:
   values = [
     car_status.get("trPrsLf"),
-    car_status.get("trPrsRf"),
     car_status.get("trPrsLr"),
+    car_status.get("trPrsRf"),
     car_status.get("trPrsRr"),
   ]
-  normalized = [_compact_number(value) for value in values]
+  normalized = [_tire_pressure_kpa(value) for value in values]
   if not any(value is not None for value in normalized):
     return None
   lines = ["타이어 정보"]
   lines.extend(f"{value} kpa" if value is not None else "--" for value in normalized)
   return "\n".join(lines)
+
+
+def _tire_pressure_kpa(value: Any) -> str | None:
+  number = _as_number(value)
+  if number is None:
+    return None
+  # Direct module responses use a 4 kPa/bit TPMS value, while the official
+  # cache already contains kPa. Preserve either representation correctly.
+  if 0 < number < 100:
+    number *= 4
+  return _compact_number(number)
 
 
 def normalize_car_status(

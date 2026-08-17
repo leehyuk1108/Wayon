@@ -33,6 +33,7 @@ val wayonPushRegistrationToken = configuredValue(
     "wayon.pushRegistrationToken",
     "WAYON_PUSH_REGISTRATION_TOKEN",
 )
+val wayonLiveToken = configuredValue("wayon.liveToken", "WAYON_LIVE_TOKEN")
 val firebaseDatabaseUrl = configuredValue("firebase.databaseUrl", "FIREBASE_DATABASE_URL")
 val firebaseConfigured = file("google-services.json").isFile && firebaseDatabaseUrl.isNotBlank()
 
@@ -60,6 +61,7 @@ android {
             "WAYON_PUSH_REGISTRATION_TOKEN",
             wayonPushRegistrationToken.asBuildConfigString(),
         )
+        buildConfigField("String", "WAYON_LIVE_TOKEN", wayonLiveToken.asBuildConfigString())
         buildConfigField("String", "FIREBASE_DATABASE_URL", firebaseDatabaseUrl.asBuildConfigString())
         buildConfigField("boolean", "FIREBASE_CONFIGURED", firebaseConfigured.toString())
 

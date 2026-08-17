@@ -33,10 +33,10 @@ class TestNormalizeCarStatus:
       "fRng": 582,
       "fLvl": 63,
       "olLfe": 82,
-      "trPrsLf": 252,
-      "trPrsRf": 240,
-      "trPrsLr": 248,
-      "trPrsRr": 248,
+      "trPrsLf": 63,
+      "trPrsRf": 60,
+      "trPrsLr": 62,
+      "trPrsRr": 62,
     }
     result = normalize_car_status(raw, 1786960934000)
     assert result["battery"] == "12.6"
@@ -46,7 +46,7 @@ class TestNormalizeCarStatus:
     assert result["range"] == "582"
     assert result["fuel"] == "63"
     assert result["oil"] == "82"
-    assert result["tire_pressure"] == "타이어 정보\n252 kpa\n240 kpa\n248 kpa\n248 kpa"
+    assert result["tire_pressure"] == "타이어 정보\n252 kpa\n248 kpa\n240 kpa\n248 kpa"
     assert result["source"] == "gmone-direct"
     assert result["collector_data_source"] == "gmone-direct"
 
@@ -54,6 +54,10 @@ class TestNormalizeCarStatus:
     result = normalize_car_status({}, 1786960934000)
     assert "fuel" not in result
     assert "tire_pressure" not in result
+
+  def test_preserves_cache_tire_values_already_in_kpa(self):
+    result = normalize_car_status({"trPrsLf": 252}, 1786960934000)
+    assert result["tire_pressure"] == "타이어 정보\n252 kpa\n--\n--\n--"
 
 
 class TestWayonPublish:

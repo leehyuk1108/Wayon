@@ -56,19 +56,34 @@ def test_unreliable_geometry_does_not_report_a_width():
   assert target_lane_space_width(m, Direction.right) is None
 
 
-def test_centerline_blocks_and_latches_until_direction_resets(tmp_path):
+def test_centerline_block_releases_on_explicit_dashed_line(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, left="centerSolid")
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
   assert gate.update(Direction.left, model())
-  write_markings(state, left="dashed")
+  write_markings(state, left="unknown")
   gate.boundary_reader.last_read_at = 0.0
   assert gate.update(Direction.left, model())
-  assert gate.block_reason == "centerline"
 
-  assert not gate.update(Direction.none, model())
+  write_markings(state, left="dashed")
+  gate.boundary_reader.last_read_at = 0.0
   assert not gate.update(Direction.left, model())
+  assert gate.block_reason == ""
+
+
+def test_white_solid_line_blocks_and_releases_on_dashed_line(tmp_path):
+  state = tmp_path / "markings.json"
+  write_markings(state, right="solid")
+  gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
+
+  assert gate.update(Direction.right, model())
+  assert gate.block_reason == "solidLine"
+
+  write_markings(state, right="dashed")
+  gate.boundary_reader.last_read_at = 0.0
+  assert not gate.update(Direction.right, model())
+  assert gate.block_reason == ""
 
 
 def test_dashed_centerline_also_blocks_requested_direction(tmp_path):

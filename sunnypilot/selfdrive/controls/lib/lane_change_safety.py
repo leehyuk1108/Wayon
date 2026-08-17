@@ -22,7 +22,8 @@ ROAD_EDGE_STD_MAX = 0.65
 TARGET_LANE_MIN_WIDTH_M = 1.00
 TARGET_LANE_WIDTH_CONFIRM_FRAMES = 5
 WIDTH_SAMPLE_DISTANCES_M = (8.0, 15.0, 25.0)
-CENTERLINE_TYPES = frozenset(("centerSolid", "centerDashed"))
+BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid", "centerDashed"))
+PERMISSIVE_BOUNDARY_TYPES = frozenset(("dashed",))
 
 
 def _finite(value: Any, default: float = 0.0) -> float:
@@ -141,6 +142,9 @@ class LaneChangeSafetyGate:
     self.boundary_reader = boundary_reader or LaneBoundaryStateReader()
     self.direction = LaneChangeDirection.none
     self.narrow_frames = 0
+    self.boundary_blocked = False
+    self.boundary_block_reason = ""
+    self.narrow_blocked = False
     self.blocked = False
     self.block_reason = ""
     self.target_width_m: float | None = None
@@ -148,6 +152,9 @@ class LaneChangeSafetyGate:
   def reset(self) -> None:
     self.direction = LaneChangeDirection.none
     self.narrow_frames = 0
+    self.boundary_blocked = False
+    self.boundary_block_reason = ""
+    self.narrow_blocked = False
     self.blocked = False
     self.block_reason = ""
     self.target_width_m = None
@@ -161,15 +168,28 @@ class LaneChangeSafetyGate:
       self.direction = direction
 
     boundary_type = self.boundary_reader.read().type_for_direction(direction)
-    if boundary_type in CENTERLINE_TYPES:
-      self.blocked = True
-      self.block_reason = "centerline"
+    if boundary_type in BLOCKING_BOUNDARY_TYPES:
+      self.boundary_blocked = True
+      self.boundary_block_reason = "solidLine" if boundary_type == "solid" else "centerline"
+    elif boundary_type in PERMISSIVE_BOUNDARY_TYPES:
+      # Only an explicit dashed-line classification releases a previous block.
+      # Keep the last decision through brief unknown/stale samples so a shadow
+      # or occlusion cannot make a prohibited lane change available.
+      self.boundary_blocked = False
+      self.boundary_block_reason = ""
 
     self.target_width_m = target_lane_space_width(model_v2, direction)
     narrow_now = self.target_width_m is not None and self.target_width_m < TARGET_LANE_MIN_WIDTH_M
     self.narrow_frames = self.narrow_frames + 1 if narrow_now else 0
     if self.narrow_frames >= TARGET_LANE_WIDTH_CONFIRM_FRAMES:
-      self.blocked = True
+      self.narrow_blocked = True
+
+    self.blocked = self.boundary_blocked or self.narrow_blocked
+    if self.narrow_blocked:
       self.block_reason = "narrowTargetLane"
+    elif self.boundary_blocked:
+      self.block_reason = self.boundary_block_reason
+    else:
+      self.block_reason = ""
 
     return self.blocked

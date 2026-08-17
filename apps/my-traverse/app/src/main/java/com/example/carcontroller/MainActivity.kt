@@ -1084,7 +1084,6 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 Log.w("MainActivity", "Wayon Cloud refresh failed", error)
                 launch(Dispatchers.Main) {
                     runJs("markWayonCloudUnavailable(${jsQuote("Wayon Cloud 정보 수신 실패")})")
-                    runJs("updateWayonDriveUnavailable(${jsQuote("Cloud 연결 실패")})")
                     if (showResult) {
                         showJsStatus("Wayon Cloud 연결 실패: ${error.message ?: "unknown"}", "danger", 4000)
                     }

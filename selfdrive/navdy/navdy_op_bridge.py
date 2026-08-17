@@ -67,6 +67,7 @@ NAVDY_RADAR_RETRY_SEC = 5.0
 NAVDY_RADAR_MAX_TRACK_WIDTH_M = 4.0
 NAVDY_E2E_ALERT_HOLD_SEC = 3.0
 NAVDY_E2E_CAPTURE_HOLD_SEC = 2.0
+NAVDY_ACC_DISPLAY_RECONCILE_SEC = 0.5
 NAVDY_FALLBACK_LANE_WIDTH_M = 3.6
 NAVDY_MIN_LANE_WIDTH_M = 2.4
 NAVDY_MAX_LANE_WIDTH_M = 4.8
@@ -298,7 +299,42 @@ def apply_navdy_e2e_alert(payload: dict[str, Any], args: argparse.Namespace, now
   payload["alertSize"] = "mid"
 
 
+def reconcile_display_set_speed(payload: dict[str, Any], args: argparse.Namespace, now: float) -> None:
+  physical_speed = finite_float(payload.pop("_physicalAccSetKph", 0.0))
+  virtual_speed = finite_float(payload.get("setSpeedKph", 0.0))
+  automatic_control = bool(payload.get("automaticAccActive", False))
+  engaged = bool(payload.get("enabled") or payload.get("active") or payload.get("engaged"))
+
+  def reset() -> None:
+    args._acc_display_mismatch_since = 0.0
+    args._acc_display_physical_override = False
+
+  if automatic_control or not engaged or physical_speed <= 0.0 or virtual_speed <= 0.0:
+    reset()
+    return
+
+  physical_display = round(physical_speed)
+  virtual_display = round(virtual_speed)
+  if physical_display == virtual_display:
+    reset()
+    return
+
+  if bool(getattr(args, "_acc_display_physical_override", False)):
+    payload["setSpeedKph"] = rounded(physical_speed)
+    return
+
+  mismatch_since = float(getattr(args, "_acc_display_mismatch_since", 0.0))
+  if mismatch_since <= 0.0:
+    args._acc_display_mismatch_since = now
+    return
+
+  if now - mismatch_since >= NAVDY_ACC_DISPLAY_RECONCILE_SEC:
+    args._acc_display_physical_override = True
+    payload["setSpeedKph"] = rounded(physical_speed)
+
+
 def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace, now: float) -> dict[str, Any]:
+  reconcile_display_set_speed(payload, args, now)
   set_speed = finite_float(payload.get("setSpeedKph", 0.0))
   if set_speed > 0.0:
     setattr(args, "_last_set_speed_kph", set_speed)
@@ -1061,6 +1097,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "standstill": show_stop_icon,
     "cruiseStandstill": show_stop_icon,
     "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
+    "_physicalAccSetKph": rounded(physical_acc_speed_kph),
     "actualAccSetKph": rounded(physical_acc_speed_kph) if automatic_acc_active else 0.0,
     "automaticAccTargetKph": rounded(automatic_acc_target_kph) if automatic_acc_active else 0.0,
     "automaticAccActive": automatic_acc_active,

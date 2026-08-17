@@ -541,6 +541,59 @@ def test_payload_prefers_cluster_corrected_vehicle_and_acc_speeds():
   assert payload["actualAccSetKph"] == 100.0
 
 
+def test_navdy_set_speed_reconciles_persistent_stock_acc_mismatch():
+  args = SimpleNamespace()
+  payload = {
+    "enabled": True,
+    "active": True,
+    "setSpeedKph": 53.0,
+    "_physicalAccSetKph": 58.1,
+    "automaticAccActive": False,
+  }
+
+  navdy_op_bridge.reconcile_display_set_speed(payload, args, now=10.0)
+  assert payload["setSpeedKph"] == 53.0
+
+  payload["_physicalAccSetKph"] = 59.2
+  navdy_op_bridge.reconcile_display_set_speed(payload, args, now=10.49)
+  assert payload["setSpeedKph"] == 53.0
+
+  payload["_physicalAccSetKph"] = 60.4
+  navdy_op_bridge.reconcile_display_set_speed(payload, args, now=10.5)
+  assert payload["setSpeedKph"] == 60.4
+
+  payload["setSpeedKph"] = 53.0
+  payload["_physicalAccSetKph"] = 60.4
+  navdy_op_bridge.reconcile_display_set_speed(payload, args, now=10.6)
+  assert payload["setSpeedKph"] == 60.4
+
+
+def test_navdy_set_speed_ignores_short_engage_transient_and_icbm_control():
+  args = SimpleNamespace()
+  payload = {
+    "enabled": True,
+    "active": True,
+    "setSpeedKph": 70.0,
+    "_physicalAccSetKph": 66.0,
+    "automaticAccActive": False,
+  }
+
+  navdy_op_bridge.reconcile_display_set_speed(payload, args, now=20.0)
+  assert payload["setSpeedKph"] == 70.0
+
+  payload["_physicalAccSetKph"] = 70.0
+  navdy_op_bridge.reconcile_display_set_speed(payload, args, now=20.2)
+  assert payload["setSpeedKph"] == 70.0
+  assert not args._acc_display_physical_override
+
+  payload["setSpeedKph"] = 100.0
+  payload["_physicalAccSetKph"] = 60.0
+  payload["automaticAccActive"] = True
+  navdy_op_bridge.reconcile_display_set_speed(payload, args, now=21.0)
+  assert payload["setSpeedKph"] == 100.0
+  assert not args._acc_display_physical_override
+
+
 def test_payload_hides_stop_icon_while_disengaged_at_standstill():
   car_state = SimpleNamespace(
     cruiseState=SimpleNamespace(standstill=True, speed=0.0),

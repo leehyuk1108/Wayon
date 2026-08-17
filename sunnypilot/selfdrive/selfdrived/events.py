@@ -257,6 +257,6 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "전방 차량 주의",
       "전방 차량 차선 침범함",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.MID, VisualAlert.none, AudibleAlert.warningSoft, 2.),
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 2.),
   },
 }

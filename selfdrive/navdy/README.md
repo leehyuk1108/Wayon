@@ -930,7 +930,7 @@ rightRisk
 제목: 전방 차량 주의
 설명: 전방 차량 차선 침범함
 상태: userPrompt / mid
-소리: warningSoft
+소리: prompt
 표시 시간: 2초
 ```
 

@@ -80,10 +80,10 @@ cycle already requested.
 ## HYUKLEE-SERVER deployment
 
 HYUKLEE-SERVER runs Windows 11. Install Python 3.12 and `keyring`, store the
-GMOne password and the dedicated Wayon GMOne token in Windows Credential
-Manager, and run the collector from Task Scheduler. The login email may be set
-as `GMONE_EMAIL`; passwords and tokens must not be placed in task arguments or
-Git.
+GMOne password, official Firebase API key, and dedicated Wayon GMOne token in
+Windows Credential Manager, and run the collector from Task Scheduler. The
+login email may be set as `GMONE_EMAIL`; credentials must not be placed in task
+arguments or Git.
 
 ```text
 GMONE_EMAIL=...

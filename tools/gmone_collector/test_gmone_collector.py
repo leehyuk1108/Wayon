@@ -1,4 +1,6 @@
 import json
+import sys
+from types import SimpleNamespace
 from urllib import error
 
 import pytest
@@ -16,12 +18,24 @@ from openpilot.tools.gmone_collector.gmone_collector import (
   collect_running_cycles,
   collector_diagnostic,
   collect_once,
+  load_firebase_api_key,
   normalize_car_status,
   publish_wayon,
   resolve_async_response,
   wayon_refresh_pending,
 )
 from openpilot.tools.gmone_collector.gmone_store import GmoneStore
+
+
+def test_loads_firebase_api_key_from_windows_credential_manager(monkeypatch):
+  fake_keyring = SimpleNamespace(
+    get_password=lambda service, account: "firebase-key"
+    if (service, account) == ("firebase-service", "api-key") else None,
+  )
+  monkeypatch.delenv("GMONE_FIREBASE_API_KEY", raising=False)
+  monkeypatch.setattr("openpilot.tools.gmone_collector.gmone_collector.sys.platform", "win32")
+  monkeypatch.setitem(sys.modules, "keyring", fake_keyring)
+  assert load_firebase_api_key("firebase-service") == "firebase-key"
 
 
 class TestNormalizeCarStatus:

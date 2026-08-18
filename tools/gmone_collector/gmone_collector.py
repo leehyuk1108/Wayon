@@ -406,7 +406,17 @@ def load_firebase_api_key(keychain_service: str) -> str:
     if secret.returncode == 0 and secret.stdout.strip():
       return secret.stdout.strip()
     raise AuthenticationError(f"macOS Keychain item not found for service {keychain_service!r}")
-  raise AuthenticationError("Set GMONE_FIREBASE_API_KEY in a protected service environment file")
+  if sys.platform == "win32":
+    try:
+      import keyring
+    except ImportError as exc:
+      raise AuthenticationError(
+        "Install keyring or set GMONE_FIREBASE_API_KEY in the service environment"
+      ) from exc
+    api_key = keyring.get_password(keychain_service, "api-key")
+    if api_key:
+      return api_key
+  raise AuthenticationError("Official Firebase API key is not available in the platform credential store")
 
 
 def load_wayon_upload_token(keychain_service: str) -> str:

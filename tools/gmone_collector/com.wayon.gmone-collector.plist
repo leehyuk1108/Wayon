@@ -9,7 +9,7 @@
     <string>/opt/homebrew/bin/python3</string>
     <string>/Users/ijonghyeog/Library/Application Support/Wayon/GmoneCollector/gmone_collector.py</string>
     <string>--poll-seconds</string>
-    <string>300</string>
+    <string>60</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/ijonghyeog/Library/Application Support/Wayon/GmoneCollector</string>

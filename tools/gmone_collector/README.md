@@ -56,9 +56,10 @@ python3 -m tools.gmone_collector.gmone_collector --once --json
 ```
 
 For temporary background verification on this Mac, install
-`com.wayon.gmone-collector.plist` into `~/Library/LaunchAgents/`. It polls every
-five minutes and reuses the in-memory session token until authentication
-expires. Copy both `gmone_collector.py` and `gmone_store.py` to
+`com.wayon.gmone-collector.plist` into `~/Library/LaunchAgents/`. It checks the
+official cached status every minute without asking the vehicle to refresh and
+reuses the in-memory session token until authentication expires. Copy both
+`gmone_collector.py` and `gmone_store.py` to
 `~/Library/Application Support/Wayon/GmoneCollector/` first; macOS blocks a
 LaunchAgent from directly reading source files under `Documents`.
 
@@ -99,8 +100,11 @@ python -m tools.gmone_collector.gmone_collector \
   --no-official-cache
 ```
 
-The process checks `/api/gmone/refresh` every 30 seconds while sleeping, so a
-manual refresh in My Traverse can wake the normal 10-minute cycle early. Each
+The process checks `/api/gmone/refresh` every 30 seconds while sleeping. Normal
+polls read only the official cached status; the operation-21 vehicle request is
+sent only after this endpoint reports a pending manual or scheduled request.
+My Traverse schedules that request once per hour only while its automatic
+refresh setting is enabled. Each
 successful upload replaces one `gmone_latest` D1 row; it does not append a row
 on every poll. The server package uses the same SQLite archive and cursor file.
 Keep the data and log directories readable only by the service account.

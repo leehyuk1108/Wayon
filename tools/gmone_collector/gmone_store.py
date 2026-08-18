@@ -130,6 +130,20 @@ class GmoneStore:
         (kind, source, server_time, collected_at, encoded),
       )
 
+  def latest_snapshot_server_time(self, kind: str) -> float | None:
+    with self._connect() as connection:
+      row = connection.execute(
+        """
+        SELECT server_time FROM snapshots
+        WHERE kind = ? AND server_time IS NOT NULL
+        ORDER BY server_time DESC, id DESC LIMIT 1
+        """,
+        (kind,),
+      ).fetchone()
+    if row is None or row["server_time"] is None:
+      return None
+    return float(row["server_time"])
+
   def save_running_cycles(self, cycles: Iterable[dict[str, Any]]) -> int:
     collected_at = datetime.now(UTC).isoformat()
     rows = []

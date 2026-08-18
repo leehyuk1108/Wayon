@@ -13,6 +13,40 @@ import org.junit.Assert.*
  */
 class ExampleUnitTest {
     @Test
+    fun autoRefreshPolicy_disabledNeverRequestsVehicle() {
+        assertNull(VehicleRefreshPolicy.nextActiveDelayMs(false, 0L, 10_000L))
+        assertFalse(VehicleRefreshPolicy.isActiveRefreshDue(false, 0L, 10_000L))
+    }
+
+    @Test
+    fun autoRefreshPolicy_firstRequestIsOneHourAfterEnable() {
+        assertEquals(
+            VehicleRefreshPolicy.ACTIVE_REFRESH_INTERVAL_MS,
+            VehicleRefreshPolicy.nextActiveDelayMs(true, 0L, 10_000L),
+        )
+    }
+
+    @Test
+    fun autoRefreshPolicy_becomesDueAfterOneHour() {
+        val lastRequest = 10_000L
+        assertEquals(
+            1_000L,
+            VehicleRefreshPolicy.nextActiveDelayMs(
+                true,
+                lastRequest,
+                lastRequest + VehicleRefreshPolicy.ACTIVE_REFRESH_INTERVAL_MS - 1_000L,
+            ),
+        )
+        assertTrue(
+            VehicleRefreshPolicy.isActiveRefreshDue(
+                true,
+                lastRequest,
+                lastRequest + VehicleRefreshPolicy.ACTIVE_REFRESH_INTERVAL_MS,
+            ),
+        )
+    }
+
+    @Test
     fun addition_isCorrect() {
         assertEquals(4, 2 + 2)
     }

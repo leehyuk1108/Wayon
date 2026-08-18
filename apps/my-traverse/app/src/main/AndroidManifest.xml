@@ -87,6 +87,15 @@
 
         <receiver android:name=".WidgetCommandReceiver" android:exported="true" />
 
+        <receiver
+            android:name=".VehicleRefreshReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- 부팅 후 알람 재등록용 리시버 -->
         <receiver
             android:name=".TimerReceiver"

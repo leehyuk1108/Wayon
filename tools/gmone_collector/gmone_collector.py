@@ -872,6 +872,93 @@ def collect_running_cycles(client: GmoneClient, state: CollectorState, store: Gm
   return store.save_running_cycles(cycle for cycle in cycles if isinstance(cycle, dict))
 
 
+def collect_cached_once(
+  client: GmoneClient,
+  email: str,
+  password: str,
+  official_firebase_client: OfficialFirebaseClient | None,
+  *,
+  max_cache_age_seconds: int = DEFAULT_MAX_CACHE_AGE_SECONDS,
+  store: GmoneStore | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+  """Read already-published GMOne data without sending a vehicle refresh request."""
+  diagnostic = {
+    "collector_status": "passive_cache_check",
+    "collector_last_attempt": _timestamp_kst(None),
+    "collector_source": "gmone-direct",
+    "collector_mode": "passive",
+  }
+  if official_firebase_client is None:
+    diagnostic["collector_cache_status"] = "disabled"
+    return None, diagnostic
+
+  if not client.authenticated:
+    client.login(email, password)
+  if client.vin is None:
+    diagnostic["collector_cache_status"] = "vehicle_identity_unavailable"
+    return None, diagnostic
+
+  try:
+    cached = official_firebase_client.read_cached_status(
+      email,
+      password,
+      client.vin,
+      expected_user_uuid=client.user_uuid,
+    )
+  except CollectorError as exc:
+    diagnostic["collector_cache_status"] = "unavailable"
+    LOG.warning("Passive official GMOne cache read failed: %s", exc)
+    return None, diagnostic
+
+  cached_car_status = cached.get("car_status")
+  if not isinstance(cached_car_status, dict):
+    diagnostic["collector_cache_status"] = "empty"
+    return None, diagnostic
+
+  cached_timestamp = _timestamp_seconds(cached.get("time"))
+  now_timestamp = datetime.now(UTC).timestamp()
+  if cached_timestamp is None or now_timestamp - cached_timestamp > max_cache_age_seconds:
+    diagnostic["collector_cache_status"] = "stale"
+    if cached_timestamp is not None:
+      diagnostic["collector_cache_last_update"] = _timestamp_kst(cached_timestamp)
+    return None, diagnostic
+
+  latest_stored_timestamp = store.latest_snapshot_server_time("car_status") if store is not None else None
+  if latest_stored_timestamp is not None and cached_timestamp <= latest_stored_timestamp:
+    diagnostic.update({
+      "collector_status": "passive_no_change",
+      "collector_cache_status": "not_newer",
+      "collector_cache_last_update": _timestamp_kst(cached_timestamp),
+    })
+    return None, diagnostic
+
+  if store is not None:
+    store.save_snapshot("car_status", "gmone-official-cache", cached_car_status, cached_timestamp)
+    dtc_records = cached_car_status.get("dtc")
+    if isinstance(dtc_records, list):
+      store.save_snapshot(
+        "dtc",
+        "gmone-official-cache",
+        {"count": cached_car_status.get("dtcCnt"), "records": dtc_records},
+        cached_timestamp,
+      )
+
+  diagnostic.update({
+    "collector_status": "success_cached",
+    "collector_cache_status": "success",
+    "collector_cache_last_update": _timestamp_kst(cached_timestamp),
+  })
+  normalized = normalize_car_status(
+    cached_car_status,
+    cached_timestamp,
+    data_source="gmone-official-cache",
+    collector_status="success_cached",
+  )
+  normalized["collector_mode"] = "passive"
+  normalized["collector_cache_status"] = "success"
+  return normalized, diagnostic
+
+
 def collect_once(
   client: GmoneClient,
   state: CollectorState,
@@ -1081,20 +1168,31 @@ def main(argv: list[str] | None = None) -> int:
   if args.wayon_url and not args.dry_run:
     wayon_upload_token = load_wayon_upload_token(args.wayon_upload_token_keychain_service)
 
+  active_refresh_requested = args.once
   while not stopping:
     try:
-      normalized, diagnostic = collect_once(
-        client=client,
-        state=state,
-        email=email,
-        password=password,
-        official_firebase_client=official_firebase_client,
-        max_cache_age_seconds=round(args.max_cache_age_hours * 3600),
-        store=store,
-        refresh_dtc=args.refresh_dtc,
-        async_timeout_seconds=args.async_timeout_seconds,
-        result_poll_seconds=args.result_poll_seconds,
-      )
+      if active_refresh_requested:
+        normalized, diagnostic = collect_once(
+          client=client,
+          state=state,
+          email=email,
+          password=password,
+          official_firebase_client=official_firebase_client,
+          max_cache_age_seconds=round(args.max_cache_age_hours * 3600),
+          store=store,
+          refresh_dtc=args.refresh_dtc,
+          async_timeout_seconds=args.async_timeout_seconds,
+          result_poll_seconds=args.result_poll_seconds,
+        )
+      else:
+        normalized, diagnostic = collect_cached_once(
+          client=client,
+          email=email,
+          password=password,
+          official_firebase_client=official_firebase_client,
+          max_cache_age_seconds=round(args.max_cache_age_hours * 3600),
+          store=store,
+        )
       wayon_payload = build_wayon_payload(normalized, diagnostic, store) if normalized is not None else None
       payload = wayon_payload["status"] if wayon_payload is not None else diagnostic
       if not args.dry_run and not args.no_firebase:
@@ -1110,7 +1208,11 @@ def main(argv: list[str] | None = None) -> int:
       if normalized is None:
         LOG.info("Vehicle status unavailable: %s; retained prior vehicle values", diagnostic["collector_status"])
       else:
-        LOG.info("Vehicle status updated with %d normalized fields", len(normalized))
+        LOG.info(
+          "Vehicle status updated with %d normalized fields (%s)",
+          len(normalized),
+          "active" if active_refresh_requested else "passive",
+        )
     except CollectorError as exc:
       client.clear_session()
       LOG.warning("Collection failed: %s", exc)
@@ -1123,6 +1225,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.once:
       break
+    active_refresh_requested = False
     deadline = time.monotonic() + args.poll_seconds
     next_refresh_check = time.monotonic() + args.wayon_refresh_check_seconds
     while not stopping and time.monotonic() < deadline:
@@ -1131,6 +1234,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
           if wayon_refresh_pending(args.wayon_url, wayon_upload_token):
             LOG.info("Wayon requested an immediate GMOne refresh")
+            active_refresh_requested = True
             break
         except CollectorError as exc:
           LOG.warning("Wayon refresh request check failed: %s", exc)

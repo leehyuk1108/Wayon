@@ -222,6 +222,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             launch(Dispatchers.IO) {
                 try {
                     requestWayonGmoneRefresh(key)
+                    VehicleRefreshScheduler.recordVehicleRefreshRequest(this@MainActivity)
                     launch(Dispatchers.Main) {
                         showJsStatus("HYUKLEE-SERVER에 차량 조회를 요청했습니다.", "success")
                         refreshWayonCloudFeed(showResult = false)
@@ -246,6 +247,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
             // 1. Send Refresh Command
             db.child("cmd_refresh").setValue(System.currentTimeMillis())
+            VehicleRefreshScheduler.recordVehicleRefreshRequest(this@MainActivity)
 
             // 2. Fetch latest data
             db.get().addOnSuccessListener {
@@ -526,8 +528,11 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             val lastUpdateStr = snapshot.child("last_update").getValue(String::class.java)
             val refreshStatus = snapshot.child("refresh_status").getValue(String::class.java) ?: ""
 
-            // [NEW] Read Auto Refresh Setting (Default: true)
-            val autoRefreshFn = snapshot.child("setting_auto_refresh").getValue(Boolean::class.java) ?: true
+            val remoteAutoRefresh = snapshot.child("setting_auto_refresh").getValue(Boolean::class.java) ?: true
+            if (!VehicleRefreshScheduler.hasSavedAutoRefreshSetting(this@MainActivity)) {
+                VehicleRefreshScheduler.setAutoRefreshEnabled(this@MainActivity, remoteAutoRefresh)
+            }
+            val autoRefreshFn = VehicleRefreshScheduler.isAutoRefreshEnabled(this@MainActivity)
             runJs("updateSettingsUI($autoRefreshFn)")
 
             if (WayonCloudMode.isEnabled(this@MainActivity)) {
@@ -626,6 +631,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                     runJs("updateWayonCloudKeyInput(${jsQuote(key)})")
                 }
                 updateGmoneAccountUi()
+                runJs("updateSettingsUI(${VehicleRefreshScheduler.isAutoRefreshEnabled(this@MainActivity)})")
                 refreshWayonCloudFeed(showResult = false)
                 startWayonCloudAutoRefresh()
                 updateDashboardStatus()
@@ -1026,6 +1032,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         wayonCloudHistoryJson = null
         wayonCloudFullHistoryLoaded = false
         prefs.edit().putString(PREF_KEY_WAYON_CLOUD_KEY, key).apply()
+        VehicleRefreshScheduler.initialize(this)
         if (WayonCloudMode.isEnabled(this)) {
             WayonCloudMode.clearLocalTrackingState(this)
             stopService(Intent(this, DrivingService::class.java))
@@ -2084,12 +2091,13 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     @JavascriptInterface
     fun setAutoRefresh(enabled: Boolean) {
         Log.d("MainActivity", "JS Request: setAutoRefresh($enabled)")
+        VehicleRefreshScheduler.setAutoRefreshEnabled(this, enabled)
         launch(Dispatchers.IO) {
             carStatusReference()?.child("setting_auto_refresh")?.setValue(enabled)
         }
 
         launch(Dispatchers.Main) {
-            val state = if(enabled) "ON" else "OFF"
+            val state = if(enabled) "ON · 1시간마다 차량 조회" else "OFF · 수동 데이터 확인만 유지"
             showJsStatus("자동 새로고침: $state", "info")
             // Optimistic UI update check
             runJs("updateSettingsUI($enabled)")

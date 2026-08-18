@@ -12,6 +12,7 @@ from openpilot.tools.gmone_collector.gmone_collector import (
   _redacted_url,
   build_wayon_payload,
   collect_auxiliary_data,
+  collect_cached_once,
   collect_running_cycles,
   collector_diagnostic,
   collect_once,
@@ -246,6 +247,79 @@ class TestReadOnlyProtocol:
 
 
 class TestOfficialFirebaseFallback:
+  def test_passive_collection_never_requests_the_vehicle(self, tmp_path):
+    class PassiveClient:
+      authenticated = True
+      vin = "test-vin"
+      user_uuid = "test-user"
+
+      def read_car_status(self, *_args, **_kwargs):
+        raise AssertionError("passive collection must not request vehicle status")
+
+    class CacheClient:
+      def read_cached_status(self, email, password, vin, expected_user_uuid=None):
+        assert (email, password, vin, expected_user_uuid) == (
+          "user@example.com", "password", "test-vin", "test-user",
+        )
+        return {"car_status": {"fLvl": 63, "odo": 55746}, "time": 1786960934000}
+
+    normalized, diagnostic = collect_cached_once(
+      PassiveClient(),
+      "user@example.com",
+      "password",
+      CacheClient(),
+      store=GmoneStore(tmp_path / "gmone.sqlite3"),
+    )
+    assert normalized is not None
+    assert normalized["fuel"] == "63"
+    assert normalized["source"] == "gmone-official-cache"
+    assert diagnostic["collector_mode"] == "passive"
+    assert diagnostic["collector_cache_status"] == "success"
+
+  def test_passive_collection_rejects_stale_cache_without_vehicle_request(self, tmp_path):
+    class PassiveClient:
+      authenticated = True
+      vin = "test-vin"
+      user_uuid = "test-user"
+
+    class CacheClient:
+      def read_cached_status(self, *_args, **_kwargs):
+        return {"car_status": {"fLvl": 99}, "time": 1_700_000_000_000}
+
+    normalized, diagnostic = collect_cached_once(
+      PassiveClient(),
+      "user@example.com",
+      "password",
+      CacheClient(),
+      max_cache_age_seconds=60,
+    )
+    assert normalized is None
+    assert diagnostic["collector_cache_status"] == "stale"
+
+  def test_passive_collection_does_not_replace_newer_direct_status(self, tmp_path):
+    class PassiveClient:
+      authenticated = True
+      vin = "test-vin"
+      user_uuid = "test-user"
+
+    class CacheClient:
+      def read_cached_status(self, *_args, **_kwargs):
+        return {"car_status": {"fLvl": 50}, "time": 1786960934000}
+
+    store = GmoneStore(tmp_path / "gmone.sqlite3")
+    store.save_snapshot("car_status", "gmone-direct", {"fLvl": 63}, 1787010951.0)
+    normalized, diagnostic = collect_cached_once(
+      PassiveClient(),
+      "user@example.com",
+      "password",
+      CacheClient(),
+      store=store,
+    )
+    assert normalized is None
+    assert diagnostic["collector_status"] == "passive_no_change"
+    assert diagnostic["collector_cache_status"] == "not_newer"
+    assert store.latest_snapshot("car_status")["fLvl"] == 63
+
   def test_reads_cache_when_direct_module_is_asleep(self, tmp_path):
     class DirectClient:
       authenticated = True
@@ -447,6 +521,13 @@ class TestGmoneStore:
     store.save_snapshot("car_status", "gmone-direct", {"fLvl": 61}, 100)
     assert store.latest_snapshot("car_status") == {"fLvl": 63}
     assert path.stat().st_mode & 0o777 == 0o600
+
+  def test_reports_latest_snapshot_server_time(self, tmp_path):
+    store = GmoneStore(tmp_path / "gmone.sqlite3")
+    store.save_snapshot("car_status", "gmone-direct", {"fLvl": 61}, 100)
+    store.save_snapshot("car_status", "gmone-direct", {"fLvl": 63}, 200)
+    assert store.latest_snapshot_server_time("car_status") == 200.0
+    assert store.latest_snapshot_server_time("missing") is None
 
   def test_removes_nested_identity_and_secret_fields(self, tmp_path):
     store = GmoneStore(tmp_path / "gmone.sqlite3")

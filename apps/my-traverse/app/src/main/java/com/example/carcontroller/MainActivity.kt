@@ -175,6 +175,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         private val WAYON_CLOUD_TRIPS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/trips?limit=1000"
         private val WAYON_CLOUD_GMONE_REFRESH_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/gmone/refresh"
         private const val WAYON_CLOUD_AUTO_REFRESH_INTERVAL_MS = 15_000L
+        private const val WAYON_GMONE_REFRESH_POLL_INTERVAL_MS = 2_500L
+        private const val WAYON_GMONE_REFRESH_TIMEOUT_MS = 90_000L
 
         internal fun normalizeTirePressureText(raw: String): String {
             val pressurePattern = Regex("""(?i)(\d+(?:\.\d+)?)\s*kpa""")
@@ -199,6 +201,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     private var wayonCloudRefreshJob: Job? = null
     private var wayonCloudTripsRefreshJob: Job? = null
     private var wayonCloudAutoRefreshJob: Job? = null
+    private var wayonGmoneRefreshJob: Job? = null
     private var wayonCloudFullHistoryLoaded = false
     private var latestVehicleStatusEpochMs = 0L
     private val wayonAddressCache = ConcurrentHashMap<String, String>()
@@ -219,13 +222,25 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
         if (WayonCloudMode.isEnabled(this)) {
             val key = loadWayonCloudKeyFromPrefs()?.takeIf { it.isNotBlank() } ?: return
-            launch(Dispatchers.IO) {
+            if (wayonGmoneRefreshJob?.isActive == true) {
+                showJsStatus("차량 데이터 새로고침이 진행 중입니다.", "info", 3000)
+                return
+            }
+            wayonGmoneRefreshJob = launch(Dispatchers.IO) {
                 try {
-                    requestWayonGmoneRefresh(key)
+                    val requestedAt = requestWayonGmoneRefresh(key)
                     VehicleRefreshScheduler.recordVehicleRefreshRequest(this@MainActivity)
                     launch(Dispatchers.Main) {
-                        showJsStatus("HYUKLEE-SERVER에 차량 조회를 요청했습니다.", "success")
+                        showJsStatus("차량 조회 요청 완료 · 응답을 기다리는 중입니다.", "info", 5000)
+                    }
+                    val completedAt = awaitWayonGmoneRefresh(key, requestedAt)
+                    launch(Dispatchers.Main) {
                         refreshWayonCloudFeed(showResult = false)
+                        if (completedAt != null) {
+                            showJsStatus("차량 데이터 새로고침이 완료되었습니다.", "success", 4000)
+                        } else {
+                            showJsStatus("차량 응답이 지연 중입니다. 완료되면 자동 반영됩니다.", "info", 5000)
+                        }
                     }
                 } catch (error: Exception) {
                     Log.w("MainActivity", "Wayon GMOne refresh request failed", error)
@@ -1187,7 +1202,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         }
     }
 
-    private fun requestWayonGmoneRefresh(key: String) {
+    private fun requestWayonGmoneRefresh(key: String): String {
         val connection = URL(WAYON_CLOUD_GMONE_REFRESH_URL).openConnection() as HttpsURLConnection
         connection.requestMethod = "POST"
         connection.doOutput = true
@@ -1201,10 +1216,46 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             connection.outputStream.use { it.write("{}".toByteArray(Charsets.UTF_8)) }
             val responseCode = connection.responseCode
             if (responseCode !in 200..299) throw IOException("HTTP $responseCode")
-            Unit
+            val body = BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { it.readText() }
+            JSONObject(body).optString("requestedAt").takeIf { it.isNotBlank() }
+                ?: throw IOException("새로고침 요청 시간이 없습니다")
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun fetchWayonGmoneRefreshStatus(key: String): WayonRefreshStatus {
+        val connection = URL(WAYON_CLOUD_GMONE_REFRESH_URL).openConnection() as HttpsURLConnection
+        connection.requestMethod = "GET"
+        connection.useCaches = false
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.setRequestProperty("Authorization", "Bearer $key")
+        connection.setRequestProperty("Accept", "application/json")
+        connection.setRequestProperty("Cache-Control", "no-cache")
+        return try {
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) throw IOException("HTTP $responseCode")
+            val body = BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { it.readText() }
+            val json = JSONObject(body)
+            WayonRefreshStatus(
+                pending = json.optBoolean("pending", false),
+                requestedAt = json.optString("requestedAt").takeIf { it.isNotBlank() },
+                completedAt = json.optString("completedAt").takeIf { it.isNotBlank() },
+            )
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private suspend fun awaitWayonGmoneRefresh(key: String, requestedAt: String): String? {
+        val deadline = SystemClock.elapsedRealtime() + WAYON_GMONE_REFRESH_TIMEOUT_MS
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val status = fetchWayonGmoneRefreshStatus(key)
+            if (WayonRefreshCompletionPolicy.isComplete(requestedAt, status)) return status.completedAt
+            delay(WAYON_GMONE_REFRESH_POLL_INTERVAL_MS)
+        }
+        return null
     }
 
     private fun applyWayonCloudFeed(feed: WayonCloudFeed, stateLocationText: String) {

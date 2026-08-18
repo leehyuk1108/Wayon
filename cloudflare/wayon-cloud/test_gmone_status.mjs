@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeVehicleStatus, sanitizeGmonePayload } from "./src/worker.js";
+import {
+  authorizeGmoneRefreshPoll,
+  mergeVehicleStatus,
+  sanitizeGmonePayload,
+} from "./src/worker.js";
 
 test("fresh GMOne status overrides matching Firebase fields", () => {
   const firebase = {
@@ -47,4 +51,20 @@ test("GMOne payload sanitization removes account and vehicle identifiers", () =>
     status: { fuel: "63" },
     nested: { safe: true },
   });
+});
+
+test("GMOne refresh completion can be polled with view or collector credentials", () => {
+  const env = {
+    WAYON_VIEW_TOKEN: "view-token",
+    WAYON_UPLOAD_TOKEN: "upload-token",
+    WAYON_GMONE_TOKEN: "collector-token",
+  };
+  const request = (token) => new Request("https://wayon.example/api/gmone/refresh", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+
+  assert.equal(authorizeGmoneRefreshPoll(request("view-token"), env), true);
+  assert.equal(authorizeGmoneRefreshPoll(request("upload-token"), env), true);
+  assert.equal(authorizeGmoneRefreshPoll(request("collector-token"), env), true);
+  assert.equal(authorizeGmoneRefreshPoll(request("wrong-token"), env), false);
 });

@@ -47,6 +47,29 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun manualRefreshCompletion_requiresMatchingFinishedRequest() {
+        val requestedAt = "2026-08-18T02:14:15.311Z"
+        assertFalse(
+            WayonRefreshCompletionPolicy.isComplete(
+                requestedAt,
+                WayonRefreshStatus(true, requestedAt, null),
+            ),
+        )
+        assertFalse(
+            WayonRefreshCompletionPolicy.isComplete(
+                requestedAt,
+                WayonRefreshStatus(false, "2026-08-18T01:00:00.000Z", "2026-08-18T01:00:30.000Z"),
+            ),
+        )
+        assertTrue(
+            WayonRefreshCompletionPolicy.isComplete(
+                requestedAt,
+                WayonRefreshStatus(false, requestedAt, "2026-08-18T02:15:00.626Z"),
+            ),
+        )
+    }
+
+    @Test
     fun addition_isCorrect() {
         assertEquals(4, 2 + 2)
     }

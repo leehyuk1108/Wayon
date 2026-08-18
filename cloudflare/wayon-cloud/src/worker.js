@@ -524,6 +524,10 @@ function authorizeGmoneUpload(request, env) {
   return constantTimeEqual(token, env.WAYON_GMONE_TOKEN || "") || authorize(request, env, true);
 }
 
+export function authorizeGmoneRefreshPoll(request, env) {
+  return authorizeGmoneUpload(request, env) || authorize(request, env, false);
+}
+
 function authorizePushRegistration(request, env) {
   return constantTimeEqual(getBearerToken(request), env.WAYON_PUSH_REGISTRATION_TOKEN || "");
 }
@@ -795,7 +799,7 @@ async function handleGmoneRefreshRequest(request, env) {
 }
 
 async function handleGmoneRefreshPoll(request, env) {
-  if (!authorizeGmoneUpload(request, env)) return json({ error: "unauthorized" }, 401);
+  if (!authorizeGmoneRefreshPoll(request, env)) return json({ error: "unauthorized" }, 401);
   const row = await env.DB.prepare(`
     SELECT requested_at, completed_at FROM gmone_refresh_requests WHERE id = ?
   `).bind(GMONE_STATUS_ID).first();

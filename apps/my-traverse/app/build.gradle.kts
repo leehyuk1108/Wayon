@@ -47,8 +47,8 @@ android {
         applicationId = "com.example.carcontroller"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.21"
+        versionCode = 8
+        versionName = "1.22"
 
         buildConfigField(
             "String",

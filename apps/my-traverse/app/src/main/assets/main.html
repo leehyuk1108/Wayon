@@ -2259,27 +2259,128 @@
         }
 
         #status {
-            flex-shrink: 0;
-            width: 100%;
-            padding: 0 15px;
-            background-color: #333;
-            color: white;
-            text-align: center;
-            font-size: 15px;
-            font-weight: 500;
+            --status-accent: var(--accent-strong-color);
+            --status-accent-soft: rgba(255, 122, 24, 0.16);
+            --status-duration: 3000ms;
+            position: fixed;
+            top: calc(env(safe-area-inset-top, 20px) + 10px);
+            left: 50%;
+            z-index: 11000;
+            width: min(calc(100% - 28px), 440px);
+            min-height: 58px;
+            padding: 10px 14px 11px 11px;
+            display: flex;
+            align-items: center;
+            gap: 11px;
             box-sizing: border-box;
-
-            max-height: 0;
-            opacity: 0;
             overflow: hidden;
-            transition: max-height 0.3s ease-out, opacity 0.2s ease, padding 0.3s ease-out;
-            order: 4;
+            color: #f5f5f7;
+            background: rgba(24, 24, 26, 0.94);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            box-shadow: 0 16px 42px rgba(0, 0, 0, 0.46);
+            -webkit-backdrop-filter: blur(22px) saturate(1.2);
+            backdrop-filter: blur(22px) saturate(1.2);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translate(-50%, -14px) scale(0.98);
+            transition:
+                opacity 0.2s ease,
+                transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+                visibility 0s linear 0.28s;
         }
 
         #status.visible {
-            padding: 15px;
-            max-height: 100px;
             opacity: 1;
+            visibility: visible;
+            transform: translate(-50%, 0) scale(1);
+            transition-delay: 0s;
+        }
+
+        #status[data-type="success"] {
+            --status-accent: #62d990;
+            --status-accent-soft: rgba(98, 217, 144, 0.15);
+        }
+
+        #status[data-type="danger"] {
+            --status-accent: #ff8177;
+            --status-accent-soft: rgba(255, 129, 119, 0.15);
+        }
+
+        #status::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 2px;
+            background: var(--status-accent);
+            transform-origin: left center;
+            transform: scaleX(0);
+            opacity: 0.72;
+        }
+
+        #status.visible::after {
+            animation: status-life var(--status-duration) linear forwards;
+        }
+
+        .status-icon {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            color: var(--status-accent);
+            background: var(--status-accent-soft);
+            font-size: 15px;
+        }
+
+        .status-message {
+            min-width: 0;
+            color: #f5f5f7;
+            font-size: 14px;
+            font-weight: 720;
+            line-height: 1.35;
+            text-align: left;
+            overflow-wrap: anywhere;
+        }
+
+        @keyframes status-life {
+            from { transform: scaleX(1); }
+            to { transform: scaleX(0); }
+        }
+
+        @media (max-width: 380px) {
+            #status {
+                width: calc(100% - 20px);
+                min-height: 54px;
+                padding: 9px 12px 10px 10px;
+            }
+
+            .status-icon {
+                width: 32px;
+                height: 32px;
+                flex-basis: 32px;
+            }
+
+            .status-message {
+                font-size: 13px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #status {
+                transform: translate(-50%, 0);
+                transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+            }
+
+            #status.visible::after {
+                animation: none;
+                transform: scaleX(1);
+            }
         }
 
         /* === Wayon Cloud Camera Records === */
@@ -4778,7 +4879,12 @@
         </div>
     </div>
 
-    <div id="status">상태: 대기 중...</div>
+    <div id="status" role="status" aria-live="polite" aria-atomic="true" data-type="info">
+        <span class="status-icon" aria-hidden="true">
+            <i id="status-icon" class="fas fa-circle-info"></i>
+        </span>
+        <span class="status-message" id="status-message">상태: 대기 중...</span>
+    </div>
 
     <div class="trip-detail-overlay" id="trip-detail-overlay" aria-hidden="true">
         <div class="trip-detail-header">
@@ -4904,6 +5010,8 @@
         // === JavaScript 로직 ===
 
         const statusDiv = document.getElementById('status');
+        const statusMessage = document.getElementById('status-message');
+        const statusIcon = document.getElementById('status-icon');
         const longPressDuration = 500; // 0.5초
         let longPressTimer = null;
         let statusTimer = null;
@@ -5335,23 +5443,27 @@
         // 1. 상태 바 업데이트
         function showStatus(message, type = 'info', duration = 3000) {
             clearTimeout(statusTimer);
-            statusDiv.textContent = message;
-            statusDiv.classList.add('visible');
+            const normalizedType = type === 'success' || type === 'danger' ? type : 'info';
+            const iconByType = {
+                success: 'fa-check',
+                danger: 'fa-exclamation',
+                info: 'fa-arrow-rotate-right'
+            };
+            const visibleDuration = Math.max(1200, Number(duration) || 3000);
 
-            if (type === 'success') {
-                statusDiv.style.backgroundColor = "rgba(76, 196, 124, 0.18)";
-                statusDiv.style.color = "var(--good-strong-color)";
-            } else if (type === 'danger') {
-                statusDiv.style.backgroundColor = "rgba(219, 90, 79, 0.18)";
-                statusDiv.style.color = "#ffb1aa";
-            } else { // info / sending
-                statusDiv.style.backgroundColor = "rgba(255, 122, 24, 0.16)";
-                statusDiv.style.color = "var(--accent-strong-color)";
-            }
+            statusDiv.classList.remove('visible');
+            statusDiv.dataset.type = normalizedType;
+            statusDiv.style.setProperty('--status-duration', `${visibleDuration}ms`);
+            statusMessage.textContent = message;
+            statusIcon.className = `fas ${iconByType[normalizedType]}`;
+
+            // Restart the entrance and progress animations for repeated messages.
+            void statusDiv.offsetWidth;
+            statusDiv.classList.add('visible');
 
             statusTimer = setTimeout(() => {
                 statusDiv.classList.remove('visible');
-            }, duration);
+            }, visibleDuration);
         }
 
         // 2. 버튼 피드백 (성공/실패)

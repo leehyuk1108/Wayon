@@ -94,10 +94,9 @@ Recommended service command:
 
 ```bash
 python -m tools.gmone_collector.gmone_collector \
-  --poll-seconds 600 \
+  --poll-seconds 60 \
   --wayon-url https://wayon-cloud.hyuklee.workers.dev \
-  --no-firebase \
-  --no-official-cache
+  --no-firebase
 ```
 
 The process checks `/api/gmone/refresh` every 30 seconds while sleeping. Normal

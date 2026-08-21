@@ -27,12 +27,13 @@ PROFILE_HIT_THRESHOLD = 0.42
 YELLOW_HIT_THRESHOLD = 0.12
 YELLOW_HOLD_SEC = 2.5
 MAX_FRAME_ID_DELTA = 2
-PATTERN_FILTER_ALPHA = 0.20
-CENTER_FILTER_ALPHA = 0.24
-PATTERN_ENTER_THRESHOLD = 0.38
-PATTERN_EXIT_THRESHOLD = 0.14
-CENTER_ENTER_THRESHOLD = 0.42
-CENTER_EXIT_THRESHOLD = 0.14
+PATTERN_FILTER_ALPHA = 0.35
+CENTER_FILTER_ALPHA = 0.35
+PATTERN_ENTER_THRESHOLD = 0.26
+PATTERN_EXIT_THRESHOLD = 0.10
+CENTER_ENTER_THRESHOLD = 0.30
+CENTER_EXIT_THRESHOLD = 0.10
+YELLOW_RIDGE_RADIUS_PX = 4
 VISION_FRAME_TIMEOUT_MS = 120
 VISION_IMPORT_RETRY_SEC = 1.0
 
@@ -355,35 +356,49 @@ def sample_profile(frame: Any, line: LaneModelLine,
     yellow_right = min(width, center_x + yellow_half + 1)
     yellow_top = max(0, center_y - 2)
     yellow_bottom = min(height, center_y + 3)
-    pair_left = yellow_left & ~1
-    pair_right = min(width - 2, (yellow_right - 1) & ~1)
-    if pair_right < pair_left or yellow_bottom <= yellow_top:
+    background_pair_left = yellow_left & ~1
+    background_pair_right = min(width - 2, (yellow_right - 1) & ~1)
+    paint_x = left + patch_x
+    ridge_left = max(yellow_left, paint_x - YELLOW_RIDGE_RADIUS_PX)
+    ridge_right = min(yellow_right - 1, paint_x + YELLOW_RIDGE_RADIUS_PX)
+    ridge_pair_left = ridge_left & ~1
+    ridge_pair_right = min(width - 2, ridge_right & ~1)
+    if (background_pair_right < background_pair_left or
+        ridge_pair_right < ridge_pair_left or yellow_bottom <= yellow_top):
       continue
 
-    pair_x = np.arange(pair_left, pair_right + 1, 2)
+    background_pair_x = np.arange(
+      background_pair_left, background_pair_right + 1, 2)
+    ridge_pair_x = np.arange(ridge_pair_left, ridge_pair_right + 1, 2)
     yellow_patch = y_plane[yellow_top:yellow_bottom, yellow_left:yellow_right]
     yellow_background = float(np.median(yellow_patch))
     pair_luma = np.maximum(
-      np.max(y_plane[yellow_top:yellow_bottom, pair_x], axis=0),
-      np.max(y_plane[yellow_top:yellow_bottom, pair_x + 1], axis=0),
+      np.max(y_plane[yellow_top:yellow_bottom, ridge_pair_x], axis=0),
+      np.max(y_plane[yellow_top:yellow_bottom, ridge_pair_x + 1], axis=0),
     ).astype(np.float32)
     uv_rows = np.arange(
       yellow_top // 2,
       min(uv_height - 1, (yellow_bottom - 1) // 2) + 1,
     )
+    background_u = np.median(
+      uv_plane[uv_rows[:, None], background_pair_x[None, :]].astype(np.float32), axis=0)
+    background_v = np.median(
+      uv_plane[uv_rows[:, None], (background_pair_x + 1)[None, :]].astype(np.float32), axis=0)
     u = np.median(
-      uv_plane[uv_rows[:, None], pair_x[None, :]].astype(np.float32), axis=0)
+      uv_plane[uv_rows[:, None], ridge_pair_x[None, :]].astype(np.float32), axis=0)
     v = np.median(
-      uv_plane[uv_rows[:, None], (pair_x + 1)[None, :]].astype(np.float32), axis=0)
+      uv_plane[uv_rows[:, None], (ridge_pair_x + 1)[None, :]].astype(np.float32), axis=0)
     warmness = v - u
-    warm_background = float(np.median(warmness))
-    u_background = float(np.median(u))
+    warm_background = float(np.median(background_v - background_u))
+    u_background = float(np.median(background_u))
     relative_warmness = np.clip(
       (warmness - warm_background - 5.0) / 24.0, 0.0, 1.0)
     relative_blue_drop = np.clip(
       (u_background - u - 1.0) / 18.0, 0.0, 1.0)
     absolute_yellow = np.clip((warmness - 10.0) / 35.0, 0.0, 1.0)
-    chroma = relative_warmness * relative_blue_drop * absolute_yellow
+    red_rejection = np.clip((170.0 - v) / 25.0, 0.0, 1.0)
+    chroma = (
+      relative_warmness * relative_blue_drop * absolute_yellow * red_rejection)
     yellow_luma = np.clip(
       (pair_luma - yellow_background - 2.0) / 20.0, 0.0, 1.0)
     yellow_scores[index] = float(np.max(chroma * yellow_luma))

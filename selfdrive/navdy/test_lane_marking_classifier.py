@@ -247,6 +247,61 @@ def test_warm_global_color_cast_does_not_turn_white_lines_yellow():
   assert all(profile.yellow_confidence < 0.2 for profile in profiles)
 
 
+def test_adjacent_yellow_object_does_not_color_white_lane_ridge():
+  request = request_for_lines()
+  assert request is not None
+  frame = synthetic_nv12_frame(
+    request,
+    lane_patterns=("solid", "solid", "solid", "solid"),
+    yellow_lanes=set(),
+  )
+  raw = np.frombuffer(frame.data, dtype=np.uint8)
+  for line in request.lines:
+    _, pixels = classifier.project_line(
+      line, request.rpy_calib, frame.width, frame.height)
+    for pixel in pixels:
+      center_x = int(round(float(pixel[0]))) + 12
+      center_y = int(round(float(pixel[1])))
+      for y in range(max(0, center_y - 1), min(frame.height, center_y + 2)):
+        for x in range(max(0, center_x - 2), min(frame.width, center_x + 3)):
+          raw[y * frame.stride + x] = 180
+          uv_index = frame.uv_offset + (y // 2) * frame.stride + (x & ~1)
+          raw[uv_index] = 96
+          raw[uv_index + 1] = 148
+
+  profiles = classifier.classify_frame(request, frame)
+
+  assert all(profile.pattern == "solid" for profile in profiles)
+  assert all(profile.yellow_confidence < 0.2 for profile in profiles)
+
+
+def test_red_light_chroma_is_not_classified_as_yellow_paint():
+  request = request_for_lines()
+  assert request is not None
+  frame = synthetic_nv12_frame(
+    request,
+    lane_patterns=("solid", "solid", "solid", "solid"),
+    yellow_lanes=set(),
+  )
+  raw = np.frombuffer(frame.data, dtype=np.uint8)
+  line = request.lines[1]
+  _, pixels = classifier.project_line(
+    line, request.rpy_calib, frame.width, frame.height)
+  for pixel in pixels:
+    center_x = int(round(float(pixel[0])))
+    center_y = int(round(float(pixel[1])))
+    for y in range(max(0, center_y - 1), min(frame.height, center_y + 2)):
+      for x in range(max(0, center_x - 2), min(frame.width, center_x + 3)):
+        raw[y * frame.stride + x] = 180
+        uv_index = frame.uv_offset + (y // 2) * frame.stride + (x & ~1)
+        raw[uv_index] = 70
+        raw[uv_index + 1] = 190
+
+  profiles = classifier.classify_frame(request, frame)
+
+  assert profiles[1].yellow_confidence < 0.2
+
+
 def test_local_contrast_keeps_markings_across_dark_and_bright_exposure():
   request = request_for_lines()
   assert request is not None
@@ -299,6 +354,25 @@ def test_pattern_hysteresis_ignores_one_conflicting_frame():
   assert worker._result["navLaneLeftType"] == "solid"
 
 
+def test_repeated_partial_solid_evidence_enters_stable_state():
+  worker = object.__new__(classifier.NavdyLaneMarkingClassifier)
+  worker._condition = threading.Condition()
+  worker._active = True
+  worker._result = dict(classifier.UNKNOWN_LANE_TYPES)
+  worker._result_at = 0.0
+  worker._pattern_scores = np.zeros(4, dtype=np.float32)
+  worker._center_scores = np.zeros(4, dtype=np.float32)
+  worker._center_last_seen_at = np.zeros(4, dtype=np.float64)
+  worker._last_duration_ms = 0.0
+  partial_solid = classifier.LaneProfile("solid", 0.32, 0.0)
+  unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
+
+  for now in (10.0, 10.5, 11.0, 11.5):
+    worker._update_result(
+      (unknown, partial_solid, unknown, unknown), now, 2.0)
+
+  assert worker._result["navLaneLeftType"] == "solid"
+
 def test_centerline_requires_repeated_color_evidence():
   worker = object.__new__(classifier.NavdyLaneMarkingClassifier)
   worker._condition = threading.Condition()
@@ -313,10 +387,8 @@ def test_centerline_requires_repeated_color_evidence():
   unknown = classifier.LaneProfile("unknown", 0.0, 0.0)
 
   worker._update_result((unknown, yellow, unknown, unknown), 10.0, 2.0)
-  assert worker._result["navLaneLeftType"] == "unknown"
+  assert worker._result["navLaneLeftType"] == "solid"
   worker._update_result((unknown, yellow, unknown, unknown), 10.5, 2.0)
-  assert worker._result["navLaneLeftType"] == "unknown"
-  worker._update_result((unknown, yellow, unknown, unknown), 11.0, 2.0)
   assert worker._result["navLaneLeftType"] == "centerSolid"
 
 

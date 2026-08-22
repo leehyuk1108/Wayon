@@ -1,7 +1,10 @@
 import unittest
+from types import SimpleNamespace
 
+from opendbc.car.gm.carcontroller import get_friction_brake_bus
 from opendbc.car.gm.fingerprints import FINGERPRINTS
-from opendbc.car.gm.values import CAMERA_ACC_CAR, GM_RX_OFFSET
+from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus
+from opendbc.car.structs import CarParams
 from opendbc.testing import parameterized
 
 CAMERA_DIAGNOSTIC_ADDRESS = 0x24b
@@ -19,3 +22,17 @@ class TestGMFingerprint(unittest.TestCase):
       for finger in fingerprints:
         for required_addr in (CAMERA_DIAGNOSTIC_ADDRESS, CAMERA_DIAGNOSTIC_ADDRESS + GM_RX_OFFSET):
           assert finger.get(required_addr) == 8, required_addr
+
+
+class TestGMFrictionBrakeBus(unittest.TestCase):
+  def test_sdgm_camera_uses_camera_bus(self):
+    CP = SimpleNamespace(networkLocation=CarParams.NetworkLocation.fwdCamera, carFingerprint=CAR.CHEVROLET_TRAVERSE)
+    self.assertEqual(get_friction_brake_bus(CP), CanBus.CAMERA)
+
+  def test_non_sdgm_camera_uses_powertrain_bus(self):
+    CP = SimpleNamespace(networkLocation=CarParams.NetworkLocation.fwdCamera, carFingerprint=CAR.CHEVROLET_BOLT_EUV)
+    self.assertEqual(get_friction_brake_bus(CP), CanBus.POWERTRAIN)
+
+  def test_gateway_uses_chassis_bus(self):
+    CP = SimpleNamespace(networkLocation=CarParams.NetworkLocation.gateway, carFingerprint=CAR.CHEVROLET_VOLT)
+    self.assertEqual(get_friction_brake_bus(CP), CanBus.CHASSIS)

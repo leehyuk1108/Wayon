@@ -119,6 +119,8 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
       ret.radarUnavailable = True  # no radar
       ret.pcmCruise = True
       ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.HW_CAM.value
+      if candidate in SDGM_CAR:
+        ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.HW_SDGM.value
       ret.minEnableSpeed = -1 if candidate in SDGM_CAR else 5 * CV.KPH_TO_MS
       ret.minSteerSpeed = 10 * CV.KPH_TO_MS
 

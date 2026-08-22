@@ -36,6 +36,7 @@ static GmHardware gm_hw = GM_ASCM;
 static bool gm_pcm_cruise = false;
 static bool gm_non_acc = false;
 static bool gm_icbm = false;
+static bool gm_sdgm = false;
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
@@ -178,6 +179,7 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
 static safety_config gm_init(uint16_t param) {
   const uint16_t GM_PARAM_HW_CAM = 1;
   const uint16_t GM_PARAM_EV = 4;
+  const uint16_t GM_PARAM_HW_SDGM = 8;
 
   // common safety checks assume unscaled integer values
   static const int GM_GAS_TO_CAN = 8;  // 1 / 0.125
@@ -204,6 +206,12 @@ static safety_config gm_init(uint16_t param) {
   // block PSCMStatus (0x184); forwarded through openpilot to hide an alert from the camera
   static const CanMsg GM_CAM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x315, 0, 5, .check_relay = true}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true},  // pt bus
                                                {0x184, 2, 8, .check_relay = true}};  // camera bus
+
+  // SDGM routes friction-brake commands on the camera-side bus. Keeping 0x315
+  // off bus 0 prevents the stock ACC controller from conditionally owning the
+  // EBCM command path when it reports a lead vehicle.
+  static const CanMsg GM_SDGM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true},  // pt bus
+                                                {0x315, 2, 5, .check_relay = false}, {0x184, 2, 8, .check_relay = true}};  // camera bus
 
 
   static RxCheck gm_rx_checks[] = {
@@ -236,6 +244,7 @@ static safety_config gm_init(uint16_t param) {
     gm_hw = GM_ASCM;
     gm_long_limits = &GM_ASCM_LONG_LIMITS;
   }
+  gm_sdgm = GET_FLAG(param, GM_PARAM_HW_SDGM);
 
   bool gm_cam_long = false;
 
@@ -255,7 +264,11 @@ static safety_config gm_init(uint16_t param) {
     // FIXME: cppcheck thinks that gm_cam_long is always false. This is not true
     // if ALLOW_DEBUG is defined but cppcheck is run without ALLOW_DEBUG
     // cppcheck-suppress knownConditionTrueFalse
-    ret = gm_cam_long ? BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_LONG_TX_MSGS) : BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_TX_MSGS);
+    if (gm_cam_long) {
+      ret = gm_sdgm ? BUILD_SAFETY_CFG(gm_rx_checks, GM_SDGM_LONG_TX_MSGS) : BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_LONG_TX_MSGS);
+    } else {
+      ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_TX_MSGS);
+    }
   } else {
     ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_ASCM_TX_MSGS);
   }

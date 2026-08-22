@@ -4,7 +4,7 @@ from opendbc.car import Bus, DT_CTRL, structs
 from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.gm import gmcan
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.gm.values import DBC, CanBus, CarControllerParams, CruiseButtons
+from opendbc.car.gm.values import DBC, CanBus, CarControllerParams, CruiseButtons, SDGM_CAR
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.sunnypilot.car.gm.icbm import IntelligentCruiseButtonManagementInterface
 
@@ -16,6 +16,12 @@ LongCtrlState = structs.CarControl.Actuators.LongControlState
 CAMERA_CANCEL_DELAY_FRAMES = 10
 # Enforce a minimum interval between steering messages to avoid a fault
 MIN_STEER_MSG_INTERVAL_MS = 15
+
+
+def get_friction_brake_bus(CP):
+  if CP.networkLocation == NetworkLocation.fwdCamera:
+    return CanBus.CAMERA if CP.carFingerprint in SDGM_CAR else CanBus.POWERTRAIN
+  return CanBus.CHASSIS
 
 
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
@@ -103,12 +109,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         at_full_stop = CC.longActive and CS.out.standstill
         near_stop = CC.longActive and (abs(CS.out.vEgo) < self.params.NEAR_STOP_BRAKE_PHASE)
-        friction_brake_bus = CanBus.CHASSIS
+        friction_brake_bus = get_friction_brake_bus(self.CP)
         # GM Camera exceptions
         # TODO: can we always check the longControlState?
         if self.CP.networkLocation == NetworkLocation.fwdCamera:
           at_full_stop = at_full_stop and stopping
-          friction_brake_bus = CanBus.POWERTRAIN
 
         # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
         can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, self.apply_gas, idx, CC.enabled, at_full_stop))

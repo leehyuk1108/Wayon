@@ -28,6 +28,8 @@ INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 1.5
 NAVDY_CAMERA_SOURCE = "trafficNotification"
+CAMERA_TARGET_DISTANCE_M = 100.0
+CAMERA_DECEL_RATE_MPS2 = 1.2
 SECTION_TARGET_OFFSET_KPH = 5
 SECTION_MAX_OFFSET_KPH = 20
 SECTION_EXIT_DISTANCE_M = 300.0
@@ -148,6 +150,14 @@ class IntelligentCruiseButtonManagement:
     self.section_distance_travelled_m = 0.0
     self.section_average_kph = 0.0
 
+  @staticmethod
+  def fixed_camera_target(restore_target_kph: int, limit_kph: int, remaining_m: float) -> int:
+    decel_distance_m = max(0.0, remaining_m - CAMERA_TARGET_DISTANCE_M)
+    limit_ms = limit_kph * CV.KPH_TO_MS
+    allowed_ms = math.sqrt(limit_ms ** 2 + 2.0 * CAMERA_DECEL_RATE_MPS2 * decel_distance_m)
+    allowed_kph = math.floor(allowed_ms * CV.MS_TO_KPH)
+    return max(limit_kph, min(restore_target_kph, allowed_kph))
+
   def update_section_target(self, CS: car.CarState, restore_target: int, limit_kph: int,
                             remaining_m: float) -> int:
     if self.section_phase == "inactive" or self.section_limit_kph != limit_kph:
@@ -214,12 +224,14 @@ class IntelligentCruiseButtonManagement:
 
     camera_target = self.read_camera_speed()
     camera_target_kph = camera_target
+    restore_target_kph = round(restore_target if self.is_metric else restore_target * CV.MPH_TO_KPH)
     if self.camera_type == "section" and camera_target_kph > 0:
-      camera_target_kph = self.update_section_target(CS, round(restore_target if self.is_metric else restore_target * CV.MPH_TO_KPH),
-                                                     camera_target_kph, self.camera_distance_m)
+      camera_target_kph = self.update_section_target(CS, restore_target_kph, camera_target_kph, self.camera_distance_m)
+    elif self.camera_type == "fixed" and camera_target_kph > 0:
+      self.reset_section_control()
+      camera_target_kph = self.fixed_camera_target(restore_target_kph, camera_target_kph, self.camera_distance_m)
     elif self.section_phase != "inactive" and camera_target_kph == 0:
-      camera_target_kph = self.held_section_target(
-        round(restore_target if self.is_metric else restore_target * CV.MPH_TO_KPH))
+      camera_target_kph = self.held_section_target(restore_target_kph)
     elif self.camera_type != "section":
       self.reset_section_control()
 

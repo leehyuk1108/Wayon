@@ -69,6 +69,32 @@ def test_camera_speed_becomes_temporary_target(tmp_path):
   assert controller.automatic_control_active
 
 
+def test_fixed_camera_profile_reaches_limit_one_hundred_meters_before_camera(tmp_path):
+  camera_path = tmp_path / "camera.json"
+  controller = make_controller(tmp_path, openpilot_long=True, pcm_cruise_speed=True)
+  state = make_state(ego_kph=100, stock_set_kph=100, restore_kph=100)
+
+  write_camera_state(camera_path, 50, "fixed", 1000)
+  controller.run(state, make_control(), make_plan(), True)
+  assert controller.v_target == 100
+  assert not controller.automatic_control_active
+
+  write_camera_state(camera_path, 50, "fixed", 300)
+  controller.camera_state_checked_at = 0.0
+  controller.run(state, make_control(), make_plan(), True)
+  assert 50 < controller.v_target < 100
+  assert controller.automatic_control_active
+
+  write_camera_state(camera_path, 50, "fixed", 100)
+  controller.camera_state_checked_at = 0.0
+  controller.run(state, make_control(), make_plan(), True)
+  assert controller.v_target == 50
+
+
+def test_fixed_camera_profile_holds_limit_inside_one_hundred_meters(tmp_path):
+  assert IntelligentCruiseButtonManagement.fixed_camera_target(100, 50, 99) == 50
+
+
 def test_openpilot_long_uses_camera_target_without_requesting_buttons(tmp_path):
   camera_path = tmp_path / "camera.json"
   write_camera_state(camera_path, 60)

@@ -93,6 +93,8 @@
 
 .field private roadEdgeRightProb:F
 
+.field private final scratchPath:Landroid/graphics/Path;
+
 .field private final vehicleBitmapPaint:Landroid/graphics/Paint;
 
 .field private final vehicleFillPaint:Landroid/graphics/Paint;
@@ -104,6 +106,8 @@
 .field private final vehicleMarkerBitmap:Landroid/graphics/Bitmap;
 
 .field private final vehicleRadarFilter:Landroid/graphics/LightingColorFilter;
+
+.field private final vehicleRect:Landroid/graphics/RectF;
 
 .field private final vehicleRightMarkerBitmaps:[Landroid/graphics/Bitmap;
 
@@ -190,6 +194,18 @@
 
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleBitmapPaint:Landroid/graphics/Paint;
 
+    new-instance v0, Landroid/graphics/Path;
+
+    invoke-direct {v0}, Landroid/graphics/Path;-><init>()V
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->scratchPath:Landroid/graphics/Path;
+
+    new-instance v0, Landroid/graphics/RectF;
+
+    invoke-direct {v0}, Landroid/graphics/RectF;-><init>()V
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleRect:Landroid/graphics/RectF;
+
     .line 41
     const/16 v0, 0xb
 
@@ -237,7 +253,7 @@
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->laneFarLeft:[F
 
     .line 55
-    const-string v0, "unknown"
+    const-string/jumbo v0, "unknown"
 
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->laneFarLeftType:Ljava/lang/String;
 
@@ -774,7 +790,7 @@
     iput v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->laneFarLeftProb:F
 
     .line 387
-    const-string v1, "unknown"
+    const-string/jumbo v1, "unknown"
 
     iput-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->laneFarLeftType:Ljava/lang/String;
 
@@ -970,7 +986,7 @@
     invoke-virtual {p4, p3}, Landroid/graphics/Paint;->setAlpha(I)V
 
     .line 275
-    invoke-static {p2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+    invoke-direct {p0, p2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
 
     move-result-object p2
 
@@ -1022,7 +1038,7 @@
     invoke-virtual {v0, p3}, Landroid/graphics/Paint;->setAlpha(I)V
 
     .line 283
-    invoke-static {p2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+    invoke-direct {p0, p2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
 
     move-result-object p2
 
@@ -1148,7 +1164,7 @@
 
     .line 332
     :goto_0
-    new-instance p5, Landroid/graphics/RectF;
+    iget-object p5, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleRect:Landroid/graphics/RectF;
 
     const v1, 0x3f51eb85    # 0.82f
 
@@ -1170,7 +1186,7 @@
 
     add-float/2addr p3, v0
 
-    invoke-direct {p5, v2, v3, v1, p3}, Landroid/graphics/RectF;-><init>(FFFF)V
+    invoke-virtual {p5, v2, v3, v1, p3}, Landroid/graphics/RectF;->set(FFFF)V
 
     .line 337
     invoke-direct {p0, p7, p6, p2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleMarkerForYaw(FIF)Landroid/graphics/Bitmap;
@@ -1272,22 +1288,22 @@
     return-void
 .end method
 
-.method private static linePath([F)Landroid/graphics/Path;
+.method private linePath([F)Landroid/graphics/Path;
     .locals 4
 
     .line 428
-    new-instance v0, Landroid/graphics/Path;
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->scratchPath:Landroid/graphics/Path;
 
-    invoke-direct {v0}, Landroid/graphics/Path;-><init>()V
+    invoke-virtual {v0}, Landroid/graphics/Path;->rewind()V
 
     .line 429
     const/4 v1, 0x0
 
-    aget v1, p0, v1
+    aget v1, p1, v1
 
     const/4 v2, 0x1
 
-    aget v2, p0, v2
+    aget v2, p1, v2
 
     invoke-virtual {v0, v1, v2}, Landroid/graphics/Path;->moveTo(FF)V
 
@@ -1295,16 +1311,16 @@
     const/4 v1, 0x2
 
     :goto_0
-    array-length v2, p0
+    array-length v2, p1
 
     if-ge v1, v2, :cond_0
 
     .line 431
-    aget v2, p0, v1
+    aget v2, p1, v1
 
     add-int/lit8 v3, v1, 0x1
 
-    aget v3, p0, v3
+    aget v3, p1, v3
 
     invoke-virtual {v0, v2, v3}, Landroid/graphics/Path;->lineTo(FF)V
 
@@ -1362,7 +1378,7 @@
     .locals 1
 
     .line 409
-    const-string v0, "unknown"
+    const-string/jumbo v0, "unknown"
 
     invoke-virtual {p0, p1, v0}, Lorg/json/JSONObject;->optString(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 
@@ -1564,7 +1580,7 @@
     move-result-object v6
 
     .line 459
-    const-string v7, "vision"
+    const-string/jumbo v7, "vision"
 
     invoke-virtual {v7, v6}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
 
@@ -1685,7 +1701,7 @@
     .line 467
     add-int/lit8 v4, v6, 0x1
 
-    const-string v7, "yawDeg"
+    const-string/jumbo v7, "yawDeg"
 
     invoke-virtual {v5, v7}, Lorg/json/JSONObject;->has(Ljava/lang/String;)Z
 
@@ -2080,7 +2096,7 @@
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->pathLeft:[F
 
-    invoke-static {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+    invoke-direct {p0, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
 
     move-result-object v0
 
@@ -2124,7 +2140,7 @@
     .line 226
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->pathLeft:[F
 
-    invoke-static {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+    invoke-direct {p0, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
 
     move-result-object v0
 
@@ -2135,7 +2151,7 @@
     .line 227
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->pathRight:[F
 
-    invoke-static {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+    invoke-direct {p0, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
 
     move-result-object v0
 
@@ -2353,7 +2369,7 @@
     return-void
 .end method
 
-.method public updatePayload(Ljava/lang/String;Z)V
+.method public updatePayload(Lorg/json/JSONObject;Z)V
     .locals 10
 
     .line 138
@@ -2374,12 +2390,10 @@
     .line 144
     :cond_0
     :try_start_0
-    new-instance p2, Lorg/json/JSONObject;
-
-    invoke-direct {p2, p1}, Lorg/json/JSONObject;-><init>(Ljava/lang/String;)V
+    move-object p2, p1
 
     .line 145
-    const-string p1, "vEgoKph"
+    const-string/jumbo p1, "vEgoKph"
 
     const-wide/16 v4, 0x0
 

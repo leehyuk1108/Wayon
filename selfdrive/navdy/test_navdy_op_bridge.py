@@ -541,7 +541,7 @@ def test_payload_prefers_cluster_corrected_vehicle_and_acc_speeds():
   assert payload["actualAccSetKph"] == 100.0
 
 
-def test_navdy_set_speed_reconciles_persistent_stock_acc_mismatch():
+def test_navdy_set_speed_keeps_openpilot_speed_during_stock_acc_mismatch():
   args = SimpleNamespace()
   payload = {
     "enabled": True,
@@ -560,12 +560,13 @@ def test_navdy_set_speed_reconciles_persistent_stock_acc_mismatch():
 
   payload["_physicalAccSetKph"] = 60.4
   navdy_op_bridge.reconcile_display_set_speed(payload, args, now=10.5)
-  assert payload["setSpeedKph"] == 60.4
+  assert payload["setSpeedKph"] == 53.0
 
   payload["setSpeedKph"] = 53.0
   payload["_physicalAccSetKph"] = 60.4
   navdy_op_bridge.reconcile_display_set_speed(payload, args, now=10.6)
-  assert payload["setSpeedKph"] == 60.4
+  assert payload["setSpeedKph"] == 53.0
+  assert "_physicalAccSetKph" not in payload
 
 
 def test_navdy_set_speed_ignores_short_engage_transient_and_icbm_control():
@@ -592,6 +593,53 @@ def test_navdy_set_speed_ignores_short_engage_transient_and_icbm_control():
   navdy_op_bridge.reconcile_display_set_speed(payload, args, now=21.0)
   assert payload["setSpeedKph"] == 100.0
   assert not args._acc_display_physical_override
+
+
+def test_navdy_set_speed_only_holds_a_short_source_gap():
+  args = SimpleNamespace(
+    blinker_hold_sec=0.0,
+    blindspot_hold_sec=0.0,
+  )
+  payload = {
+    "enabled": True,
+    "active": True,
+    "engaged": True,
+    "setSpeedKph": 70.0,
+  }
+
+  navdy_op_bridge.stabilize_display_payload(payload, args, now=10.0)
+  assert payload["setSpeedKph"] == 70.0
+
+  payload["setSpeedKph"] = 0.0
+  navdy_op_bridge.stabilize_display_payload(payload, args, now=10.5)
+  assert payload["setSpeedKph"] == 70.0
+
+  payload["setSpeedKph"] = 0.0
+  navdy_op_bridge.stabilize_display_payload(payload, args, now=10.61)
+  assert payload["setSpeedKph"] == 0.0
+  assert args._last_set_speed_kph == 0.0
+
+
+def test_navdy_set_speed_cache_clears_when_disengaged():
+  args = SimpleNamespace(
+    blinker_hold_sec=0.0,
+    blindspot_hold_sec=0.0,
+  )
+  payload = {
+    "enabled": True,
+    "active": True,
+    "engaged": True,
+    "setSpeedKph": 80.0,
+  }
+  navdy_op_bridge.stabilize_display_payload(payload, args, now=20.0)
+
+  payload.update(enabled=False, active=False, engaged=False, setSpeedKph=0.0)
+  navdy_op_bridge.stabilize_display_payload(payload, args, now=20.1)
+  assert args._last_set_speed_kph == 0.0
+
+  payload.update(enabled=True, active=True, engaged=True, setSpeedKph=0.0)
+  navdy_op_bridge.stabilize_display_payload(payload, args, now=20.2)
+  assert payload["setSpeedKph"] == 0.0
 
 
 def test_payload_hides_stop_icon_while_disengaged_at_standstill():

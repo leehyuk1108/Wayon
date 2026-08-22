@@ -67,7 +67,7 @@ NAVDY_RADAR_RETRY_SEC = 5.0
 NAVDY_RADAR_MAX_TRACK_WIDTH_M = 4.0
 NAVDY_E2E_ALERT_HOLD_SEC = 3.0
 NAVDY_E2E_CAPTURE_HOLD_SEC = 2.0
-NAVDY_ACC_DISPLAY_RECONCILE_SEC = 0.5
+NAVDY_SET_SPEED_HOLD_SEC = 0.6
 NAVDY_FALLBACK_LANE_WIDTH_M = 3.6
 NAVDY_MIN_LANE_WIDTH_M = 2.4
 NAVDY_MAX_LANE_WIDTH_M = 4.8
@@ -300,48 +300,32 @@ def apply_navdy_e2e_alert(payload: dict[str, Any], args: argparse.Namespace, now
 
 
 def reconcile_display_set_speed(payload: dict[str, Any], args: argparse.Namespace, now: float) -> None:
-  physical_speed = finite_float(payload.pop("_physicalAccSetKph", 0.0))
-  virtual_speed = finite_float(payload.get("setSpeedKph", 0.0))
-  automatic_control = bool(payload.get("automaticAccActive", False))
-  engaged = bool(payload.get("enabled") or payload.get("active") or payload.get("engaged"))
-
-  def reset() -> None:
-    args._acc_display_mismatch_since = 0.0
-    args._acc_display_physical_override = False
-
-  if automatic_control or not engaged or physical_speed <= 0.0 or virtual_speed <= 0.0:
-    reset()
-    return
-
-  physical_display = round(physical_speed)
-  virtual_display = round(virtual_speed)
-  if physical_display == virtual_display:
-    reset()
-    return
-
-  if bool(getattr(args, "_acc_display_physical_override", False)):
-    payload["setSpeedKph"] = rounded(physical_speed)
-    return
-
-  mismatch_since = float(getattr(args, "_acc_display_mismatch_since", 0.0))
-  if mismatch_since <= 0.0:
-    args._acc_display_mismatch_since = now
-    return
-
-  if now - mismatch_since >= NAVDY_ACC_DISPLAY_RECONCILE_SEC:
-    args._acc_display_physical_override = True
-    payload["setSpeedKph"] = rounded(physical_speed)
+  # vCruiseCluster is the canonical openpilot set speed. The physical stock-ACC
+  # value can legitimately lag under openpilot longitudinal control, so using it
+  # as a mismatch override makes the HUD jump back to an old cluster value.
+  payload.pop("_physicalAccSetKph", None)
+  args._acc_display_mismatch_since = 0.0
+  args._acc_display_physical_override = False
 
 
 def stabilize_display_payload(payload: dict[str, Any], args: argparse.Namespace, now: float) -> dict[str, Any]:
   reconcile_display_set_speed(payload, args, now)
   set_speed = finite_float(payload.get("setSpeedKph", 0.0))
+  engaged = bool(payload.get("enabled") or payload.get("active") or payload.get("engaged"))
   if set_speed > 0.0:
     setattr(args, "_last_set_speed_kph", set_speed)
-  elif payload.get("enabled") or payload.get("active") or payload.get("engaged"):
+    setattr(args, "_last_set_speed_at", now)
+  elif engaged:
     last_set_speed = finite_float(getattr(args, "_last_set_speed_kph", 0.0))
-    if last_set_speed > 0.0:
+    last_set_speed_at = finite_float(getattr(args, "_last_set_speed_at", -math.inf), -math.inf)
+    if last_set_speed > 0.0 and now - last_set_speed_at <= NAVDY_SET_SPEED_HOLD_SEC:
       payload["setSpeedKph"] = rounded(last_set_speed)
+    else:
+      setattr(args, "_last_set_speed_kph", 0.0)
+      setattr(args, "_last_set_speed_at", 0.0)
+  else:
+    setattr(args, "_last_set_speed_kph", 0.0)
+    setattr(args, "_last_set_speed_at", 0.0)
 
   left_blinker = hold_bool(args, "left_blinker", bool(payload.get("leftBlinker", False)),
                            now, args.blinker_hold_sec)
@@ -1977,6 +1961,7 @@ def main() -> int:
   setattr(args, "_last_onroad_process_check_at", 0.0)
   setattr(args, "_last_onroad_process_started", False)
   setattr(args, "_last_set_speed_kph", 0.0)
+  setattr(args, "_last_set_speed_at", 0.0)
   setattr(args, "_last_socket_connect_at", 0.0)
   setattr(args, "_socket_conn", None)
   if args.adb_path:

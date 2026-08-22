@@ -1179,6 +1179,61 @@ def test_navdy_vehicle_geometry_fuses_camera_lead_and_classifies_adjacent_lanes(
   assert by_id[10]["yawDeg"] == 0.0
 
 
+def test_navdy_vehicle_geometry_marks_only_the_active_mpc_lead():
+  radar_points = [
+    {"trackId": 10, "dRel": 30.0, "yRel": -0.2, "vRel": -5.0},
+    {"trackId": 11, "dRel": 26.0, "yRel": 3.0, "vRel": 0.5},
+  ]
+  radar_state = SimpleNamespace(
+    leadOne=SimpleNamespace(
+      status=True, radar=True, radarTrackId=10, dRel=30.0, yRel=-0.2),
+    leadTwo=SimpleNamespace(
+      status=True, radar=True, radarTrackId=11, dRel=26.0, yRel=3.0),
+  )
+  longitudinal_plan = SimpleNamespace(longitudinalPlanSource="lead0")
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state, longitudinal_plan)["navVehicles"]
+  by_id = {vehicle["trackId"]: vehicle for vehicle in vehicles}
+
+  assert by_id[10]["longitudinalLead"] is True
+  assert by_id[11]["longitudinalLead"] is False
+
+
+def test_navdy_vehicle_geometry_does_not_mark_a_lead_when_cruise_controls():
+  radar_points = [{"trackId": 10, "dRel": 30.0, "yRel": -0.2, "vRel": -5.0}]
+  radar_state = SimpleNamespace(
+    leadOne=SimpleNamespace(
+      status=True, radar=True, radarTrackId=10, dRel=30.0, yRel=-0.2),
+  )
+  longitudinal_plan = SimpleNamespace(longitudinalPlanSource="cruise")
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state, longitudinal_plan)["navVehicles"]
+
+  assert all(vehicle["longitudinalLead"] is False for vehicle in vehicles)
+
+
+def test_navdy_vehicle_geometry_marks_a_vision_only_secondary_mpc_lead():
+  model = navdy_vehicle_test_model()
+  model.leadsV3[1] = SimpleNamespace(
+    prob=0.88, x=[41.52], y=[0.4], yStd=[0.4], v=[18.0])
+  radar_state = SimpleNamespace(
+    leadOne=SimpleNamespace(status=False),
+    leadTwo=SimpleNamespace(
+      status=True, radar=False, radarTrackId=-1, dRel=40.0, yRel=-0.4),
+  )
+  longitudinal_plan = SimpleNamespace(longitudinalPlanSource="lead1")
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(
+    model, [], radar_state, longitudinal_plan)["navVehicles"]
+  by_id = {vehicle["trackId"]: vehicle for vehicle in vehicles}
+
+  assert by_id[-101]["source"] == "vision"
+  assert by_id[-101]["longitudinalLead"] is True
+  assert sum(vehicle["longitudinalLead"] for vehicle in vehicles) == 1
+
+
 def test_navdy_radar_width_recovers_continuous_vehicle_center():
   left = {"yRel": 3.0, "widthM": 1.75}
   right = {"yRel": -3.0, "widthM": 1.75}
@@ -1246,6 +1301,13 @@ def test_navdy_payload_signature_tracks_vehicle_yaw_changes():
   curved = {"navVehicles": [{"trackId": 1, "yawDeg": 8.0}]}
 
   assert navdy_op_bridge.payload_signature(straight) != navdy_op_bridge.payload_signature(curved)
+
+
+def test_navdy_payload_signature_tracks_longitudinal_lead_changes():
+  inactive = {"navVehicles": [{"trackId": 1, "longitudinalLead": False}]}
+  active = {"navVehicles": [{"trackId": 1, "longitudinalLead": True}]}
+
+  assert navdy_op_bridge.payload_signature(inactive) != navdy_op_bridge.payload_signature(active)
 
 
 def test_navdy_payload_signature_tracks_lane_risk_changes():
@@ -1514,7 +1576,7 @@ def test_navdy_vehicle_markers_remain_visible_at_long_range():
   assert "float height = width * 1.55f" in java
 
 
-def test_navdy_path_renderer_draws_fused_camera_and_radar_vehicles():
+def test_navdy_path_renderer_highlights_only_the_active_longitudinal_lead():
   patch_root = Path(__file__).parent / "hud_patch" / \
                "engaged-path-v7-alert-banner-speed-warning"
   source = patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java"
@@ -1527,7 +1589,10 @@ def test_navdy_path_renderer_draws_fused_camera_and_radar_vehicles():
   assert "drawVehicles(canvas);" in java
   assert "COLOR_VEHICLE_RADAR" in java
   assert "COLOR_VEHICLE_VISION" in java
-  assert "COLOR_VEHICLE_FUSED" in java
+  assert "COLOR_VEHICLE_LONGITUDINAL_LEAD" in java
+  assert 'vehicle.optBoolean("longitudinalLead", false)' in java
+  assert 'const-string v6, "longitudinalLead"' in (
+    patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
   assert "BitmapFactory.decodeResource" in java
   assert "new LightingColorFilter" in java
   assert "canvas.drawBitmap(marker, null, destination, vehicleBitmapPaint)" in java

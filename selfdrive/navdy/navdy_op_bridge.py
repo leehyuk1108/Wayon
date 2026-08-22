@@ -56,6 +56,7 @@ NAVDY_FAST_SERVICES = (
   "starpilotPlan",
   "longitudinalPlan",
   "longitudinalPlanSP",
+  "radarState",
 )
 NAVDY_MODEL_SERVICE = "modelV2"
 NAVDY_CALIBRATION_SERVICE = "liveCalibration"
@@ -706,10 +707,62 @@ def navdy_camera_leads(model_v2: Any) -> list[dict[str, Any]]:
   return candidates
 
 
-def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]]) -> dict[str, Any]:
+def navdy_active_longitudinal_lead(radar_state: Any, longitudinal_plan: Any) -> dict[str, Any] | None:
+  plan_source = enum_text(getattr(longitudinal_plan, "longitudinalPlanSource", "cruise")).lower()
+  lead_index = {"lead0": 0, "lead1": 1}.get(plan_source)
+  if lead_index is None or radar_state is None:
+    return None
+
+  lead = getattr(radar_state, "leadOne" if lead_index == 0 else "leadTwo", None)
+  if lead is None or not bool(getattr(lead, "status", False)):
+    return None
+
+  radar_backed = bool(getattr(lead, "radar", False))
+  return {
+    "trackId": int(getattr(lead, "radarTrackId", -1)) if radar_backed else -100 - lead_index,
+    "distanceM": finite_float(getattr(lead, "dRel", 0.0), 0.0),
+    # radarState yRel is positive left; Navdy/model coordinates are positive right.
+    "modelY": -finite_float(getattr(lead, "yRel", 0.0), 0.0),
+  }
+
+
+def mark_navdy_longitudinal_lead(vehicles: list[dict[str, Any]], radar_state: Any,
+                                 longitudinal_plan: Any) -> None:
+  for vehicle in vehicles:
+    vehicle["longitudinalLead"] = False
+
+  active_lead = navdy_active_longitudinal_lead(radar_state, longitudinal_plan)
+  if active_lead is None:
+    return
+
+  matching_vehicle = next(
+    (vehicle for vehicle in vehicles if vehicle["trackId"] == active_lead["trackId"]), None)
+  if matching_vehicle is None:
+    distance_tolerance = max(5.0, active_lead["distanceM"] * 0.25)
+    candidates = [
+      vehicle for vehicle in vehicles
+      if abs(vehicle["distanceM"] - active_lead["distanceM"]) <= distance_tolerance and
+         abs(vehicle["modelY"] - active_lead["modelY"]) <= 2.0
+    ]
+    if candidates:
+      matching_vehicle = min(
+        candidates,
+        key=lambda vehicle: (
+          abs(vehicle["distanceM"] - active_lead["distanceM"]) / distance_tolerance +
+          abs(vehicle["modelY"] - active_lead["modelY"]) / 2.0
+        ),
+      )
+
+  if matching_vehicle is not None:
+    matching_vehicle["longitudinalLead"] = True
+
+
+def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]],
+                           radar_state: Any = None, longitudinal_plan: Any = None) -> dict[str, Any]:
   if model_v2 is None:
     return {"navVehicles": []}
 
+  active_longitudinal_lead = navdy_active_longitudinal_lead(radar_state, longitudinal_plan)
   vehicles = []
   for point in radar_points:
     distance_m = finite_float(point.get("dRel", 0.0), 0.0)
@@ -780,13 +833,25 @@ def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]]) ->
       vehicles[index]["source"] = "fused"
       vehicles[index]["confidence"] = rounded(max(0.75, vision["confidence"]), 2)
       vehicles[index]["modelY"] = vision["modelY"]
-    elif not any(navdy_vehicle_overlap_iou(other, vision) >= NAVDY_VEHICLE_DUPLICATE_IOU
-                 for other in unmatched_vision):
-      unmatched_vision.append(vision)
+    else:
+      overlapping_vision_index = next(
+        (index for index, other in enumerate(unmatched_vision)
+         if navdy_vehicle_overlap_iou(other, vision) >= NAVDY_VEHICLE_DUPLICATE_IOU), None)
+      if overlapping_vision_index is None:
+        unmatched_vision.append(vision)
+      elif active_longitudinal_lead is not None and \
+           vision["trackId"] == active_longitudinal_lead["trackId"]:
+        # Keep the camera hypothesis that MPC actually selected, even if it
+        # overlaps another lead hypothesis in the compact HUD projection.
+        unmatched_vision[overlapping_vision_index] = vision
 
   vehicles.extend(unmatched_vision)
+  mark_navdy_longitudinal_lead(vehicles, radar_state, longitudinal_plan)
   priority = {"fused": 0, "vision": 1, "radar": 2}
-  selected = sorted(vehicles, key=lambda item: (priority[item["source"]], item["distanceM"]))[:NAVDY_VEHICLE_MAX_COUNT]
+  selected = sorted(
+    vehicles,
+    key=lambda item: (not item["longitudinalLead"], priority[item["source"]], item["distanceM"]),
+  )[:NAVDY_VEHICLE_MAX_COUNT]
   output = []
   for vehicle in sorted(selected, key=lambda item: item["distanceM"], reverse=True):
     screen = navdy_project_point(vehicle["distanceM"], vehicle["modelY"])
@@ -805,6 +870,7 @@ def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]]) ->
       "widthCenterApplied": bool(vehicle.get("widthCenterApplied", False)),
       "lane": vehicle["lane"],
       "source": vehicle["source"],
+      "longitudinalLead": bool(vehicle["longitudinalLead"]),
       "confidence": rounded(vehicle["confidence"], 2),
     })
   return {"navVehicles": output}
@@ -1590,6 +1656,7 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
         vehicle.get("relativeSpeedMps"),
         vehicle.get("lane"),
         vehicle.get("source"),
+        vehicle.get("longitudinalLead"),
       )
       for vehicle in payload.get("navVehicles", [])
     ),
@@ -1837,7 +1904,12 @@ def run_live(args: argparse.Namespace) -> None:
             path_geometry.update(lane_markings)
             publish_navdy_lane_marking_state(lane_markings)
           radar_points = radar_reader.snapshot(now) if radar_reader is not None else []
-          path_geometry.update(navdy_vehicle_geometry(model_v2, radar_points))
+          radar_state = sm_optional(sm, services, "radarState") \
+            if "radarState" in services and service_recent(sm, "radarState", now) else None
+          longitudinal_plan = sm_optional(sm, services, "longitudinalPlan") \
+            if "longitudinalPlan" in services and service_recent(sm, "longitudinalPlan", now) else None
+          path_geometry.update(navdy_vehicle_geometry(
+            model_v2, radar_points, radar_state, longitudinal_plan))
           lane_risks, intrusion = evaluate_navdy_lane_risk(
             lane_risk_detector, model_v2, radar_points,
             finite_float(getattr(car_state, "vEgo", 0.0)), now)

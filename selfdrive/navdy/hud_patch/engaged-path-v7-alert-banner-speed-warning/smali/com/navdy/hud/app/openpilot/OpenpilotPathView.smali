@@ -15,7 +15,7 @@
 
 .field private static final COLOR_LANE_DANGER:I = -0xdfd8
 
-.field private static final COLOR_VEHICLE_FUSED:I = -0xff1a01
+.field private static final COLOR_VEHICLE_LONGITUDINAL_LEAD:I = -0xff1a01
 
 .field private static final COLOR_VEHICLE_RADAR:I = -0x22000001
 
@@ -97,7 +97,7 @@
 
 .field private final vehicleFillPaint:Landroid/graphics/Paint;
 
-.field private final vehicleFusedFilter:Landroid/graphics/LightingColorFilter;
+.field private final vehicleLongitudinalLeadFilter:Landroid/graphics/LightingColorFilter;
 
 .field private final vehicleLeftMarkerBitmaps:[Landroid/graphics/Bitmap;
 
@@ -229,7 +229,7 @@
 
     invoke-direct {v0, v6, v4}, Landroid/graphics/LightingColorFilter;-><init>(II)V
 
-    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleFusedFilter:Landroid/graphics/LightingColorFilter;
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleLongitudinalLeadFilter:Landroid/graphics/LightingColorFilter;
 
     .line 53
     new-array v0, v4, [F
@@ -1086,7 +1086,7 @@
     .line 320
     iget-object p5, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleBitmapPaint:Landroid/graphics/Paint;
 
-    iget-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleFusedFilter:Landroid/graphics/LightingColorFilter;
+    iget-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleLongitudinalLeadFilter:Landroid/graphics/LightingColorFilter;
 
     invoke-virtual {p5, v1}, Landroid/graphics/Paint;->setColorFilter(Landroid/graphics/ColorFilter;)Landroid/graphics/ColorFilter;
 
@@ -1540,6 +1540,21 @@
 
     .line 458
     :cond_1
+    const-string v6, "longitudinalLead"
+
+    invoke-virtual {v5, v6, v0}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
+
+    move-result v6
+
+    const/4 v8, 0x1
+
+    if-eqz v6, :cond_2
+
+    const/4 v6, 0x2
+
+    goto :goto_1
+
+    :cond_2
     const-string v6, "source"
 
     const-string v7, "radar"
@@ -1549,21 +1564,6 @@
     move-result-object v6
 
     .line 459
-    const-string v7, "fused"
-
-    invoke-virtual {v7, v6}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
-
-    move-result v7
-
-    const/4 v8, 0x1
-
-    if-eqz v7, :cond_2
-
-    const/4 v6, 0x2
-
-    goto :goto_1
-
-    :cond_2
     const-string v7, "vision"
 
     invoke-virtual {v7, v6}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z

@@ -456,6 +456,7 @@ geometry는 `active=true`일 때만 생성한다.
 | `widthCenterApplied` | boolean | - | 좌측 radar width 중심 보정 적용 여부 |
 | `lane` | string | - | `left`, `center`, `right` |
 | `source` | string | - | `radar`, `vision`, `fused` |
+| `longitudinalLead` | boolean | - | 현재 MPC source가 선택한 `lead0` 또는 `lead1`인지 여부 |
 | `confidence` | number | - | 표시 우선순위용 신뢰도 |
 
 ### payload 예시
@@ -510,6 +511,7 @@ geometry는 `active=true`일 때만 생성한다.
       "widthCenterApplied": false,
       "lane": "right",
       "source": "fused",
+      "longitudinalLead": false,
       "confidence": 0.91
     }
   ]
@@ -824,7 +826,11 @@ lateral tolerance = max(1.5 m, vision yStd * 2)
 - fused confidence는 최소 0.75
 - match되지 않은 vision lead는 별도 `vision` 항목 유지
 - vision끼리도 IoU 0.25 이상 겹치면 중복 억제
-- 최종 우선순위: fused, vision, radar
+- `longitudinalPlanSource=lead0/lead1`이면 대응하는 `radarState.leadOne/leadTwo`를
+  `trackId`로 우선 매칭하고, vision-only lead는 거리와 횡 위치로 매칭
+- 실제 MPC source로 선택된 차량만 `longitudinalLead=true`이며 하늘색으로 표시
+- 단순히 `source=fused`인 차량은 더 이상 하늘색 조건이 아님
+- 최종 우선순위: longitudinal lead, fused, vision, radar
 - 같은 우선순위에서는 가까운 차량 우선 선택
 - 최대 8대 선택
 - draw 순서는 먼 차량부터 가까운 차량 순서라 가까운 marker가 마지막에 그려짐

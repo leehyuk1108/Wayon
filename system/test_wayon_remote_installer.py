@@ -40,15 +40,19 @@ def test_ensure_directories_uses_writable_data_partition(tmp_path: Path, monkeyp
   assert stat.S_IMODE(bin_dir.stat().st_mode) == 0o750
 
 
-def test_run_supervisor_replaces_manager_process(tmp_path: Path, monkeypatch):
+def test_run_supervisor_keeps_daemon_identity(tmp_path: Path, monkeypatch):
   supervisor = tmp_path / "wayon_remote_supervisor.sh"
   calls = []
   monkeypatch.setattr(installer, "SUPERVISOR_PATH", supervisor)
-  monkeypatch.setattr(installer.os, "execv", lambda path, args: calls.append((path, args)))
+  monkeypatch.setattr(
+    installer.subprocess,
+    "run",
+    lambda args, check: calls.append((args, check)) or subprocess.CompletedProcess(args, 0),
+  )
 
-  installer.run_supervisor()
+  assert installer.run_supervisor() == 0
 
-  assert calls == [(str(supervisor), [str(supervisor)])]
+  assert calls == [([str(supervisor)], False)]
 
 
 def test_supervisor_supports_cellular_transport_fallback():

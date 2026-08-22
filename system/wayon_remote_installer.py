@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -123,9 +124,9 @@ def install() -> None:
   write_token(token)
 
 
-def run_supervisor() -> None:
+def run_supervisor() -> int:
   supervisor = str(SUPERVISOR_PATH)
-  os.execv(supervisor, [supervisor])
+  return subprocess.run([supervisor], check=False).returncode
 
 
 def is_offroad() -> bool:
@@ -137,17 +138,20 @@ def is_offroad() -> bool:
 
 def main() -> None:
   attempt = 0
-  while is_offroad():
+  while True:
+    if not is_offroad():
+      time.sleep(2)
+      continue
+
     try:
       install()
       print("Wayon remote: installed; starting supervisor", flush=True)
-      run_supervisor()
+      return_code = run_supervisor()
+      raise RuntimeError(f"supervisor exited with code {return_code}")
     except Exception as exc:
       attempt += 1
       print(f"Wayon remote: install attempt {attempt} failed: {exc}", flush=True)
-      if not is_offroad():
-        return
-      time.sleep(min(15 * attempt, 60))
+      time.sleep(2 if not is_offroad() else min(15 * attempt, 60))
 
 
 if __name__ == "__main__":

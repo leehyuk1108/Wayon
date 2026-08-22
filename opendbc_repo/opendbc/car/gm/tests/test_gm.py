@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from opendbc.car.gm.carcontroller import get_friction_brake_bus
+from opendbc.car.gm.carcontroller import get_acc_dashboard_speed_kph, get_friction_brake_bus
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus
 from opendbc.car.structs import CarParams
@@ -36,3 +36,14 @@ class TestGMFrictionBrakeBus(unittest.TestCase):
   def test_gateway_uses_chassis_bus(self):
     CP = SimpleNamespace(networkLocation=CarParams.NetworkLocation.gateway, carFingerprint=CAR.CHEVROLET_VOLT)
     self.assertEqual(get_friction_brake_bus(CP), CanBus.CHASSIS)
+
+
+class TestGMAccDashboardSpeed(unittest.TestCase):
+  def test_sdgm_uses_inverse_cluster_correction(self):
+    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
+    self.assertEqual(get_acc_dashboard_speed_kph(CP, 70.0), 66.0)
+    self.assertEqual(get_acc_dashboard_speed_kph(CP, 100.0), 95.0)
+
+  def test_non_sdgm_is_unchanged(self):
+    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
+    self.assertEqual(get_acc_dashboard_speed_kph(CP, 70.0), 70.0)

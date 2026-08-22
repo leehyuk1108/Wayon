@@ -4,6 +4,7 @@ from opendbc.car import Bus, DT_CTRL, structs
 from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.gm import gmcan
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.gm.cluster_speed import gm_raw_display_kph_from_cluster_display_kph
 from opendbc.car.gm.values import DBC, CanBus, CarControllerParams, CruiseButtons, SDGM_CAR
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.sunnypilot.car.gm.icbm import IntelligentCruiseButtonManagementInterface
@@ -22,6 +23,12 @@ def get_friction_brake_bus(CP):
   if CP.networkLocation == NetworkLocation.fwdCamera:
     return CanBus.CAMERA if CP.carFingerprint in SDGM_CAR else CanBus.POWERTRAIN
   return CanBus.CHASSIS
+
+
+def get_acc_dashboard_speed_kph(CP, cluster_target_kph):
+  if CP.carFingerprint in SDGM_CAR:
+    return gm_raw_display_kph_from_cluster_display_kph(cluster_target_kph)
+  return cluster_target_kph
 
 
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
@@ -122,8 +129,9 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         # Send dashboard UI commands (ACC status)
         send_fcw = hud_alert == VisualAlert.fcw
+        dashboard_speed_kph = get_acc_dashboard_speed_kph(self.CP, hud_v_cruise * CV.MS_TO_KPH)
         can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, CC.enabled,
-                                                            hud_v_cruise * CV.MS_TO_KPH, hud_control, send_fcw))
+                                                            dashboard_speed_kph, hud_control, send_fcw))
 
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)

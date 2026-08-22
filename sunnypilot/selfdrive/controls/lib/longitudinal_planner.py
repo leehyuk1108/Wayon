@@ -5,6 +5,8 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import math
+
 from cereal import messaging, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
@@ -19,6 +21,18 @@ from openpilot.sunnypilot.models.helpers import get_active_bundle
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
+
+ICBM_MIN_TARGET_KPH = 20.0
+
+
+def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: float) -> float:
+  """Apply the existing ICBM camera/section target as an OP-long cruise ceiling."""
+  target_kph = float(icbm.automaticTargetSpeedKph)
+  if not icbm.automaticControlActive or not math.isfinite(target_kph):
+    return v_cruise
+  if not ICBM_MIN_TARGET_KPH <= target_kph <= V_CRUISE_MAX:
+    return v_cruise
+  return min(v_cruise, target_kph * CV.KPH_TO_MS)
 
 
 class LongitudinalPlannerSP:
@@ -62,8 +76,13 @@ class LongitudinalPlannerSP:
     self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
+    # ICBM continues to own the proven Navdy camera and section-control state
+    # machine. Under OP long its target caps cruise directly instead of sending
+    # synthetic stock ACC button presses.
+    icbm_v_cruise = apply_icbm_target(sm['selfdriveStateSP'].intelligentCruiseButtonManagement, v_cruise)
+
     targets = {
-      LongitudinalPlanSource.cruise: (v_cruise, a_ego),
+      LongitudinalPlanSource.cruise: (icbm_v_cruise, a_ego),
       LongitudinalPlanSource.sccVision: (self.scc.vision.output_v_target, self.scc.vision.output_a_target),
       LongitudinalPlanSource.sccMap: (self.scc.map.output_v_target, self.scc.map.output_a_target),
       LongitudinalPlanSource.speedLimitAssist: (self.sla.output_v_target, self.sla.output_a_target),

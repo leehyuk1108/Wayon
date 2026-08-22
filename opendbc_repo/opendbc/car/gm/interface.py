@@ -114,7 +114,7 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     ret.longitudinalTuning.kiBP = [5., 35.]
 
     if candidate in (CAMERA_ACC_CAR | SDGM_CAR):
-      ret.alphaLongitudinalAvailable = candidate not in SDGM_CAR
+      ret.alphaLongitudinalAvailable = candidate not in SDGM_CAR or candidate == CAR.CHEVROLET_TRAVERSE
       ret.networkLocation = NetworkLocation.fwdCamera
       ret.radarUnavailable = True  # no radar
       ret.pcmCruise = True
@@ -128,7 +128,7 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
       ret.vEgoStopping = 0.25
       ret.vEgoStarting = 0.25
 
-      if alpha_long:
+      if ret.alphaLongitudinalAvailable and alpha_long:
         ret.pcmCruise = False
         ret.openpilotLongitudinalControl = True
         ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.HW_CAM_LONG.value

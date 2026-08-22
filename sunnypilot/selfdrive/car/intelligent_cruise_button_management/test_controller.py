@@ -13,9 +13,11 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.con
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 
 
-def make_controller(tmp_path):
+def make_controller(tmp_path, *, openpilot_long=False, pcm_cruise_speed=False):
   return IntelligentCruiseButtonManagement(
-    SimpleNamespace(), SimpleNamespace(pcmCruiseSpeed=False), str(tmp_path / "camera.json"))
+    SimpleNamespace(openpilotLongitudinalControl=openpilot_long),
+    SimpleNamespace(pcmCruiseSpeed=pcm_cruise_speed),
+    str(tmp_path / "camera.json"))
 
 
 def make_state(*, ego_kph=80.0, stock_set_kph=100.0, restore_kph=100.0, accel=0.0):
@@ -65,6 +67,19 @@ def test_camera_speed_becomes_temporary_target(tmp_path):
 
   assert controller.v_target == 60
   assert controller.automatic_control_active
+
+
+def test_openpilot_long_uses_camera_target_without_requesting_buttons(tmp_path):
+  camera_path = tmp_path / "camera.json"
+  write_camera_state(camera_path, 60)
+  controller = make_controller(tmp_path, openpilot_long=True, pcm_cruise_speed=True)
+
+  controller.run(make_state(), make_control(), make_plan(), True)
+
+  assert controller.v_target == 60
+  assert controller.automatic_control_active
+  assert controller.state == custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState.holding
+  assert controller.cruise_button == custom.IntelligentCruiseButtonManagement.SendButtonState.none
 
 
 def test_mobile_camera_does_not_activate_icbm(tmp_path):

@@ -313,7 +313,8 @@ class IntelligentCruiseButtonManagement:
       self.reset_temporary_control()
 
   def run(self, CS: car.CarState, CC: car.CarControl, LP_SP: custom.LongitudinalPlanSP, is_metric: bool) -> None:
-    if self.CP_SP.pcmCruiseSpeed:
+    openpilot_long = bool(getattr(self.CP, "openpilotLongitudinalControl", False))
+    if self.CP_SP.pcmCruiseSpeed and not openpilot_long:
       self.reset_temporary_control()
       return
 
@@ -321,6 +322,14 @@ class IntelligentCruiseButtonManagement:
 
     self.update_calculations(CS, LP_SP)
     self.update_readiness(CS, CC)
+
+    if openpilot_long:
+      # OP long consumes the calculated target directly in plannerd. Never
+      # request synthetic stock ACC button presses in this mode.
+      self.cruise_button = SendButtonState.none
+      self.state = State.holding if self.automatic_control_active else State.inactive
+      self.is_ready_prev = self.is_ready
+      return
 
     self.cruise_button = self.update_state_machine()
 

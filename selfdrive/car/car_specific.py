@@ -5,6 +5,7 @@ from opendbc.car.interfaces import MAX_CTRL_SPEED
 from opendbc.car.toyota.values import ToyotaFlags
 
 from openpilot.selfdrive.selfdrived.events import Events
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import is_enabled as wayon_carrot_long_enabled
 
 ButtonType = structs.CarState.ButtonEvent.Type
 GearShifter = structs.CarState.GearShifter
@@ -128,7 +129,7 @@ class CarSpecificEvents:
       events.add(EventName.speedTooHigh)
     if CS.cruiseState.nonAdaptive:
       events.add(EventName.wrongCruiseMode)
-    if CS.brakeHoldActive and self.CP.openpilotLongitudinalControl:
+    if CS.brakeHoldActive and self.CP.openpilotLongitudinalControl and not wayon_carrot_long_enabled(self.CP):
       events.add(EventName.brakeHold)
     if CS.parkingBrake:
       events.add(EventName.parkBrake)

@@ -4,9 +4,10 @@ from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.gm.cluster_speed import gm_cluster_cruise_speed_from_raw_ms
 from opendbc.car.interfaces import CarStateBase
-from opendbc.car.gm.values import DBC, AccState, CruiseButtons, STEER_THRESHOLD, SDGM_CAR, ALT_ACCS
+from opendbc.car.gm.values import CAR, DBC, AccState, CruiseButtons, STEER_THRESHOLD, SDGM_CAR, ALT_ACCS
 
 from opendbc.sunnypilot.car.gm.carstate_ext import CarStateExt
+from opendbc.sunnypilot.car.gm.soft_hold import SoftHoldController
 from opendbc.sunnypilot.car.gm.values_ext import GMFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -35,6 +36,9 @@ class CarState(CarStateBase, CarStateExt):
     self.buttons_counter = 0
 
     self.distance_button = 0
+    self.soft_hold = SoftHoldController(
+      CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.openpilotLongitudinalControl
+    )
 
   def update_button_enable(self, buttonEvents: list[structs.CarState.ButtonEvent]):
     if not self.CP.pcmCruise:
@@ -159,6 +163,28 @@ class CarState(CarStateBase, CarStateExt):
         *create_button_events(self.distance_button, prev_distance_button,
                               {1: ButtonType.gapAdjustCruise})
       ]
+
+    resume_pressed = any(b.pressed and b.type in (ButtonType.accelCruise, ButtonType.resumeCruise)
+                         for b in ret.buttonEvents)
+    cancel_pressed = any(b.pressed and b.type == ButtonType.cancel for b in ret.buttonEvents)
+    soft_hold = self.soft_hold.update(
+      brake_pedal_position=pt_cp.vl["ECMAcceleratorPos"]["BrakePedalPos"],
+      standstill=ret.standstill,
+      gear_shifter=ret.gearShifter,
+      gas_pressed=ret.gasPressed,
+      resume_pressed=resume_pressed,
+      cancel_pressed=cancel_pressed,
+      door_open=ret.doorOpen,
+      seatbelt_unlatched=ret.seatbeltUnlatched,
+      cruise_available=ret.cruiseState.available,
+    )
+    if soft_hold.enable:
+      ret.buttonEnable = True
+    if soft_hold.cancel:
+      ret.buttonEvents.append(structs.CarState.ButtonEvent(type=ButtonType.cancel, pressed=True))
+    if soft_hold.active:
+      ret.brakeHoldActive = True
+      ret.cruiseState.standstill = True
 
     if ret.vEgo < self.CP.minSteerSpeed:
       ret.lowSpeedAlert = True

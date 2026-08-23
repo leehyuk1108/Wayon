@@ -21,7 +21,7 @@ DEFAULT_ARGS = [
   "--no-stdout",
   "--manage-navdy-power",
   "--socket-transport",
-  "--heartbeat-sec", "5",
+  "--heartbeat-sec", "1",
   "--power-on-ensure-sec", "60",
   "--power-off-delay-sec", "30",
   "--power-off-ensure-sec", "5",

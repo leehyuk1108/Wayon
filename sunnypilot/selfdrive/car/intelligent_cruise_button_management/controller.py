@@ -26,7 +26,7 @@ SendButtonState = custom.IntelligentCruiseButtonManagement.SendButtonState
 
 INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
-NAVDY_CAMERA_STATE_MAX_AGE = 1.5
+NAVDY_CAMERA_STATE_MAX_AGE = 2.5
 NAVDY_CAMERA_SOURCE = "trafficNotification"
 CAMERA_TARGET_DISTANCE_M = 100.0
 CAMERA_DECEL_RATE_MPS2 = 1.2
@@ -333,9 +333,14 @@ class IntelligentCruiseButtonManagement:
     self.is_metric = is_metric
 
     self.update_calculations(CS, LP_SP)
-    self.update_readiness(CS, CC)
 
     if openpilot_long:
+      # GM long control continuously requests stock ACC cancel while openpilot
+      # owns longitudinal actuation. That output is not a driver cancellation
+      # and must not clear the camera target calculated above.
+      self.is_ready = self.automatic_control_active and CC.enabled
+      if not CC.enabled:
+        self.reset_temporary_control()
       # OP long consumes the calculated target directly in plannerd. Never
       # request synthetic stock ACC button presses in this mode.
       self.cruise_button = SendButtonState.none
@@ -343,6 +348,7 @@ class IntelligentCruiseButtonManagement:
       self.is_ready_prev = self.is_ready
       return
 
+    self.update_readiness(CS, CC)
     self.cruise_button = self.update_state_machine()
 
     self.is_ready_prev = self.is_ready

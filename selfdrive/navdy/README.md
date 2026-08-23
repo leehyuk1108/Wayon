@@ -199,7 +199,7 @@ Manager가 child process를 시작하면 [`navdy_power_bridge.py`](navdy_power_b
 --no-stdout
 --manage-navdy-power
 --socket-transport
---heartbeat-sec 5
+--heartbeat-sec 1
 --power-on-ensure-sec 60
 --power-off-delay-sec 30
 ```
@@ -343,8 +343,9 @@ HUD에서는 복귀 목표를 기존 초록색 ACC SET 아이콘과 함께 현�
 응답으로 `cameraSpeedKph`와 `cameraSource=trafficNotification`을 돌려준다. 알림 발신자 이름에
 `comma` 또는 `carrot`이 있다는 이유만으로 카메라로 분류하지 않으며, 제목·부제·본문에 카메라
 키워드가 있는 실제 교통 알림만 허용한다. `navdy_op_bridge`와 ICBM은 출처 표식이 없는 숫자를
-거부한다. 유효한 값은 `/dev/shm/navdy_camera_state.json`에 원자적으로 갱신되며, 1.5초 이상 새
-응답이 없으면 제한속도를 즉시 무효화한다.
+거부한다. 유효한 값은 `/dev/shm/navdy_camera_state.json`에 원자적으로 갱신된다. manager 실행은
+정속 주행 중에도 1초 heartbeat로 Navdy 응답을 회수하며, ICBM은 2.5초 동안 응답이 없으면 제한속도를
+즉시 무효화한다.
 
 ```text
 TMAP -> CommANav -> Bluetooth -> Navdy HUD -> USB data port -> navdy_op_bridge -> ICBM

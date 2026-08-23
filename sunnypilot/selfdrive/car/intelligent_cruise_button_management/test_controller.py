@@ -108,6 +108,21 @@ def test_openpilot_long_uses_camera_target_without_requesting_buttons(tmp_path):
   assert controller.cruise_button == custom.IntelligentCruiseButtonManagement.SendButtonState.none
 
 
+def test_openpilot_long_keeps_camera_target_during_internal_stock_acc_cancel(tmp_path):
+  camera_path = tmp_path / "camera.json"
+  write_camera_state(camera_path, 60)
+  controller = make_controller(tmp_path, openpilot_long=True, pcm_cruise_speed=True)
+  control = make_control()
+  control.cruiseControl.cancel = True
+
+  controller.run(make_state(), control, make_plan(), True)
+
+  assert controller.v_target == 60
+  assert controller.automatic_control_active
+  assert controller.state == custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState.holding
+  assert controller.cruise_button == custom.IntelligentCruiseButtonManagement.SendButtonState.none
+
+
 def test_mobile_camera_does_not_activate_icbm(tmp_path):
   camera_path = tmp_path / "camera.json"
   write_camera_state(camera_path, 60, "mobile")

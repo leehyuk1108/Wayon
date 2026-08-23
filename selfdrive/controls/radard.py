@@ -15,6 +15,8 @@ from openpilot.common.simple_kalman import KF1D
 from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lane_intrusion import RadarLaneIntrusionDetector
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import leads_are_duplicates
 
 
 # Default lead acceleration decay set to 50% at 1s
@@ -28,6 +30,7 @@ V_EGO_STATIONARY = 4.   # no stationary object flag below this speed
 
 RADAR_TO_CENTER = 2.7   # (deprecated) RADAR is ~ 2.7m ahead from center of car
 RADAR_TO_CAMERA = 1.52  # RADAR is ~ 1.5m ahead from center of mesh frame
+RADAR_LEAD_HOLD_TIME = 0.25
 
 
 class KalmanParams:
@@ -57,6 +60,8 @@ class Track:
     self.identifier = identifier
     self.cnt = 0
     self.aLeadTau = FirstOrderFilter(_LEAD_ACCEL_TAU, 0.45, DT_MDL)
+    self.jLeadFilter = FirstOrderFilter(0.0, 0.35, DT_MDL)
+    self.prev_aLeadK = 0.0
     self.K_A = kalman_params.A
     self.K_C = kalman_params.C
     self.K_K = kalman_params.K
@@ -76,6 +81,13 @@ class Track:
 
     self.vLeadK = float(self.kf.x[SPEED][0])
     self.aLeadK = float(self.kf.x[ACCEL][0])
+    if self.cnt > 0:
+      raw_jerk = np.clip((self.aLeadK - self.prev_aLeadK) / DT_MDL, -5.0, 5.0)
+      self.jLeadFilter.update(raw_jerk)
+    else:
+      self.jLeadFilter.x = 0.0
+    self.jLead = float(self.jLeadFilter.x)
+    self.prev_aLeadK = self.aLeadK
 
     # Learn if constant acceleration
     if abs(self.aLeadK) < 0.5:
@@ -99,6 +111,8 @@ class Track:
       "modelProb": model_prob,
       "radar": True,
       "radarTrackId": self.identifier,
+      "jLead": self.jLead,
+      "score": 0.0,
     }
 
   def potential_low_speed_lead(self, v_ego: float):
@@ -157,6 +171,8 @@ def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: floa
     "status": True,
     "radar": False,
     "radarTrackId": -1,
+    "jLead": 0.0,
+    "score": 0.0,
   }
 
 
@@ -216,6 +232,60 @@ class RadarD:
     self.radar_state_valid = False
 
     self.ready = False
+    self.lead_holds: list[tuple[dict[str, Any], float] | None] = [None, None]
+    self.intrusion_detector = RadarLaneIntrusionDetector() if CP.brand == "gm" else None
+
+  def hold_radar_lead(self, index: int, lead: dict[str, Any]) -> dict[str, Any]:
+    if lead.get("status", False) and lead.get("radar", False):
+      self.lead_holds[index] = (dict(lead), self.current_time)
+      return lead
+    if lead.get("status", False):
+      return lead
+
+    held = self.lead_holds[index]
+    if held is None:
+      return lead
+    held_lead, held_time = held
+    age = self.current_time - held_time
+    if age < 0.0 or age > RADAR_LEAD_HOLD_TIME:
+      self.lead_holds[index] = None
+      return lead
+
+    predicted = dict(held_lead)
+    predicted["dRel"] = max(0.0, float(predicted["dRel"]) + float(predicted["vRel"]) * age)
+    predicted["modelProb"] = float(predicted.get("modelProb", 0.0)) * max(0.0, 1.0 - age / RADAR_LEAD_HOLD_TIME)
+    predicted["score"] = max(float(predicted.get("score", 0.0)), 0.01)
+    return predicted
+
+  def get_cutin_risk(self, sm: messaging.SubMaster, rr: car.RadarData) -> dict[str, Any]:
+    if self.intrusion_detector is None:
+      return {"status": False}
+
+    lane_change_active = sm['modelV2'].meta.laneChangeState != log.LaneChangeState.off
+    self.intrusion_detector.update(self.v_ego, list(rr.points), sm['modelV2'], self.current_time,
+                                   lane_change_active=lane_change_active)
+    risk = self.intrusion_detector.cutin_risk
+    if risk is None:
+      return {"status": False}
+
+    v_lead = max(0.0, self.v_ego + risk.relative_speed_mps)
+    return {
+      "dRel": risk.distance_m,
+      "yRel": risk.radar_y_rel_m,
+      "vRel": risk.relative_speed_mps,
+      "vLead": v_lead,
+      "vLeadK": v_lead,
+      "aLeadK": 0.0,
+      "aLeadTau": _LEAD_ACCEL_TAU,
+      "status": True,
+      "fcw": False,
+      "modelProb": risk.score,
+      "radar": True,
+      "radarTrackId": risk.track_id,
+      "jLead": 0.0,
+      "score": risk.score,
+      "vLat": risk.inward_speed_mps,
+    }
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -266,10 +336,18 @@ class RadarD:
         else:
           self.lead_prob_filters[i].update(lead_prob)
 
-      self.radar_state.leadOne = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x,
-                                          self.CP, self.CP_SP, low_speed_override=True)
-      self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x,
-                                          self.CP, self.CP_SP, low_speed_override=False)
+      lead_one = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x,
+                          self.CP, self.CP_SP, low_speed_override=True)
+      lead_two = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x,
+                          self.CP, self.CP_SP, low_speed_override=False)
+      lead_one = self.hold_radar_lead(0, lead_one)
+      lead_two = self.hold_radar_lead(1, lead_two)
+      if leads_are_duplicates(lead_one, lead_two):
+        lead_two = {"status": False}
+      self.radar_state.leadOne = lead_one
+      self.radar_state.leadTwo = lead_two
+
+    self.radar_state.leadCutInRisk = self.get_cutin_risk(sm, rr)
 
   def publish(self, pm: messaging.PubMaster):
     assert self.radar_state is not None

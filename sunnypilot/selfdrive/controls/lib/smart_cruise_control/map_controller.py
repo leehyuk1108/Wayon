@@ -9,6 +9,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.navd.helpers import coordinate_from_param, Coordinate
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN_V
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import CURVE_SPEED_FLOOR, MAP_CURVE_FACTOR
 
 MapState = VisionState = custom.LongitudinalPlanSP.SmartCruiseControl.MapState
 
@@ -70,10 +71,11 @@ class SmartCruiseControlMap:
   output_v_target: float = V_CRUISE_UNSET
   output_a_target: float = 0.
 
-  def __init__(self):
+  def __init__(self, wayon_carrot_profile: bool = False):
     self.params = Params()
+    self.wayon_carrot_profile = wayon_carrot_profile
     self.mem_params = Params("/dev/shm/params") if platform.system() != "Darwin" else self.params
-    self.enabled = self.params.get_bool("SmartCruiseControlMap")
+    self.enabled = self.wayon_carrot_profile or self.params.get_bool("SmartCruiseControlMap")
     self.long_enabled = False
     self.long_override = False
     self.is_enabled = False
@@ -98,7 +100,7 @@ class SmartCruiseControlMap:
 
   def update_params(self):
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
-      self.enabled = self.params.get_bool("SmartCruiseControlMap")
+      self.enabled = self.wayon_carrot_profile or self.params.get_bool("SmartCruiseControlMap")
 
   def update_calculations(self) -> None:
     self.last_position = coordinate_from_param("LastGPSPosition", self.mem_params) or Coordinate(0.0, 0.0)
@@ -136,6 +138,8 @@ class SmartCruiseControlMap:
       tlat = target_velocity["latitude"]
       tlon = target_velocity["longitude"]
       tv = target_velocity["velocity"]
+      if self.wayon_carrot_profile:
+        tv = max(tv * MAP_CURVE_FACTOR, CURVE_SPEED_FLOOR)
       if tv > self.v_ego:
         continue
 
@@ -188,6 +192,8 @@ class SmartCruiseControlMap:
         tlat = target_velocity["latitude"]
         tlon = target_velocity["longitude"]
         tv = target_velocity["velocity"]
+        if self.wayon_carrot_profile:
+          tv = max(tv * MAP_CURVE_FACTOR, CURVE_SPEED_FLOOR)
         if tv > self.v_ego:
           continue
 

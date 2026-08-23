@@ -116,7 +116,11 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     if candidate in (CAMERA_ACC_CAR | SDGM_CAR):
       ret.alphaLongitudinalAvailable = candidate not in SDGM_CAR or candidate == CAR.CHEVROLET_TRAVERSE
       ret.networkLocation = NetworkLocation.fwdCamera
-      ret.radarUnavailable = True  # no radar
+      # The Wayon Traverse uses the physical front LRR through SASCM/SDGM. Its
+      # header may start after fingerprinting, so don't permanently disable the
+      # radar just because the ignition-time fingerprint missed that header.
+      ret.radarUnavailable = candidate != CAR.CHEVROLET_TRAVERSE and \
+                             RADAR_HEADER_MSG not in fingerprint[CanBus.OBSTACLE]
       ret.pcmCruise = True
       ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.HW_CAM.value
       if candidate in SDGM_CAR:
@@ -229,6 +233,8 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
 
     elif candidate == CAR.CHEVROLET_TRAVERSE:
       ret.steerActuatorDelay = 0.2
+      if ret.openpilotLongitudinalControl:
+        ret.vEgoStopping = 0.5
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
     elif candidate == CAR.GMC_YUKON:

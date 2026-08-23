@@ -13,6 +13,11 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN_V
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import (
+  CURVE_SPEED_FLOOR,
+  VISION_CURVE_FACTOR,
+  VISION_TARGET_LAT_ACCEL,
+)
 
 VisionState = custom.LongitudinalPlanSP.SmartCruiseControl.VisionState
 
@@ -58,14 +63,15 @@ class SmartCruiseControlVision:
   output_v_target: float = V_CRUISE_UNSET
   output_a_target: float = 0.
 
-  def __init__(self):
+  def __init__(self, wayon_carrot_profile: bool = False):
     self.params = Params()
+    self.wayon_carrot_profile = wayon_carrot_profile
     self.frame = -1
     self.long_enabled = False
     self.long_override = False
     self.is_enabled = False
     self.is_active = False
-    self.enabled = self.params.get_bool("SmartCruiseControlVision")
+    self.enabled = self.wayon_carrot_profile or self.params.get_bool("SmartCruiseControlVision")
     self.v_cruise_setpoint = 0.
 
     self.state = VisionState.disabled
@@ -80,13 +86,13 @@ class SmartCruiseControlVision:
 
   def get_v_target_from_control(self) -> float:
     if self.is_active:
-      return max(self.v_target, MIN_V)
+      return max(self.v_target, CURVE_SPEED_FLOOR if self.wayon_carrot_profile else MIN_V)
 
     return V_CRUISE_UNSET
 
   def _update_params(self) -> None:
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
-      self.enabled = self.params.get_bool("SmartCruiseControlVision")
+      self.enabled = self.wayon_carrot_profile or self.params.get_bool("SmartCruiseControlVision")
 
   @staticmethod
   def _smooth_curvature(curvature: np.ndarray) -> np.ndarray:
@@ -115,10 +121,13 @@ class SmartCruiseControlVision:
 
     distance = distance[valid]
     curvature = self._smooth_curvature(yaw_rate[valid] / velocity[valid])
+    if self.wayon_carrot_profile:
+      curvature *= VISION_CURVE_FACTOR
     predicted_lat_acc = curvature * self.v_ego ** 2
     max_pred_lat_acc = float(np.max(predicted_lat_acc))
 
-    safe_curve_speed = np.sqrt(_A_LAT_REG_MAX / np.maximum(curvature, _CURVATURE_FLOOR))
+    target_lat_accel = VISION_TARGET_LAT_ACCEL if self.wayon_carrot_profile else _A_LAT_REG_MAX
+    safe_curve_speed = np.sqrt(target_lat_accel / np.maximum(curvature, _CURVATURE_FLOOR))
     effective_distance = np.maximum(distance - self.v_ego * _REACTION_TIME, 0.)
     allowed_speed_now = np.sqrt(safe_curve_speed ** 2 + 2. * _COMFORTABLE_DECEL * effective_distance)
     return float(np.min(allowed_speed_now)), max_pred_lat_acc

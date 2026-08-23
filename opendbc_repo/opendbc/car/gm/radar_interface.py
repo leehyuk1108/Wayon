@@ -14,6 +14,7 @@ NUM_SLOTS = 20
 # Actually it's 0x47f, but can parser only reports
 # messages that are present in DBC
 LAST_RADAR_MSG = RADAR_HEADER_MSG + NUM_SLOTS
+RADAR_EMPTY_RANGE = 255.875
 
 
 def create_radar_can_parser(car_fingerprint):
@@ -75,8 +76,9 @@ class RadarInterface(RadarInterfaceBase):
         break
 
       cpt = self.rcp.vl[ii]
-      # Zero distance means it's an empty target slot
-      if cpt['TrkRange'] > 0.0:
+      # GM fills unused slots with the maximum encoded range (255.875 m).
+      # Publish no more objects than the header declares as valid.
+      if 0.0 < cpt['TrkRange'] < RADAR_EMPTY_RANGE and len(currentTargets) < num_targets:
         targetId = cpt['TrkObjectID']
         currentTargets.add(targetId)
         if targetId not in self.pts:

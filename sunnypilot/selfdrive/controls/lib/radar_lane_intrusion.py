@@ -32,11 +32,24 @@ class RadarLaneIntrusion:
   inward_speed_mps: float
 
 
+@dataclass(frozen=True)
+class RadarCutInRisk:
+  track_id: int
+  side: str
+  distance_m: float
+  radar_y_rel_m: float
+  relative_speed_mps: float
+  inward_speed_mps: float
+  score: float
+
+
 @dataclass
 class _TrackState:
   side: str
   distance_m: float
   lateral_m: float
+  radar_y_rel_m: float
+  relative_speed_mps: float
   penetration_m: float
   last_seen_s: float
   outside_samples: int
@@ -120,19 +133,26 @@ class RadarLaneIntrusionDetector:
   def __init__(self) -> None:
     self._tracks: dict[int, _TrackState] = {}
     self._lane_risks = {"left": 0.0, "right": 0.0}
+    self._cutin_risk: RadarCutInRisk | None = None
     self._last_risk_update_s: float | None = None
 
   @property
   def lane_risks(self) -> dict[str, float]:
     return dict(self._lane_risks)
 
+  @property
+  def cutin_risk(self) -> RadarCutInRisk | None:
+    return self._cutin_risk
+
   def reset(self) -> None:
     self._tracks.clear()
     self._lane_risks = {"left": 0.0, "right": 0.0}
+    self._cutin_risk = None
     self._last_risk_update_s = None
 
   def _update_lane_risks(self, seen_tracks: set[int], now_s: float) -> None:
     frame_risks = {"left": 0.0, "right": 0.0}
+    candidates: list[RadarCutInRisk] = []
     for track_id in seen_tracks:
       state = self._tracks.get(track_id)
       if state is None or state.outside_samples < REQUIRED_OUTSIDE_SAMPLES or \
@@ -140,20 +160,34 @@ class RadarLaneIntrusionDetector:
         continue
       proximity = (state.penetration_m + LANE_RISK_START_GAP_M) / \
                   (LANE_RISK_START_GAP_M + INSIDE_MARGIN_M)
-      frame_risks[state.side] = max(frame_risks[state.side], max(0.0, min(1.0, proximity)))
+      score = max(0.0, min(1.0, proximity))
+      frame_risks[state.side] = max(frame_risks[state.side], score)
+      if score > 0.0:
+        candidates.append(RadarCutInRisk(
+          track_id=track_id,
+          side=state.side,
+          distance_m=state.distance_m,
+          radar_y_rel_m=state.radar_y_rel_m,
+          relative_speed_mps=state.relative_speed_mps,
+          inward_speed_mps=state.inward_speed_mps,
+          score=score,
+        ))
 
     elapsed_s = 0.05 if self._last_risk_update_s is None else max(0.0, now_s - self._last_risk_update_s)
     decay = math.exp(-elapsed_s / LANE_RISK_FADE_TIME_S)
     for side in ("left", "right"):
       self._lane_risks[side] = max(frame_risks[side], self._lane_risks[side] * decay)
     self._last_risk_update_s = now_s
+    self._cutin_risk = min(candidates, key=lambda risk: (-risk.score, risk.distance_m), default=None)
 
-  def _new_state(self, side: str, distance_m: float, lateral_m: float,
-                 penetration_m: float, now_s: float) -> _TrackState:
+  def _new_state(self, side: str, distance_m: float, lateral_m: float, radar_y_rel_m: float,
+                 relative_speed_mps: float, penetration_m: float, now_s: float) -> _TrackState:
     return _TrackState(
       side=side,
       distance_m=distance_m,
       lateral_m=lateral_m,
+      radar_y_rel_m=radar_y_rel_m,
+      relative_speed_mps=relative_speed_mps,
       penetration_m=penetration_m,
       last_seen_s=now_s,
       outside_samples=1 if penetration_m <= -OUTSIDE_MARGIN_M else 0,
@@ -170,6 +204,7 @@ class RadarLaneIntrusionDetector:
     for point in radar_points:
       track_id = int(_finite_float(_point_value(point, "trackId", -1), -1.0))
       distance_m = _finite_float(_point_value(point, "dRel", 0.0))
+      relative_speed_mps = _finite_float(_point_value(point, "vRel", 0.0))
       if track_id < 0 or not MIN_TRACK_DISTANCE_M <= distance_m <= MAX_TRACK_DISTANCE_M:
         continue
 
@@ -179,7 +214,8 @@ class RadarLaneIntrusionDetector:
       left, right = bounds
 
       # GM radar yRel is positive to vehicle-left; modelV2 y is positive to vehicle-right.
-      lateral_m = -_finite_float(_point_value(point, "yRel", 0.0))
+      radar_y_rel_m = _finite_float(_point_value(point, "yRel", 0.0))
+      lateral_m = -radar_y_rel_m
       state = self._tracks.get(track_id)
       side = state.side if state is not None else _side_for_lateral(lateral_m, left, right)
       if side is None:
@@ -188,7 +224,8 @@ class RadarLaneIntrusionDetector:
       penetration_m = _penetration_m(side, lateral_m, left, right)
       seen_tracks.add(track_id)
       if state is None:
-        self._tracks[track_id] = self._new_state(side, distance_m, lateral_m, penetration_m, now_s)
+        self._tracks[track_id] = self._new_state(
+          side, distance_m, lateral_m, radar_y_rel_m, relative_speed_mps, penetration_m, now_s)
         continue
 
       sample_gap_s = now_s - state.last_seen_s
@@ -201,7 +238,7 @@ class RadarLaneIntrusionDetector:
           del self._tracks[track_id]
         else:
           self._tracks[track_id] = self._new_state(
-            current_side, distance_m, lateral_m,
+            current_side, distance_m, lateral_m, radar_y_rel_m, relative_speed_mps,
             _penetration_m(current_side, lateral_m, left, right), now_s)
         continue
 
@@ -209,6 +246,8 @@ class RadarLaneIntrusionDetector:
       state.inward_speed_mps = 0.55 * state.inward_speed_mps + 0.45 * raw_inward_speed
       state.distance_m = distance_m
       state.lateral_m = lateral_m
+      state.radar_y_rel_m = radar_y_rel_m
+      state.relative_speed_mps = relative_speed_mps
       state.penetration_m = penetration_m
       state.last_seen_s = now_s
 

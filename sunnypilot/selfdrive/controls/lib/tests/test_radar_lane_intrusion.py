@@ -17,8 +17,8 @@ def model(left=None, right=None, probabilities=None):
   )
 
 
-def point(track_id=7, distance=30.0, model_y=-3.1):
-  return SimpleNamespace(trackId=track_id, dRel=distance, yRel=-model_y, vRel=0.0)
+def point(track_id=7, distance=30.0, model_y=-3.1, v_rel=0.0):
+  return SimpleNamespace(trackId=track_id, dRel=distance, yRel=-model_y, vRel=v_rel)
 
 
 def update(detector, now, model_y, track_id=7, distance=30.0, model_v2=None,
@@ -72,6 +72,20 @@ def test_left_lane_risk_grows_as_vehicle_approaches_boundary():
   assert 0.0 < risks[3] < risks[4] < risks[5] < risks[6]
   assert risks[6] > 0.99
   assert detector.lane_risks["right"] == 0.0
+
+
+def test_cutin_risk_preserves_front_radar_motion():
+  detector = RadarLaneIntrusionDetector()
+  samples = [-3.5, -3.5, -3.5, -3.3, -3.0]
+  for index, lateral in enumerate(samples):
+    detector.update(20.0, [point(model_y=lateral, v_rel=-4.0)], model(), index * 0.05)
+
+  risk = detector.cutin_risk
+  assert risk is not None
+  assert risk.track_id == 7
+  assert risk.side == "left"
+  assert risk.relative_speed_mps == -4.0
+  assert risk.score > 0.0
 
 
 def test_lane_risk_accepts_navdy_radar_dicts_and_fades():

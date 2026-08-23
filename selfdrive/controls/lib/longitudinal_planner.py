@@ -9,13 +9,25 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import A_CHANGE_COST, LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
+from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import (
+  cutin_predecel_accel,
+  dynamic_a_change_cost,
+  future_curvature,
+  lead_response_factor,
+  limit_accel_for_future_curve,
+)
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import (
+  A_CHANGE_COST_STARTING,
+  get_max_accel as get_wayon_carrot_max_accel,
+  is_enabled,
+)
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -27,7 +39,9 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 
-def get_max_accel(v_ego):
+def get_max_accel(v_ego, wayon_carrot_profile=False):
+  if wayon_carrot_profile:
+    return get_wayon_carrot_max_accel(v_ego)
   return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
 
 def get_coast_accel(pitch):
@@ -50,7 +64,8 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
 class LongitudinalPlanner(LongitudinalPlannerSP):
   def __init__(self, CP, CP_SP, init_v=0.0, init_a=0.0, dt=DT_MDL):
     self.CP = CP
-    self.mpc = LongitudinalMpc(dt=dt)
+    self.wayon_carrot_profile = is_enabled(CP)
+    self.mpc = LongitudinalMpc(dt=dt, wayon_carrot_profile=self.wayon_carrot_profile)
     LongitudinalPlannerSP.__init__(self, self.CP, CP_SP, self.mpc)
     self.fcw = False
     self.dt = dt
@@ -60,7 +75,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
     self.output_a_target = 0.0
+    self.output_v_target_now = 0.0
+    self.output_j_target_now = 0.0
     self.output_should_stop = False
+    self.cutin_predecel_mode = 2
+    self.cutin_shadow_accel = None
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -89,10 +108,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
   def update(self, sm):
     LongitudinalPlannerSP.update(self, sm)
 
-    if len(sm['carControl'].orientationNED) == 3:
+    if not self.wayon_carrot_profile and len(sm['carControl'].orientationNED) == 3:
       accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
     else:
-      accel_coast = ACCEL_MAX
+      accel_coast = get_coast_accel(0.0) if self.wayon_carrot_profile else ACCEL_MAX
 
     v_ego = sm['carState'].vEgo
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
@@ -110,9 +129,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # No change cost when user is controlling the speed, or when standstill
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
-    accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+    accel_clip = [ACCEL_MIN, get_max_accel(v_ego, self.wayon_carrot_profile)]
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
     accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
+    curvature_future = future_curvature(sm['modelV2'], sm['controlsState'].desiredCurvature)
+    total_accel_limit = float(np.interp(v_ego, _A_TOTAL_MAX_BP, _A_TOTAL_MAX_V))
+    accel_clip = limit_accel_for_future_curve(v_ego, curvature_future, accel_clip, total_accel_limit)
 
     if reset_state:
       self.v_desired_filter.x = v_ego
@@ -136,7 +158,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if force_slow_decel:
       v_cruise = 0.0
 
-    self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+    cutin_risk = sm['radarState'].leadCutInRisk
+    active_cutin_risk = cutin_risk if self.cutin_predecel_mode == 2 else None
+    response_lead = None if self.wayon_carrot_profile else sm['radarState'].leadOne
+    response_factor = lead_response_factor(response_lead, active_cutin_risk)
+    a_change_cost = dynamic_a_change_cost(A_CHANGE_COST, response_factor)
+    self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
+                         a_change_cost_override=a_change_cost,
+                         a_change_cost_starting=A_CHANGE_COST_STARTING if self.wayon_carrot_profile else 0.0)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality)
 
@@ -157,6 +186,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
     output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
                                                                         action_t=action_t, vEgoStopping=self.CP.vEgoStopping)
+    self.output_v_target_now = float(self.v_desired_trajectory[0])
+    self.output_j_target_now = float(np.interp(action_t, CONTROL_N_T_IDX, self.j_desired_trajectory))
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
@@ -168,6 +199,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     else:
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
+
+    self.cutin_shadow_accel = cutin_predecel_accel(cutin_risk, v_ego)
+    if self.cutin_predecel_mode == 2 and self.cutin_shadow_accel is not None:
+      accel_clip[1] = min(accel_clip[1], self.cutin_shadow_accel)
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
@@ -193,6 +228,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     longitudinalPlan.fcw = self.fcw
 
     longitudinalPlan.aTarget = float(self.output_a_target)
+    longitudinalPlan.vTargetNow = float(self.output_v_target_now)
+    longitudinalPlan.jTargetNow = float(self.output_j_target_now)
     longitudinalPlan.shouldStop = bool(self.output_should_stop)
     longitudinalPlan.allowBrake = True
     longitudinalPlan.allowThrottle = bool(self.allow_throttle)

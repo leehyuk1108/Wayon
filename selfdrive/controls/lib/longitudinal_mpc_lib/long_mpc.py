@@ -9,6 +9,10 @@ from openpilot.common.swaglog import cloudlog
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import index_function
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import (
+  dynamic_t_follow_target,
+  ramp_t_follow,
+)
 
 if __name__ == '__main__':  # generating code
   from acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
@@ -214,8 +218,11 @@ def gen_long_ocp():
 
 
 class LongitudinalMpc:
-  def __init__(self, dt=DT_MDL):
+  def __init__(self, dt=DT_MDL, wayon_carrot_profile=False):
     self.dt = dt
+    self.wayon_carrot_profile = wayon_carrot_profile
+    self.dynamic_follow_enabled = False
+    self.cutin_predecel_mode = 2
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
     self.source = LongitudinalPlanSource.cruise
@@ -249,6 +256,7 @@ class LongitudinalMpc:
     self.time_linearization = 0.0
     self.time_integrator = 0.0
     self.x0 = np.zeros(X_DIM)
+    self.t_follow = get_T_FOLLOW()
     self.set_weights()
 
   def set_cost_weights(self, cost_weights, constraint_cost_weights):
@@ -267,9 +275,11 @@ class LongitudinalMpc:
     for i in range(N):
       self.solver.cost_set(i, 'Zl', Zl)
 
-  def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard):
+  def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard,
+                  a_change_cost_override=None, a_change_cost_starting=0.0):
     jerk_factor = get_jerk_factor(personality)
-    a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
+    a_change_cost = (A_CHANGE_COST if a_change_cost_override is None else a_change_cost_override) \
+                    if prev_accel_constraint else a_change_cost_starting
     cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST, jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
     self.set_cost_weights(cost_weights, constraint_cost_weights)
@@ -283,8 +293,11 @@ class LongitudinalMpc:
         self.solver.set(i, 'x', self.x0)
 
   @staticmethod
-  def extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau):
-    a_lead_traj = a_lead * np.exp(-a_lead_tau * (T_IDXS**2)/2.)
+  def extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau, j_lead=0.0):
+    jerk_tau = float(np.interp(j_lead, [-2.0, 0.0, 2.0], [0.30, 1.20, 0.40]))
+    jerk_traj = j_lead * np.exp(-jerk_tau * (T_IDXS**2) / 2.0)
+    jerk_accel = np.cumsum(T_DIFFS * jerk_traj)
+    a_lead_traj = np.clip(a_lead * np.exp(-a_lead_tau * (T_IDXS**2)/2.) + jerk_accel, -5.0, 3.0)
     v_lead_traj = np.clip(v_lead + np.cumsum(T_DIFFS * a_lead_traj), 0.0, 1e8)
     x_lead_traj = x_lead + np.cumsum(T_DIFFS * v_lead_traj)
     lead_xv = np.column_stack((x_lead_traj, v_lead_traj))
@@ -297,12 +310,14 @@ class LongitudinalMpc:
       v_lead = lead.vLead
       a_lead = lead.aLeadK
       a_lead_tau = lead.aLeadTau
+      j_lead = 0.0 if self.wayon_carrot_profile else float(np.clip(lead.jLead, -2.0, 2.0))
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode
       x_lead = 50.0
       v_lead = v_ego + 10.0
       a_lead = 0.0
       a_lead_tau = _LEAD_ACCEL_TAU
+      j_lead = 0.0
 
     # MPC will not converge if immediate crash is expected
     # Clip lead distance to what is still possible to brake for
@@ -310,13 +325,20 @@ class LongitudinalMpc:
     x_lead = np.clip(x_lead, min_x_lead, 1e8)
     v_lead = np.clip(v_lead, 0.0, 1e8)
     a_lead = np.clip(a_lead, -10., 5.)
-    lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
+    lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau, j_lead)
     return lead_xv
 
   def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard):
-    t_follow = get_T_FOLLOW(personality)
+    base_t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
+    cutin_risk = radarstate.leadCutInRisk if self.cutin_predecel_mode == 2 else None
+    if self.dynamic_follow_enabled:
+      target_t_follow = dynamic_t_follow_target(base_t_follow, radarstate.leadOne, self.x0[2], cutin_risk)
+      self.t_follow = ramp_t_follow(target_t_follow, self.t_follow, self.dt)
+    else:
+      self.t_follow = base_t_follow
+    t_follow = self.t_follow
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)

@@ -692,6 +692,7 @@ struct RadarState @0x9a185389d6fdd05f {
 
   leadOne @3 :LeadData;
   leadTwo @4 :LeadData;
+  leadCutInRisk @14 :LeadData;
 
   struct LeadData {
     dRel @0 :Float32;
@@ -709,6 +710,8 @@ struct RadarState @0x9a185389d6fdd05f {
     modelProb @13 :Float32;
     radar @14 :Bool;
     radarTrackId @15 :Int32 = -1;
+    jLead @16 :Float32;
+    score @17 :Float32;
 
     deprecated :group {
       aLead @5 :Float32;
@@ -1160,6 +1163,8 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   shouldStop @37: Bool;
   allowThrottle @38: Bool;
   allowBrake @39: Bool;
+  vTargetNow @40 :Float32;
+  jTargetNow @41 :Float32;
 
 
   solverExecutionTime @35 :Float32;

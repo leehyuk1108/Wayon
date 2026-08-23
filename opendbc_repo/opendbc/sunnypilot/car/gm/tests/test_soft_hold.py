@@ -51,6 +51,14 @@ def test_stays_active_after_brake_release():
   assert update(controller, brake=0).active
 
 
+def test_releases_after_vehicle_starts_moving():
+  controller = SoftHoldController(True)
+  activate(controller)
+  state = update(controller, brake=0, standstill=False)
+  assert not state.active
+  assert not state.cancel
+
+
 def test_does_not_enable_until_brake_is_fully_released():
   controller = SoftHoldController(True)
   assert update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD).active

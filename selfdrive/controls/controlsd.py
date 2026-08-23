@@ -133,7 +133,7 @@ class Controls(ControlsExt):
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits))
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, self.sm['radarState']))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -174,7 +174,9 @@ class Controls(ControlsExt):
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop
+    soft_hold_resume_ready = not CS.brakeHoldActive or self.LoC.soft_hold_resume_ready
+    CC.cruiseControl.resume = (CC.enabled and CS.cruiseState.standstill and
+                               not self.sm['longitudinalPlan'].shouldStop and soft_hold_resume_ready)
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(CS.vCruiseCluster * CV.KPH_TO_MS)

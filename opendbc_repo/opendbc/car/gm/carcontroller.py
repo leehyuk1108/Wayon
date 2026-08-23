@@ -46,6 +46,9 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.last_steer_frame = 0
     self.last_button_frame = 0
     self.cancel_counter = 0
+    self.soft_hold_resume_button_state = 0
+    self.soft_hold_resume_button_counter = 0
+    self.soft_hold_resume_last = False
 
     self.lka_steering_cmd_counter = 0
     self.lka_icon_status_last = (False, False)
@@ -126,6 +129,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         # TODO: can we always check the longControlState?
         if self.CP.networkLocation == NetworkLocation.fwdCamera:
           at_full_stop = at_full_stop and stopping
+        if self.CP.autoResumeSng and (actuators.longControlState == LongCtrlState.starting or CC.cruiseControl.resume):
+          at_full_stop = False
 
         # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
         can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, self.apply_gas, idx, CC.enabled, at_full_stop))
@@ -137,6 +142,20 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         dashboard_speed_kph = get_acc_dashboard_speed_kph(self.CP, hud_v_cruise * CV.MS_TO_KPH)
         can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, CC.enabled,
                                                             dashboard_speed_kph, hud_control, send_fcw))
+
+        # Some GM modules keep their internal stop-and-go latch set after the
+        # direct longitudinal launch command. Send one matching RES release.
+        resume_rising = CC.cruiseControl.resume and not self.soft_hold_resume_last
+        if self.CP.autoResumeSng and resume_rising:
+          self.soft_hold_resume_button_state = 2
+          self.soft_hold_resume_button_counter = (CS.buttons_counter + 1) % 4
+        if self.soft_hold_resume_button_state > 0:
+          button = CruiseButtons.RES_ACCEL if self.soft_hold_resume_button_state == 2 else CruiseButtons.UNPRESS
+          can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.POWERTRAIN,
+                                                self.soft_hold_resume_button_counter, button))
+          self.soft_hold_resume_button_counter = (self.soft_hold_resume_button_counter + 1) % 4
+          self.soft_hold_resume_button_state -= 1
+        self.soft_hold_resume_last = CC.cruiseControl.resume
 
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)

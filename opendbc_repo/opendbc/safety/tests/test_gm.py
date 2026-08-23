@@ -269,7 +269,7 @@ class TestGmCameraLongitudinalEVSafety(TestGmCameraLongitudinalSafety, TestGmEVS
 
 
 class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
-  TX_MSGS = [[0x180, 0], [0x2CB, 0], [0x370, 0],  # pt bus
+  TX_MSGS = [[0x180, 0], [0x1E1, 0], [0x2CB, 0], [0x370, 0],  # pt bus
              [0x315, 2], [0x184, 2]]  # camera bus
   FWD_BLACKLISTED_ADDRS = {2: [0x180, 0x2CB, 0x370], 0: [0x184]}
   RELAY_MALFUNCTION_ADDRS = {0: (0x180, 0x2CB, 0x370), 2: (0x184,)}
@@ -311,6 +311,14 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
       "GasRegenCmdActive": True,
     })
     self.assertFalse(self._tx(excessive))
+
+    self.safety.set_controls_allowed(False)
+    for button in range(8):
+      self.assertFalse(self._tx(self._button_msg(button)))
+
+    self.safety.set_controls_allowed(True)
+    for button in range(8):
+      self.assertEqual(button in (Buttons.UNPRESS, Buttons.RES_ACCEL), self._tx(self._button_msg(button)))
 
     self.safety.set_current_safety_param_sp(0)
 

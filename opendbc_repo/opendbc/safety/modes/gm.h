@@ -168,13 +168,16 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  // BUTTONS: used for resume spamming and cruise cancellation with stock longitudinal
-  if ((msg->addr == 0x1E1U) && gm_pcm_cruise) {
+  // BUTTONS: stock-long control and the Traverse soft-hold RES release.
+  if (msg->addr == 0x1E1U) {
     int button = (msg->data[5] >> 4) & 0x7U;
 
     bool allowed_button = (button == GM_BTN_CANCEL) && cruise_engaged_prev;
     if (gm_icbm && controls_allowed && cruise_engaged_prev) {
       allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_SET) || (button == GM_BTN_UNPRESS);
+    }
+    if (gm_auto_longitudinal_controls_allowed && controls_allowed) {
+      allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_UNPRESS);
     }
     if (!allowed_button) {
       tx = false;
@@ -218,7 +221,7 @@ static safety_config gm_init(uint16_t param) {
   // SDGM routes friction-brake commands on the camera-side bus. Keeping 0x315
   // off bus 0 prevents the stock ACC controller from conditionally owning the
   // EBCM command path when it reports a lead vehicle.
-  static const CanMsg GM_SDGM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true},  // pt bus
+  static const CanMsg GM_SDGM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x1E1, 0, 7, .check_relay = false}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true},  // pt bus
                                                 {0x315, 2, 5, .check_relay = false}, {0x184, 2, 8, .check_relay = true}};  // camera bus
 
 

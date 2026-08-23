@@ -234,6 +234,9 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     elif candidate == CAR.CHEVROLET_TRAVERSE:
       ret.steerActuatorDelay = 0.2
       if ret.openpilotLongitudinalControl:
+        ret.autoResumeSng = True
+        ret.startingState = True
+        ret.startAccel = 0.35
         ret.vEgoStopping = 0.5
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 

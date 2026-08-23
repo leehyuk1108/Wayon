@@ -46,7 +46,9 @@ class SoftHoldController:
     release_requested = gas_pressed or resume_pressed
     invalid_state = (gear_shifter != GearShifter.drive or door_open or
                      seatbelt_unlatched or not cruise_available or acc_faulted)
-    if release_requested or cancel_pressed or invalid_state:
+    # Stop synthesizing standstill as soon as longitudinal control launches.
+    vehicle_moving = self.active and not standstill
+    if release_requested or cancel_pressed or invalid_state or vehicle_moving:
       self.active = False
       self.waiting_for_brake_release = False
       self.enable_delay = 0

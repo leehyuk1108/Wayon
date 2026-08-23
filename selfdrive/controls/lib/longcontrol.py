@@ -10,15 +10,21 @@ CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
+SOFT_HOLD_LEAD_CONFIRM_FRAMES = round(0.12 / DT_CTRL)
+SOFT_HOLD_LEAD_MIN_DISTANCE = 4.0
+SOFT_HOLD_LEAD_MAX_DISTANCE = 10.0
+SOFT_HOLD_LEAD_MIN_REL_SPEED = 0.4
+
 
 def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
-                             should_stop, brake_pressed, cruise_standstill):
+                             should_stop, brake_pressed, cruise_standstill,
+                             soft_hold_resume=False):
   # Gas Interceptor
   cruise_standstill = cruise_standstill and not CP_SP.enableGasInterceptor
 
   stopping_condition = should_stop
   starting_condition = (not should_stop and
-                        not cruise_standstill and
+                        (not cruise_standstill or soft_hold_resume) and
                         not brake_pressed)
   started_condition = v_ego > CP.vEgoStarting
 
@@ -63,12 +69,26 @@ class LongControl:
                                    ([0.0], [PID_KI]),
                                    rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
+    self.soft_hold_lead_frames = 0
+    self.soft_hold_resume_ready = False
 
   def reset(self):
     self.pid.reset()
     self.speed_pid.reset()
 
-  def update(self, active, CS, long_plan, accel_limits):
+  def update_soft_hold_resume(self, CS, long_plan, radar_state):
+    lead = radar_state.leadOne if radar_state is not None else None
+    lead_departing = (self.wayon_carrot_profile and CS.brakeHoldActive and not CS.brakePressed and
+                      lead is not None and lead.status and
+                      SOFT_HOLD_LEAD_MIN_DISTANCE < lead.dRel < SOFT_HOLD_LEAD_MAX_DISTANCE and
+                      lead.vRel > SOFT_HOLD_LEAD_MIN_REL_SPEED)
+    self.soft_hold_lead_frames = min(self.soft_hold_lead_frames + 1, SOFT_HOLD_LEAD_CONFIRM_FRAMES) if lead_departing else 0
+    self.soft_hold_resume_ready = (lead_departing and
+                                   self.soft_hold_lead_frames >= SOFT_HOLD_LEAD_CONFIRM_FRAMES and
+                                   not long_plan.shouldStop)
+    return self.soft_hold_resume_ready
+
+  def update(self, active, CS, long_plan, accel_limits, radar_state=None):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     a_target = long_plan.aTarget
     should_stop = long_plan.shouldStop
@@ -76,10 +96,16 @@ class LongControl:
     self.pid.pos_limit = accel_limits[1]
     self.speed_pid.neg_limit = accel_limits[0]
     self.speed_pid.pos_limit = accel_limits[1]
+    if active:
+      soft_hold_resume = self.update_soft_hold_resume(CS, long_plan, radar_state)
+    else:
+      self.soft_hold_lead_frames = 0
+      self.soft_hold_resume_ready = False
+      soft_hold_resume = False
 
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop, CS.brakePressed,
-                                                       CS.cruiseState.standstill)
+                                                       CS.cruiseState.standstill, soft_hold_resume)
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.

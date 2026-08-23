@@ -247,9 +247,12 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
   @staticmethod
   def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
-    if candidate == CAR.CHEVROLET_TRAVERSE and not stock_cp.openpilotLongitudinalControl:
-      ret.intelligentCruiseButtonManagementAvailable = True
-      ret.safetyParam |= GMSafetyFlagsSP.ICBM
+    if candidate == CAR.CHEVROLET_TRAVERSE:
+      if stock_cp.openpilotLongitudinalControl:
+        ret.safetyParam |= GMSafetyFlagsSP.AUTO_LONGITUDINAL_CONTROLS_ALLOWED
+      else:
+        ret.intelligentCruiseButtonManagementAvailable = True
+        ret.safetyParam |= GMSafetyFlagsSP.ICBM
 
     if candidate in (CAR.CHEVROLET_MALIBU_NON_ACC_9TH_GEN, CAR.CHEVROLET_BOLT_NON_ACC, CAR.CHEVROLET_BOLT_NON_ACC_1ST_GEN,
                      CAR.CHEVROLET_BOLT_NON_ACC_2ND_GEN, CAR.CHEVROLET_TRAILBLAZER_NON_ACC_2ND_GEN):

@@ -15,3 +15,4 @@ class GMFlagsSP(IntFlag):
 class GMSafetyFlagsSP:
   NON_ACC = 1
   ICBM = 2
+  AUTO_LONGITUDINAL_CONTROLS_ALLOWED = 4

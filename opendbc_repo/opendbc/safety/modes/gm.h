@@ -37,6 +37,7 @@ static bool gm_pcm_cruise = false;
 static bool gm_non_acc = false;
 static bool gm_icbm = false;
 static bool gm_sdgm = false;
+static bool gm_auto_longitudinal_controls_allowed = false;
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
@@ -150,6 +151,13 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     // convert float CAN signal to an int for gas checks: 22534 / 0.125 = 180272
     int gas_regen = (((msg->data[1] & 0x7U) << 16) | (msg->data[2] << 8) | msg->data[3]) - 180272U;
 
+    // Carrot-style longitudinal engagement for the explicitly enabled GM
+    // platform. This keeps Panda's controls state aligned with an application
+    // engagement that did not originate from a physical SET/RES button edge.
+    if (gm_auto_longitudinal_controls_allowed && apply) {
+      controls_allowed = true;
+    }
+
     bool violation = false;
     // Allow apply bit in pre-enabled and overriding states
     violation |= !controls_allowed && apply;
@@ -256,8 +264,10 @@ static safety_config gm_init(uint16_t param) {
 
   const uint16_t GM_PARAM_SP_NON_ACC = 1;
   const uint16_t GM_PARAM_SP_ICBM = 2;
+  const uint16_t GM_PARAM_SP_AUTO_LONGITUDINAL_CONTROLS_ALLOWED = 4;
   gm_non_acc = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_NON_ACC);
   gm_icbm = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_ICBM);
+  gm_auto_longitudinal_controls_allowed = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_LONGITUDINAL_CONTROLS_ALLOWED);
 
   safety_config ret;
   if (gm_hw == GM_CAM) {

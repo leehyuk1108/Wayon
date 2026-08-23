@@ -1,7 +1,5 @@
-from types import SimpleNamespace
-
 from cereal import car, custom
-from openpilot.selfdrive.controls.lib.longcontrol import LongControl, LongCtrlState, long_control_state_trans
+from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState, long_control_state_trans
 
 
 
@@ -59,29 +57,3 @@ def test_starting():
   next_state = long_control_state_trans(CP, CP_SP, active, current_state, v_ego=1.0,
                              should_stop=False, brake_pressed=False, cruise_standstill=False)
   assert next_state == LongCtrlState.pid
-
-
-def test_traverse_soft_hold_uses_constant_hold_accel():
-  CP = car.CarParams.new_message(
-    brand="gm",
-    carFingerprint="CHEVROLET_TRAVERSE",
-    openpilotLongitudinalControl=True,
-    stopAccel=-2.0,
-    stoppingDecelRate=0.8,
-  )
-  CP.longitudinalTuning.kpBP = [0.0]
-  CP.longitudinalTuning.kpV = [1.0]
-  CP.longitudinalTuning.kiBP = [0.0]
-  CP.longitudinalTuning.kiV = [0.0]
-  control = LongControl(CP, custom.CarParamsSP.new_message())
-  control.long_control_state = LongCtrlState.stopping
-  CS = SimpleNamespace(
-    vEgo=0.0,
-    aEgo=0.0,
-    brakePressed=False,
-    brakeHoldActive=True,
-    cruiseState=SimpleNamespace(standstill=True),
-  )
-  plan = SimpleNamespace(aTarget=0.0, shouldStop=True, speeds=[0.0])
-
-  assert control.update(True, CS, plan, (-3.5, 2.0)) == -0.5

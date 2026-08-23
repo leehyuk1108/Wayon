@@ -283,6 +283,37 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
     self.safety.init_tests()
 
+  def test_auto_longitudinal_controls_allowed(self):
+    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_LONGITUDINAL_CONTROLS_ALLOWED)
+    safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
+    self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
+    self.safety.init_tests()
+
+    self.safety.set_controls_allowed(False)
+    inactive = self.packer.make_can_msg_safety("ASCMGasRegenCmd", 0, {
+      "GasRegenCmd": self.INACTIVE_GAS,
+      "GasRegenCmdActive": False,
+    })
+    self.assertTrue(self._tx(inactive))
+    self.assertFalse(self.safety.get_controls_allowed())
+
+    active = self.packer.make_can_msg_safety("ASCMGasRegenCmd", 0, {
+      "GasRegenCmd": self.INACTIVE_GAS,
+      "GasRegenCmdActive": True,
+    })
+    self.assertTrue(self._tx(active))
+    self.assertTrue(self.safety.get_controls_allowed())
+    self.assertTrue(self._tx(self._send_brake_msg(50)))
+
+    self.safety.set_controls_allowed(False)
+    excessive = self.packer.make_can_msg_safety("ASCMGasRegenCmd", 0, {
+      "GasRegenCmd": self.MAX_GAS + 1,
+      "GasRegenCmdActive": True,
+    })
+    self.assertFalse(self._tx(excessive))
+
+    self.safety.set_current_safety_param_sp(0)
+
 
 class TestGmCameraNonACCSafety(TestGmCameraSafety):
 

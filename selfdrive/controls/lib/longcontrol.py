@@ -85,10 +85,13 @@ class LongControl:
       output_accel = 0.
 
     elif self.long_control_state == LongCtrlState.stopping:
-      output_accel = self.last_output_accel
-      if output_accel > self.CP.stopAccel:
-        output_accel = min(output_accel, 0.0)
-        output_accel -= self.CP.stoppingDecelRate * DT_CTRL
+      if self.wayon_carrot_profile and CS.brakeHoldActive:
+        output_accel = max(self.CP.stopAccel, -0.5)
+      else:
+        output_accel = self.last_output_accel
+        if output_accel > self.CP.stopAccel:
+          output_accel = min(output_accel, 0.0)
+          output_accel -= self.CP.stoppingDecelRate * DT_CTRL
       self.reset()
 
     elif self.long_control_state == LongCtrlState.starting:

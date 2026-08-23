@@ -31,6 +31,10 @@ def get_acc_dashboard_speed_kph(CP, cluster_target_kph):
   return cluster_target_kph
 
 
+def is_soft_hold_driver_braking(CS):
+  return bool(CS.out.brakeHoldActive and CS.out.brakePressed)
+
+
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
@@ -100,7 +104,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       # Gas/regen, brakes, and UI commands - all at 25Hz
       if self.frame % 4 == 0:
         stopping = actuators.longControlState == LongCtrlState.stopping
-        if not CC.longActive:
+        soft_hold_driver_braking = is_soft_hold_driver_braking(CS)
+        if not CC.longActive or soft_hold_driver_braking:
           # ASCM sends max regen when not enabled
           self.apply_gas = self.params.INACTIVE_REGEN
           self.apply_brake = 0
@@ -114,8 +119,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         idx = (self.frame // 4) % 4
 
-        at_full_stop = CC.longActive and CS.out.standstill
-        near_stop = CC.longActive and (abs(CS.out.vEgo) < self.params.NEAR_STOP_BRAKE_PHASE)
+        at_full_stop = CC.longActive and CS.out.standstill and not soft_hold_driver_braking
+        near_stop = CC.longActive and not soft_hold_driver_braking and (abs(CS.out.vEgo) < self.params.NEAR_STOP_BRAKE_PHASE)
         friction_brake_bus = get_friction_brake_bus(self.CP)
         # GM Camera exceptions
         # TODO: can we always check the longControlState?

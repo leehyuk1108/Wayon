@@ -113,7 +113,9 @@ class Controls(ControlsExt):
 
     CC.latActive = _lat_active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
                    (not standstill or self.CP.steerAtStandstill)
-    CC.longActive = CC.enabled and not any(e.overrideLongitudinal for e in self.sm['onroadEvents']) and \
+    soft_hold_waiting_for_release = self.LoC.wayon_carrot_profile and CS.brakeHoldActive and CS.brakePressed
+    CC.longActive = CC.enabled and not soft_hold_waiting_for_release and \
+                    not any(e.overrideLongitudinal for e in self.sm['onroadEvents']) and \
                     (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
 
     actuators = CC.actuators

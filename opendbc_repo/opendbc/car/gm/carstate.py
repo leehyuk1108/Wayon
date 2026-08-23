@@ -180,6 +180,7 @@ class CarState(CarStateBase, CarStateExt):
       door_open=ret.doorOpen,
       seatbelt_unlatched=ret.seatbeltUnlatched,
       cruise_available=ret.cruiseState.available,
+      acc_faulted=ret.accFaulted,
     )
     self.soft_hold_button_enable = soft_hold.enable
     if soft_hold.cancel:

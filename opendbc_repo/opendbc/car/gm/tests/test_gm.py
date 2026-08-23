@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from opendbc.car.gm.carcontroller import get_acc_dashboard_speed_kph, get_friction_brake_bus
+from opendbc.car.gm.carcontroller import get_acc_dashboard_speed_kph, get_friction_brake_bus, is_soft_hold_driver_braking
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus
 from opendbc.car.structs import CarParams
@@ -47,3 +47,13 @@ class TestGMAccDashboardSpeed(unittest.TestCase):
   def test_non_sdgm_is_unchanged(self):
     CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertEqual(get_acc_dashboard_speed_kph(CP, 70.0), 70.0)
+
+
+class TestGMSoftHoldBrakeGuard(unittest.TestCase):
+  def test_blocks_actuation_while_driver_holds_brake(self):
+    CS = SimpleNamespace(out=SimpleNamespace(brakeHoldActive=True, brakePressed=True))
+    self.assertTrue(is_soft_hold_driver_braking(CS))
+
+  def test_allows_actuation_after_brake_release(self):
+    CS = SimpleNamespace(out=SimpleNamespace(brakeHoldActive=True, brakePressed=False))
+    self.assertFalse(is_soft_hold_driver_braking(CS))

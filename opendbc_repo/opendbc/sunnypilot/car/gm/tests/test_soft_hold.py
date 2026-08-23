@@ -7,7 +7,7 @@ GearShifter = structs.CarState.GearShifter
 
 
 def update(controller, brake=0, standstill=True, gear=GearShifter.drive, gas=False,
-           resume=False, cancel=False, door=False, seatbelt=False, available=True):
+           resume=False, cancel=False, door=False, seatbelt=False, available=True, faulted=False):
   return controller.update(
     brake_pedal_position=brake,
     standstill=standstill,
@@ -18,6 +18,7 @@ def update(controller, brake=0, standstill=True, gear=GearShifter.drive, gas=Fal
     door_open=door,
     seatbelt_unlatched=seatbelt,
     cruise_available=available,
+    acc_faulted=faulted,
   )
 
 
@@ -69,6 +70,7 @@ def test_invalid_vehicle_state_releases():
     {"door": True},
     {"seatbelt": True},
     {"available": False},
+    {"faulted": True},
   )
   for invalid in invalid_states:
     controller = SoftHoldController(True)

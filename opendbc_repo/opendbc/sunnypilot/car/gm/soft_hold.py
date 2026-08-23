@@ -33,7 +33,8 @@ class SoftHoldController:
 
   def update(self, *, brake_pedal_position: float, standstill: bool, gear_shifter,
              gas_pressed: bool, resume_pressed: bool, cancel_pressed: bool,
-             door_open: bool, seatbelt_unlatched: bool, cruise_available: bool) -> SoftHoldState:
+             door_open: bool, seatbelt_unlatched: bool, cruise_available: bool,
+             acc_faulted: bool) -> SoftHoldState:
     if not self.enabled:
       return SoftHoldState()
 
@@ -42,7 +43,7 @@ class SoftHoldController:
 
     release_requested = gas_pressed or resume_pressed
     invalid_state = (gear_shifter != GearShifter.drive or door_open or
-                     seatbelt_unlatched or not cruise_available)
+                     seatbelt_unlatched or not cruise_available or acc_faulted)
     if release_requested or cancel_pressed or invalid_state:
       self.active = False
       self.enable_delay = 0

@@ -7,9 +7,13 @@ GearShifter = structs.CarState.GearShifter
 
 
 def update(controller, brake=0, standstill=True, gear=GearShifter.drive, gas=False,
-           resume=False, cancel=False, door=False, seatbelt=False, available=True, faulted=False):
+           brake_pressed=None, resume=False, cancel=False, door=False, seatbelt=False,
+           available=True, faulted=False):
+  if brake_pressed is None:
+    brake_pressed = brake >= 8
   return controller.update(
     brake_pedal_position=brake,
+    brake_pressed=brake_pressed,
     standstill=standstill,
     gear_shifter=gear,
     gas_pressed=gas,
@@ -25,7 +29,9 @@ def update(controller, brake=0, standstill=True, gear=GearShifter.drive, gas=Fal
 def activate(controller):
   state = update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD)
   assert state.active and not state.enable
-  state = update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD)
+  state = update(controller, brake=0)
+  assert state.active and not state.enable
+  state = update(controller, brake=0)
   assert state.active and state.enable
   return state
 
@@ -43,6 +49,19 @@ def test_stays_active_after_brake_release():
   controller = SoftHoldController(True)
   activate(controller)
   assert update(controller, brake=0).active
+
+
+def test_does_not_enable_until_brake_is_fully_released():
+  controller = SoftHoldController(True)
+  assert update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD).active
+  for _ in range(10):
+    state = update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD)
+    assert state.active and not state.enable
+
+  state = update(controller, brake=0)
+  assert state.active and not state.enable
+  state = update(controller, brake=0)
+  assert state.active and state.enable
   assert update(controller, brake=0).active
 
 

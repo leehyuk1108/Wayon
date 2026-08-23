@@ -24,15 +24,17 @@ class SoftHoldController:
     self.enabled = enabled
     self.active = False
     self.strong_press_latched = False
+    self.waiting_for_brake_release = False
     self.enable_delay = 0
 
   def reset(self) -> None:
     self.active = False
     self.strong_press_latched = False
+    self.waiting_for_brake_release = False
     self.enable_delay = 0
 
   def update(self, *, brake_pedal_position: float, standstill: bool, gear_shifter,
-             gas_pressed: bool, resume_pressed: bool, cancel_pressed: bool,
+             brake_pressed: bool, gas_pressed: bool, resume_pressed: bool, cancel_pressed: bool,
              door_open: bool, seatbelt_unlatched: bool, cruise_available: bool,
              acc_faulted: bool) -> SoftHoldState:
     if not self.enabled:
@@ -46,6 +48,7 @@ class SoftHoldController:
                      seatbelt_unlatched or not cruise_available or acc_faulted)
     if release_requested or cancel_pressed or invalid_state:
       self.active = False
+      self.waiting_for_brake_release = False
       self.enable_delay = 0
       return SoftHoldState()
 
@@ -55,14 +58,18 @@ class SoftHoldController:
       self.strong_press_latched = True
       if self.active:
         self.active = False
+        self.waiting_for_brake_release = False
         self.enable_delay = 0
         return SoftHoldState(cancel=True)
       if standstill:
         self.active = True
-        # Wait until after the brake rising-edge event before requesting pre-enable.
-        self.enable_delay = ENABLE_DELAY_FRAMES
+        # GM faults if ACC is enabled while the driver brake is still applied.
+        self.waiting_for_brake_release = True
 
     enable = False
+    if self.active and self.waiting_for_brake_release and not brake_pressed:
+      self.waiting_for_brake_release = False
+      self.enable_delay = ENABLE_DELAY_FRAMES
     if self.active and self.enable_delay > 0:
       self.enable_delay -= 1
       enable = self.enable_delay == 0

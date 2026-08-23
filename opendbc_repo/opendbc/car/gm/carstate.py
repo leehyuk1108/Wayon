@@ -172,6 +172,7 @@ class CarState(CarStateBase, CarStateExt):
     cancel_pressed = any(b.pressed and b.type == ButtonType.cancel for b in ret.buttonEvents)
     soft_hold = self.soft_hold.update(
       brake_pedal_position=pt_cp.vl["ECMAcceleratorPos"]["BrakePedalPos"],
+      brake_pressed=ret.brakePressed,
       standstill=ret.standstill,
       gear_shifter=ret.gearShifter,
       gas_pressed=ret.gasPressed,

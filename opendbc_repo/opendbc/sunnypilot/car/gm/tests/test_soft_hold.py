@@ -1,5 +1,6 @@
 from opendbc.car import structs
-from opendbc.sunnypilot.car.gm.soft_hold import SoftHoldController
+from opendbc.car.gm.carstate import CarState
+from opendbc.sunnypilot.car.gm.soft_hold import SOFT_HOLD_PRESS_THRESHOLD, SoftHoldController
 
 
 GearShifter = structs.CarState.GearShifter
@@ -21,17 +22,17 @@ def update(controller, brake=0, standstill=True, gear=GearShifter.drive, gas=Fal
 
 
 def activate(controller):
-  state = update(controller, brake=70)
+  state = update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD)
   assert state.active and not state.enable
-  state = update(controller, brake=70)
+  state = update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD)
   assert state.active and state.enable
   return state
 
 
 def test_requires_strong_press_at_standstill():
   controller = SoftHoldController(True)
-  assert not update(controller, brake=69).active
-  assert not update(controller, brake=82, standstill=False).active
+  assert not update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD - 1).active
+  assert not update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD + 20, standstill=False).active
 
   update(controller, brake=40)
   activate(controller)
@@ -48,7 +49,7 @@ def test_second_strong_press_cancels():
   controller = SoftHoldController(True)
   activate(controller)
   update(controller, brake=0)
-  state = update(controller, brake=75)
+  state = update(controller, brake=SOFT_HOLD_PRESS_THRESHOLD + 10)
   assert not state.active
   assert state.cancel
 
@@ -78,3 +79,9 @@ def test_invalid_vehicle_state_releases():
 def test_disabled_controller_never_activates():
   controller = SoftHoldController(False)
   assert not update(controller, brake=100).active
+
+
+def test_carstate_forwards_soft_hold_enable_pulse():
+  car_state = CarState.__new__(CarState)
+  car_state.soft_hold_button_enable = True
+  assert car_state.update_button_enable([])

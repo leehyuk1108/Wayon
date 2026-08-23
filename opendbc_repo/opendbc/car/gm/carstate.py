@@ -39,8 +39,11 @@ class CarState(CarStateBase, CarStateExt):
     self.soft_hold = SoftHoldController(
       CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.openpilotLongitudinalControl
     )
+    self.soft_hold_button_enable = False
 
   def update_button_enable(self, buttonEvents: list[structs.CarState.ButtonEvent]):
+    if self.soft_hold_button_enable:
+      return True
     if not self.CP.pcmCruise:
       for b in buttonEvents:
         # The ECM allows enabling on falling edge of set, but only rising edge of resume
@@ -178,8 +181,7 @@ class CarState(CarStateBase, CarStateExt):
       seatbelt_unlatched=ret.seatbeltUnlatched,
       cruise_available=ret.cruiseState.available,
     )
-    if soft_hold.enable:
-      ret.buttonEnable = True
+    self.soft_hold_button_enable = soft_hold.enable
     if soft_hold.cancel:
       ret.buttonEvents.append(structs.CarState.ButtonEvent(type=ButtonType.cancel, pressed=True))
     if soft_hold.active:

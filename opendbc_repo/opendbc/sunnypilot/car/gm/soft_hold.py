@@ -7,7 +7,7 @@ from opendbc.car import structs
 
 GearShifter = structs.CarState.GearShifter
 
-SOFT_HOLD_PRESS_THRESHOLD = 70
+SOFT_HOLD_PRESS_THRESHOLD = 100
 SOFT_HOLD_RELEASE_THRESHOLD = 45
 ENABLE_DELAY_FRAMES = 2
 

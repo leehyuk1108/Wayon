@@ -11,6 +11,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   PID_KP,
   is_enabled,
 )
+from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -77,6 +78,7 @@ class LongControl:
     self.speed_pid = PIDController(([0.0], [PID_KP]),
                                    ([0.0], [PID_KI]),
                                    rate=1 / DT_CTRL)
+    self.accel_smoother = AdaptiveLongitudinalSmoother()
     self.last_output_accel = 0.0
     self.sng_stop_frames = 0
     self.sng_lead_frames = 0
@@ -164,6 +166,7 @@ class LongControl:
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.
+      self.accel_smoother.reset(CS.aEgo)
 
     elif self.long_control_state == LongCtrlState.stopping:
       output_accel = self.last_output_accel
@@ -171,10 +174,12 @@ class LongControl:
         output_accel = min(output_accel, 0.0)
         output_accel -= self.get_stopping_decel_rate(CS.standstill) * DT_CTRL
       self.reset()
+      self.accel_smoother.reset(output_accel)
 
     elif self.long_control_state == LongCtrlState.starting:
       output_accel = self.CP.startAccel
       self.reset()
+      self.accel_smoother.reset(output_accel)
 
     else:  # LongCtrlState.pid
       if self.speed_pid_enabled:
@@ -182,6 +187,12 @@ class LongControl:
         error = v_target_now - CS.vEgo
         output_accel = self.speed_pid.update(error, speed=CS.vEgo, feedforward=a_target * self.speed_pid_kf)
         self.pid.reset()
+        lead = radar_state.leadOne if radar_state is not None else None
+        cutin_risk = radar_state.leadCutInRisk if radar_state is not None else None
+        output_accel = self.accel_smoother.update(
+          output_accel, CS.aEgo, CS.vEgo, v_target_now,
+          planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
+          lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]))
       else:
         error = a_target - CS.aEgo
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)

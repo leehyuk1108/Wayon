@@ -5,6 +5,7 @@ from openpilot.selfdrive.controls.lib.longcontrol import (LongControl, LongCtrlS
                                                           SNG_LEAD_CONFIRM_FRAMES, SNG_RESUME_TIMEOUT_FRAMES,
                                                           SNG_STOP_CONFIRM_FRAMES,
                                                           long_control_state_trans)
+from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 
 
 
@@ -171,3 +172,68 @@ def test_sng_resume_times_out_without_retrying_same_stop():
   CS.vEgo = 1.0
   assert not controller.update_sng_resume(True, CS, plan, radar)
   assert not controller.sng_resume_attempted
+
+
+def run_smoother(target, seconds=4.0, **kwargs):
+  smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  smoother.reset(0.0)
+  outputs = []
+  for _ in range(round(seconds / smoother.dt)):
+    outputs.append(smoother.update(target, measured_accel=outputs[-1] if outputs else 0.0,
+                                   v_ego=20.0, v_target=20.0, **kwargs))
+  return outputs
+
+
+def test_adaptive_smoother_builds_and_releases_brake_without_overshoot():
+  outputs = run_smoother(-1.0)
+  slopes = [(outputs[i] - outputs[i - 1]) / 0.01 for i in range(1, len(outputs))]
+
+  assert min(outputs) >= -1.0
+  assert abs(outputs[-1] + 1.0) < 0.01
+  assert abs(slopes[2]) < max(abs(s) for s in slopes)
+  assert abs(slopes[-2]) < max(abs(s) for s in slopes)
+
+
+def test_adaptive_smoother_compresses_curve_for_stronger_braking():
+  mild = run_smoother(-0.4, seconds=1.0)
+  strong = run_smoother(-2.0, seconds=1.0)
+
+  assert abs(strong[-1]) > abs(mild[-1]) * 2.0
+  assert strong[-1] < -1.0
+
+
+def test_adaptive_smoother_responds_faster_to_closing_lead():
+  calm = run_smoother(-0.6, seconds=0.5)
+  lead = SimpleNamespace(status=True, dRel=10.0, vRel=-6.0)
+  urgent = run_smoother(-0.6, seconds=0.5, lead=lead)
+
+  assert urgent[-1] < calm[-1]
+
+
+def test_adaptive_smoother_preserves_emergency_brake_response():
+  outputs = run_smoother(-3.0, seconds=0.5)
+
+  assert outputs[-1] < -2.0
+  assert min(outputs) >= -3.0
+
+
+def test_adaptive_smoother_releases_brake_without_lingering_or_overshoot():
+  smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  smoother.reset(-1.0)
+  outputs = [smoother.update(0.0, measured_accel=smoother.output_accel,
+                             v_ego=18.0, v_target=18.0) for _ in range(150)]
+
+  assert outputs[49] < -0.3
+  assert outputs[99] > -0.15
+  assert outputs[-1] > -0.05
+  assert max(outputs) <= 0.0
+
+
+def test_adaptive_smoother_acceleration_is_smooth_and_bounded():
+  outputs = run_smoother(0.8)
+  slopes = [(outputs[i] - outputs[i - 1]) / 0.01 for i in range(1, len(outputs))]
+
+  assert max(outputs) <= 0.8
+  assert abs(outputs[-1] - 0.8) < 0.01
+  assert slopes[2] < max(slopes)
+  assert slopes[-2] < max(slopes)

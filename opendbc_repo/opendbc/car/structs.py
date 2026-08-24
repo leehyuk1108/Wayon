@@ -113,6 +113,7 @@ class IntelligentCruiseButtonManagement:
   sectionAverageKph: float = auto_field()
   sectionProgress: float = auto_field()
   sectionRemainingM: float = auto_field()
+  controlSource: str = auto_field()
 
   class IntelligentCruiseButtonManagementState(StrEnum):
     inactive = auto()

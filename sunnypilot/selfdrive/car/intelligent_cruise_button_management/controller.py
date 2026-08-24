@@ -68,6 +68,7 @@ class IntelligentCruiseButtonManagement:
     self.camera_distance_m = 0.0
     self.camera_state_checked_at = 0.0
     self.automatic_speed_control_active = False
+    self.automatic_control_source = "inactive"
 
     self.section_phase = "inactive"
     self.section_limit_kph = 0
@@ -100,6 +101,7 @@ class IntelligentCruiseButtonManagement:
   def reset_temporary_control(self) -> None:
     self.automatic_speed_control_active = False
     self.automatic_control_active = False
+    self.automatic_control_source = "inactive"
 
   def reset_section_control(self) -> None:
     self.section_phase = "inactive"
@@ -245,20 +247,24 @@ class IntelligentCruiseButtonManagement:
     if not bool(getattr(vision, "active", False)):
       vision_target = 0
 
-    limiter_targets = [target for target in (camera_target, vision_target)
+    limiter_targets = [(target, source) for target, source in ((camera_target, "camera"), (vision_target, "curve"))
                        if self.v_cruise_min <= target < restore_target]
     if limiter_targets:
+      selected_target, selected_source = min(limiter_targets, key=lambda item: item[0])
       self.automatic_speed_control_active = True
       self.automatic_control_active = True
-      return min(limiter_targets)
+      self.automatic_control_source = selected_source
+      return selected_target
 
     # Restore the driver's virtual set speed after the camera or curve clears.
     if self.automatic_speed_control_active and self.v_cruise_cluster != restore_target:
       self.automatic_control_active = True
+      self.automatic_control_source = "restore"
       return restore_target
 
     self.automatic_speed_control_active = False
     self.automatic_control_active = False
+    self.automatic_control_source = "inactive"
     return restore_target
 
   def update_calculations(self, CS: car.CarState, LP_SP: custom.LongitudinalPlanSP) -> None:

@@ -118,6 +118,7 @@ class ControlsExt(ModelStateBase):
     CC_SP.intelligentCruiseButtonManagement.sectionAverageKph = icbm_src.sectionAverageKph
     CC_SP.intelligentCruiseButtonManagement.sectionProgress = icbm_src.sectionProgress
     CC_SP.intelligentCruiseButtonManagement.sectionRemainingM = icbm_src.sectionRemainingM
+    CC_SP.intelligentCruiseButtonManagement.controlSource = icbm_src.controlSource
 
     return CC_SP
 

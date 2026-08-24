@@ -1121,6 +1121,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   icbm = getattr(selfdrive_state_sp, "intelligentCruiseButtonManagement", None)
   automatic_acc_active = bool(getattr(icbm, "automaticControlActive", False))
   automatic_acc_target_kph = finite_float(getattr(icbm, "automaticTargetSpeedKph", 0.0))
+  automatic_control_source = str(getattr(icbm, "controlSource", "inactive"))
   section_phase = str(getattr(icbm, "sectionPhase", "inactive"))
   section_limit_kph = finite_float(getattr(icbm, "sectionLimitKph", 0.0))
   section_average_kph = finite_float(getattr(icbm, "sectionAverageKph", 0.0))
@@ -1152,6 +1153,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "automaticAccTargetKph": rounded(automatic_acc_target_kph) if automatic_acc_active else 0.0,
     "automaticAccActive": automatic_acc_active,
     "automaticAccAtTarget": automatic_acc_at_target,
+    "automaticControlSource": automatic_control_source if automatic_acc_active else "inactive",
     "sectionPhase": section_phase,
     "sectionLimitKph": rounded(section_limit_kph),
     "sectionAverageKph": rounded(section_average_kph),

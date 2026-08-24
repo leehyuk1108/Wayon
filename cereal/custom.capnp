@@ -36,6 +36,7 @@ struct IntelligentCruiseButtonManagement {
   sectionAverageKph @7 :Float32;
   sectionProgress @8 :Float32;
   sectionRemainingM @9 :Float32;
+  controlSource @10 :Text;
 
   enum IntelligentCruiseButtonManagementState {
     inactive @0;      # No button press or default state

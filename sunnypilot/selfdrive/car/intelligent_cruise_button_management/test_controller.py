@@ -67,6 +67,7 @@ def test_camera_speed_becomes_temporary_target(tmp_path):
 
   assert controller.v_target == 60
   assert controller.automatic_control_active
+  assert controller.automatic_control_source == "camera"
 
 
 def test_fixed_camera_profile_reaches_limit_one_hundred_meters_before_camera(tmp_path):
@@ -279,6 +280,7 @@ def test_active_vision_curve_becomes_temporary_target(tmp_path):
   assert controller.v_target == 70
   assert controller.automatic_speed_control_active
   assert controller.automatic_control_active
+  assert controller.automatic_control_source == "curve"
 
 
 def test_inactive_vision_target_is_ignored(tmp_path):
@@ -318,12 +320,14 @@ def test_camera_session_restores_driver_target_after_camera_clears(tmp_path):
   assert controller.v_target == 100
   assert controller.automatic_speed_control_active
   assert controller.automatic_control_active
+  assert controller.automatic_control_source == "restore"
 
   state.cruiseState.speedCluster = 100 * CV.KPH_TO_MS
   controller.run(state, make_control(), make_plan(), True)
   assert controller.v_target == 100
   assert not controller.automatic_speed_control_active
   assert not controller.automatic_control_active
+  assert controller.automatic_control_source == "inactive"
 
 
 def test_camera_session_sends_decrease_then_restore_increase(tmp_path):
@@ -415,6 +419,7 @@ def test_automatic_control_status_survives_car_control_conversion():
   message.intelligentCruiseButtonManagement.automaticTargetSpeedKph = 80
   message.intelligentCruiseButtonManagement.sectionPhase = "cruise"
   message.intelligentCruiseButtonManagement.sectionProgress = 0.64
+  message.intelligentCruiseButtonManagement.controlSource = "camera"
 
   converted = convert_carControlSP(message)
 
@@ -422,3 +427,4 @@ def test_automatic_control_status_survives_car_control_conversion():
   assert converted.intelligentCruiseButtonManagement.automaticTargetSpeedKph == 80
   assert converted.intelligentCruiseButtonManagement.sectionPhase == "cruise"
   assert abs(converted.intelligentCruiseButtonManagement.sectionProgress - 0.64) < 1e-5
+  assert converted.intelligentCruiseButtonManagement.controlSource == "camera"

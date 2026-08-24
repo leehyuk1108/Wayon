@@ -671,6 +671,7 @@ class SelfdriveD(CruiseHelper):
     icbm.sectionAverageKph = self.icbm.section_average_kph
     icbm.sectionProgress = self.icbm.section_progress
     icbm.sectionRemainingM = self.icbm.section_remaining_m
+    icbm.controlSource = self.icbm.automatic_control_source
 
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 

@@ -86,6 +86,8 @@
 
 .field private static sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;
 
+.field private static sAutomaticControlSource:Ljava/lang/String;
+
 .field private static sCameraDistanceTextView:Landroid/widget/TextView;
 
 .field private static sCameraSpeedTextView:Landroid/widget/TextView;
@@ -171,6 +173,8 @@
     sput-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastGear:Ljava/lang/String;
 
     sput-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sMusicTitle:Ljava/lang/String;
+
+    sput-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticControlSource:Ljava/lang/String;
 
     .line 89
     new-instance v0, Landroid/os/Handler;
@@ -1092,13 +1096,13 @@
 
     new-instance v3, Landroid/widget/FrameLayout$LayoutParams;
 
-    const/16 v4, 0x32
+    const/16 v4, 0x30
 
     const/16 v5, 0x1e
 
     invoke-direct {v3, v4, v5}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
 
-    const/16 v4, 0x15c
+    const/16 v4, 0x186
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
@@ -1112,17 +1116,17 @@
 
     new-instance v3, Landroid/widget/FrameLayout$LayoutParams;
 
-    const/16 v4, 0x12
+    const/16 v4, 0x14
 
-    const/16 v5, 0xe
+    const/16 v5, 0x12
 
     invoke-direct {v3, v4, v5}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
 
-    const/16 v4, 0x17f
+    const/16 v4, 0x16e
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
-    const/16 v4, 0x131
+    const/16 v4, 0x12f
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 
@@ -1309,7 +1313,7 @@
 
     invoke-virtual {v3, v4}, Landroid/widget/ImageView;->setScaleType(Landroid/widget/ImageView$ScaleType;)V
 
-    const-string v4, "navdy_acc_control_arrow"
+    const-string v4, "navdy_camera_decel"
 
     invoke-static {p0, v3, v4}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->setImageByName(Landroid/content/Context;Landroid/widget/ImageView;Ljava/lang/String;)V
 
@@ -1319,7 +1323,7 @@
 
     new-instance v2, Landroid/view/animation/AlphaAnimation;
 
-    const v3, 0x3e8f5c29    # 0.28f
+    const v3, 0x3ee66666    # 0.45f
 
     const/high16 v4, 0x3f800000    # 1.0f
 
@@ -1404,11 +1408,11 @@
 
     const/4 v1, 0x0
 
-    const/high16 v3, 0x41980000    # 19.0f
+    const/high16 v3, 0x41800000    # 16.0f
 
     invoke-virtual {p0, v1, v3}, Landroid/widget/TextView;->setTextSize(IF)V
 
-    const/16 v3, 0x11
+    const/16 v3, 0x13
 
     invoke-virtual {p0, v3}, Landroid/widget/TextView;->setGravity(I)V
 
@@ -1418,7 +1422,7 @@
 
     invoke-virtual {p0, v1}, Landroid/widget/TextView;->setSingleLine(Z)V
 
-    const-string v1, "88"
+    const-string v1, "감속 중"
 
     invoke-virtual {p0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 
@@ -2913,6 +2917,16 @@
 
     sput-wide v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedKph:D
 
+    const-string v0, "automaticControlSource"
+
+    const-string v1, "inactive"
+
+    invoke-virtual {p0, v0, v1}, Lorg/json/JSONObject;->optString(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v0
+
+    sput-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticControlSource:Ljava/lang/String;
+
     return-void
 .end method
 
@@ -3069,105 +3083,131 @@
 
     sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedTextView:Landroid/widget/TextView;
 
-    sget-boolean p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccActive:Z
+    sget-object p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
 
-    if-eqz p1, :cond_a
+    const/4 p2, 0x4
 
-    sget-wide p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActualAccSpeedKph:D
+    invoke-virtual {p0, p2}, Landroid/widget/TextView;->setVisibility(I)V
 
-    const-wide/16 p3, 0x0
+    invoke-virtual {p1, p2}, Landroid/widget/ImageView;->setVisibility(I)V
 
-    cmpl-double p3, p1, p3
+    sget-object p3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;
 
-    if-lez p3, :cond_a
+    invoke-virtual {p3, p2}, Landroid/widget/TextView;->setVisibility(I)V
 
-    sget-wide p3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedKph:D
+    sget-boolean p2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccActive:Z
 
-    const-wide/16 p5, 0x0
+    if-eqz p2, :cond_a
 
-    cmpl-double p5, p3, p5
+    const-string p2, "camera"
 
-    if-lez p5, :cond_a
+    sget-object p3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticControlSource:Ljava/lang/String;
 
-    cmpl-double p5, p1, p3
+    invoke-virtual {p2, p3}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
 
-    invoke-static {p1, p2}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->formatSetSpeed(D)Ljava/lang/String;
+    move-result p2
 
-    move-result-object p1
+    if-eqz p2, :cond_8
 
-    invoke-virtual {p0, p1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+    const/4 p2, 0x0
+
+    const/high16 p3, 0x41600000    # 14.0f
+
+    invoke-virtual {p0, p2, p3}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    const-string p2, "감속 중"
+
+    invoke-virtual {p0, p2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    invoke-virtual {p1}, Landroid/widget/ImageView;->getContext()Landroid/content/Context;
+
+    move-result-object p2
+
+    const-string p3, "navdy_camera_decel"
+
+    invoke-static {p2, p1, p3}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->setImageByName(Landroid/content/Context;Landroid/widget/ImageView;Ljava/lang/String;)V
+
+    const p2, -0x4dc2
+
+    invoke-static {p1, p2}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->tintImage(Landroid/widget/ImageView;I)V
 
     invoke-virtual {p0, v0}, Landroid/widget/TextView;->setVisibility(I)V
 
-    sget-boolean v1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccAtTarget:Z
+    invoke-virtual {p1, v0}, Landroid/widget/ImageView;->setVisibility(I)V
 
-    if-nez v1, :cond_9
+    invoke-virtual {p1}, Landroid/widget/ImageView;->getAnimation()Landroid/view/animation/Animation;
 
-    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;
+    move-result-object p2
 
-    const/4 p1, 0x4
+    if-nez p2, :cond_b
 
-    invoke-virtual {p0, p1}, Landroid/widget/TextView;->setVisibility(I)V
+    sget-object p2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;
 
-    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
+    if-eqz p2, :cond_b
 
-    if-gez p5, :cond_8
-
-    const/high16 p1, -0x3d4c0000    # -90.0f
-
-    goto :goto_5
-
-    :cond_8
-    const/high16 p1, 0x42b40000    # 90.0f
-
-    :goto_5
-    invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setRotation(F)V
-
-    invoke-virtual {p0, v0}, Landroid/widget/ImageView;->setVisibility(I)V
-
-    invoke-virtual {p0}, Landroid/widget/ImageView;->getAnimation()Landroid/view/animation/Animation;
-
-    move-result-object p1
-
-    if-nez p1, :cond_b
-
-    sget-object p1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;
-
-    if-eqz p1, :cond_b
-
-    invoke-virtual {p0, p1}, Landroid/widget/ImageView;->startAnimation(Landroid/view/animation/Animation;)V
+    invoke-virtual {p1, p2}, Landroid/widget/ImageView;->startAnimation(Landroid/view/animation/Animation;)V
 
     goto :goto_6
 
-    :cond_9
-    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
+    :cond_8
+    const-string p2, "curve"
 
-    invoke-virtual {p0}, Landroid/widget/ImageView;->clearAnimation()V
+    sget-object p3, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticControlSource:Ljava/lang/String;
 
-    const/4 p1, 0x4
+    invoke-virtual {p2, p3}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
 
-    invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setVisibility(I)V
+    move-result p2
 
-    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;
+    if-eqz p2, :cond_a
+
+    sget-wide p2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedKph:D
+
+    const-wide/16 p4, 0x0
+
+    cmpl-double p4, p2, p4
+
+    if-lez p4, :cond_a
+
+    const/4 p4, 0x0
+
+    const/high16 p5, 0x41800000    # 16.0f
+
+    invoke-virtual {p0, p4, p5}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    invoke-static {p2, p3}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->formatSetSpeed(D)Ljava/lang/String;
+
+    move-result-object p2
+
+    invoke-virtual {p0, p2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    invoke-virtual {p1}, Landroid/widget/ImageView;->getContext()Landroid/content/Context;
+
+    move-result-object p2
+
+    const-string p3, "navdy_curve_target"
+
+    invoke-static {p2, p1, p3}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->setImageByName(Landroid/content/Context;Landroid/widget/ImageView;Ljava/lang/String;)V
+
+    const p2, -0x4dc2
+
+    invoke-static {p1, p2}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->tintImage(Landroid/widget/ImageView;I)V
+
+    invoke-virtual {p1}, Landroid/widget/ImageView;->clearAnimation()V
 
     invoke-virtual {p0, v0}, Landroid/widget/TextView;->setVisibility(I)V
+
+    invoke-virtual {p1, v0}, Landroid/widget/ImageView;->setVisibility(I)V
 
     goto :goto_6
 
     :cond_a
-    const/4 p1, 0x4
+    const/4 p2, 0x4
 
-    invoke-virtual {p0, p1}, Landroid/widget/TextView;->setVisibility(I)V
+    invoke-virtual {p0, p2}, Landroid/widget/TextView;->setVisibility(I)V
 
-    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;
+    invoke-virtual {p1}, Landroid/widget/ImageView;->clearAnimation()V
 
-    invoke-virtual {p0, p1}, Landroid/widget/TextView;->setVisibility(I)V
-
-    sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccArrowView:Landroid/widget/ImageView;
-
-    invoke-virtual {p0}, Landroid/widget/ImageView;->clearAnimation()V
-
-    invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setVisibility(I)V
+    invoke-virtual {p1, p2}, Landroid/widget/ImageView;->setVisibility(I)V
 
     .line 236
     :cond_b

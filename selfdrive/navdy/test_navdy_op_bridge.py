@@ -323,52 +323,45 @@ def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
   assert 'const-string v0, "automaticAccAtTarget"' in smali
   assert 'const-string v0, "actualAccSetKph"' in smali
   assert 'const-string v0, "automaticAccTargetKph"' in smali
+  assert 'const-string v0, "automaticControlSource"' in smali
   assert "sActualAccSpeedTextView:Landroid/widget/TextView;" in smali
   assert "sAutomaticAccTargetSpeedTextView:Landroid/widget/TextView;" in smali
   assert "sAutomaticAccArrowView:Landroid/widget/ImageView;" in smali
   assert "sAutomaticAccArrowAnimation:Landroid/view/animation/AlphaAnimation;" in smali
-  assert 'const-string v4, "navdy_acc_control_arrow"' in smali
+  assert 'const-string v4, "navdy_camera_decel"' in smali
+  assert 'const-string p3, "navdy_camera_decel"' in smali
+  assert 'const-string p3, "navdy_curve_target"' in smali
+  assert 'const-string p2, "감속 중"' in smali
   assert "Landroid/view/animation/AlphaAnimation;" in smali
   assert "->getAnimation()Landroid/view/animation/Animation;" in smali
   assert "->clearAnimation()V" in smali
-  assert "->setRotation(F)V" in smali
-  assert "const/high16 p1, -0x3d4c0000    # -90.0f" in smali
-  assert "const/high16 p1, 0x42b40000    # 90.0f" in smali
-  assert "if-nez v1, :cond_9" in smali
-  reached_check = (
-    "sget-boolean v1, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccAtTarget:Z\n\n"
-    "    if-nez v1, :cond_9"
-  )
-  assert reached_check in smali
   overlay_update = smali.split(".method private static updateOpenpilotOverlay", 1)[1].split(".end method", 1)[0]
-  actual_acc_update = overlay_update.split("->sActualAccSpeedKph:D", 1)[1]
-  speed_compare = actual_acc_update.index("cmpl-double p5, p1, p3")
-  speed_format = actual_acc_update.index("->formatSetSpeed(D)Ljava/lang/String;")
-  reached_state = actual_acc_update.index("->sAutomaticAccAtTarget:Z")
-  assert speed_compare < speed_format < reached_state
-  hidden_block = smali.rsplit(":cond_a", 1)[1].split(":goto_6", 1)[0]
-  assert (
-    "sget-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;"
-    "->sAutomaticAccArrowView:Landroid/widget/ImageView;\n\n"
-    "    invoke-virtual {p0}, Landroid/widget/ImageView;->clearAnimation()V\n\n"
-    "    invoke-virtual {p0, p1}, Landroid/widget/ImageView;->setVisibility(I)V"
-  ) in hidden_block
+  assert 'const-string p2, "camera"' in overlay_update
+  assert 'const-string p2, "curve"' in overlay_update
+  assert "const/high16 p3, 0x41600000    # 14.0f" in overlay_update
+  assert "const/high16 p5, 0x41800000    # 16.0f" in overlay_update
+  assert "->sActualAccSpeedKph:D" not in overlay_update
+  assert "->setRotation(F)V" not in overlay_update
   assert "Landroid/view/Space;" not in smali
   assert "new-instance v2, Landroid/view/View;" in smali
-  assert "const/high16 v3, 0x41980000    # 19.0f" in smali
+  assert "const/high16 v3, 0x41800000    # 16.0f" in smali
   set_speed_builder = smali.split(".method private static buildSetSpeedRow", 1)[1].split(".end method", 1)[0]
   overlay_builder = smali.split(".method private static buildOverlayView", 1)[1].split(".end method", 1)[0]
   assert set_speed_builder.count("Landroid/widget/TextView;->setGravity(I)V") == 3
   assert "const/16 v4, 0x46" not in set_speed_builder
   assert overlay_builder.count("Landroid/widget/LinearLayout;->removeView(Landroid/view/View;)V") == 3
-  assert "const/16 v4, 0x15c" in overlay_builder
+  assert "const/16 v4, 0x30" in overlay_builder
+  assert "const/16 v4, 0x186" in overlay_builder
   assert "const/16 v4, 0x129" in overlay_builder
-  assert "const/16 v4, 0x17f" in overlay_builder
-  assert "const/16 v4, 0x131" in overlay_builder
+  assert "const/16 v4, 0x14" in overlay_builder
+  assert "const/16 v5, 0x12" in overlay_builder
+  assert "const/16 v4, 0x16e" in overlay_builder
+  assert "const/16 v4, 0x12f" in overlay_builder
   assert "const/16 v4, 0x16c" in overlay_builder
   assert "const/16 v4, 0x142" in overlay_builder
   assert "Landroid/widget/TextView;->setBackgroundColor(I)V" in overlay_builder
-  assert (patch / "res/drawable-nodpi/navdy_acc_control_arrow.png").is_file()
+  assert (patch / "res/drawable-nodpi/navdy_camera_decel.png").is_file()
+  assert (patch / "res/drawable-nodpi/navdy_curve_target.png").is_file()
 
 
 def test_navdy_disengaged_music_sits_above_current_speed():
@@ -461,6 +454,7 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
     intelligentCruiseButtonManagement=SimpleNamespace(
       automaticControlActive=True,
       automaticTargetSpeedKph=70.0,
+      controlSource="camera",
       state="holding",
     ))
 
@@ -472,6 +466,7 @@ def test_payload_keeps_restore_speed_and_adds_physical_and_control_targets():
   assert payload["automaticAccTargetKph"] == 70.0
   assert payload["automaticAccActive"] is True
   assert payload["automaticAccAtTarget"] is False
+  assert payload["automaticControlSource"] == "camera"
 
 
 def test_payload_exposes_section_enforcement_metrics_to_navdy():
@@ -496,6 +491,24 @@ def test_payload_exposes_section_enforcement_metrics_to_navdy():
   assert payload["sectionAverageKph"] == 92.4
   assert payload["sectionProgress"] == 0.64
   assert payload["sectionRemainingM"] == 1300.0
+
+
+def test_payload_exposes_curve_control_source_and_target_to_navdy():
+  car_state = navdy_op_bridge.default_car_state()
+  selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+  selfdrive_state_sp = SimpleNamespace(
+    intelligentCruiseButtonManagement=SimpleNamespace(
+      automaticControlActive=True,
+      automaticTargetSpeedKph=65.0,
+      controlSource="curve",
+    ))
+
+  payload = navdy_op_bridge.payload_from_messages(
+    selfdrive_state, car_state, 8, selfdrive_state_sp=selfdrive_state_sp)
+
+  assert payload["automaticAccActive"] is True
+  assert payload["automaticAccTargetKph"] == 65.0
+  assert payload["automaticControlSource"] == "curve"
 
 
 def test_payload_marks_icbm_target_reached_from_matching_cluster_values():

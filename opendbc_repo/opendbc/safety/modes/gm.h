@@ -38,6 +38,7 @@ static bool gm_non_acc = false;
 static bool gm_icbm = false;
 static bool gm_sdgm = false;
 static bool gm_auto_resume_sng = false;
+static bool gm_auto_hold = false;
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
@@ -128,7 +129,13 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
   if (msg->addr == 0x315U) {
     int brake = ((msg->data[0] & 0xFU) << 8) + msg->data[1];
     brake = (0x1000 - brake) & 0xFFF;
-    if (longitudinal_brake_checks(brake, *gm_long_limits)) {
+    // GM Auto Hold may retain the already-established hydraulic hold only at
+    // standstill. All moving, gas/regen, and stronger brake commands continue
+    // through the normal longitudinal safety checks.
+    bool auto_hold_brake = gm_auto_hold && !controls_allowed && !vehicle_moving &&
+                           !gas_pressed_prev && !regen_braking_prev &&
+                           (brake > 0) && (brake <= 1);
+    if (longitudinal_brake_checks(brake, *gm_long_limits) && !auto_hold_brake) {
       tx = false;
     }
   }
@@ -261,9 +268,11 @@ static safety_config gm_init(uint16_t param) {
   const uint16_t GM_PARAM_SP_NON_ACC = 1;
   const uint16_t GM_PARAM_SP_ICBM = 2;
   const uint16_t GM_PARAM_SP_AUTO_RESUME_SNG = 4;
+  const uint16_t GM_PARAM_SP_AUTO_HOLD = 8;
   gm_non_acc = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_NON_ACC);
   gm_icbm = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_ICBM);
   gm_auto_resume_sng = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_RESUME_SNG);
+  gm_auto_hold = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_HOLD);
 
   safety_config ret;
   if (gm_hw == GM_CAM) {

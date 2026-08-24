@@ -323,6 +323,26 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
 
     self.safety.set_current_safety_param_sp(0)
 
+  def test_gm_auto_hold_brake_is_stationary_and_bounded(self):
+    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.GM_AUTO_HOLD)
+    safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
+    self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
+    self.safety.init_tests()
+
+    self.safety.set_controls_allowed(False)
+    self._rx(self._speed_msg(0))
+    self._rx(self._user_gas_msg(False))
+    self.assertTrue(self._tx(self._send_brake_msg(1)))
+    self.assertFalse(self._tx(self._send_brake_msg(2)))
+
+    self._rx(self._speed_msg(1.0))
+    self.assertFalse(self._tx(self._send_brake_msg(1)))
+
+    self._rx(self._speed_msg(0))
+    self._rx(self._user_gas_msg(True))
+    self.assertFalse(self._tx(self._send_brake_msg(1)))
+    self.safety.set_current_safety_param_sp(0)
+
 
 class TestGmCameraNonACCSafety(TestGmCameraSafety):
 

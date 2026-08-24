@@ -4,7 +4,7 @@ from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.gm.cluster_speed import gm_cluster_cruise_speed_from_raw_ms
 from opendbc.car.interfaces import CarStateBase
-from opendbc.car.gm.values import DBC, AccState, CruiseButtons, STEER_THRESHOLD, SDGM_CAR, ALT_ACCS
+from opendbc.car.gm.values import CAR, DBC, AccState, CruiseButtons, STEER_THRESHOLD, SDGM_CAR, ALT_ACCS
 
 from opendbc.sunnypilot.car.gm.carstate_ext import CarStateExt
 from opendbc.sunnypilot.car.gm.values_ext import GMFlagsSP
@@ -35,6 +35,14 @@ class CarState(CarStateBase, CarStateExt):
     self.buttons_counter = 0
 
     self.distance_button = 0
+
+    # Volt-style GM Auto Hold is intentionally limited to the Wayon Traverse
+    # longitudinal configuration. The controller only actuates it while both
+    # openpilot and stock cruise are disengaged.
+    self.autoHold = CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.openpilotLongitudinalControl
+    self.autoHoldActive = False
+    self.autoHoldActivated = False
+    self.brake_pedal_position = 0
 
   def update_button_enable(self, buttonEvents: list[structs.CarState.ButtonEvent]):
     if not self.CP.pcmCruise:
@@ -96,6 +104,7 @@ class CarState(CarStateBase, CarStateExt):
       # To avoid a cruise fault we need to use a conservative brake position threshold
       # https://static.nhtsa.gov/odi/tsbs/2017/MC-10137629-9999.pdf
       ret.brakePressed = pt_cp.vl["ECMAcceleratorPos"]["BrakePedalPos"] >= 8
+    self.brake_pedal_position = pt_cp.vl["ECMAcceleratorPos"]["BrakePedalPos"]
 
     # Regen braking is braking
     if self.CP.transmissionType == TransmissionType.direct:

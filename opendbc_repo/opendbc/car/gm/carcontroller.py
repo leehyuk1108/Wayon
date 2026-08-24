@@ -12,6 +12,7 @@ from opendbc.sunnypilot.car.gm.icbm import IntelligentCruiseButtonManagementInte
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 NetworkLocation = structs.CarParams.NetworkLocation
 LongCtrlState = structs.CarControl.Actuators.LongControlState
+GearShifter = structs.CarState.GearShifter
 
 # Camera cancels up to 0.1s after brake is pressed, ECM allows 0.5s
 CAMERA_CANCEL_DELAY_FRAMES = 10
@@ -20,7 +21,12 @@ MIN_STEER_MSG_INTERVAL_MS = 15
 TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
-SNG_RESUME_BUTTON_FRAMES = 4
+VOLT_RESUME_BUTTON_INTERVAL_S = 0.12
+VOLT_RESUME_REOPEN_DELAY_S = 0.28
+VOLT_RESUME_MAX_BUTTONS = 2
+VOLT_RESUME_MAX_SPEED = 3.5
+VOLT_RESUME_ACCEL_FORCE = 950
+VOLT_GM_AUTO_HOLD_BRAKE = 1
 
 
 def get_friction_brake_bus(CP):
@@ -42,6 +48,16 @@ def update_traverse_coasting(CP, coasting, long_active, stopping, v_ego, accel):
   return accel_range[0] <= accel <= accel_range[1]
 
 
+def gm_auto_hold_command(CP, CC, CS):
+  return (
+    CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and
+    not CC.longActive and not CC.enabled and not CS.out.cruiseState.enabled and
+    CS.autoHold and CS.autoHoldActive and not CS.out.gasPressed and
+    CS.out.gearShifter in (GearShifter.drive, GearShifter.low) and
+    CS.out.vEgo < 0.05 and not CS.out.regenBraking
+  )
+
+
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
@@ -53,9 +69,13 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.last_steer_frame = 0
     self.last_button_frame = 0
     self.cancel_counter = 0
-    self.sng_resume_button_frames = 0
-    self.sng_resume_last_stock_counter = None
-    self.sng_resume_last = False
+    self.auto_resume_window_frame = None
+    self.auto_resume_last_button_frame = None
+    self.auto_resume_button_count = 0
+    self.auto_resume_button_counter = None
+    self.auto_resume_last_request = False
+    self.auto_resume_started = False
+    self.auto_resume_brake_tick_pending = False
     self.traverse_coasting = False
 
     self.lka_steering_cmd_counter = 0
@@ -67,28 +87,68 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.packer_obj = CANPacker(DBC[self.CP.carFingerprint][Bus.radar])
     self.packer_ch = CANPacker(DBC[self.CP.carFingerprint][Bus.chassis])
 
-  def update_sng_resume_button(self, CC, CS):
-    resume_valid = (CC.longActive and CS.out.standstill and
+  def reset_auto_resume(self):
+    self.auto_resume_window_frame = None
+    self.auto_resume_last_button_frame = None
+    self.auto_resume_button_count = 0
+    self.auto_resume_button_counter = None
+    self.auto_resume_started = False
+    self.auto_resume_brake_tick_pending = False
+
+  def open_auto_resume_window(self, CS):
+    self.auto_resume_window_frame = self.frame
+    self.auto_resume_last_button_frame = None
+    self.auto_resume_button_count = 0
+    self.auto_resume_button_counter = int(CS.buttons_counter) & 0x3
+    self.auto_resume_started = True
+    self.auto_resume_brake_tick_pending = True
+
+  def update_auto_resume(self, CC, CS, actuators):
+    """Volt resume actuation driven by Wayon's existing lead-departure request."""
+    resume_valid = (CC.longActive and (CS.out.standstill or CS.out.cruiseState.standstill) and
                     not CS.out.brakePressed and not CS.out.gasPressed and
                     CS.cruise_buttons == CruiseButtons.UNPRESS)
-    resume_rising = resume_valid and CC.cruiseControl.resume and not self.sng_resume_last
-    if self.CP.autoResumeSng and resume_rising:
-      self.sng_resume_button_frames = SNG_RESUME_BUTTON_FRAMES
-      self.sng_resume_last_stock_counter = None
-    elif not resume_valid:
-      self.sng_resume_button_frames = 0
+    resume_request = resume_valid and CC.cruiseControl.resume
+    resume_rising = resume_request and not self.auto_resume_last_request
+    self.auto_resume_last_request = resume_request
 
-    stock_counter = int(CS.buttons_counter) % 4
-    stock_counter_updated = (self.sng_resume_last_stock_counter is None or
-                             stock_counter != self.sng_resume_last_stock_counter)
+    if not self.CP.autoResumeSng or not resume_valid:
+      self.reset_auto_resume()
+      return [], False, False
+
+    starting = actuators.longControlState == LongCtrlState.starting
+    if self.auto_resume_window_frame is None:
+      if resume_rising:
+        self.open_auto_resume_window(CS)
+      else:
+        return [], False, False
+
+    elapsed = (self.frame - self.auto_resume_window_frame) * DT_CTRL
+    if elapsed >= VOLT_RESUME_REOPEN_DELAY_S:
+      if starting and self.auto_resume_started:
+        self.open_auto_resume_window(CS)
+      else:
+        self.reset_auto_resume()
+        return [], False, False
+
     can_sends = []
-    if self.CP.autoResumeSng and resume_valid and self.sng_resume_button_frames > 0 and stock_counter_updated:
-      can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA,
-                                            stock_counter, CruiseButtons.RES_ACCEL))
-      self.sng_resume_button_frames -= 1
-    self.sng_resume_last_stock_counter = stock_counter
-    self.sng_resume_last = CC.cruiseControl.resume if resume_valid else False
-    return can_sends
+    if starting and self.auto_resume_button_count < VOLT_RESUME_MAX_BUTTONS:
+      button_due = self.auto_resume_last_button_frame is None or \
+                   (self.frame - self.auto_resume_last_button_frame) * DT_CTRL >= VOLT_RESUME_BUTTON_INTERVAL_S
+      if button_due:
+        self.auto_resume_button_counter = (self.auto_resume_button_counter + 1) & 0x3
+        # Traverse SDGM routing has been verified on the camera-side bus; the
+        # Volt sequence and timing are otherwise retained exactly.
+        can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA,
+                                              self.auto_resume_button_counter, CruiseButtons.RES_ACCEL))
+        self.auto_resume_last_button_frame = self.frame
+        self.auto_resume_button_count += 1
+
+    resume_active = ((starting or CS.out.cruiseState.enabled) and self.auto_resume_window_frame is not None and
+                     CS.out.vEgo < VOLT_RESUME_MAX_SPEED)
+    brake_tick = resume_active and self.auto_resume_brake_tick_pending
+    self.auto_resume_brake_tick_pending = self.auto_resume_brake_tick_pending and not brake_tick
+    return can_sends, resume_active, brake_tick
 
   def update(self, CC, CC_SP, CS, now_nanos):
     actuators = CC.actuators
@@ -159,6 +219,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         idx = (self.frame // 4) % 4
 
+        resume_sends, resume_active, resume_brake_tick = self.update_auto_resume(CC, CS, actuators)
+        can_sends.extend(resume_sends)
+        if resume_brake_tick:
+          self.apply_brake = max(self.apply_brake, VOLT_GM_AUTO_HOLD_BRAKE)
+
         at_full_stop = CC.longActive and CS.out.standstill
         near_stop = CC.longActive and (abs(CS.out.vEgo) < self.params.NEAR_STOP_BRAKE_PHASE)
         friction_brake_bus = get_friction_brake_bus(self.CP)
@@ -166,13 +231,25 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         # TODO: can we always check the longControlState?
         if self.CP.networkLocation == NetworkLocation.fwdCamera:
           at_full_stop = at_full_stop and stopping
-        if self.CP.autoResumeSng and (actuators.longControlState == LongCtrlState.starting or CC.cruiseControl.resume):
+        if self.CP.autoResumeSng and (actuators.longControlState == LongCtrlState.starting or
+                                     CC.cruiseControl.resume or resume_active):
           at_full_stop = False
 
+        auto_hold_cmd = gm_auto_hold_command(self.CP, CC, CS)
+
         # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
-        can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, self.apply_gas, idx, CC.enabled, at_full_stop))
-        can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, self.apply_brake,
-                                                             idx, CC.enabled, near_stop, at_full_stop, self.CP))
+        send_gas = max(0, int(max(self.apply_gas, VOLT_RESUME_ACCEL_FORCE))) if resume_active else self.apply_gas
+        can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, send_gas,
+                                                        idx, CC.enabled or resume_active, at_full_stop))
+        if auto_hold_cmd:
+          hold_brake = max(self.apply_brake, VOLT_GM_AUTO_HOLD_BRAKE)
+          can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, hold_brake,
+                                                               idx, False, True, False, self.CP))
+          CS.autoHoldActivated = True
+        else:
+          can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, self.apply_brake,
+                                                               idx, CC.enabled, near_stop, at_full_stop, self.CP))
+          CS.autoHoldActivated = False
 
         # Send dashboard UI commands (ACC status)
         send_fcw = hud_alert == VisualAlert.fcw
@@ -198,11 +275,6 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
       if self.CP.networkLocation == NetworkLocation.gateway and self.frame % self.params.ADAS_KEEPALIVE_STEP == 0:
         can_sends += gmcan.create_adas_keepalive(CanBus.POWERTRAIN)
-
-      # Release the stock stop-and-go latch using the same four-frame camera-bus
-      # sequence as a physical RES press. A one-frame powertrain-bus press is too
-      # short for the Traverse ECM and only releases the friction brake.
-      can_sends.extend(self.update_sng_resume_button(CC, CS))
 
     else:
       # While car is braking, cancel button causes ECM to enter a soft disable state with a fault status.

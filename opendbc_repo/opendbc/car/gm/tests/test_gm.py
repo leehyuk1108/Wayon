@@ -4,14 +4,17 @@ from types import SimpleNamespace
 from opendbc.can import CANPacker
 from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
-from opendbc.car.gm.carcontroller import (CarController, SNG_RESUME_BUTTON_FRAMES, get_acc_dashboard_speed_kph,
-                                         get_friction_brake_bus, update_traverse_coasting)
+from opendbc.car.gm.carcontroller import (CarController, VOLT_RESUME_MAX_BUTTONS, get_acc_dashboard_speed_kph,
+                                         get_friction_brake_bus, gm_auto_hold_command, update_traverse_coasting)
+from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CruiseButtons
-from opendbc.car.structs import CarParams
+from opendbc.car.structs import CarControl, CarParams, CarState
 from opendbc.testing import parameterized
 
 CAMERA_DIAGNOSTIC_ADDRESS = 0x24b
+LongCtrlState = CarControl.Actuators.LongControlState
+GearShifter = CarState.GearShifter
 
 
 class TestGMFingerprint(unittest.TestCase):
@@ -78,15 +81,27 @@ class TestGMTraverseAutoResume(unittest.TestCase):
     self.controller = CarController.__new__(CarController)
     self.controller.CP = SimpleNamespace(autoResumeSng=True)
     self.controller.packer_pt = CANPacker("gm_global_a_powertrain_generated")
-    self.controller.sng_resume_button_frames = 0
-    self.controller.sng_resume_last_stock_counter = None
-    self.controller.sng_resume_last = False
+    self.controller.frame = 0
+    self.controller.auto_resume_window_frame = None
+    self.controller.auto_resume_last_button_frame = None
+    self.controller.auto_resume_button_count = 0
+    self.controller.auto_resume_button_counter = None
+    self.controller.auto_resume_last_request = False
+    self.controller.auto_resume_started = False
+    self.controller.auto_resume_brake_tick_pending = False
     self.CC = SimpleNamespace(longActive=True, cruiseControl=SimpleNamespace(resume=True))
     self.CS = SimpleNamespace(
       buttons_counter=0,
       cruise_buttons=CruiseButtons.UNPRESS,
-      out=SimpleNamespace(standstill=True, brakePressed=False, gasPressed=False),
+      out=SimpleNamespace(
+        standstill=True,
+        brakePressed=False,
+        gasPressed=False,
+        vEgo=0.0,
+        cruiseState=SimpleNamespace(enabled=True, standstill=True),
+      ),
     )
+    self.actuators = SimpleNamespace(longControlState=LongCtrlState.starting)
     self.dbc_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1]
 
   def decode(self, msg):
@@ -95,24 +110,87 @@ class TestGMTraverseAutoResume(unittest.TestCase):
       for name in ("ACCButtons", "RollingCounter")
     }
 
-  def test_uses_route_matched_four_frame_camera_bus_press(self):
-    messages = []
-    for counter in range(4):
-      self.CS.buttons_counter = counter
-      messages.extend(self.controller.update_sng_resume_button(self.CC, self.CS))
+  def test_volt_two_press_sequence_and_accel_window(self):
+    messages, active, brake_tick = self.controller.update_auto_resume(self.CC, self.CS, self.actuators)
+    self.assertEqual(1, len(messages))
+    self.assertTrue(active)
+    self.assertTrue(brake_tick)
 
-    self.assertEqual(SNG_RESUME_BUTTON_FRAMES, len(messages))
+    self.CC.cruiseControl.resume = False
+    for frame in range(1, 12):
+      self.controller.frame = frame
+      next_messages, active, brake_tick = self.controller.update_auto_resume(self.CC, self.CS, self.actuators)
+      messages.extend(next_messages)
+      self.assertTrue(active)
+      self.assertFalse(brake_tick)
+
+    self.controller.frame = 12
+    next_messages, active, _ = self.controller.update_auto_resume(self.CC, self.CS, self.actuators)
+    messages.extend(next_messages)
+    self.assertTrue(active)
+    self.assertEqual(VOLT_RESUME_MAX_BUTTONS, len(messages))
     self.assertTrue(all(msg[2] == CanBus.CAMERA for msg in messages))
     decoded = [self.decode(msg) for msg in messages]
-    self.assertEqual([0, 1, 2, 3], [msg["RollingCounter"] for msg in decoded])
+    self.assertEqual([1, 2], [msg["RollingCounter"] for msg in decoded])
     self.assertTrue(all(msg["ACCButtons"] == CruiseButtons.RES_ACCEL for msg in decoded))
 
-  def test_repeated_counter_does_not_duplicate_button_frame(self):
-    self.assertEqual(1, len(self.controller.update_sng_resume_button(self.CC, self.CS)))
-    self.assertEqual([], self.controller.update_sng_resume_button(self.CC, self.CS))
+  def test_reopens_after_volt_retry_delay_while_starting(self):
+    self.controller.update_auto_resume(self.CC, self.CS, self.actuators)
+    self.CC.cruiseControl.resume = False
+    self.controller.frame = 28
+    messages, active, brake_tick = self.controller.update_auto_resume(self.CC, self.CS, self.actuators)
+    self.assertEqual(1, len(messages))
+    self.assertTrue(active)
+    self.assertTrue(brake_tick)
 
   def test_driver_input_cancels_pending_press(self):
-    self.assertEqual(1, len(self.controller.update_sng_resume_button(self.CC, self.CS)))
+    self.assertEqual(1, len(self.controller.update_auto_resume(self.CC, self.CS, self.actuators)[0]))
     self.CS.out.gasPressed = True
-    self.assertEqual([], self.controller.update_sng_resume_button(self.CC, self.CS))
-    self.assertEqual(0, self.controller.sng_resume_button_frames)
+    messages, active, _ = self.controller.update_auto_resume(self.CC, self.CS, self.actuators)
+    self.assertEqual([], messages)
+    self.assertFalse(active)
+    self.assertIsNone(self.controller.auto_resume_window_frame)
+
+
+class TestGMTraverseAutoHold(unittest.TestCase):
+  def setUp(self):
+    self.CI = CarInterface.__new__(CarInterface)
+    self.CI.CS = SimpleNamespace(
+      autoHold=True,
+      autoHoldActive=False,
+      autoHoldActivated=False,
+      brake_pedal_position=8,
+      out=SimpleNamespace(vEgo=0.0, brakePressed=True, gasPressed=False, regenBraking=False),
+    )
+
+  def test_enters_and_latches_after_brake_press(self):
+    self.CI.update_auto_hold()
+    self.assertTrue(self.CI.CS.autoHoldActive)
+    self.assertTrue(self.CI.CS.autoHoldActivated)
+
+    self.CI.CS.out.brakePressed = False
+    self.CI.CS.brake_pedal_position = 0
+    self.CI.update_auto_hold()
+    self.assertTrue(self.CI.CS.autoHoldActive)
+    self.assertTrue(self.CI.CS.autoHoldActivated)
+
+  def test_gas_releases_hold(self):
+    self.CI.update_auto_hold()
+    self.CI.CS.out.gasPressed = True
+    self.CI.update_auto_hold()
+    self.assertFalse(self.CI.CS.autoHoldActive)
+
+  def test_controller_only_commands_hold_while_disengaged(self):
+    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
+    CC = SimpleNamespace(enabled=False, longActive=False)
+    CS = SimpleNamespace(
+      autoHold=True,
+      autoHoldActive=True,
+      out=SimpleNamespace(
+        cruiseState=SimpleNamespace(enabled=False), gasPressed=False, regenBraking=False,
+        gearShifter=GearShifter.drive, vEgo=0.0,
+      ),
+    )
+    self.assertTrue(gm_auto_hold_command(CP, CC, CS))
+    CC.enabled = True
+    self.assertFalse(gm_auto_hold_command(CP, CC, CS))

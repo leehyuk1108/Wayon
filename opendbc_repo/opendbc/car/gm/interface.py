@@ -42,6 +42,32 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     CarInterfaceBase.__init__(self, CP, CP_SP)
     CarInterfaceExt.__init__(self, CP, CarInterfaceBase)
 
+  def update_auto_hold(self):
+    """Mirror the Volt GM Auto Hold state machine without replacing engaged standstill."""
+    self.CS.autoHoldActivated = False
+
+    if not self.CS.autoHold:
+      self.CS.autoHoldActive = False
+    elif self.CS.out.gasPressed or self.CS.out.regenBraking:
+      self.CS.autoHoldActive = False
+    elif self.CS.autoHoldActive:
+      self.CS.autoHoldActivated = True
+    else:
+      brake_hold_pressed = self.CS.out.brakePressed and self.CS.brake_pedal_position >= 8
+      if self.CS.out.vEgo < 0.05 and brake_hold_pressed:
+        self.CS.autoHoldActive = True
+        self.CS.autoHoldActivated = True
+
+  def apply(self, c, c_sp, now_nanos=None):
+    self.update_auto_hold()
+    # Use the generic brake-hold event only while GM Hold is actually eligible
+    # to command the brakes. Engaged stop-and-go continues to use standstill.
+    self.CS.out.brakeHoldActive = bool(
+      self.CS.autoHoldActivated and not c.enabled and not c.longActive and
+      not self.CS.out.cruiseState.enabled
+    )
+    return super().apply(c, c_sp, now_nanos)
+
   @staticmethod
   def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
     return CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX
@@ -252,7 +278,7 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
     if candidate == CAR.CHEVROLET_TRAVERSE:
       if stock_cp.openpilotLongitudinalControl:
-        ret.safetyParam |= GMSafetyFlagsSP.AUTO_RESUME_SNG
+        ret.safetyParam |= GMSafetyFlagsSP.AUTO_RESUME_SNG | GMSafetyFlagsSP.GM_AUTO_HOLD
       else:
         ret.intelligentCruiseButtonManagementAvailable = True
         ret.safetyParam |= GMSafetyFlagsSP.ICBM

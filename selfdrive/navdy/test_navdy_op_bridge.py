@@ -331,15 +331,15 @@ def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():
   assert 'const-string v4, "navdy_camera_decel"' in smali
   assert 'const-string p3, "navdy_camera_decel"' in smali
   assert 'const-string p3, "navdy_curve_target"' in smali
-  assert 'const-string p2, "감속 중"' in smali
+  assert 'const-string p2, "감속 중"' not in smali
   assert "Landroid/view/animation/AlphaAnimation;" in smali
   assert "->getAnimation()Landroid/view/animation/Animation;" in smali
   assert "->clearAnimation()V" in smali
   overlay_update = smali.split(".method private static updateOpenpilotOverlay", 1)[1].split(".end method", 1)[0]
   assert 'const-string p2, "camera"' in overlay_update
   assert 'const-string p2, "curve"' in overlay_update
-  assert "const/high16 p3, 0x41600000    # 14.0f" in overlay_update
   assert "const/high16 p5, 0x41800000    # 16.0f" in overlay_update
+  assert overlay_update.count("->formatSetSpeed(D)Ljava/lang/String;") == 3
   assert "->sActualAccSpeedKph:D" not in overlay_update
   assert "->setRotation(F)V" not in overlay_update
   assert "Landroid/view/Space;" not in smali

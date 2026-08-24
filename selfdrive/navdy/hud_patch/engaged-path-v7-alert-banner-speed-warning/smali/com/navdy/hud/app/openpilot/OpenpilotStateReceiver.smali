@@ -3109,13 +3109,23 @@
 
     if-eqz p2, :cond_8
 
-    const/4 p2, 0x0
+    sget-wide p2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutomaticAccTargetSpeedKph:D
 
-    const/high16 p3, 0x41600000    # 14.0f
+    const-wide/16 p4, 0x0
 
-    invoke-virtual {p0, p2, p3}, Landroid/widget/TextView;->setTextSize(IF)V
+    cmpl-double p4, p2, p4
 
-    const-string p2, "감속 중"
+    if-lez p4, :cond_a
+
+    const/4 p4, 0x0
+
+    const/high16 p5, 0x41800000    # 16.0f
+
+    invoke-virtual {p0, p4, p5}, Landroid/widget/TextView;->setTextSize(IF)V
+
+    invoke-static {p2, p3}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->formatSetSpeed(D)Ljava/lang/String;
+
+    move-result-object p2
 
     invoke-virtual {p0, p2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 

@@ -42,9 +42,10 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     CarInterfaceBase.__init__(self, CP, CP_SP)
     CarInterfaceExt.__init__(self, CP, CarInterfaceBase)
 
-  def update_auto_hold(self):
-    """Mirror the Volt GM Auto Hold state machine without replacing engaged standstill."""
+  def update_auto_hold(self, control=None):
+    """Maintain manual GM Hold and the engaged stop-and-go hold state."""
     self.CS.autoHoldActivated = False
+    self.CS.longAutoHoldActive = False
 
     if not self.CS.autoHold:
       self.CS.autoHoldActive = False
@@ -58,12 +59,20 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
         self.CS.autoHoldActive = True
         self.CS.autoHoldActivated = True
 
+    if control is not None:
+      self.CS.longAutoHoldActive = bool(
+        control.longActive and control.actuators.longControlState == structs.CarControl.Actuators.LongControlState.stopping and
+        self.CS.out.standstill and not self.CS.out.gasPressed and not self.CS.out.regenBraking and
+        self.CS.out.gearShifter in (structs.CarState.GearShifter.drive, *self.DRIVABLE_GEARS)
+      )
+      self.CS.autoHoldActivated |= self.CS.longAutoHoldActive
+
   def apply(self, c, c_sp, now_nanos=None):
-    self.update_auto_hold()
-    # Use the generic brake-hold event only while GM Hold is actually eligible
-    # to command the brakes. Engaged stop-and-go continues to use standstill.
+    self.update_auto_hold(c)
+    # Manual hold remains a no-entry state. Engaged GM Hold is tracked
+    # separately and remains under longitudinal control.
     self.CS.out.brakeHoldActive = bool(
-      self.CS.autoHoldActivated and not c.enabled and not c.longActive and
+      self.CS.autoHoldActive and not c.enabled and not c.longActive and
       not self.CS.out.cruiseState.enabled
     )
     return super().apply(c, c_sp, now_nanos)
@@ -278,7 +287,7 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
     if candidate == CAR.CHEVROLET_TRAVERSE:
       if stock_cp.openpilotLongitudinalControl:
-        ret.safetyParam |= GMSafetyFlagsSP.AUTO_RESUME_SNG | GMSafetyFlagsSP.GM_AUTO_HOLD
+        ret.safetyParam |= GMSafetyFlagsSP.GM_AUTO_HOLD
       else:
         ret.intelligentCruiseButtonManagementAvailable = True
         ret.safetyParam |= GMSafetyFlagsSP.ICBM

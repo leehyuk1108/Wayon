@@ -26,6 +26,10 @@ SNG_LEAD_MIN_DISTANCE_DELTA = 0.4
 SNG_RESUME_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 
 
+def use_gm_auto_hold_sng(CP) -> bool:
+  return getattr(CP, "brand", "") == "gm" and bool(getattr(CP, "autoResumeSng", False))
+
+
 def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
                              should_stop, brake_pressed, cruise_standstill,
                              sng_resume=False):
@@ -33,8 +37,13 @@ def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
   cruise_standstill = cruise_standstill and not CP_SP.enableGasInterceptor
 
   stopping_condition = should_stop
+  # Traverse keeps the ACC full-stop latch clear and uses GM hydraulic hold.
+  # Treat a physically stopped GM Hold as latched until the existing lead
+  # departure detector explicitly opens the launch window.
+  gm_hold_standstill = use_gm_auto_hold_sng(CP) and v_ego <= max(CP.vEgoStopping, 0.05)
+  launch_latched = cruise_standstill or gm_hold_standstill
   starting_condition = (not should_stop and
-                        (not cruise_standstill or sng_resume) and
+                        (not launch_latched or sng_resume) and
                         not brake_pressed)
   started_condition = v_ego > CP.vEgoStarting
 
@@ -127,7 +136,8 @@ class LongControl:
         self.reset_sng_resume(clear_attempt=False)
       return self.sng_resume_ready
 
-    safe_stop = (CS.standstill and CS.cruiseState.standstill and
+    safe_stop = (CS.standstill and
+                 (use_gm_auto_hold_sng(self.CP) or CS.cruiseState.standstill) and
                  self.long_control_state == LongCtrlState.stopping)
     if not safe_stop or self.sng_resume_attempted or not valid_lead:
       self.reset_sng_resume(clear_attempt=False)

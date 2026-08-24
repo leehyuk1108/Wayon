@@ -4,7 +4,7 @@ from cereal import car, custom
 from openpilot.selfdrive.controls.lib.longcontrol import (LongControl, LongCtrlState,
                                                           SNG_LEAD_CONFIRM_FRAMES, SNG_RESUME_TIMEOUT_FRAMES,
                                                           SNG_STOP_CONFIRM_FRAMES,
-                                                          long_control_state_trans)
+                                                          long_control_state_trans, use_gm_auto_hold_sng)
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 
 
@@ -74,9 +74,26 @@ def test_sng_resume_releases_cruise_standstill():
   assert next_state == LongCtrlState.starting
 
 
+def test_gm_hold_blocks_launch_without_confirmed_lead_departure():
+  CP = car.CarParams.new_message(brand="gm", autoResumeSng=True, startingState=True,
+                                 vEgoStopping=0.5, vEgoStarting=0.5)
+  CP_SP = custom.CarParamsSP.new_message()
+  assert use_gm_auto_hold_sng(CP)
+
+  next_state = long_control_state_trans(CP, CP_SP, True, LongCtrlState.stopping, v_ego=0.0,
+                                        should_stop=False, brake_pressed=False, cruise_standstill=False,
+                                        sng_resume=False)
+  assert next_state == LongCtrlState.stopping
+
+  next_state = long_control_state_trans(CP, CP_SP, True, LongCtrlState.stopping, v_ego=0.0,
+                                        should_stop=False, brake_pressed=False, cruise_standstill=False,
+                                        sng_resume=True)
+  assert next_state == LongCtrlState.starting
+
+
 def sng_controller():
   controller = LongControl.__new__(LongControl)
-  controller.CP = SimpleNamespace(autoResumeSng=True, vEgoStarting=0.5)
+  controller.CP = SimpleNamespace(brand="gm", autoResumeSng=True, vEgoStarting=0.5)
   controller.long_control_state = LongCtrlState.stopping
   controller.sng_stop_frames = 0
   controller.sng_lead_frames = 0
@@ -102,7 +119,7 @@ def test_traverse_stopping_decel_rate_is_soft_until_standstill():
 def test_sng_resume_requires_confirmed_stop_and_departing_lead():
   controller = sng_controller()
   CS = SimpleNamespace(vEgo=0.0, standstill=True, brakePressed=False, gasPressed=False,
-                       cruiseState=SimpleNamespace(standstill=True))
+                       cruiseState=SimpleNamespace(standstill=False))
   plan = SimpleNamespace(shouldStop=True)
   radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vLead=0.0, vRel=0.0))
 
@@ -125,7 +142,7 @@ def test_sng_resume_requires_confirmed_stop_and_departing_lead():
 def test_sng_resume_rejects_lead_loss_and_driver_input():
   controller = sng_controller()
   CS = SimpleNamespace(vEgo=0.0, standstill=True, brakePressed=False, gasPressed=False,
-                       cruiseState=SimpleNamespace(standstill=True))
+                       cruiseState=SimpleNamespace(standstill=False))
   plan = SimpleNamespace(shouldStop=True)
   radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vLead=0.0, vRel=0.0))
 

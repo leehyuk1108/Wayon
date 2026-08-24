@@ -15,5 +15,4 @@ class GMFlagsSP(IntFlag):
 class GMSafetyFlagsSP:
   NON_ACC = 1
   ICBM = 2
-  AUTO_RESUME_SNG = 4
   GM_AUTO_HOLD = 8

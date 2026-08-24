@@ -76,8 +76,11 @@ class CarSpecificEvents:
       if CS.vEgo < self.CP.minEnableSpeed and not (CS.standstill and CS.brakePressed and
                                                    self.CP.networkLocation == NetworkLocation.fwdCamera):
         events.add(EventName.belowEngageSpeed)
-      if CS.cruiseState.standstill and CS.standstill:
-        # Standstill is an expected low-speed steering lockout; keep the autohold timer visible.
+      gm_hold_stop = (self.CP.openpilotLongitudinalControl and self.CP.autoResumeSng and CC.longActive and
+                      CS.standstill and CC.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping)
+      if gm_hold_stop or (not self.CP.autoResumeSng and CS.cruiseState.standstill and CS.standstill):
+        # Keep the existing timer visible, but derive it from physical GM Hold
+        # rather than the ECU ACC standstill state on the Traverse.
         events.remove(EventName.belowSteerSpeed)
         events.add(EventName.resumeRequired)
 

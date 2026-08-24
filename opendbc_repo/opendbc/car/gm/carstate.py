@@ -36,12 +36,12 @@ class CarState(CarStateBase, CarStateExt):
 
     self.distance_button = 0
 
-    # Volt-style GM Auto Hold is intentionally limited to the Wayon Traverse
-    # longitudinal configuration. The controller only actuates it while both
-    # openpilot and stock cruise are disengaged.
+    # Wayon Traverse uses the same GM hydraulic hold for manual brake-latched
+    # Auto Hold and for engaged stop-and-go stops.
     self.autoHold = CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.openpilotLongitudinalControl
     self.autoHoldActive = False
     self.autoHoldActivated = False
+    self.longAutoHoldActive = False
     self.brake_pedal_position = 0
 
   def update_button_enable(self, buttonEvents: list[structs.CarState.ButtonEvent]):

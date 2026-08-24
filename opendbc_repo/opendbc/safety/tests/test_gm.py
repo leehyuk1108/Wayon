@@ -283,46 +283,6 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
     self.safety.init_tests()
 
-  def test_auto_resume_sng_buttons(self):
-    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_RESUME_SNG)
-    safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
-    self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
-    self.safety.init_tests()
-
-    # Longitudinal actuation must never create controls permission.
-    self.safety.set_controls_allowed(False)
-    active = self.packer.make_can_msg_safety("ASCMGasRegenCmd", 0, {
-      "GasRegenCmd": self.INACTIVE_GAS,
-      "GasRegenCmdActive": True,
-    })
-    self.assertFalse(self._tx(active))
-    self.assertFalse(self.safety.get_controls_allowed())
-
-    def auto_resume_button_msg(button):
-      values = {"ACCButtons": button}
-      return self.packer.make_can_msg_safety("ASCMSteeringButton", 2, values)
-
-    for button in range(8):
-      self.assertFalse(self._tx(auto_resume_button_msg(button)))
-
-    # Only RES/release are allowed while already engaged and fully stopped.
-    self.safety.set_controls_allowed(True)
-    self._rx(self._speed_msg(0))
-    self._rx(self._user_brake_msg(False))
-    for button in range(8):
-      self.assertEqual(button in (Buttons.UNPRESS, Buttons.RES_ACCEL), self._tx(auto_resume_button_msg(button)))
-
-    self._rx(self._speed_msg(1.0))
-    for button in range(8):
-      self.assertFalse(self._tx(auto_resume_button_msg(button)))
-
-    self._rx(self._speed_msg(0))
-    self._rx(self._user_brake_msg(True))
-    for button in range(8):
-      self.assertFalse(self._tx(auto_resume_button_msg(button)))
-
-    self.safety.set_current_safety_param_sp(0)
-
   def test_gm_auto_hold_brake_is_stationary_and_bounded(self):
     self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.GM_AUTO_HOLD)
     safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
@@ -341,6 +301,21 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self._rx(self._speed_msg(0))
     self._rx(self._user_gas_msg(True))
     self.assertFalse(self._tx(self._send_brake_msg(1)))
+    self.safety.set_current_safety_param_sp(0)
+
+  def test_gm_auto_hold_does_not_reenable_resume_button_spam(self):
+    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.GM_AUTO_HOLD)
+    safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
+    self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
+    self.safety.init_tests()
+
+    self.safety.set_controls_allowed(True)
+    self._rx(self._speed_msg(0))
+    self._rx(self._user_brake_msg(False))
+    for button in range(8):
+      msg = self.packer.make_can_msg_safety("ASCMSteeringButton", 2, {"ACCButtons": button})
+      self.assertFalse(self._tx(msg))
+
     self.safety.set_current_safety_param_sp(0)
 
 

@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from opendbc.car.gm.carcontroller import get_acc_dashboard_speed_kph, get_friction_brake_bus
+from opendbc.car.gm.carcontroller import get_acc_dashboard_speed_kph, get_friction_brake_bus, update_traverse_coasting
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus
 from opendbc.car.structs import CarParams
@@ -47,3 +47,23 @@ class TestGMAccDashboardSpeed(unittest.TestCase):
   def test_non_sdgm_is_unchanged(self):
     CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertEqual(get_acc_dashboard_speed_kph(CP, 70.0), 70.0)
+
+
+class TestGMTraverseCoasting(unittest.TestCase):
+  def setUp(self):
+    self.CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
+
+  def test_enters_and_holds_with_hysteresis(self):
+    self.assertTrue(update_traverse_coasting(self.CP, False, True, False, 20.0, -0.25))
+    self.assertTrue(update_traverse_coasting(self.CP, True, True, False, 20.0, -0.40))
+    self.assertFalse(update_traverse_coasting(self.CP, False, True, False, 20.0, -0.40))
+    self.assertFalse(update_traverse_coasting(self.CP, True, True, False, 20.0, -0.50))
+
+  def test_disabled_when_braking_or_below_minimum_speed(self):
+    self.assertFalse(update_traverse_coasting(self.CP, True, True, True, 20.0, -0.25))
+    self.assertFalse(update_traverse_coasting(self.CP, True, True, False, 4.9, -0.25))
+    self.assertFalse(update_traverse_coasting(self.CP, True, False, False, 20.0, -0.25))
+
+  def test_other_gm_cars_are_unchanged(self):
+    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
+    self.assertFalse(update_traverse_coasting(CP, False, True, False, 20.0, -0.25))

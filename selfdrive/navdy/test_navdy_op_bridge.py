@@ -1829,6 +1829,54 @@ def test_payload_only_exports_model_geometry_while_active():
   assert "navPathLeft" not in navdy_op_bridge.payload_from_messages(disengaged, car_state, 2, model_v2=model)
 
 
+def test_navdy_projects_active_traffic_stop_across_current_lane():
+  model = SimpleNamespace(
+    position=SimpleNamespace(x=[0.0, 40.0, 80.0], y=[0.0, 0.5, 1.0]),
+    laneLines=[
+      SimpleNamespace(x=[], y=[]),
+      SimpleNamespace(x=[0.0, 40.0, 80.0], y=[-1.8, -1.3, -0.8]),
+      SimpleNamespace(x=[0.0, 40.0, 80.0], y=[1.8, 2.3, 2.8]),
+    ],
+    laneLineProbs=[0.0, 0.9, 0.9],
+    roadEdges=[],
+  )
+  traffic_stop = SimpleNamespace(
+    active=True, state="stopping", signal="red",
+    stopDistance=31.0, modelDistance=40.0,
+  )
+  plan_sp = SimpleNamespace(
+    trafficStop=traffic_stop,
+    e2eAlerts=SimpleNamespace(greenLightAlert=False, leadDepartAlert=False),
+  )
+  selfdrive_state = SimpleNamespace(
+    active=True, enabled=True, engageable=True, state="enabled",
+    alertType="", alertText1="", alertText2="", alertStatus="normal", alertSize="none",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(
+    selfdrive_state, navdy_op_bridge.default_car_state(), 1,
+    model_v2=model, longitudinal_plan_sp=plan_sp)
+
+  assert payload["trafficStopActive"]
+  assert payload["trafficStopState"] == "stopping"
+  assert payload["trafficStopSignal"] == "red"
+  assert payload["trafficStopDistanceM"] == 31.0
+  assert payload["trafficStopModelDistanceM"] == 40.0
+  assert len(payload["navTrafficStopLine"]) == 4
+  assert payload["navTrafficStopLine"][0] < payload["navTrafficStopLine"][2]
+
+
+def test_navdy_path_renderer_draws_active_traffic_stop_line():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java").read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
+
+  for source in (java, smali):
+    assert "trafficStopActive" in source
+    assert "navTrafficStopLine" in source
+    assert "drawTrafficStopLine" in source
+
+
 def test_live_payload_ready_uses_recent_messages_not_alive_flags():
   sm = SimpleNamespace(
     alive={"selfdriveState": False, "carStateSP": False},

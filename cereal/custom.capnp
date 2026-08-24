@@ -202,6 +202,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   aTarget @5 :Float32;
   events @6 :List(OnroadEventSP.Event);
   e2eAlerts @7 :E2eAlerts;
+  trafficStop @8 :TrafficStop;
 
   struct DynamicExperimentalControl {
     state @0 :DynamicExperimentalControlState;
@@ -303,6 +304,26 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   struct E2eAlerts {
     greenLightAlert @0 :Bool;
     leadDepartAlert @1 :Bool;
+  }
+
+  struct TrafficStop {
+    active @0 :Bool;
+    state @1 :State;
+    signal @2 :Signal;
+    stopDistance @3 :Float32;
+    modelDistance @4 :Float32;
+
+    enum State {
+      inactive @0;
+      stopping @1;
+      stopped @2;
+    }
+
+    enum Signal {
+      off @0;
+      red @1;
+      green @2;
+    }
   }
 }
 

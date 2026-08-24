@@ -1175,6 +1175,7 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
     lead1 @2;
     lead2 @3;
     e2e @4;
+    trafficStop @5;
   }
 
 

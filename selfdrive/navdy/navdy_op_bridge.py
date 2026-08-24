@@ -507,6 +507,41 @@ def model_line_y_at(line: Any, distance_m: float) -> float | None:
   return None
 
 
+def navdy_traffic_stop_geometry(model_v2: Any, longitudinal_plan_sp: Any) -> dict[str, Any]:
+  traffic_stop = getattr(longitudinal_plan_sp, "trafficStop", None)
+  if model_v2 is None or traffic_stop is None or not bool(getattr(traffic_stop, "active", False)):
+    return {}
+
+  distance_m = finite_float(getattr(traffic_stop, "modelDistance", 0.0), 0.0)
+  if not 0.0 <= distance_m <= NAVDY_VEHICLE_MAX_DISTANCE_M:
+    return {}
+
+  path_y = model_line_y_at(getattr(model_v2, "position", None), distance_m)
+  if path_y is None:
+    return {}
+
+  left_y = path_y - NAVDY_FALLBACK_LANE_WIDTH_M * 0.5
+  right_y = path_y + NAVDY_FALLBACK_LANE_WIDTH_M * 0.5
+  lane_lines = list(getattr(model_v2, "laneLines", []))
+  lane_probs = list(getattr(model_v2, "laneLineProbs", []))
+  if len(lane_lines) >= 3 and len(lane_probs) >= 3 and \
+     lane_probs[1] >= 0.3 and lane_probs[2] >= 0.3:
+    measured_left = model_line_y_at(lane_lines[1], distance_m)
+    measured_right = model_line_y_at(lane_lines[2], distance_m)
+    if measured_left is not None and measured_right is not None and \
+       NAVDY_MIN_LANE_WIDTH_M <= measured_right - measured_left <= NAVDY_MAX_LANE_WIDTH_M:
+      left_y, right_y = measured_left, measured_right
+
+  left_point = navdy_project_point(distance_m, left_y)
+  right_point = navdy_project_point(distance_m, right_y)
+  if len(left_point) != 2 or len(right_point) != 2:
+    return {}
+  return {
+    "navTrafficStopLine": left_point + right_point,
+    "navTrafficStopLineDistanceM": rounded(distance_m, 1),
+  }
+
+
 def navdy_path_lane_for_model_point(model_v2: Any, distance_m: float, model_y: float,
                                     left: float | None = None, right: float | None = None) -> str:
   path_y = model_line_y_at(getattr(model_v2, "position", None), distance_m)
@@ -1171,6 +1206,12 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   e2e_alerts = getattr(longitudinal_plan_sp, "e2eAlerts", None)
   green_light_alert = bool(getattr(e2e_alerts, "greenLightAlert", False))
   lead_depart_alert = bool(getattr(e2e_alerts, "leadDepartAlert", False))
+  traffic_stop = getattr(longitudinal_plan_sp, "trafficStop", None)
+  traffic_stop_active = bool(getattr(traffic_stop, "active", False))
+  traffic_stop_state = enum_text(getattr(traffic_stop, "state", "inactive")).lower()
+  traffic_stop_signal = enum_text(getattr(traffic_stop, "signal", "off")).lower()
+  traffic_stop_distance = finite_float(getattr(traffic_stop, "stopDistance", 0.0), 0.0)
+  traffic_stop_model_distance = finite_float(getattr(traffic_stop, "modelDistance", 0.0), 0.0)
   icbm = getattr(selfdrive_state_sp, "intelligentCruiseButtonManagement", None)
   automatic_acc_active = bool(getattr(icbm, "automaticControlActive", False))
   automatic_acc_target_kph = finite_float(getattr(icbm, "automaticTargetSpeedKph", 0.0))
@@ -1229,11 +1270,17 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "alertSize": alert_size,
     "greenLightAlert": green_light_alert,
     "leadDepartAlert": lead_depart_alert,
+    "trafficStopActive": traffic_stop_active,
+    "trafficStopState": traffic_stop_state if traffic_stop_active else "inactive",
+    "trafficStopSignal": traffic_stop_signal,
+    "trafficStopDistanceM": rounded(traffic_stop_distance, 1) if traffic_stop_active else 0.0,
+    "trafficStopModelDistanceM": rounded(traffic_stop_model_distance, 1) if traffic_stop_active else 0.0,
     "longitudinalActuator": longitudinal_actuator,
     "longitudinalActuatorLevel": rounded(longitudinal_actuator_level, 2),
   }
   if active:
     payload.update(navdy_model_geometry(model_v2))
+    payload.update(navdy_traffic_stop_geometry(model_v2, longitudinal_plan_sp))
   return payload
 
 
@@ -1687,6 +1734,12 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("alertSize"),
     payload.get("greenLightAlert"),
     payload.get("leadDepartAlert"),
+    payload.get("trafficStopActive"),
+    payload.get("trafficStopState"),
+    payload.get("trafficStopSignal"),
+    payload.get("trafficStopDistanceM"),
+    payload.get("trafficStopModelDistanceM"),
+    tuple(payload.get("navTrafficStopLine", [])),
     payload.get("longitudinalActuator"),
     payload.get("longitudinalActuatorLevel"),
     tuple(payload.get("navPathLeft", [])),
@@ -1975,6 +2028,8 @@ def run_live(args: argparse.Namespace) -> None:
           path_geometry.update(navdy_vehicle_geometry(
             model_v2, radar_points, radar_state, longitudinal_plan,
             longitudinal_lead_tracker=longitudinal_lead_tracker, now=now))
+          path_geometry.update(navdy_traffic_stop_geometry(
+            model_v2, sm_optional(sm, services, "longitudinalPlanSP")))
           lane_risks, intrusion = evaluate_navdy_lane_risk(
             lane_risk_detector, model_v2, radar_points,
             finite_float(getattr(car_state, "vEgo", 0.0)), now)

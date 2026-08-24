@@ -13,6 +13,10 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements impor
   dynamic_t_follow_target,
   ramp_t_follow,
 )
+from openpilot.selfdrive.controls.lib.traffic_stop import (
+  get_traffic_stop_accel_floor,
+  get_traffic_stop_obstacle_distance,
+)
 
 if __name__ == '__main__':  # generating code
   from acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
@@ -27,7 +31,8 @@ EXPORT_DIR = os.path.join(LONG_MPC_DIR, "c_generated_code")
 JSON_FILE = os.path.join(LONG_MPC_DIR, "acados_ocp_long.json")
 
 LongitudinalPlanSource = log.LongitudinalPlan.LongitudinalPlanSource
-MPC_SOURCES = (LongitudinalPlanSource.lead0, LongitudinalPlanSource.lead1, LongitudinalPlanSource.cruise)
+MPC_SOURCES = (LongitudinalPlanSource.lead0, LongitudinalPlanSource.lead1,
+               LongitudinalPlanSource.cruise, LongitudinalPlanSource.trafficStop)
 
 X_DIM = 3
 U_DIM = 1
@@ -92,7 +97,7 @@ def get_safe_obstacle_distance(v_ego, t_follow):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
 
 
-def get_mpc_source(x_obstacles, lead_status):
+def get_mpc_source(x_obstacles, lead_status, traffic_stop_active=False):
   """Return the first valid lead that constrains the near MPC horizon."""
   horizon_count = min(len(x_obstacles), len(T_IDXS))
   for index in range(horizon_count):
@@ -101,6 +106,8 @@ def get_mpc_source(x_obstacles, lead_status):
     source_index = int(np.argmin(x_obstacles[index]))
     if source_index < 2 and bool(lead_status[source_index]):
       return MPC_SOURCES[source_index]
+    if source_index == 3 and traffic_stop_active:
+      return LongitudinalPlanSource.trafficStop
   return LongitudinalPlanSource.cruise
 
 def gen_long_model():
@@ -341,7 +348,9 @@ class LongitudinalMpc:
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau, j_lead)
     return lead_xv
 
-  def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard):
+  def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard,
+             traffic_stop_distance=1000.0, traffic_stop_raw_distance=1000.0,
+             traffic_stop_active=False):
     base_t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
@@ -370,9 +379,14 @@ class LongitudinalMpc:
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
 
-    x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
+    traffic_stop_obstacle = get_traffic_stop_obstacle_distance(traffic_stop_distance)
+    traffic_stop_obstacle = traffic_stop_obstacle * np.ones(N+1)
+    x_obstacles = np.column_stack([
+      lead_0_obstacle, lead_1_obstacle, cruise_obstacle, traffic_stop_obstacle,
+    ])
     self.source = get_mpc_source(
-      x_obstacles, (radarstate.leadOne.status, radarstate.leadTwo.status))
+      x_obstacles, (radarstate.leadOne.status, radarstate.leadTwo.status),
+      traffic_stop_active=traffic_stop_active)
 
     self.yref[:,:] = 0.0
     for i in range(N):
@@ -380,6 +394,10 @@ class LongitudinalMpc:
     self.solver.set(N, "yref", self.yref[N][:COST_E_DIM])
 
     self.params[:,0] = ACCEL_MIN
+    if traffic_stop_active and self.source == LongitudinalPlanSource.trafficStop:
+      traffic_stop_accel_floor = get_traffic_stop_accel_floor(
+        v_ego, traffic_stop_raw_distance, STOP_DISTANCE)
+      self.params[:,0] = np.maximum(self.params[:,0], traffic_stop_accel_floor)
     self.params[:,1] = ACCEL_MAX
     self.params[:,2] = np.min(x_obstacles, axis=1)
     self.params[:,3] = np.copy(self.a_prev)

@@ -15,6 +15,8 @@
 
 .field private static final COLOR_LANE_DANGER:I = -0xdfd8
 
+.field private static final COLOR_TRAFFIC_STOP:I = -0xc4d0
+
 .field private static final COLOR_VEHICLE_LONGITUDINAL_LEAD:I = -0xff1a01
 
 .field private static final COLOR_VEHICLE_RADAR:I = -0x22000001
@@ -94,6 +96,14 @@
 .field private roadEdgeRightProb:F
 
 .field private final scratchPath:Landroid/graphics/Path;
+
+.field private trafficStopActive:Z
+
+.field private final trafficStopGlowPaint:Landroid/graphics/Paint;
+
+.field private trafficStopLine:[F
+
+.field private final trafficStopPaint:Landroid/graphics/Paint;
 
 .field private final vehicleBitmapPaint:Landroid/graphics/Paint;
 
@@ -193,6 +203,18 @@
     invoke-direct {v0, v2}, Landroid/graphics/Paint;-><init>(I)V
 
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleBitmapPaint:Landroid/graphics/Paint;
+
+    new-instance v0, Landroid/graphics/Paint;
+
+    invoke-direct {v0, v1}, Landroid/graphics/Paint;-><init>(I)V
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopGlowPaint:Landroid/graphics/Paint;
+
+    new-instance v0, Landroid/graphics/Paint;
+
+    invoke-direct {v0, v1}, Landroid/graphics/Paint;-><init>(I)V
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopPaint:Landroid/graphics/Paint;
 
     new-instance v0, Landroid/graphics/Path;
 
@@ -306,6 +328,10 @@
 
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicles:[F
 
+    new-array v0, v4, [F
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopLine:[F
+
     .line 83
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->lanePaint:Landroid/graphics/Paint;
 
@@ -391,6 +417,54 @@
     sget-object v3, Landroid/graphics/Paint$Style;->STROKE:Landroid/graphics/Paint$Style;
 
     invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setStyle(Landroid/graphics/Paint$Style;)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopGlowPaint:Landroid/graphics/Paint;
+
+    const v3, 0x66ff3b30
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setColor(I)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopGlowPaint:Landroid/graphics/Paint;
+
+    sget-object v3, Landroid/graphics/Paint$Style;->STROKE:Landroid/graphics/Paint$Style;
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setStyle(Landroid/graphics/Paint$Style;)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopGlowPaint:Landroid/graphics/Paint;
+
+    sget-object v3, Landroid/graphics/Paint$Cap;->ROUND:Landroid/graphics/Paint$Cap;
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setStrokeCap(Landroid/graphics/Paint$Cap;)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopGlowPaint:Landroid/graphics/Paint;
+
+    const/high16 v3, 0x41000000    # 8.0f
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setStrokeWidth(F)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopPaint:Landroid/graphics/Paint;
+
+    const v3, -0xc4d0
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setColor(I)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopPaint:Landroid/graphics/Paint;
+
+    sget-object v3, Landroid/graphics/Paint$Style;->STROKE:Landroid/graphics/Paint$Style;
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setStyle(Landroid/graphics/Paint$Style;)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopPaint:Landroid/graphics/Paint;
+
+    sget-object v3, Landroid/graphics/Paint$Cap;->ROUND:Landroid/graphics/Paint$Cap;
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setStrokeCap(Landroid/graphics/Paint$Cap;)V
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopPaint:Landroid/graphics/Paint;
+
+    const v3, 0x40666666    # 3.6f
+
+    invoke-virtual {v0, v3}, Landroid/graphics/Paint;->setStrokeWidth(F)V
 
     .line 96
     iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->roadEdgePaint:Landroid/graphics/Paint;
@@ -784,6 +858,14 @@
 
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicles:[F
 
+    const/4 v1, 0x0
+
+    new-array v0, v1, [F
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopLine:[F
+
+    iput-boolean v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopActive:Z
+
     .line 386
     const/4 v0, 0x0
 
@@ -1052,6 +1134,39 @@
     .line 280
     :cond_1
     :goto_0
+    return-void
+.end method
+
+.method private drawTrafficStopLine(Landroid/graphics/Canvas;)V
+    .locals 2
+
+    iget-boolean v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopActive:Z
+
+    if-eqz v0, :cond_stop_done
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopLine:[F
+
+    array-length v0, v0
+
+    const/4 v1, 0x4
+
+    if-ne v0, v1, :cond_stop_done
+
+    iget-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopLine:[F
+
+    invoke-direct {p0, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->linePath([F)Landroid/graphics/Path;
+
+    move-result-object v0
+
+    iget-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopGlowPaint:Landroid/graphics/Paint;
+
+    invoke-virtual {p1, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V
+
+    iget-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopPaint:Landroid/graphics/Paint;
+
+    invoke-virtual {p1, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V
+
+    :cond_stop_done
     return-void
 .end method
 
@@ -2236,6 +2351,8 @@
     invoke-direct/range {v0 .. v5}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->drawLane(Landroid/graphics/Canvas;[FFFLjava/lang/String;)V
 
     .line 238
+    invoke-direct {p0, p1}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->drawTrafficStopLine(Landroid/graphics/Canvas;)V
+
     invoke-direct {p0, p1}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->drawVehicles(Landroid/graphics/Canvas;)V
 
     .line 240
@@ -2410,6 +2527,45 @@
     move-result p1
 
     iput p1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleSpeedKph:F
+
+    const-string/jumbo p1, "trafficStopActive"
+
+    const/4 v6, 0x0
+
+    invoke-virtual {p2, p1, v6}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
+
+    move-result p1
+
+    iput-boolean p1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopActive:Z
+
+    if-nez p1, :cond_traffic_stop_active
+
+    new-array p1, v6, [F
+
+    iput-object p1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopLine:[F
+
+    goto :cond_traffic_stop_done
+
+    :cond_traffic_stop_active
+    const-string/jumbo p1, "navTrafficStopLine"
+
+    invoke-virtual {p2, p1}, Lorg/json/JSONObject;->has(Ljava/lang/String;)Z
+
+    move-result v6
+
+    if-eqz v6, :cond_traffic_stop_done
+
+    invoke-virtual {p2, p1}, Lorg/json/JSONObject;->optJSONArray(Ljava/lang/String;)Lorg/json/JSONArray;
+
+    move-result-object p1
+
+    invoke-static {p1}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->readPoints(Lorg/json/JSONArray;)[F
+
+    move-result-object p1
+
+    iput-object p1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->trafficStopLine:[F
+
+    :cond_traffic_stop_done
 
     .line 146
     invoke-virtual {p2, v3}, Lorg/json/JSONObject;->has(Ljava/lang/String;)Z

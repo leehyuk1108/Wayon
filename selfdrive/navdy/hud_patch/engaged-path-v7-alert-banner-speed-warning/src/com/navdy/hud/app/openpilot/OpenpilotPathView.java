@@ -25,6 +25,7 @@ public final class OpenpilotPathView extends View implements Runnable {
   private static final int COLOR_VEHICLE_RADAR = 0xddffffff;
   private static final int COLOR_VEHICLE_VISION = 0xff00e646;
   private static final int COLOR_VEHICLE_LONGITUDINAL_LEAD = 0xff00e5ff;
+  private static final int COLOR_TRAFFIC_STOP = 0xffff3b30;
   private static final float[] LANE_DASH_PATTERN = {56.0f, 24.0f};
   private static final float LANE_DASH_CYCLE = 80.0f;
   private static final float ROAD_EDGE_MIN_CONFIDENCE = 0.5f;
@@ -38,6 +39,8 @@ public final class OpenpilotPathView extends View implements Runnable {
   private final Paint vehicleFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint vehicleBitmapPaint = new Paint(
       Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+  private final Paint trafficStopGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final Paint trafficStopPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final LightingColorFilter[] laneRiskFilters =
       new LightingColorFilter[LANE_RISK_FILTER_STEPS + 1];
   private final LightingColorFilter[] centerLaneRiskFilters =
@@ -71,6 +74,8 @@ public final class OpenpilotPathView extends View implements Runnable {
   private float[] roadEdgeRight = new float[0];
   private float roadEdgeRightProb;
   private float[] vehicles = new float[0];
+  private float[] trafficStopLine = new float[0];
+  private boolean trafficStopActive;
   private DashPathEffect laneDashEffect;
   private float dashPhase;
   private boolean dashFrameScheduled;
@@ -105,6 +110,15 @@ public final class OpenpilotPathView extends View implements Runnable {
     pathEdgePaint.setStrokeWidth(1.8f);
 
     pathFillPaint.setStyle(Paint.Style.FILL);
+
+    trafficStopGlowPaint.setColor(0x66ff3b30);
+    trafficStopGlowPaint.setStyle(Paint.Style.STROKE);
+    trafficStopGlowPaint.setStrokeCap(Paint.Cap.ROUND);
+    trafficStopGlowPaint.setStrokeWidth(8.0f);
+    trafficStopPaint.setColor(COLOR_TRAFFIC_STOP);
+    trafficStopPaint.setStyle(Paint.Style.STROKE);
+    trafficStopPaint.setStrokeCap(Paint.Cap.ROUND);
+    trafficStopPaint.setStrokeWidth(3.6f);
 
     vehicleFillPaint.setStyle(Paint.Style.FILL);
     vehicleMarkerBitmap = loadVehicleMarker(context, "navdy_vehicle_marker");
@@ -143,6 +157,12 @@ public final class OpenpilotPathView extends View implements Runnable {
     try {
       JSONObject json = new JSONObject(payload);
       vehicleSpeedKph = Math.max(0.0f, (float) json.optDouble("vEgoKph", 0.0));
+      trafficStopActive = json.optBoolean("trafficStopActive", false);
+      if (!trafficStopActive) {
+        trafficStopLine = new float[0];
+      } else if (json.has("navTrafficStopLine")) {
+        trafficStopLine = readPoints(json.optJSONArray("navTrafficStopLine"));
+      }
       if (json.has("navVehicles")) {
         vehicles = readVehicles(json.optJSONArray("navVehicles"));
       }
@@ -235,6 +255,7 @@ public final class OpenpilotPathView extends View implements Runnable {
     drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft, laneLeftType);
     drawLane(canvas, laneRight, laneRightProb, laneRiskRight, laneRightType);
     drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f, laneFarRightType);
+    drawTrafficStopLine(canvas);
     drawVehicles(canvas);
 
     if (vehicleSpeedKph > 1.0f) {
@@ -281,6 +302,15 @@ public final class OpenpilotPathView extends View implements Runnable {
     }
     roadEdgePaint.setAlpha((int) (confidence * 210.0f + 25.0f));
     canvas.drawPath(linePath(points), roadEdgePaint);
+  }
+
+  private void drawTrafficStopLine(Canvas canvas) {
+    if (!trafficStopActive || trafficStopLine.length != 4) {
+      return;
+    }
+    Path stopLine = linePath(trafficStopLine);
+    canvas.drawPath(stopLine, trafficStopGlowPaint);
+    canvas.drawPath(stopLine, trafficStopPaint);
   }
 
   private void updateDashPhase() {
@@ -383,6 +413,8 @@ public final class OpenpilotPathView extends View implements Runnable {
     roadEdgeLeft = new float[0];
     roadEdgeRight = new float[0];
     vehicles = new float[0];
+    trafficStopLine = new float[0];
+    trafficStopActive = false;
     laneFarLeftProb = 0.0f;
     laneFarLeftType = "unknown";
     laneLeftProb = 0.0f;

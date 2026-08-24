@@ -68,6 +68,11 @@ class LongitudinalPlannerSP:
 
     self.output_v_target = 0.
     self.output_a_target = 0.
+    self.traffic_stop_active = False
+    self.traffic_stop_state = 0
+    self.traffic_stop_signal = 0
+    self.traffic_stop_distance = 1000.0
+    self.traffic_stop_model_distance = 1000.0
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
@@ -177,5 +182,12 @@ class LongitudinalPlannerSP:
     e2eAlerts = longitudinalPlanSP.e2eAlerts
     e2eAlerts.greenLightAlert = self.e2e_alerts_helper.green_light_alert
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
+
+    trafficStop = longitudinalPlanSP.trafficStop
+    trafficStop.active = bool(self.traffic_stop_active)
+    trafficStop.state = ("inactive", "stopping", "stopped")[int(self.traffic_stop_state)]
+    trafficStop.signal = ("off", "red", "green")[int(self.traffic_stop_signal)]
+    trafficStop.stopDistance = float(self.traffic_stop_distance)
+    trafficStop.modelDistance = float(self.traffic_stop_model_distance)
 
     pm.send('longitudinalPlanSP', plan_sp_send)

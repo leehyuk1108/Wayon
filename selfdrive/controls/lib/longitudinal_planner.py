@@ -12,6 +12,7 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import A_CHANGE_COST, LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
+from openpilot.selfdrive.controls.lib.traffic_stop import TrafficStopController
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
@@ -80,6 +81,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.output_should_stop = False
     self.cutin_predecel_mode = 2
     self.cutin_shadow_accel = None
+    self.traffic_stop_controller = TrafficStopController()
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -155,6 +157,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Get new v_cruise and a_desired from Smart Cruise Control and Speed Limit Assist
     v_cruise, self.a_desired = LongitudinalPlannerSP.update_targets(self, sm, self.v_desired_filter.x, self.a_desired, v_cruise)
 
+    traffic_stop_enabled = (
+      self.wayon_carrot_profile and self.CP.openpilotLongitudinalControl and
+      sm['carControl'].enabled
+    )
+    self.traffic_stop_controller.update(
+      traffic_stop_enabled, sm['carState'], sm['radarState'], sm['modelV2'], v_cruise)
+    v_cruise = self.traffic_stop_controller.limit_cruise_speed(v_cruise)
+    self.traffic_stop_active = self.traffic_stop_controller.active
+    self.traffic_stop_state = self.traffic_stop_controller.state
+    self.traffic_stop_signal = self.traffic_stop_controller.signal_state
+    self.traffic_stop_distance = self.traffic_stop_controller.stop_distance
+    self.traffic_stop_model_distance = self.traffic_stop_controller.model_distance
+
     if force_slow_decel:
       v_cruise = 0.0
 
@@ -167,7 +182,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                          a_change_cost_override=a_change_cost,
                          a_change_cost_starting=A_CHANGE_COST_STARTING if self.wayon_carrot_profile else 0.0)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
-    self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality)
+    self.mpc.update(
+      sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality,
+      traffic_stop_distance=self.traffic_stop_controller.stop_distance,
+      traffic_stop_raw_distance=self.traffic_stop_controller.model_distance,
+      traffic_stop_active=self.traffic_stop_controller.active,
+    )
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
@@ -193,12 +213,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     if self.is_e2e(sm):
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
-      self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+      self.output_should_stop = (
+        output_should_stop_e2e or output_should_stop_mpc or
+        self.traffic_stop_controller.should_stop
+      )
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
       output_a_target = output_a_target_mpc
-      self.output_should_stop = output_should_stop_mpc
+      self.output_should_stop = output_should_stop_mpc or self.traffic_stop_controller.should_stop
 
     self.cutin_shadow_accel = cutin_predecel_accel(cutin_risk, v_ego)
     if self.cutin_predecel_mode == 2 and self.cutin_shadow_accel is not None:

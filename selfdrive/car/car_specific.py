@@ -76,7 +76,7 @@ class CarSpecificEvents:
       if CS.vEgo < self.CP.minEnableSpeed and not (CS.standstill and CS.brakePressed and
                                                    self.CP.networkLocation == NetworkLocation.fwdCamera):
         events.add(EventName.belowEngageSpeed)
-      if CS.cruiseState.standstill:
+      if CS.cruiseState.standstill and CS.standstill:
         # Standstill is an expected low-speed steering lockout; keep the autohold timer visible.
         events.remove(EventName.belowSteerSpeed)
         events.add(EventName.resumeRequired)

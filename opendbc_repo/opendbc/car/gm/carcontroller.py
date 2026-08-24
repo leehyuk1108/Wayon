@@ -20,6 +20,7 @@ MIN_STEER_MSG_INTERVAL_MS = 15
 TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
+SNG_RESUME_BUTTON_FRAMES = 4
 
 
 def get_friction_brake_bus(CP):
@@ -52,8 +53,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.last_steer_frame = 0
     self.last_button_frame = 0
     self.cancel_counter = 0
-    self.sng_resume_button_state = 0
-    self.sng_resume_button_counter = 0
+    self.sng_resume_button_frames = 0
+    self.sng_resume_last_stock_counter = None
     self.sng_resume_last = False
     self.traverse_coasting = False
 
@@ -65,6 +66,29 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.packer_pt = CANPacker(DBC[self.CP.carFingerprint][Bus.pt])
     self.packer_obj = CANPacker(DBC[self.CP.carFingerprint][Bus.radar])
     self.packer_ch = CANPacker(DBC[self.CP.carFingerprint][Bus.chassis])
+
+  def update_sng_resume_button(self, CC, CS):
+    resume_valid = (CC.longActive and CS.out.standstill and
+                    not CS.out.brakePressed and not CS.out.gasPressed and
+                    CS.cruise_buttons == CruiseButtons.UNPRESS)
+    resume_rising = resume_valid and CC.cruiseControl.resume and not self.sng_resume_last
+    if self.CP.autoResumeSng and resume_rising:
+      self.sng_resume_button_frames = SNG_RESUME_BUTTON_FRAMES
+      self.sng_resume_last_stock_counter = None
+    elif not resume_valid:
+      self.sng_resume_button_frames = 0
+
+    stock_counter = int(CS.buttons_counter) % 4
+    stock_counter_updated = (self.sng_resume_last_stock_counter is None or
+                             stock_counter != self.sng_resume_last_stock_counter)
+    can_sends = []
+    if self.CP.autoResumeSng and resume_valid and self.sng_resume_button_frames > 0 and stock_counter_updated:
+      can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA,
+                                            stock_counter, CruiseButtons.RES_ACCEL))
+      self.sng_resume_button_frames -= 1
+    self.sng_resume_last_stock_counter = stock_counter
+    self.sng_resume_last = CC.cruiseControl.resume if resume_valid else False
+    return can_sends
 
   def update(self, CC, CC_SP, CS, now_nanos):
     actuators = CC.actuators
@@ -156,23 +180,6 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, CC.enabled,
                                                             dashboard_speed_kph, hud_control, send_fcw))
 
-        # Release the stock stop-and-go latch once after a confirmed lead departure.
-        resume_valid = (CC.longActive and CS.out.standstill and
-                        not CS.out.brakePressed and not CS.out.gasPressed)
-        resume_rising = resume_valid and CC.cruiseControl.resume and not self.sng_resume_last
-        if self.CP.autoResumeSng and resume_rising:
-          self.sng_resume_button_state = 2
-          self.sng_resume_button_counter = (CS.buttons_counter + 1) % 4
-        elif not resume_valid:
-          self.sng_resume_button_state = 0
-        if self.sng_resume_button_state > 0:
-          button = CruiseButtons.RES_ACCEL if self.sng_resume_button_state == 2 else CruiseButtons.UNPRESS
-          can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.POWERTRAIN,
-                                                self.sng_resume_button_counter, button))
-          self.sng_resume_button_counter = (self.sng_resume_button_counter + 1) % 4
-          self.sng_resume_button_state -= 1
-        self.sng_resume_last = CC.cruiseControl.resume if resume_valid else False
-
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)
       if not self.CP.radarUnavailable:
@@ -191,6 +198,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
       if self.CP.networkLocation == NetworkLocation.gateway and self.frame % self.params.ADAS_KEEPALIVE_STEP == 0:
         can_sends += gmcan.create_adas_keepalive(CanBus.POWERTRAIN)
+
+      # Release the stock stop-and-go latch using the same four-frame camera-bus
+      # sequence as a physical RES press. A one-frame powertrain-bus press is too
+      # short for the Traverse ECM and only releases the friction brake.
+      can_sends.extend(self.update_sng_resume_button(CC, CS))
 
     else:
       # While car is braking, cancel button causes ECM to enter a soft disable state with a fault status.

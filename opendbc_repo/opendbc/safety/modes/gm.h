@@ -214,8 +214,8 @@ static safety_config gm_init(uint16_t param) {
   // SDGM routes friction-brake commands on the camera-side bus. Keeping 0x315
   // off bus 0 prevents the stock ACC controller from conditionally owning the
   // EBCM command path when it reports a lead vehicle.
-  static const CanMsg GM_SDGM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x1E1, 0, 7, .check_relay = false}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true},  // pt bus
-                                                {0x315, 2, 5, .check_relay = false}, {0x184, 2, 8, .check_relay = true}};  // camera bus
+  static const CanMsg GM_SDGM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true},  // pt bus
+                                                {0x1E1, 2, 7, .check_relay = false}, {0x315, 2, 5, .check_relay = false}, {0x184, 2, 8, .check_relay = true}};  // camera bus
 
 
   static RxCheck gm_rx_checks[] = {

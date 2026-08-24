@@ -691,6 +691,24 @@ def test_payload_shows_stop_icon_while_engaged_at_standstill():
   assert payload["cruiseStandstill"] is True
 
 
+def test_payload_hides_stop_icon_once_engaged_vehicle_starts_creeping():
+  car_state = SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=True, speed=0.0),
+    gearShifter="drive",
+    standstill=False,
+    vCruise=80.0,
+    vCruiseCluster=80.0,
+    vEgo=0.2,
+    vEgoCluster=0.2,
+  )
+  selfdrive_state = SimpleNamespace(active=True, enabled=True, engageable=True, state="enabled")
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 11)
+
+  assert payload["standstill"] is False
+  assert payload["cruiseStandstill"] is False
+
+
 def test_payload_exports_alert_metadata_for_navdy_banner():
   selfdrive_state = SimpleNamespace(
     active=True,

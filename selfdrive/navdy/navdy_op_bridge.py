@@ -1148,7 +1148,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   engageable = bool(getattr(selfdrive_state, "engageable", False))
   state = enum_text(getattr(selfdrive_state, "state", "unknown"))
   cruise_standstill = is_cruise_standstill(car_state)
-  vehicle_standstill = bool(getattr(car_state, "standstill", False) or cruise_standstill)
+  vehicle_standstill = bool(getattr(car_state, "standstill", False))
   # preEnabled is the stopped engagement-wait state. Otherwise show the stop
   # icon only while openpilot is engaged and the vehicle is stationary.
   show_stop_icon = state == "preEnabled" or ((enabled or active) and vehicle_standstill)

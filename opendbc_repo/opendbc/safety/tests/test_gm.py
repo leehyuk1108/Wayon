@@ -269,8 +269,8 @@ class TestGmCameraLongitudinalEVSafety(TestGmCameraLongitudinalSafety, TestGmEVS
 
 
 class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
-  TX_MSGS = [[0x180, 0], [0x1E1, 0], [0x2CB, 0], [0x370, 0],  # pt bus
-             [0x315, 2], [0x184, 2]]  # camera bus
+  TX_MSGS = [[0x180, 0], [0x2CB, 0], [0x370, 0],  # pt bus
+             [0x1E1, 2], [0x315, 2], [0x184, 2]]  # camera bus
   FWD_BLACKLISTED_ADDRS = {2: [0x180, 0x2CB, 0x370], 0: [0x184]}
   RELAY_MALFUNCTION_ADDRS = {0: (0x180, 0x2CB, 0x370), 2: (0x184,)}
   BRAKE_BUS = 2
@@ -298,24 +298,28 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.assertFalse(self._tx(active))
     self.assertFalse(self.safety.get_controls_allowed())
 
+    def auto_resume_button_msg(button):
+      values = {"ACCButtons": button}
+      return self.packer.make_can_msg_safety("ASCMSteeringButton", 2, values)
+
     for button in range(8):
-      self.assertFalse(self._tx(self._button_msg(button)))
+      self.assertFalse(self._tx(auto_resume_button_msg(button)))
 
     # Only RES/release are allowed while already engaged and fully stopped.
     self.safety.set_controls_allowed(True)
     self._rx(self._speed_msg(0))
     self._rx(self._user_brake_msg(False))
     for button in range(8):
-      self.assertEqual(button in (Buttons.UNPRESS, Buttons.RES_ACCEL), self._tx(self._button_msg(button)))
+      self.assertEqual(button in (Buttons.UNPRESS, Buttons.RES_ACCEL), self._tx(auto_resume_button_msg(button)))
 
     self._rx(self._speed_msg(1.0))
     for button in range(8):
-      self.assertFalse(self._tx(self._button_msg(button)))
+      self.assertFalse(self._tx(auto_resume_button_msg(button)))
 
     self._rx(self._speed_msg(0))
     self._rx(self._user_brake_msg(True))
     for button in range(8):
-      self.assertFalse(self._tx(self._button_msg(button)))
+      self.assertFalse(self._tx(auto_resume_button_msg(button)))
 
     self.safety.set_current_safety_param_sp(0)
 

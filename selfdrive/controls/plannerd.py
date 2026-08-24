@@ -29,7 +29,10 @@ def main():
   sm = messaging.SubMaster(['carControl', 'carState', 'controlsState', 'liveParameters', 'radarState', 'modelV2', 'selfdriveState',
                             'selfdriveStateSP',
                             'liveMapDataSP', 'carStateSP', gps_location_service],
-                           poll='carState')
+                           poll='carState',
+                           # Planner work can delay this process's 100 Hz receive loop even while card is healthy.
+                           # Keep carState alive/valid checks, but do not invalidate derived plans from local rate jitter.
+                           ignore_avg_freq=['carState'])
 
   while True:
     sm.update()

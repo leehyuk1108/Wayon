@@ -30,18 +30,23 @@ def test_icbm_never_raises_driver_cruise_target():
   assert apply_icbm_target(icbm_target(100), cruise) == cruise
 
 
-def test_icbm_decel_target_follows_speed_error():
+def test_icbm_releases_propulsion_instead_of_requesting_early_braking():
   accel = apply_icbm_accel_target(icbm_target(65), 67 * CV.KPH_TO_MS, 0.3, 80 * CV.KPH_TO_MS)
-  assert accel == pytest.approx((65 - 67) * CV.KPH_TO_MS / 1.5)
+  assert accel == 0.0
 
 
-def test_icbm_decel_target_is_limited_to_camera_profile():
+def test_icbm_large_speed_error_still_starts_from_coast_target():
   accel = apply_icbm_accel_target(icbm_target(50), 80 * CV.KPH_TO_MS, 0.3, 100 * CV.KPH_TO_MS)
-  assert accel == -1.2
+  assert accel == 0.0
 
 
 def test_icbm_does_not_brake_below_target():
   assert apply_icbm_accel_target(icbm_target(60), 55 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS) == 0.4
+
+
+def test_icbm_starts_coasting_when_target_is_near_current_speed():
+  accel = apply_icbm_accel_target(icbm_target(60), 58 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS)
+  assert accel == 0.0
 
 
 def test_inactive_icbm_does_not_change_accel():

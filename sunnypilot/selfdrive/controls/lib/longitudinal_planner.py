@@ -24,8 +24,7 @@ DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimen
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 ICBM_MIN_TARGET_KPH = 20.0
-ICBM_MAX_DECEL_MPS2 = 1.2
-ICBM_DECEL_RESPONSE_TIME_S = 1.5
+ICBM_COAST_ENTRY_MARGIN_KPH = 3.0
 
 
 def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: float) -> float:
@@ -40,7 +39,7 @@ def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: 
 
 def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_ego: float,
                             a_target: float, v_cruise: float) -> float:
-  """Promptly follow a falling ICBM speed ceiling without exceeding its camera decel profile."""
+  """Release propulsion near a falling ICBM ceiling and let MPC add braking only if needed."""
   target_kph = float(icbm.automaticTargetSpeedKph)
   if not icbm.automaticControlActive or not math.isfinite(target_kph):
     return a_target
@@ -48,11 +47,11 @@ def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_eg
     return a_target
 
   target_ms = target_kph * CV.KPH_TO_MS
-  if target_ms >= min(v_ego, v_cruise):
+  if target_ms >= v_cruise or target_ms > v_ego + ICBM_COAST_ENTRY_MARGIN_KPH * CV.KPH_TO_MS:
     return a_target
 
-  speed_error_accel = (target_ms - v_ego) / ICBM_DECEL_RESPONSE_TIME_S
-  return min(a_target, max(-ICBM_MAX_DECEL_MPS2, speed_error_accel))
+  # On GM SDGM, zero acceleration maps to zero gas and zero friction brake.
+  return min(a_target, 0.0)
 
 
 class LongitudinalPlannerSP:

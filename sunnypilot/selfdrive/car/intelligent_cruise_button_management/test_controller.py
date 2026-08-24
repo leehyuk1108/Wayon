@@ -95,6 +95,11 @@ def test_fixed_camera_profile_holds_limit_inside_one_hundred_meters(tmp_path):
   assert IntelligentCruiseButtonManagement.fixed_camera_target(100, 50, 99) == 50
 
 
+def test_fixed_camera_profile_starts_with_early_coast_window():
+  assert IntelligentCruiseButtonManagement.fixed_camera_target(80, 60, 500) == 80
+  assert IntelligentCruiseButtonManagement.fixed_camera_target(80, 60, 400) == 79
+
+
 def test_openpilot_long_uses_camera_target_without_requesting_buttons(tmp_path):
   camera_path = tmp_path / "camera.json"
   write_camera_state(camera_path, 60)

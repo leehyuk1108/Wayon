@@ -29,7 +29,7 @@ NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 2.5
 NAVDY_CAMERA_SOURCE = "trafficNotification"
 CAMERA_TARGET_DISTANCE_M = 100.0
-CAMERA_DECEL_RATE_MPS2 = 1.2
+CAMERA_COAST_PROFILE_DECEL_MPS2 = 0.35
 SECTION_TARGET_OFFSET_KPH = 5
 SECTION_MAX_OFFSET_KPH = 20
 SECTION_EXIT_DISTANCE_M = 300.0
@@ -154,7 +154,7 @@ class IntelligentCruiseButtonManagement:
   def fixed_camera_target(restore_target_kph: int, limit_kph: int, remaining_m: float) -> int:
     decel_distance_m = max(0.0, remaining_m - CAMERA_TARGET_DISTANCE_M)
     limit_ms = limit_kph * CV.KPH_TO_MS
-    allowed_ms = math.sqrt(limit_ms ** 2 + 2.0 * CAMERA_DECEL_RATE_MPS2 * decel_distance_m)
+    allowed_ms = math.sqrt(limit_ms ** 2 + 2.0 * CAMERA_COAST_PROFILE_DECEL_MPS2 * decel_distance_m)
     allowed_kph = math.floor(allowed_ms * CV.MS_TO_KPH)
     return max(limit_kph, min(restore_target_kph, allowed_kph))
 

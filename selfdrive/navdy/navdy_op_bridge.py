@@ -77,6 +77,7 @@ NAVDY_VEHICLE_MAX_YAW_DEG = 24.0
 NAVDY_VEHICLE_NEAR_WIDTH_PX = 58.5
 NAVDY_VEHICLE_FAR_WIDTH_PX = 12.0
 NAVDY_VEHICLE_DUPLICATE_IOU = 0.25
+NAVDY_LONGITUDINAL_LEAD_HOLD_SEC = 0.45
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -726,12 +727,33 @@ def navdy_active_longitudinal_lead(radar_state: Any, longitudinal_plan: Any) -> 
   }
 
 
+class NavdyLongitudinalLeadTracker:
+  def __init__(self, hold_sec: float = NAVDY_LONGITUDINAL_LEAD_HOLD_SEC):
+    self.hold_sec = hold_sec
+    self._lead: dict[str, Any] | None = None
+    self._until = 0.0
+
+  def reset(self) -> None:
+    self._lead = None
+    self._until = 0.0
+
+  def update(self, lead: dict[str, Any] | None, now: float) -> dict[str, Any] | None:
+    if lead is not None:
+      self._lead = dict(lead)
+      self._until = now + max(self.hold_sec, 0.0)
+    elif now >= self._until:
+      self.reset()
+    return self._lead
+
+
 def mark_navdy_longitudinal_lead(vehicles: list[dict[str, Any]], radar_state: Any,
-                                 longitudinal_plan: Any) -> None:
+                                 longitudinal_plan: Any,
+                                 active_lead: dict[str, Any] | None = None) -> None:
   for vehicle in vehicles:
     vehicle["longitudinalLead"] = False
 
-  active_lead = navdy_active_longitudinal_lead(radar_state, longitudinal_plan)
+  if active_lead is None:
+    active_lead = navdy_active_longitudinal_lead(radar_state, longitudinal_plan)
   if active_lead is None:
     return
 
@@ -758,11 +780,16 @@ def mark_navdy_longitudinal_lead(vehicles: list[dict[str, Any]], radar_state: An
 
 
 def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]],
-                           radar_state: Any = None, longitudinal_plan: Any = None) -> dict[str, Any]:
+                           radar_state: Any = None, longitudinal_plan: Any = None,
+                           longitudinal_lead_tracker: NavdyLongitudinalLeadTracker | None = None,
+                           now: float | None = None) -> dict[str, Any]:
   if model_v2 is None:
     return {"navVehicles": []}
 
   active_longitudinal_lead = navdy_active_longitudinal_lead(radar_state, longitudinal_plan)
+  if longitudinal_lead_tracker is not None:
+    active_longitudinal_lead = longitudinal_lead_tracker.update(
+      active_longitudinal_lead, time.monotonic() if now is None else now)
   vehicles = []
   for point in radar_points:
     distance_m = finite_float(point.get("dRel", 0.0), 0.0)
@@ -846,7 +873,8 @@ def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]],
         unmatched_vision[overlapping_vision_index] = vision
 
   vehicles.extend(unmatched_vision)
-  mark_navdy_longitudinal_lead(vehicles, radar_state, longitudinal_plan)
+  mark_navdy_longitudinal_lead(
+    vehicles, radar_state, longitudinal_plan, active_longitudinal_lead)
   priority = {"fused": 0, "vision": 1, "radar": 2}
   selected = sorted(
     vehicles,
@@ -1854,6 +1882,7 @@ def run_live(args: argparse.Namespace) -> None:
   last_path_update_at = 0.0
   radar_reader = create_navdy_radar_reader(messaging, args.stdout) if args.radar_overlay else None
   lane_risk_detector = create_navdy_lane_risk_detector()
+  longitudinal_lead_tracker = NavdyLongitudinalLeadTracker()
   lane_marking_classifier = create_navdy_lane_marking_classifier(args)
   e2e_alert_reader = NavdyE2EAlertReader(messaging) if "longitudinalPlanSP" in services else None
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
@@ -1911,7 +1940,8 @@ def run_live(args: argparse.Namespace) -> None:
           longitudinal_plan = sm_optional(sm, services, "longitudinalPlan") \
             if "longitudinalPlan" in services and service_recent(sm, "longitudinalPlan", now) else None
           path_geometry.update(navdy_vehicle_geometry(
-            model_v2, radar_points, radar_state, longitudinal_plan))
+            model_v2, radar_points, radar_state, longitudinal_plan,
+            longitudinal_lead_tracker=longitudinal_lead_tracker, now=now))
           lane_risks, intrusion = evaluate_navdy_lane_risk(
             lane_risk_detector, model_v2, radar_points,
             finite_float(getattr(car_state, "vEgo", 0.0)), now)
@@ -1919,6 +1949,7 @@ def run_live(args: argparse.Namespace) -> None:
           publish_radar_lane_intrusion(messaging, lane_intrusion_pm, intrusion, lane_risks)
     elif not active:
       last_path_update_at = 0.0
+      longitudinal_lead_tracker.reset()
       if lane_risk_detector is not None:
         lane_risk_detector.reset()
     path_geometry.update(navdy_lane_risk_values(lane_risk_detector))

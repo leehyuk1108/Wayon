@@ -1227,6 +1227,29 @@ def test_navdy_vehicle_geometry_does_not_mark_a_lead_when_cruise_controls():
   assert all(vehicle["longitudinalLead"] is False for vehicle in vehicles)
 
 
+def test_navdy_vehicle_geometry_holds_active_longitudinal_lead_through_short_source_gap():
+  radar_points = [{"trackId": 10, "dRel": 30.0, "yRel": -0.2, "vRel": -5.0}]
+  radar_state = SimpleNamespace(
+    leadOne=SimpleNamespace(
+      status=True, radar=True, radarTrackId=10, dRel=30.0, yRel=-0.2),
+  )
+  tracker = navdy_op_bridge.NavdyLongitudinalLeadTracker(hold_sec=0.45)
+
+  active = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state,
+    SimpleNamespace(longitudinalPlanSource="lead0"), tracker, now=10.0)["navVehicles"]
+  held = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state,
+    SimpleNamespace(longitudinalPlanSource="cruise"), tracker, now=10.3)["navVehicles"]
+  expired = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state,
+    SimpleNamespace(longitudinalPlanSource="cruise"), tracker, now=10.46)["navVehicles"]
+
+  assert active[0]["longitudinalLead"] is True
+  assert held[0]["longitudinalLead"] is True
+  assert expired[0]["longitudinalLead"] is False
+
+
 def test_navdy_vehicle_geometry_marks_a_vision_only_secondary_mpc_lead():
   model = navdy_vehicle_test_model()
   model.leadsV3[1] = SimpleNamespace(

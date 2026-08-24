@@ -62,6 +62,7 @@ STOP_DISTANCE = 6.0
 CRUISE_MIN_ACCEL = -1.2
 CRUISE_MAX_ACCEL = 1.6
 MIN_X_LEAD_FACTOR = 0.5
+MPC_LEAD_SOURCE_LOOKAHEAD_S = 5.0
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
@@ -89,6 +90,18 @@ def get_stopped_equivalence_factor(v_lead):
 
 def get_safe_obstacle_distance(v_ego, t_follow):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
+
+
+def get_mpc_source(x_obstacles, lead_status):
+  """Return the first valid lead that constrains the near MPC horizon."""
+  horizon_count = min(len(x_obstacles), len(T_IDXS))
+  for index in range(horizon_count):
+    if T_IDXS[index] > MPC_LEAD_SOURCE_LOOKAHEAD_S:
+      break
+    source_index = int(np.argmin(x_obstacles[index]))
+    if source_index < 2 and bool(lead_status[source_index]):
+      return MPC_SOURCES[source_index]
+  return LongitudinalPlanSource.cruise
 
 def gen_long_model():
   model = AcadosModel()
@@ -358,7 +371,8 @@ class LongitudinalMpc:
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
-    self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
+    self.source = get_mpc_source(
+      x_obstacles, (radarstate.leadOne.status, radarstate.leadTwo.status))
 
     self.yref[:,:] = 0.0
     for i in range(N):

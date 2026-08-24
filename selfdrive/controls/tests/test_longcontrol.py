@@ -86,6 +86,18 @@ def sng_controller():
   return controller
 
 
+def test_traverse_stopping_decel_rate_is_soft_until_standstill():
+  controller = LongControl.__new__(LongControl)
+  controller.CP = SimpleNamespace(stoppingDecelRate=2.0)
+  controller.wayon_carrot_profile = True
+
+  assert controller.get_stopping_decel_rate(False) == 0.8
+  assert controller.get_stopping_decel_rate(True) == 2.0
+
+  controller.wayon_carrot_profile = False
+  assert controller.get_stopping_decel_rate(False) == 2.0
+
+
 def test_sng_resume_requires_confirmed_stop_and_departing_lead():
   controller = sng_controller()
   CS = SimpleNamespace(vEgo=0.0, standstill=True, brakePressed=False, gasPressed=False,

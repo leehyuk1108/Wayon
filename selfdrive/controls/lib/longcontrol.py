@@ -4,7 +4,13 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
-from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import PID_KF, PID_KI, PID_KP, is_enabled
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import (
+  MOVING_STOPPING_DECEL_RATE,
+  PID_KF,
+  PID_KI,
+  PID_KP,
+  is_enabled,
+)
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -92,6 +98,11 @@ class LongControl:
     if clear_attempt:
       self.sng_resume_attempted = False
 
+  def get_stopping_decel_rate(self, standstill: bool) -> float:
+    if self.wayon_carrot_profile and not standstill:
+      return MOVING_STOPPING_DECEL_RATE
+    return self.CP.stoppingDecelRate
+
   def update_sng_resume(self, active, CS, long_plan, radar_state):
     lead = radar_state.leadOne if radar_state is not None else None
     valid_lead = (lead is not None and lead.status and
@@ -158,7 +169,7 @@ class LongControl:
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
-        output_accel -= self.CP.stoppingDecelRate * DT_CTRL
+        output_accel -= self.get_stopping_decel_rate(CS.standstill) * DT_CTRL
       self.reset()
 
     elif self.long_control_state == LongCtrlState.starting:

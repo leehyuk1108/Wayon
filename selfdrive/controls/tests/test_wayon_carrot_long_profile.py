@@ -7,6 +7,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   CURVE_SPEED_FLOOR,
   MAP_CURVE_FACTOR,
   MAX_ACCEL_V,
+  MOVING_STOPPING_DECEL_RATE,
   PID_KF,
   PID_KI,
   PID_KP,
@@ -48,6 +49,7 @@ def test_carrot_max_accel_curve(speed_kph, expected):
 def test_carrot_profile_scalars():
   assert (PID_KP, PID_KI, PID_KF) == (1.0, 0.0, 1.0)
   assert V_EGO_STOPPING == 0.5
+  assert MOVING_STOPPING_DECEL_RATE == 0.8
   assert A_CHANGE_COST_STARTING == 10.0
   assert VISION_CURVE_FACTOR == 0.60
   assert CURVE_SPEED_FLOOR == pytest.approx(30 * CV.KPH_TO_MS)

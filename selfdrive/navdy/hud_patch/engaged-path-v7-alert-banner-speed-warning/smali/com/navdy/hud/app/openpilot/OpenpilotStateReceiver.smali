@@ -138,6 +138,8 @@
 
 .field private static sPathView:Lcom/navdy/hud/app/openpilot/OpenpilotPathView;
 
+.field private static sActuatorView:Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;
+
 .field private static sRightBlinkerRequested:Z
 
 .field private static sRightBsmView:Landroid/widget/ImageView;
@@ -731,6 +733,30 @@
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
     const/16 v4, 0x78
+
+    iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v1, v2, v3}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
+
+    new-instance v2, Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;
+
+    invoke-direct {v2, p0}, Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;-><init>(Landroid/content/Context;)V
+
+    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActuatorView:Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;
+
+    new-instance v3, Landroid/widget/FrameLayout$LayoutParams;
+
+    const/16 v4, 0x4c
+
+    const/16 v5, 0x2c
+
+    invoke-direct {v3, v4, v5}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
+
+    const/16 v4, 0xc4
+
+    iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    const/16 v4, 0x124
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 
@@ -2116,6 +2142,18 @@
     move v2, v5
 
     invoke-virtual {v0, v1, v2}, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->updatePayload(Lorg/json/JSONObject;Z)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sActuatorView:Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;
+
+    if-eqz v0, :cond_navdy_actuator_updated
+
+    move-object/from16 v1, v18
+
+    move v2, v5
+
+    invoke-virtual {v0, v1, v2}, Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;->updatePayload(Lorg/json/JSONObject;Z)V
+
+    :cond_navdy_actuator_updated
 
     :cond_5
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAlertBannerView:Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;

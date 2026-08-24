@@ -421,6 +421,8 @@ show_stop_icon = (
 | `alertSize` | string | - | `none`, `small`, `mid`, `full` 등 |
 | `greenLightAlert` | boolean | - | 초록불 감지 flag |
 | `leadDepartAlert` | boolean | - | 전방 차량 출발 flag |
+| `longitudinalActuator` | string | - | `none`, `coast`, `accelerator`, `brake`; 실제 종방향 출력 표시 |
+| `longitudinalActuatorLevel` | number | - | 0.0부터 1.0까지 HUD 링 투명도용 출력 세기 |
 
 ### geometry 필드
 
@@ -1120,8 +1122,9 @@ Receiver 처리 순서:
 4. 설정 속도, 깜빡이, BSM, OP 상태 아이콘 갱신
 5. engaged/disengaged layout 배치 갱신
 6. `OpenpilotPathView.updatePayload(payload, active)` 호출
-7. `OpenpilotAlertBannerView.updatePayload(payload)` 호출
-8. current speed와 camera overspeed 색상 갱신
+7. `OpenpilotActuatorView.updatePayload(payload, active)` 호출
+8. `OpenpilotAlertBannerView.updatePayload(payload)` 호출
+9. current speed와 camera overspeed 색상 갱신
 
 Overlay는 `TYPE_SYSTEM_ALERT` 계열 full-screen transparent WindowManager view다. 현재 title은
 `NavdyOpenpilotStatus`다. Root는 화면 전체를 차지하지만 touch/focus를 방해하지 않도록 flags를
@@ -1150,6 +1153,9 @@ Overlay는 `TYPE_SYSTEM_ALERT` 계열 full-screen transparent WindowManager view
 - path, 차선, 도로 경계, 차량 표시
 - current speed를 engaged 위치와 62 px 글꼴로 표시
 - ACC set speed를 current speed 아래쪽에 표시
+- 흰색 가속·제동 페달을 나란히 표시하고 실제 가속 출력은 가속 페달의
+  원을 파란색으로, 실제 마찰제동 출력은 제동 페달의 원을 빨간색으로 채움.
+  탄력주행에서는 원 없이 두 페달만 유지하고 disengaged에서는 둘 다 숨김
 - 음악을 `artist - title` 형식으로 표시
 - status icon 위치를 engaged 배치로 이동
 - event banner를 HUD 위에 표시

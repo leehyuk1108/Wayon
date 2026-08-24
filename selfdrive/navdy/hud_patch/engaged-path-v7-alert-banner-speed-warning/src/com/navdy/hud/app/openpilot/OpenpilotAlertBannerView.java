@@ -66,14 +66,13 @@ public final class OpenpilotAlertBannerView extends FrameLayout {
         FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
   }
 
-  public void updatePayload(String payload) {
-    if (payload == null) {
+  public void updatePayload(JSONObject json) {
+    if (json == null) {
       hideBanner();
       return;
     }
 
     try {
-      JSONObject json = new JSONObject(payload);
       String title = json.optString("alertText1", "").trim();
       String subtitle = json.optString("alertText2", "").trim();
       String type = json.optString("alertType", "");

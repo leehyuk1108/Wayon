@@ -52,6 +52,7 @@ NAVDY_FAST_SERVICES = (
   "selfdriveState",
   "selfdriveStateSP",
   NAVDY_CAR_STATE_SERVICE,
+  "carOutput",
   "controlsState",
   "starpilotPlan",
   "longitudinalPlan",
@@ -78,6 +79,8 @@ NAVDY_VEHICLE_NEAR_WIDTH_PX = 58.5
 NAVDY_VEHICLE_FAR_WIDTH_PX = 12.0
 NAVDY_VEHICLE_DUPLICATE_IOU = 0.25
 NAVDY_LONGITUDINAL_LEAD_HOLD_SEC = 0.45
+NAVDY_ACCELERATOR_COMMAND_THRESHOLD = 0.05
+NAVDY_BRAKE_COMMAND_THRESHOLD = 0.5
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -90,6 +93,26 @@ def finite_float(value: Any, default: float = 0.0) -> float:
   except (TypeError, ValueError):
     return default
   return value if math.isfinite(value) else default
+
+
+def navdy_longitudinal_actuator(active: bool, car_output: Any = None) -> tuple[str, float]:
+  """Return the physical longitudinal actuator selected by CarController."""
+  if not active or car_output is None:
+    return "none", 0.0
+
+  actuators = getattr(car_output, "actuatorsOutput", None)
+  if actuators is None:
+    return "none", 0.0
+
+  brake_command = max(0.0, finite_float(getattr(actuators, "brake", 0.0)))
+  if brake_command > NAVDY_BRAKE_COMMAND_THRESHOLD:
+    return "brake", min(1.0, brake_command / 350.0)
+
+  accel_command = finite_float(getattr(actuators, "accel", 0.0))
+  if accel_command > NAVDY_ACCELERATOR_COMMAND_THRESHOLD:
+    return "accelerator", min(1.0, accel_command)
+
+  return "coast", 0.0
 
 
 def rounded(value: float, digits: int = 1) -> float:
@@ -1114,7 +1137,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
                           controls_state: Any = None, starpilot_plan: Any = None,
                           longitudinal_plan: Any = None, model_v2: Any = None,
                           longitudinal_plan_sp: Any = None,
-                          selfdrive_state_sp: Any = None) -> dict[str, Any]:
+                          selfdrive_state_sp: Any = None,
+                          car_output: Any = None) -> dict[str, Any]:
   left_blinker = bool(getattr(car_state, "leftBlinker", False))
   right_blinker = bool(getattr(car_state, "rightBlinker", False))
   left_blindspot = bool(getattr(car_state, "leftBlindspot", False))
@@ -1161,6 +1185,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     automatic_acc_active and physical_acc_speed_kph > 0.0 and automatic_acc_target_kph > 0.0 and
     round(physical_acc_speed_kph) == round(automatic_acc_target_kph)
   )
+  longitudinal_actuator, longitudinal_actuator_level = navdy_longitudinal_actuator(
+    active, car_output)
 
   payload = {
     "schema": "navdy.openpilot.v1",
@@ -1202,6 +1228,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "alertSize": alert_size,
     "greenLightAlert": green_light_alert,
     "leadDepartAlert": lead_depart_alert,
+    "longitudinalActuator": longitudinal_actuator,
+    "longitudinalActuatorLevel": rounded(longitudinal_actuator_level, 2),
   }
   if active:
     payload.update(navdy_model_geometry(model_v2))
@@ -1255,6 +1283,8 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "alertSize": "none",
     "greenLightAlert": False,
     "leadDepartAlert": False,
+    "longitudinalActuator": "accelerator" if (seq % 20) < 10 else "brake",
+    "longitudinalActuatorLevel": 0.72,
   }
 
 
@@ -1656,6 +1686,8 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("alertSize"),
     payload.get("greenLightAlert"),
     payload.get("leadDepartAlert"),
+    payload.get("longitudinalActuator"),
+    payload.get("longitudinalActuatorLevel"),
     tuple(payload.get("navPathLeft", [])),
     tuple(payload.get("navPathRight", [])),
     tuple(payload.get("navLaneFarLeft", [])),
@@ -1960,7 +1992,10 @@ def run_live(args: argparse.Namespace) -> None:
                                     sm_optional(sm, services, "starpilotPlan"),
                                     sm_optional(sm, services, "longitudinalPlan"),
                                     longitudinal_plan_sp=sm_optional(sm, services, "longitudinalPlanSP"),
-                                    selfdrive_state_sp=sm_optional(sm, services, "selfdriveStateSP"))
+                                    selfdrive_state_sp=sm_optional(sm, services, "selfdriveStateSP"),
+                                    car_output=(sm_optional(sm, services, "carOutput")
+                                                if "carOutput" in services and
+                                                service_recent(sm, "carOutput", now, 0.25) else None))
     if e2e_alert_reader is not None:
       captured_green, captured_lead = e2e_alert_reader.pending(
         now, consume=navdy_e2e_alert_allowed(payload))

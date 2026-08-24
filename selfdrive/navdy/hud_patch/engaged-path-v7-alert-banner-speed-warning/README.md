@@ -30,6 +30,11 @@ Behavior:
   subsequent reads to once every five seconds.
 - Moves status icons to the engaged layout and shows the custom path, lanes,
   current speed, and music only while openpilot is actively engaged.
+- Shows fixed white accelerator and brake pedal icons side by side while
+  openpilot is engaged. Physical accelerator output fills the accelerator
+  circle in blue and GM friction-brake output fills the brake circle in red,
+  without a separate outline. Coast leaves both icons unfilled and
+  disengagement hides the pair.
 - Shows music as `artist - title` in both stock and engaged layouts, and restores
   the current track whenever the dashboard view is recreated.
 - Draws all four `modelV2.laneLines` as classified dashed or solid lines.

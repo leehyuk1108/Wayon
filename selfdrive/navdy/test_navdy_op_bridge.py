@@ -957,6 +957,16 @@ def test_navdy_alert_banner_suppresses_resume_required():
   assert ":cond_navdy_hide_resume_required" in smali
 
 
+def test_navdy_alert_banner_receiver_contract_uses_parsed_json():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  receiver = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+  banner = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotAlertBannerView.smali").read_text()
+
+  signature = "updatePayload(Lorg/json/JSONObject;)V"
+  assert f"OpenpilotAlertBannerView;->{signature}" in receiver
+  assert f".method public {signature}" in banner
+
+
 def test_navdy_hud_patch_keeps_status_icons_while_disengaged():
   receiver = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
              "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali"
@@ -1024,6 +1034,31 @@ def test_navdy_path_renderer_keeps_lane_and_road_edges_legible():
   assert "const/high16 v1, 0x41c80000    # 25.0f" in smali
 
 
+def test_navdy_hud_draws_actual_longitudinal_actuator_with_user_assets():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  receiver = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotActuatorView.java").read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotActuatorView.smali").read_text()
+
+  assert (patch_root / "res/drawable-nodpi/navdy_accelerator_pedal.png").is_file()
+  assert (patch_root / "res/drawable-nodpi/navdy_brake_pedal.png").is_file()
+  assert "sActuatorView:Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;" in receiver
+  assert "->updatePayload(Lorg/json/JSONObject;Z)V" in receiver
+  assert '"longitudinalActuator"' in java
+  assert '"accelerator".equals(value)' in java
+  assert '"brake".equals(value)' in java
+  assert "setVisibility(active ? VISIBLE : GONE)" in java
+  assert "getWidth() * 0.25f" in java
+  assert "getWidth() * 0.75f" in java
+  assert "fillPaint.setStyle(Paint.Style.FILL)" in java
+  assert "canvas.drawCircle(centerX, centerY, INDICATOR_RADIUS_PX, fillPaint)" in java
+  assert "bitmapPaint.setAlpha(selected ? 255 : 180)" in java
+  assert "new PorterDuffColorFilter(0xffffffff, PorterDuff.Mode.SRC_IN)" in java
+  assert "COLOR_ACCELERATOR = 0xff2f8cff" in java
+  assert "COLOR_BRAKE = 0xffff3b30" in java
+  assert "->drawCircle(FFFLandroid/graphics/Paint;)V" in smali
+
+
 def test_payload_uses_structured_reverse_alert_when_gear_sample_is_unavailable():
   selfdrive_state = SimpleNamespace(
     active=False,
@@ -1075,8 +1110,36 @@ def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
 
 def test_navdy_bridge_avoids_saturated_car_state_service():
   assert navdy_op_bridge.NAVDY_CAR_STATE_SERVICE == "carStateSP"
+  assert "carOutput" in navdy_op_bridge.NAVDY_FAST_SERVICES
   assert navdy_op_bridge.NAVDY_MODEL_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES
   assert navdy_op_bridge.NAVDY_CALIBRATION_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES
+
+
+def test_navdy_longitudinal_actuator_uses_actual_friction_brake_output():
+  accelerator = SimpleNamespace(actuatorsOutput=SimpleNamespace(accel=0.42, brake=0.0))
+  coasting = SimpleNamespace(actuatorsOutput=SimpleNamespace(accel=-0.18, brake=0.0))
+  braking = SimpleNamespace(actuatorsOutput=SimpleNamespace(accel=-0.55, brake=175.0))
+
+  assert navdy_op_bridge.navdy_longitudinal_actuator(True, accelerator) == ("accelerator", 0.42)
+  assert navdy_op_bridge.navdy_longitudinal_actuator(True, coasting) == ("coast", 0.0)
+  assert navdy_op_bridge.navdy_longitudinal_actuator(True, braking) == ("brake", 0.5)
+  assert navdy_op_bridge.navdy_longitudinal_actuator(False, braking) == ("none", 0.0)
+
+
+def test_navdy_payload_exports_longitudinal_actuator_state():
+  selfdrive_state = SimpleNamespace(
+    active=True,
+    enabled=True,
+    engageable=True,
+    state="enabled",
+  )
+  car_output = SimpleNamespace(actuatorsOutput=SimpleNamespace(accel=-0.4, brake=84.0))
+
+  payload = navdy_op_bridge.payload_from_messages(
+    selfdrive_state, navdy_op_bridge.default_car_state(), 21, car_output=car_output)
+
+  assert payload["longitudinalActuator"] == "brake"
+  assert payload["longitudinalActuatorLevel"] == 0.24
 
 
 def test_navdy_model_geometry_projects_path_and_all_lane_lines():

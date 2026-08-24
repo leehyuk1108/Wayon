@@ -456,7 +456,7 @@
 
 
 # virtual methods
-.method public updatePayload(Ljava/lang/String;)V
+.method public updatePayload(Lorg/json/JSONObject;)V
     .locals 7
 
     .line 70
@@ -475,9 +475,7 @@
     .line 76
     :cond_0
     :try_start_0
-    new-instance v2, Lorg/json/JSONObject;
-
-    invoke-direct {v2, p1}, Lorg/json/JSONObject;-><init>(Ljava/lang/String;)V
+    move-object v2, p1
 
     .line 77
     const-string p1, "alertText1"

@@ -673,11 +673,12 @@ def test_payload_hides_stop_icon_while_disengaged_at_standstill():
   assert payload["cruiseStandstill"] is False
 
 
-def test_payload_shows_manual_auto_hold_icon_and_event_while_disengaged():
+def test_payload_shows_only_manual_auto_hold_icon_while_disengaged():
   car_state = SimpleNamespace(
     cruiseState=SimpleNamespace(standstill=False, speed=0.0),
     gearShifter="drive",
     standstill=True,
+    brakeHoldActive=True,
     vCruise=80.0,
     vCruiseCluster=80.0,
     vEgo=0.0,
@@ -688,9 +689,41 @@ def test_payload_shows_manual_auto_hold_icon_and_event_while_disengaged():
     enabled=False,
     engageable=False,
     state="disabled",
-    alertText1="오토홀드",
-    alertText2="브레이크에서 발을 떼도 정차 상태를 유지합니다",
-    alertType="silentBrakeHold/warning",
+    alertText1="",
+    alertText2="",
+    alertType="",
+    alertStatus="normal",
+    alertSize="none",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 10)
+
+  assert payload["standstill"] is True
+  assert payload["cruiseStandstill"] is True
+  assert payload["alertText1"] == ""
+  assert payload["alertText2"] == ""
+  assert payload["alertType"] == ""
+
+
+def test_payload_suppresses_manual_auto_hold_event_text():
+  car_state = SimpleNamespace(
+    cruiseState=SimpleNamespace(standstill=False, speed=0.0),
+    gearShifter="drive",
+    standstill=True,
+    brakeHoldActive=True,
+    vCruise=80.0,
+    vCruiseCluster=80.0,
+    vEgo=0.0,
+    vEgoCluster=0.0,
+  )
+  selfdrive_state = SimpleNamespace(
+    active=False,
+    enabled=False,
+    engageable=False,
+    state="disabled",
+    alertText1="Press Resume to Exit Brake Hold",
+    alertText2="",
+    alertType="brakeHold/warning",
     alertStatus="normal",
     alertSize="small",
   )
@@ -699,18 +732,9 @@ def test_payload_shows_manual_auto_hold_icon_and_event_while_disengaged():
 
   assert payload["standstill"] is True
   assert payload["cruiseStandstill"] is True
-  assert payload["alertText1"] == "오토홀드"
-  assert payload["alertType"] == "silentBrakeHold/warning"
-
-
-def test_manual_auto_hold_alerts_use_visible_korean_label():
-  root = Path(__file__).resolve().parents[2]
-  events_sp = (root / "sunnypilot/selfdrive/selfdrived/events.py").read_text()
-  overrides = json.loads((root / "selfdrive/ui/mici/mici_event_alert_overrides.json").read_text())
-
-  assert 'EventNameSP.silentBrakeHold' in events_sp
-  assert '"오토홀드"' in events_sp
-  assert overrides["events"]["EVENTS.brakeHold.WARNING"]["title"] == "오토홀드"
+  assert payload["alertText1"] == ""
+  assert payload["alertText2"] == ""
+  assert payload["alertType"] == ""
 
 
 def test_payload_shows_stop_icon_while_engaged_at_standstill():

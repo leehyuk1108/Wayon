@@ -122,12 +122,8 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventNameSP.silentBrakeHold: {
-    ET.WARNING: Alert(
-      "오토홀드",
-      "브레이크에서 발을 떼도 정차 상태를 유지합니다",
-      AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
-    ET.NO_ENTRY: NoEntryAlert("오토홀드가 활성화되어 있습니다"),
+    ET.WARNING: EngagementAlert(AudibleAlert.none),
+    ET.NO_ENTRY: NoEntryAlert("Brake Hold Active"),
   },
 
   EventNameSP.silentWrongGear: {

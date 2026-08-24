@@ -19,8 +19,10 @@ from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitAlertRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.e2e_alerts import E2EAlertController
 from openpilot.selfdrive.ui.mici.onroad.status_timers import (
+  AUTO_HOLD_EVENT_NAMES,
   PARKING_BRAKE_EVENT_NAMES,
   format_mmss,
+  should_show_auto_hold_timer,
   should_show_parking_brake_timer,
 )
 
@@ -268,6 +270,8 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
   def will_render(self) -> tuple[Alert | None, bool]:
     alert = self.get_alert(ui_state.sm)
+    if alert is None and ui_state.sm['carState'].brakeHoldActive:
+      return Alert(alert_type="silentBrakeHold/warning"), False
     return alert or self._prev_alert, alert is None
 
   def _icon_helper(self, alert: Alert) -> AlertLayout:
@@ -353,6 +357,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
     alert = self.get_alert(ui_state.sm)
     event_name = alert.alert_type.split('/')[0] if alert is not None and alert.alert_type else ''
+    brake_hold_active = ui_state.sm["carState"].brakeHoldActive
     parking_brake_active = ui_state.sm["carState"].parkingBrake
     if parking_brake_active and self._parking_brake_start_time is None:
       self._parking_brake_start_time = time.monotonic()
@@ -360,7 +365,10 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
       self._parking_brake_start_time = None
     draw_parking_timer = should_show_parking_brake_timer(parking_brake_active=parking_brake_active,
                                                          alert_event_name=event_name)
-    has_active_indicator = alert is not None or draw_parking_timer
+    draw_auto_hold_timer = should_show_auto_hold_timer(brake_hold_active=brake_hold_active,
+                                                       alert_event_name=event_name,
+                                                       has_alert=alert is not None)
+    has_active_indicator = alert is not None or draw_auto_hold_timer or draw_parking_timer
 
     # Animate fade and slide in/out
     self._alert_y_filter.update(self._rect.y - 50 if not has_active_indicator else self._rect.y)
@@ -371,6 +379,12 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
     active_alert = alert
     if alert is None:
+      if draw_auto_hold_timer:
+        self._prev_alert = None
+        self._parking_brake_timer_visible = False
+        self._draw_resume_required(True)
+        return True
+
       if draw_parking_timer:
         self._prev_alert = None
         self._resume_required_start_time = None
@@ -393,7 +407,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
     alert_layout = self._icon_helper(alert)
     event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
-    if event_name == 'resumeRequired':
+    if event_name in AUTO_HOLD_EVENT_NAMES:
       self._draw_resume_required(active_alert is not None)
       return True
     if event_name in PARKING_BRAKE_EVENT_NAMES and parking_brake_active:
@@ -493,7 +507,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
   def _draw_background(self, alert: Alert) -> None:
     # draw top gradient for alert text at top
     event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
-    if event_name == 'resumeRequired' or event_name in PARKING_BRAKE_EVENT_NAMES:
+    if event_name in AUTO_HOLD_EVENT_NAMES or event_name in PARKING_BRAKE_EVENT_NAMES:
       return
 
     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])

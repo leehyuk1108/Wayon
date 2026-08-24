@@ -1149,7 +1149,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   state = enum_text(getattr(selfdrive_state, "state", "unknown"))
   alert_type = str(getattr(selfdrive_state, "alertType", ""))
   vehicle_standstill = bool(getattr(car_state, "standstill", False))
-  manual_auto_hold = alert_type.split("/", 1)[0] in ("brakeHold", "silentBrakeHold")
+  alert_event_name = alert_type.split("/", 1)[0]
+  manual_auto_hold = bool(getattr(car_state, "brakeHoldActive", False)) or alert_event_name in ("brakeHold", "silentBrakeHold")
   # preEnabled is the stopped engagement-wait state. Otherwise show the stop
   # icon while openpilot is engaged, or while manual GM Auto Hold is active.
   show_stop_icon = state == "preEnabled" or (vehicle_standstill and ((enabled or active) or manual_auto_hold))
@@ -1161,7 +1162,7 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   alert_text_2 = str(getattr(selfdrive_state, "alertText2", ""))
   alert_status = enum_text(getattr(selfdrive_state, "alertStatus", "normal"))
   alert_size = enum_text(getattr(selfdrive_state, "alertSize", "none"))
-  if alert_type.split("/", 1)[0] == "resumeRequired":
+  if alert_event_name in ("resumeRequired", "brakeHold", "silentBrakeHold"):
     alert_text_1 = ""
     alert_text_2 = ""
     alert_type = ""

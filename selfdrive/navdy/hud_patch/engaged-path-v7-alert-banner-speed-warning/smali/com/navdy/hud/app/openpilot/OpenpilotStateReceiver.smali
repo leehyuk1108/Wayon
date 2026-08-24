@@ -756,7 +756,7 @@
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
-    const/16 v4, 0x124
+    const/16 v4, 0x120
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 

@@ -37,7 +37,7 @@ static bool gm_pcm_cruise = false;
 static bool gm_non_acc = false;
 static bool gm_icbm = false;
 static bool gm_sdgm = false;
-static bool gm_auto_longitudinal_controls_allowed = false;
+static bool gm_auto_resume_sng = false;
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
@@ -151,13 +151,6 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     // convert float CAN signal to an int for gas checks: 22534 / 0.125 = 180272
     int gas_regen = (((msg->data[1] & 0x7U) << 16) | (msg->data[2] << 8) | msg->data[3]) - 180272U;
 
-    // Carrot-style longitudinal engagement for the explicitly enabled GM
-    // platform. This keeps Panda's controls state aligned with an application
-    // engagement that did not originate from a physical SET/RES button edge.
-    if (gm_auto_longitudinal_controls_allowed && apply) {
-      controls_allowed = true;
-    }
-
     bool violation = false;
     // Allow apply bit in pre-enabled and overriding states
     violation |= !controls_allowed && apply;
@@ -168,7 +161,7 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  // BUTTONS: stock-long control and the Traverse soft-hold RES release.
+  // BUTTONS: stock-long control and one Traverse stop-and-go RES release.
   if (msg->addr == 0x1E1U) {
     int button = (msg->data[5] >> 4) & 0x7U;
 
@@ -176,7 +169,7 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     if (gm_icbm && controls_allowed && cruise_engaged_prev) {
       allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_SET) || (button == GM_BTN_UNPRESS);
     }
-    if (gm_auto_longitudinal_controls_allowed && controls_allowed) {
+    if (gm_auto_resume_sng && controls_allowed && !vehicle_moving && !brake_pressed) {
       allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_UNPRESS);
     }
     if (!allowed_button) {
@@ -267,10 +260,10 @@ static safety_config gm_init(uint16_t param) {
 
   const uint16_t GM_PARAM_SP_NON_ACC = 1;
   const uint16_t GM_PARAM_SP_ICBM = 2;
-  const uint16_t GM_PARAM_SP_AUTO_LONGITUDINAL_CONTROLS_ALLOWED = 4;
+  const uint16_t GM_PARAM_SP_AUTO_RESUME_SNG = 4;
   gm_non_acc = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_NON_ACC);
   gm_icbm = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_ICBM);
-  gm_auto_longitudinal_controls_allowed = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_LONGITUDINAL_CONTROLS_ALLOWED);
+  gm_auto_resume_sng = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_RESUME_SNG);
 
   safety_config ret;
   if (gm_hw == GM_CAM) {

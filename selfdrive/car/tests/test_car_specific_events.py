@@ -7,7 +7,7 @@ from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 EventName = log.OnroadEvent.EventName
 
 
-def gm_events(cruise_standstill: bool, brake_hold_active: bool = False) -> list[int]:
+def gm_events(cruise_standstill: bool) -> list[int]:
   CP = car.CarParams.new_message()
   CP.brand = "gm"
   CP.carFingerprint = CAR.CHEVROLET_TRAVERSE
@@ -21,7 +21,6 @@ def gm_events(cruise_standstill: bool, brake_hold_active: bool = False) -> list[
   CS.cruiseState.standstill = cruise_standstill
   CS.standstill = cruise_standstill
   CS.lowSpeedAlert = True
-  CS.brakeHoldActive = brake_hold_active
 
   CS_prev = car.CarState.new_message()
   CS_prev.cruiseState.enabled = True
@@ -42,9 +41,3 @@ def test_gm_low_speed_steer_alert_remains_outside_autohold():
 
   assert EventName.resumeRequired not in events
   assert EventName.belowSteerSpeed in events
-
-
-def test_gm_soft_hold_shows_brake_hold_event():
-  events = gm_events(cruise_standstill=True, brake_hold_active=True)
-
-  assert EventName.brakeHold in events

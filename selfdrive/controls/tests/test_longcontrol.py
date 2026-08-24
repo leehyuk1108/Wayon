@@ -2,7 +2,8 @@ from types import SimpleNamespace
 
 from cereal import car, custom
 from openpilot.selfdrive.controls.lib.longcontrol import (LongControl, LongCtrlState,
-                                                          SOFT_HOLD_LEAD_CONFIRM_FRAMES,
+                                                          SNG_LEAD_CONFIRM_FRAMES, SNG_RESUME_TIMEOUT_FRAMES,
+                                                          SNG_STOP_CONFIRM_FRAMES,
                                                           long_control_state_trans)
 
 
@@ -63,28 +64,98 @@ def test_starting():
   assert next_state == LongCtrlState.pid
 
 
-def test_soft_hold_resume_bypasses_synthetic_cruise_standstill():
+def test_sng_resume_releases_cruise_standstill():
   CP = car.CarParams.new_message(startingState=True, vEgoStarting=0.5)
   CP_SP = custom.CarParamsSP.new_message()
   next_state = long_control_state_trans(CP, CP_SP, True, LongCtrlState.stopping, v_ego=0.0,
                                         should_stop=False, brake_pressed=False, cruise_standstill=True,
-                                        soft_hold_resume=True)
+                                        sng_resume=True)
   assert next_state == LongCtrlState.starting
 
 
-def test_soft_hold_resume_requires_stable_departing_lead():
+def sng_controller():
   controller = LongControl.__new__(LongControl)
-  controller.wayon_carrot_profile = True
-  controller.soft_hold_lead_frames = 0
-  controller.soft_hold_resume_ready = False
-  CS = SimpleNamespace(brakeHoldActive=True, brakePressed=False)
-  plan = SimpleNamespace(shouldStop=False)
-  radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vLead=1.0, vRel=0.8))
+  controller.CP = SimpleNamespace(autoResumeSng=True, vEgoStarting=0.5)
+  controller.long_control_state = LongCtrlState.stopping
+  controller.sng_stop_frames = 0
+  controller.sng_lead_frames = 0
+  controller.sng_lead_baseline_m = None
+  controller.sng_resume_ready = False
+  controller.sng_resume_frames = 0
+  controller.sng_resume_attempted = False
+  return controller
 
-  for _ in range(SOFT_HOLD_LEAD_CONFIRM_FRAMES - 1):
-    assert not controller.update_soft_hold_resume(CS, plan, radar)
-  assert controller.update_soft_hold_resume(CS, plan, radar)
 
-  radar.leadOne.vRel = 0.0
-  assert not controller.update_soft_hold_resume(CS, plan, radar)
-  assert controller.soft_hold_lead_frames == 0
+def test_sng_resume_requires_confirmed_stop_and_departing_lead():
+  controller = sng_controller()
+  CS = SimpleNamespace(vEgo=0.0, standstill=True, brakePressed=False, gasPressed=False,
+                       cruiseState=SimpleNamespace(standstill=True))
+  plan = SimpleNamespace(shouldStop=True)
+  radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vLead=0.0, vRel=0.0))
+
+  for _ in range(SNG_STOP_CONFIRM_FRAMES):
+    assert not controller.update_sng_resume(True, CS, plan, radar)
+
+  plan.shouldStop = False
+  radar.leadOne.dRel = 6.6
+  radar.leadOne.vRel = 0.8
+  for _ in range(SNG_LEAD_CONFIRM_FRAMES - 1):
+    assert not controller.update_sng_resume(True, CS, plan, radar)
+  assert controller.update_sng_resume(True, CS, plan, radar)
+  assert controller.sng_resume_attempted
+
+  radar.leadOne.status = False
+  assert not controller.update_sng_resume(True, CS, plan, radar)
+  assert controller.sng_resume_attempted
+
+
+def test_sng_resume_rejects_lead_loss_and_driver_input():
+  controller = sng_controller()
+  CS = SimpleNamespace(vEgo=0.0, standstill=True, brakePressed=False, gasPressed=False,
+                       cruiseState=SimpleNamespace(standstill=True))
+  plan = SimpleNamespace(shouldStop=True)
+  radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vLead=0.0, vRel=0.0))
+
+  for _ in range(SNG_STOP_CONFIRM_FRAMES):
+    controller.update_sng_resume(True, CS, plan, radar)
+
+  plan.shouldStop = False
+  radar.leadOne.status = False
+  assert not controller.update_sng_resume(True, CS, plan, radar)
+  assert controller.sng_stop_frames == 0
+
+  radar.leadOne.status = True
+  CS.brakePressed = True
+  assert not controller.update_sng_resume(True, CS, plan, radar)
+  assert controller.sng_lead_baseline_m is None
+
+
+def test_sng_resume_times_out_without_retrying_same_stop():
+  controller = sng_controller()
+  CS = SimpleNamespace(vEgo=0.0, standstill=True, brakePressed=False, gasPressed=False,
+                       cruiseState=SimpleNamespace(standstill=True))
+  plan = SimpleNamespace(shouldStop=True)
+  radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vLead=0.0, vRel=0.0))
+
+  for _ in range(SNG_STOP_CONFIRM_FRAMES):
+    controller.update_sng_resume(True, CS, plan, radar)
+  plan.shouldStop = False
+  radar.leadOne.dRel = 6.6
+  radar.leadOne.vRel = 0.8
+  for _ in range(SNG_LEAD_CONFIRM_FRAMES):
+    controller.update_sng_resume(True, CS, plan, radar)
+  assert controller.sng_resume_ready
+
+  controller.long_control_state = LongCtrlState.starting
+  for _ in range(SNG_RESUME_TIMEOUT_FRAMES):
+    controller.update_sng_resume(True, CS, plan, radar)
+  assert not controller.sng_resume_ready
+  assert controller.sng_resume_attempted
+
+  controller.long_control_state = LongCtrlState.stopping
+  for _ in range(SNG_STOP_CONFIRM_FRAMES + SNG_LEAD_CONFIRM_FRAMES):
+    assert not controller.update_sng_resume(True, CS, plan, radar)
+
+  CS.vEgo = 1.0
+  assert not controller.update_sng_resume(True, CS, plan, radar)
+  assert not controller.sng_resume_attempted

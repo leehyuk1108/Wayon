@@ -252,7 +252,7 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
     if candidate == CAR.CHEVROLET_TRAVERSE:
       if stock_cp.openpilotLongitudinalControl:
-        ret.safetyParam |= GMSafetyFlagsSP.AUTO_LONGITUDINAL_CONTROLS_ALLOWED
+        ret.safetyParam |= GMSafetyFlagsSP.AUTO_RESUME_SNG
       else:
         ret.intelligentCruiseButtonManagementAvailable = True
         ret.safetyParam |= GMSafetyFlagsSP.ICBM

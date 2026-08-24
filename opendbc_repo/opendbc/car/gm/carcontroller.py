@@ -31,10 +31,6 @@ def get_acc_dashboard_speed_kph(CP, cluster_target_kph):
   return cluster_target_kph
 
 
-def is_soft_hold_driver_braking(CS):
-  return bool(CS.out.brakeHoldActive and CS.out.brakePressed)
-
-
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
@@ -46,9 +42,9 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.last_steer_frame = 0
     self.last_button_frame = 0
     self.cancel_counter = 0
-    self.soft_hold_resume_button_state = 0
-    self.soft_hold_resume_button_counter = 0
-    self.soft_hold_resume_last = False
+    self.sng_resume_button_state = 0
+    self.sng_resume_button_counter = 0
+    self.sng_resume_last = False
 
     self.lka_steering_cmd_counter = 0
     self.lka_icon_status_last = (False, False)
@@ -107,8 +103,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       # Gas/regen, brakes, and UI commands - all at 25Hz
       if self.frame % 4 == 0:
         stopping = actuators.longControlState == LongCtrlState.stopping
-        soft_hold_driver_braking = is_soft_hold_driver_braking(CS)
-        if not CC.longActive or soft_hold_driver_braking:
+        if not CC.longActive:
           # ASCM sends max regen when not enabled
           self.apply_gas = self.params.INACTIVE_REGEN
           self.apply_brake = 0
@@ -122,8 +117,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         idx = (self.frame // 4) % 4
 
-        at_full_stop = CC.longActive and CS.out.standstill and not soft_hold_driver_braking
-        near_stop = CC.longActive and not soft_hold_driver_braking and (abs(CS.out.vEgo) < self.params.NEAR_STOP_BRAKE_PHASE)
+        at_full_stop = CC.longActive and CS.out.standstill
+        near_stop = CC.longActive and (abs(CS.out.vEgo) < self.params.NEAR_STOP_BRAKE_PHASE)
         friction_brake_bus = get_friction_brake_bus(self.CP)
         # GM Camera exceptions
         # TODO: can we always check the longControlState?
@@ -143,19 +138,22 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, CC.enabled,
                                                             dashboard_speed_kph, hud_control, send_fcw))
 
-        # Some GM modules keep their internal stop-and-go latch set after the
-        # direct longitudinal launch command. Send one matching RES release.
-        resume_rising = CC.cruiseControl.resume and not self.soft_hold_resume_last
+        # Release the stock stop-and-go latch once after a confirmed lead departure.
+        resume_valid = (CC.longActive and CS.out.standstill and
+                        not CS.out.brakePressed and not CS.out.gasPressed)
+        resume_rising = resume_valid and CC.cruiseControl.resume and not self.sng_resume_last
         if self.CP.autoResumeSng and resume_rising:
-          self.soft_hold_resume_button_state = 2
-          self.soft_hold_resume_button_counter = (CS.buttons_counter + 1) % 4
-        if self.soft_hold_resume_button_state > 0:
-          button = CruiseButtons.RES_ACCEL if self.soft_hold_resume_button_state == 2 else CruiseButtons.UNPRESS
+          self.sng_resume_button_state = 2
+          self.sng_resume_button_counter = (CS.buttons_counter + 1) % 4
+        elif not resume_valid:
+          self.sng_resume_button_state = 0
+        if self.sng_resume_button_state > 0:
+          button = CruiseButtons.RES_ACCEL if self.sng_resume_button_state == 2 else CruiseButtons.UNPRESS
           can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.POWERTRAIN,
-                                                self.soft_hold_resume_button_counter, button))
-          self.soft_hold_resume_button_counter = (self.soft_hold_resume_button_counter + 1) % 4
-          self.soft_hold_resume_button_state -= 1
-        self.soft_hold_resume_last = CC.cruiseControl.resume
+                                                self.sng_resume_button_counter, button))
+          self.sng_resume_button_counter = (self.sng_resume_button_counter + 1) % 4
+          self.sng_resume_button_state -= 1
+        self.sng_resume_last = CC.cruiseControl.resume if resume_valid else False
 
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)

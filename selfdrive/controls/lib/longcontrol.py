@@ -10,21 +10,24 @@ CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
-SOFT_HOLD_LEAD_CONFIRM_FRAMES = round(0.12 / DT_CTRL)
-SOFT_HOLD_LEAD_MIN_DISTANCE = 4.0
-SOFT_HOLD_LEAD_MAX_DISTANCE = 10.0
-SOFT_HOLD_LEAD_MIN_REL_SPEED = 0.4
+SNG_STOP_CONFIRM_FRAMES = round(0.5 / DT_CTRL)
+SNG_LEAD_CONFIRM_FRAMES = round(0.2 / DT_CTRL)
+SNG_LEAD_MIN_DISTANCE = 1.5
+SNG_LEAD_MAX_DISTANCE = 25.0
+SNG_LEAD_MIN_REL_SPEED = 0.35
+SNG_LEAD_MIN_DISTANCE_DELTA = 0.4
+SNG_RESUME_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 
 
 def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
                              should_stop, brake_pressed, cruise_standstill,
-                             soft_hold_resume=False):
+                             sng_resume=False):
   # Gas Interceptor
   cruise_standstill = cruise_standstill and not CP_SP.enableGasInterceptor
 
   stopping_condition = should_stop
   starting_condition = (not should_stop and
-                        (not cruise_standstill or soft_hold_resume) and
+                        (not cruise_standstill or sng_resume) and
                         not brake_pressed)
   started_condition = v_ego > CP.vEgoStarting
 
@@ -69,24 +72,68 @@ class LongControl:
                                    ([0.0], [PID_KI]),
                                    rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
-    self.soft_hold_lead_frames = 0
-    self.soft_hold_resume_ready = False
+    self.sng_stop_frames = 0
+    self.sng_lead_frames = 0
+    self.sng_lead_baseline_m = None
+    self.sng_resume_ready = False
+    self.sng_resume_frames = 0
+    self.sng_resume_attempted = False
 
   def reset(self):
     self.pid.reset()
     self.speed_pid.reset()
 
-  def update_soft_hold_resume(self, CS, long_plan, radar_state):
+  def reset_sng_resume(self, clear_attempt=True):
+    self.sng_stop_frames = 0
+    self.sng_lead_frames = 0
+    self.sng_lead_baseline_m = None
+    self.sng_resume_ready = False
+    self.sng_resume_frames = 0
+    if clear_attempt:
+      self.sng_resume_attempted = False
+
+  def update_sng_resume(self, active, CS, long_plan, radar_state):
     lead = radar_state.leadOne if radar_state is not None else None
-    lead_departing = (self.wayon_carrot_profile and CS.brakeHoldActive and not CS.brakePressed and
-                      lead is not None and lead.status and
-                      SOFT_HOLD_LEAD_MIN_DISTANCE < lead.dRel < SOFT_HOLD_LEAD_MAX_DISTANCE and
-                      lead.vRel > SOFT_HOLD_LEAD_MIN_REL_SPEED)
-    self.soft_hold_lead_frames = min(self.soft_hold_lead_frames + 1, SOFT_HOLD_LEAD_CONFIRM_FRAMES) if lead_departing else 0
-    self.soft_hold_resume_ready = (lead_departing and
-                                   self.soft_hold_lead_frames >= SOFT_HOLD_LEAD_CONFIRM_FRAMES and
-                                   not long_plan.shouldStop)
-    return self.soft_hold_resume_ready
+    valid_lead = (lead is not None and lead.status and
+                  SNG_LEAD_MIN_DISTANCE < lead.dRel < SNG_LEAD_MAX_DISTANCE)
+
+    if not self.CP.autoResumeSng or not active or CS.brakePressed or CS.gasPressed:
+      self.reset_sng_resume()
+      return False
+
+    if CS.vEgo > self.CP.vEgoStarting:
+      self.reset_sng_resume()
+      return False
+
+    if self.sng_resume_ready:
+      if long_plan.shouldStop or not valid_lead:
+        self.reset_sng_resume(clear_attempt=False)
+        return False
+      self.sng_resume_frames += 1
+      if self.sng_resume_frames >= SNG_RESUME_TIMEOUT_FRAMES:
+        self.reset_sng_resume(clear_attempt=False)
+      return self.sng_resume_ready
+
+    safe_stop = (CS.standstill and CS.cruiseState.standstill and
+                 self.long_control_state == LongCtrlState.stopping)
+    if not safe_stop or self.sng_resume_attempted or not valid_lead:
+      self.reset_sng_resume(clear_attempt=False)
+      return False
+
+    self.sng_stop_frames = min(self.sng_stop_frames + 1, SNG_STOP_CONFIRM_FRAMES)
+    if self.sng_lead_baseline_m is None:
+      self.sng_lead_baseline_m = lead.dRel
+    else:
+      self.sng_lead_baseline_m = min(self.sng_lead_baseline_m, lead.dRel)
+
+    lead_departing = (self.sng_stop_frames >= SNG_STOP_CONFIRM_FRAMES and
+                      not long_plan.shouldStop and
+                      (lead.vRel > SNG_LEAD_MIN_REL_SPEED or
+                       lead.dRel - self.sng_lead_baseline_m > SNG_LEAD_MIN_DISTANCE_DELTA))
+    self.sng_lead_frames = min(self.sng_lead_frames + 1, SNG_LEAD_CONFIRM_FRAMES) if lead_departing else 0
+    self.sng_resume_ready = self.sng_lead_frames >= SNG_LEAD_CONFIRM_FRAMES
+    self.sng_resume_attempted |= self.sng_resume_ready
+    return self.sng_resume_ready
 
   def update(self, active, CS, long_plan, accel_limits, radar_state=None):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
@@ -96,16 +143,13 @@ class LongControl:
     self.pid.pos_limit = accel_limits[1]
     self.speed_pid.neg_limit = accel_limits[0]
     self.speed_pid.pos_limit = accel_limits[1]
-    if active:
-      soft_hold_resume = self.update_soft_hold_resume(CS, long_plan, radar_state)
-    else:
-      self.soft_hold_lead_frames = 0
-      self.soft_hold_resume_ready = False
-      soft_hold_resume = False
+    sng_resume = self.update_sng_resume(active, CS, long_plan, radar_state)
+    sng_launch_failed = (self.CP.autoResumeSng and self.sng_resume_attempted and not sng_resume and
+                         self.long_control_state == LongCtrlState.starting and CS.vEgo <= self.CP.vEgoStarting)
 
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
-                                                       should_stop, CS.brakePressed,
-                                                       CS.cruiseState.standstill, soft_hold_resume)
+                                                       should_stop or sng_launch_failed, CS.brakePressed,
+                                                       CS.cruiseState.standstill, sng_resume)
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.

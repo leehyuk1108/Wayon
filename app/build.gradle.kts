@@ -28,11 +28,6 @@ val wayonCloudUrl = configuredValue(
     environmentName = "WAYON_CLOUD_URL",
     defaultValue = "https://wayon-cloud.hyuklee.workers.dev",
 ).trimEnd('/')
-val wayonDeviceId = configuredValue("wayon.deviceId", "WAYON_DEVICE_ID")
-val wayonPushRegistrationToken = configuredValue(
-    "wayon.pushRegistrationToken",
-    "WAYON_PUSH_REGISTRATION_TOKEN",
-)
 val firebaseDatabaseUrl = configuredValue("firebase.databaseUrl", "FIREBASE_DATABASE_URL")
 val firebaseConfigured = file("google-services.json").isFile && firebaseDatabaseUrl.isNotBlank()
 
@@ -53,12 +48,6 @@ android {
             "String",
             "WAYON_CLOUD_URL",
             wayonCloudUrl.asBuildConfigString(),
-        )
-        buildConfigField("String", "WAYON_DEVICE_ID", wayonDeviceId.asBuildConfigString())
-        buildConfigField(
-            "String",
-            "WAYON_PUSH_REGISTRATION_TOKEN",
-            wayonPushRegistrationToken.asBuildConfigString(),
         )
         buildConfigField("String", "FIREBASE_DATABASE_URL", firebaseDatabaseUrl.asBuildConfigString())
         buildConfigField("boolean", "FIREBASE_CONFIGURED", firebaseConfigured.toString())

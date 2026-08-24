@@ -25,17 +25,19 @@ object WayonPushRegistrar {
 
     fun registerToken(context: Context, token: String, force: Boolean = false) {
         if (BuildConfig.APPLICATION_ID.endsWith(".source")) return
-        if (token.isBlank() ||
-            BuildConfig.WAYON_PUSH_REGISTRATION_TOKEN.isBlank() ||
-            BuildConfig.WAYON_DEVICE_ID.isBlank()
-        ) {
+        val appContext = context.applicationContext
+        val wayonKey = appContext.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(MainActivity.PREF_KEY_WAYON_CLOUD_KEY, null)
+            ?.trim()
+            .orEmpty()
+        if (token.isBlank() || wayonKey.isBlank()) {
             Log.w(TAG, "Wayon push registration is not configured")
             return
         }
 
-        val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val recentlyRegistered = prefs.getString(LAST_TOKEN, null) == token &&
+        val registrationIdentity = "$token:${wayonKey.hashCode()}"
+        val recentlyRegistered = prefs.getString(LAST_TOKEN, null) == registrationIdentity &&
             System.currentTimeMillis() - prefs.getLong(LAST_REGISTERED_AT, 0L) < REFRESH_INTERVAL_MS
         if (!force && recentlyRegistered) return
 
@@ -47,12 +49,11 @@ object WayonPushRegistrar {
                     connectTimeout = 10_000
                     readTimeout = 10_000
                     doOutput = true
-                    setRequestProperty("Authorization", "Bearer ${BuildConfig.WAYON_PUSH_REGISTRATION_TOKEN}")
+                    setRequestProperty("Authorization", "Bearer $wayonKey")
                     setRequestProperty("Content-Type", "application/json")
                 }
                 val payload = JSONObject()
                     .put("fcmToken", token)
-                    .put("deviceId", BuildConfig.WAYON_DEVICE_ID)
                     .put("platform", "android")
                     .put("appVersion", BuildConfig.VERSION_NAME)
                 connection.outputStream.use { output ->
@@ -62,7 +63,7 @@ object WayonPushRegistrar {
                 val responseCode = connection.responseCode
                 if (responseCode in 200..299) {
                     prefs.edit()
-                        .putString(LAST_TOKEN, token)
+                        .putString(LAST_TOKEN, registrationIdentity)
                         .putLong(LAST_REGISTERED_AT, System.currentTimeMillis())
                         .apply()
                     Log.i(TAG, "Wayon push registration complete")

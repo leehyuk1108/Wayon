@@ -50,10 +50,11 @@ The following environment variables can be used instead of Gradle properties:
 
 ```text
 WAYON_CLOUD_URL
-WAYON_DEVICE_ID
-WAYON_PUSH_REGISTRATION_TOKEN
 FIREBASE_DATABASE_URL
 ```
+
+The Wayon Cloud Key is entered in app settings and is shared by data, push,
+360 Live, and remote access for the selected vehicle.
 
 `local.properties` and `app/google-services.json` are ignored by Git. A build
 without them still compiles, but Firebase push/status integration remains

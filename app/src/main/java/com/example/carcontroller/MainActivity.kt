@@ -105,9 +105,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
     @JavascriptInterface
     fun requestWayonLiveSession() {
-        if (BuildConfig.WAYON_PUSH_REGISTRATION_TOKEN.isBlank() ||
-            BuildConfig.WAYON_DEVICE_ID.isBlank()
-        ) {
+        val wayonKey = loadWayonCloudKeyFromPrefs().orEmpty()
+        if (wayonKey.isBlank()) {
             runJs("onWayonLiveSessionError('Live 인증 설정이 없습니다.')")
             return
         }
@@ -123,13 +122,13 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                     doOutput = true
                     setRequestProperty(
                         "Authorization",
-                        "Bearer ${BuildConfig.WAYON_PUSH_REGISTRATION_TOKEN}",
+                        "Bearer $wayonKey",
                     )
                     setRequestProperty("Content-Type", "application/json")
                 }
 
                 connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-                    writer.write(JSONObject().put("deviceId", BuildConfig.WAYON_DEVICE_ID).toString())
+                    writer.write("{}")
                 }
 
                 val status = connection.responseCode
@@ -974,6 +973,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         wayonCloudHistoryJson = null
         wayonCloudFullHistoryLoaded = false
         prefs.edit().putString(PREF_KEY_WAYON_CLOUD_KEY, key).apply()
+        WayonPushRegistrar.registerCurrentToken(this)
         if (WayonCloudMode.isEnabled(this)) {
             WayonCloudMode.clearLocalTrackingState(this)
             stopService(Intent(this, DrivingService::class.java))

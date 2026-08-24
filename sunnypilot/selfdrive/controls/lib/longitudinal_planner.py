@@ -24,6 +24,8 @@ DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimen
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 ICBM_MIN_TARGET_KPH = 20.0
+ICBM_MAX_DECEL_MPS2 = 1.2
+ICBM_DECEL_RESPONSE_TIME_S = 1.5
 
 
 def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: float) -> float:
@@ -34,6 +36,23 @@ def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: 
   if not ICBM_MIN_TARGET_KPH <= target_kph <= V_CRUISE_MAX:
     return v_cruise
   return min(v_cruise, target_kph * CV.KPH_TO_MS)
+
+
+def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_ego: float,
+                            a_target: float, v_cruise: float) -> float:
+  """Promptly follow a falling ICBM speed ceiling without exceeding its camera decel profile."""
+  target_kph = float(icbm.automaticTargetSpeedKph)
+  if not icbm.automaticControlActive or not math.isfinite(target_kph):
+    return a_target
+  if not ICBM_MIN_TARGET_KPH <= target_kph <= V_CRUISE_MAX:
+    return a_target
+
+  target_ms = target_kph * CV.KPH_TO_MS
+  if target_ms >= min(v_ego, v_cruise):
+    return a_target
+
+  speed_error_accel = (target_ms - v_ego) / ICBM_DECEL_RESPONSE_TIME_S
+  return min(a_target, max(-ICBM_MAX_DECEL_MPS2, speed_error_accel))
 
 
 class LongitudinalPlannerSP:
@@ -80,10 +99,12 @@ class LongitudinalPlannerSP:
     # ICBM continues to own the proven Navdy camera and section-control state
     # machine. Under OP long its target caps cruise directly instead of sending
     # synthetic stock ACC button presses.
-    icbm_v_cruise = apply_icbm_target(sm['selfdriveStateSP'].intelligentCruiseButtonManagement, v_cruise)
+    icbm = sm['selfdriveStateSP'].intelligentCruiseButtonManagement
+    icbm_v_cruise = apply_icbm_target(icbm, v_cruise)
+    icbm_a_target = apply_icbm_accel_target(icbm, v_ego, a_ego, v_cruise)
 
     targets = {
-      LongitudinalPlanSource.cruise: (icbm_v_cruise, a_ego),
+      LongitudinalPlanSource.cruise: (icbm_v_cruise, icbm_a_target),
       LongitudinalPlanSource.sccVision: (self.scc.vision.output_v_target, self.scc.vision.output_a_target),
       LongitudinalPlanSource.sccMap: (self.scc.map.output_v_target, self.scc.map.output_a_target),
       LongitudinalPlanSource.speedLimitAssist: (self.sla.output_v_target, self.sla.output_a_target),

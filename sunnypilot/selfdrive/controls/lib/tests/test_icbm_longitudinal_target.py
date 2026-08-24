@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from openpilot.common.constants import CV
-from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import apply_icbm_target
+from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import apply_icbm_accel_target, apply_icbm_target
 
 
 def icbm_target(speed_kph: float, active: bool = True):
@@ -28,3 +28,21 @@ def test_invalid_icbm_target_is_ignored(target):
 def test_icbm_never_raises_driver_cruise_target():
   cruise = 80 * CV.KPH_TO_MS
   assert apply_icbm_target(icbm_target(100), cruise) == cruise
+
+
+def test_icbm_decel_target_follows_speed_error():
+  accel = apply_icbm_accel_target(icbm_target(65), 67 * CV.KPH_TO_MS, 0.3, 80 * CV.KPH_TO_MS)
+  assert accel == pytest.approx((65 - 67) * CV.KPH_TO_MS / 1.5)
+
+
+def test_icbm_decel_target_is_limited_to_camera_profile():
+  accel = apply_icbm_accel_target(icbm_target(50), 80 * CV.KPH_TO_MS, 0.3, 100 * CV.KPH_TO_MS)
+  assert accel == -1.2
+
+
+def test_icbm_does_not_brake_below_target():
+  assert apply_icbm_accel_target(icbm_target(60), 55 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS) == 0.4
+
+
+def test_inactive_icbm_does_not_change_accel():
+  assert apply_icbm_accel_target(icbm_target(50, active=False), 80 * CV.KPH_TO_MS, 0.4, 100 * CV.KPH_TO_MS) == 0.4

@@ -10,6 +10,14 @@
       "subtitle": "오토홀드가 활성화되었습니다",
       "subtitleFontPx": 35
     },
+    "EVENTS.brakeHold.WARNING": {
+      "eventName": "brakeHold",
+      "eventType": "WARNING",
+      "source": "EVENTS",
+      "title": "오토홀드",
+      "subtitle": "브레이크에서 발을 떼도 정차 상태를 유지합니다",
+      "subtitleFontPx": 31
+    },
     "EVENTS.belowSteerSpeed.WARNING": {
       "eventName": "belowSteerSpeed",
       "eventType": "WARNING",

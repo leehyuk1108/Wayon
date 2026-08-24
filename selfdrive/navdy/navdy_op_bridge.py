@@ -1147,18 +1147,18 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   active = bool(getattr(selfdrive_state, "active", False))
   engageable = bool(getattr(selfdrive_state, "engageable", False))
   state = enum_text(getattr(selfdrive_state, "state", "unknown"))
-  cruise_standstill = is_cruise_standstill(car_state)
+  alert_type = str(getattr(selfdrive_state, "alertType", ""))
   vehicle_standstill = bool(getattr(car_state, "standstill", False))
+  manual_auto_hold = alert_type.split("/", 1)[0] in ("brakeHold", "silentBrakeHold")
   # preEnabled is the stopped engagement-wait state. Otherwise show the stop
-  # icon only while openpilot is engaged and the vehicle is stationary.
-  show_stop_icon = state == "preEnabled" or ((enabled or active) and vehicle_standstill)
+  # icon while openpilot is engaged, or while manual GM Auto Hold is active.
+  show_stop_icon = state == "preEnabled" or (vehicle_standstill and ((enabled or active) or manual_auto_hold))
 
   v_ego_cluster = finite_float(getattr(car_state, "vEgoCluster", 0.0))
   v_ego_ms = finite_float(getattr(car_state, "vEgo", 0.0))
   v_ego_kph = (v_ego_cluster if v_ego_cluster > 0.0 else v_ego_ms) * KPH_PER_MS
   alert_text_1 = str(getattr(selfdrive_state, "alertText1", ""))
   alert_text_2 = str(getattr(selfdrive_state, "alertText2", ""))
-  alert_type = str(getattr(selfdrive_state, "alertType", ""))
   alert_status = enum_text(getattr(selfdrive_state, "alertStatus", "normal"))
   alert_size = enum_text(getattr(selfdrive_state, "alertSize", "none"))
   if alert_type.split("/", 1)[0] == "resumeRequired":

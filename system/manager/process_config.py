@@ -194,8 +194,12 @@ procs = [
   PythonProcess("wayon_cloud", "system.wayon_cloud_uploader", always_run, restart_if_crash=True),
   PythonProcess("wayon_impactd", "system.wayon_impactd", wayon_impact_ready, restart_if_crash=True),
   PythonProcess("wayon_live", "system.wayon_live_stream", wayon_remote_ready, restart_if_crash=True),
+  PythonProcess("wayon_remote_relay", "system.wayon_remote_relay", wayon_remote_ready,
+                enabled=not PC, restart_if_crash=True),
+  PythonProcess("wayon_key_server", "system.wayon_key_server", wayon_remote_ready,
+                enabled=not PC, restart_if_crash=True),
   # Official Athena is disabled above, so reuse its persistent daemon PID slot for remote SSH.
-  DaemonProcess("wayon_remote_installer", "system.wayon_remote_installer", "AthenadPid", enabled=not PC),
+  DaemonProcess("wayon_remote_installer", "system.wayon_remote_installer", "AthenadPid", enabled=False),
   PythonProcess("gm_button_test_web", "system.gm_button_test_server", always_run,
                 enabled=not PC, restart_if_crash=True),
   PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", only_offroad, enabled=not PC),

@@ -22,6 +22,14 @@ database_id = "c953a6c9-eb7a-4695-b1a4-702c5ede186d"
 binding = "SNAPSHOTS"
 id = "f66d9a8906494da3a3a254e340d205ae"
 
+[[durable_objects.bindings]]
+name = "DEVICE_RELAY"
+class_name = "WayonDeviceRelay"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WayonDeviceRelay"]
+
 [[vpc_networks]]
 binding = "COMMA_NETWORK"
 tunnel_id = "449bf488-e41f-4d08-908e-7db6f3d32a28"

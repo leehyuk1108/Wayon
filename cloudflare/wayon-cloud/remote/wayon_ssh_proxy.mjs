@@ -26,8 +26,8 @@ try {
 } catch {
   exitWithError(`cannot read credentials: ${credentialsPath}`);
 }
-if (typeof credentials?.username !== "string" || typeof credentials?.password !== "string"
-    || !credentials.username || !credentials.password) {
+const wayonKey = String(credentials?.key || credentials?.token || "");
+if (!wayonKey.startsWith("wayon_")) {
   exitWithError(`invalid credentials: ${credentialsPath}`);
 }
 
@@ -40,7 +40,7 @@ try {
   login = await fetch(sessionEndpoint, {
     method: "POST",
     headers: {
-      authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`, "utf8").toString("base64")}`,
+      authorization: `Bearer ${wayonKey}`,
       accept: "application/json",
       "user-agent": "wayon-ssh-proxy/1.0",
     },

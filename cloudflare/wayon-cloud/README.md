@@ -13,8 +13,9 @@ in three views:
 - Trips: 31-day statistics, recent routes, and a speed-colored route map.
 - Cameras: filterable wide and driver snapshot history.
 
-The view token is stored only in the browser's local storage. Existing users
-keep the same `wayonViewToken` key when the dashboard UI is updated.
+Each comma registers its Dongle ID with one randomly generated Wayon Cloud Key.
+Only the SHA-256 key hash is stored in D1. The same key authorizes telemetry,
+app reads, push registration, 360 Live, and remote SSH for that device.
 
 ## Cloudflare Resources
 
@@ -25,15 +26,13 @@ keep the same `wayonViewToken` key when the dashboard UI is updated.
 The dashboard and API are served from the same Worker. API reads and writes are
 protected with bearer tokens.
 
-## Offroad Remote SSH
+## Offroad Remote SSH and Live
 
-`remote/wayon_remote_supervisor.sh` runs the Cloudflare Tunnel only while the
-comma is offroad. The tunnel is stored outside `/data/openpilot`, so it remains
-available when a Sunnypilot update fails. The Worker uses a tunnel-scoped
-Workers VPC binding and exposes a credential-authenticated WebSocket bridge.
-`POST /api/remote/session` exchanges the Wayon username and password for a
-60-second signed protocol token; `/api/remote/ssh` uses that token and connects
-only to `127.0.0.1:22`.
+`system.wayon_remote_relay` runs only while the comma is offroad. It opens
+device-authenticated outbound WebSockets to one Durable Object per Dongle ID.
+`POST /api/remote/session` exchanges the Wayon Cloud Key for a 60-second signed
+protocol token containing that Dongle ID. The relay opens local port 22 or 8765
+only while an SSH or 360 Live client is connected.
 
 The Mac connects through the included SSH `ProxyCommand` client:
 
@@ -44,26 +43,23 @@ Host wayon-comma
   ProxyCommand /opt/homebrew/bin/node /path/to/remote/wayon_ssh_proxy.mjs
 ```
 
-Store the gateway login at `~/.config/wayon/ssh.credentials.json` with mode
+Store the same Wayon Cloud Key at `~/.config/wayon/ssh.credentials.json` with mode
 `0600`:
 
 ```json
-{"username":"comma","password":"strong-password"}
+{"key":"wayon_..."}
 ```
 
-Any client with those credentials and the proxy script can connect from the
-internet. The offroad-only `wayon_remote_installer` fetches the tunnel token
-with the device's existing upload credential, verifies the pinned cloudflared
-binary, and installs everything under `/data/wayon-remote`. The token remains
-mode `0600` and is never stored in Git. The tunnel starts only after six seconds
-of confirmed offroad state and stops as soon as `IsOnroad` changes.
+The key can also be viewed and copied on the same LAN at
+`http://COMMA_IP:1108` while the device is offroad. That local page and both
+relay channels stop as soon as `IsOnroad` changes.
 
 ## JSON API
 
-Read requests use the view token:
+Read requests use the device's Wayon Cloud Key:
 
 ```sh
-curl -H "Authorization: Bearer $WAYON_VIEW_TOKEN" \
+curl -H "Authorization: Bearer $WAYON_CLOUD_KEY" \
   https://wayon-cloud.hyuklee.workers.dev/api/json
 ```
 

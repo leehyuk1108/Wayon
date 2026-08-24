@@ -22,12 +22,15 @@ const REMOTE_SESSION_PATH = "/api/remote/session";
 const REMOTE_SSH_PATH = "/api/remote/ssh";
 const REMOTE_SSH_PROTOCOL_PREFIX = "wayon-ssh-v1";
 const REMOTE_SSH_MAX_AGE_SECONDS = 60;
-const REMOTE_SSH_TARGET = "172.31.255.254:22";
+const LEGACY_REMOTE_DEVICE_ID = "legacy-vpc";
+const LEGACY_REMOTE_SSH_TARGET = "172.31.255.254:22";
 const LIVE_SESSION_PATH = "/api/live/session";
 const LIVE_STREAM_PATH = "/api/live/stream";
 const LIVE_PROTOCOL_PREFIX = "wayon-live-v1";
 const LIVE_MAX_AGE_SECONDS = 30;
-const LIVE_STREAM_TARGET = "172.31.255.254:8765";
+const DEVICE_REGISTER_PATH = "/api/devices/register";
+const DEVICE_RELAY_PREFIX = "/api/device/relay/";
+const AUTH_DEVICE_HEADER = "x-wayon-auth-device";
 const LIVE_FRAME_HEADER_SIZE = 24;
 const LIVE_FRAME_MAX_PAYLOAD_SIZE = 4 * 1024 * 1024;
 const SERVER_API_TIMEOUT_MS = 5000;
@@ -176,33 +179,57 @@ async function importHmacKey(secret, usage) {
   );
 }
 
-async function issueSignedProtocol(prefix, sessionSecret, nowSeconds) {
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function validDeviceId(value) {
+  return /^[A-Za-z0-9._:-]{4,128}$/.test(String(value || ""));
+}
+
+function validWayonKey(value) {
+  return /^wayon_[A-Za-z0-9_-]{40,96}$/.test(String(value || ""));
+}
+
+async function issueSignedProtocol(prefix, sessionSecret, deviceId, nowSeconds) {
   const nonceBytes = new Uint8Array(16);
   crypto.getRandomValues(nonceBytes);
   const nonce = bytesToHex(nonceBytes);
+  const encodedDeviceId = textToBase64Url(deviceId);
+  const signedValue = `${nowSeconds}:${nonce}:${encodedDeviceId}`;
   const key = await importHmacKey(sessionSecret, "sign");
   const signature = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(`${nowSeconds}:${nonce}`),
+    new TextEncoder().encode(signedValue),
   );
-  return `${prefix}.${nowSeconds}.${nonce}.${bytesToHex(new Uint8Array(signature))}`;
+  return `${prefix}.${nowSeconds}.${nonce}.${encodedDeviceId}.${bytesToHex(new Uint8Array(signature))}`;
 }
 
 async function verifySignedProtocol(prefix, maxAgeSeconds, header, sessionSecret, nowSeconds) {
-  if (!header || !sessionSecret) return "";
+  if (!header || !sessionSecret) return null;
 
   const protocol = header.split(",").map((value) => value.trim())
     .find((value) => value.startsWith(`${prefix}.`));
-  if (!protocol) return "";
+  if (!protocol) return null;
 
   const parts = protocol.split(".");
-  if (parts.length !== 4 || parts[0] !== prefix) return "";
+  if (parts.length !== 5 || parts[0] !== prefix) return null;
   const timestamp = Number.parseInt(parts[1], 10);
   const nonce = parts[2];
-  const signature = hexToBytes(parts[3]);
-  if (!Number.isFinite(timestamp) || Math.abs(nowSeconds - timestamp) > maxAgeSeconds) return "";
-  if (!/^[0-9a-f]{32}$/i.test(nonce) || !signature || signature.length !== 32) return "";
+  const encodedDeviceId = parts[3];
+  const signature = hexToBytes(parts[4]);
+  if (!Number.isFinite(timestamp) || Math.abs(nowSeconds - timestamp) > maxAgeSeconds) return null;
+  if (!/^[0-9a-f]{32}$/i.test(nonce) || !signature || signature.length !== 32) return null;
+
+  let deviceId;
+  try {
+    deviceId = base64UrlToText(encodedDeviceId);
+  } catch {
+    return null;
+  }
+  if (!validDeviceId(deviceId)) return null;
 
   const encoder = new TextEncoder();
   const key = await importHmacKey(sessionSecret, "verify");
@@ -210,16 +237,17 @@ async function verifySignedProtocol(prefix, maxAgeSeconds, header, sessionSecret
     "HMAC",
     key,
     signature,
-    encoder.encode(`${timestamp}:${nonce}`),
+    encoder.encode(`${timestamp}:${nonce}:${encodedDeviceId}`),
   );
-  return valid ? protocol : "";
+  return valid ? { protocol, deviceId } : null;
 }
 
 export async function issueRemoteSshProtocol(
   sessionSecret,
+  deviceId = "test-device",
   nowSeconds = Math.floor(Date.now() / 1000),
 ) {
-  return issueSignedProtocol(REMOTE_SSH_PROTOCOL_PREFIX, sessionSecret, nowSeconds);
+  return issueSignedProtocol(REMOTE_SSH_PROTOCOL_PREFIX, sessionSecret, deviceId, nowSeconds);
 }
 
 export async function verifyRemoteSshProtocol(
@@ -238,9 +266,10 @@ export async function verifyRemoteSshProtocol(
 
 export async function issueLiveProtocol(
   sessionSecret,
+  deviceId = "test-device",
   nowSeconds = Math.floor(Date.now() / 1000),
 ) {
-  return issueSignedProtocol(LIVE_PROTOCOL_PREFIX, sessionSecret, nowSeconds);
+  return issueSignedProtocol(LIVE_PROTOCOL_PREFIX, sessionSecret, deviceId, nowSeconds);
 }
 
 export async function verifyLiveProtocol(
@@ -274,33 +303,190 @@ function basicCredentials(request) {
   }
 }
 
-async function handleRemoteSession(request, env) {
-  if (!env.WAYON_SSH_USERNAME || !env.WAYON_SSH_PASSWORD || !env.WAYON_SSH_SESSION_SECRET) {
-    return json({ error: "remote_access_unavailable" }, 503);
+async function authenticateDeviceKey(request, env) {
+  const token = getBearerToken(request);
+  if (!validWayonKey(token)) return null;
+
+  const keyHash = await sha256Hex(token);
+  const device = await env.DB.prepare(`
+    SELECT device_id FROM wayon_devices
+    WHERE key_hash = ? AND revoked_at IS NULL
+  `).bind(keyHash).first();
+  if (!device || !validDeviceId(device.device_id)) return null;
+
+  env.DB.prepare(`
+    UPDATE wayon_devices SET last_seen_at = ?, updated_at = ? WHERE device_id = ?
+  `).bind(nowIso(), nowIso(), device.device_id).run().catch(() => {});
+  return { deviceId: device.device_id };
+}
+
+async function handleDeviceRegistration(request, env) {
+  const payload = await request.json().catch(() => ({}));
+  const deviceId = String(payload.deviceId || "").trim();
+  const key = String(payload.key || "").trim();
+  if (!validDeviceId(deviceId) || !validWayonKey(key)) {
+    return json({ error: "invalid_device_registration" }, 400);
   }
 
-  const credentials = basicCredentials(request);
-  if (!credentials
-      || !constantTimeEqual(credentials.username, env.WAYON_SSH_USERNAME)
-      || !constantTimeEqual(credentials.password, env.WAYON_SSH_PASSWORD)) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: {
-        ...JSON_HEADERS,
-        "www-authenticate": "Basic realm=\"Wayon Remote SSH\", charset=\"UTF-8\"",
-      },
+  const legacyToken = getBearerToken(request);
+  const legacyAuthorized = constantTimeEqual(legacyToken, env.WAYON_UPLOAD_TOKEN || "");
+  const existing = await env.DB.prepare(`
+    SELECT key_hash, revoked_at FROM wayon_devices WHERE device_id = ?
+  `).bind(deviceId).first();
+  const keyHash = await sha256Hex(key);
+  if (existing && !constantTimeEqual(existing.key_hash || "", keyHash) && !legacyAuthorized) {
+    return json({ error: "device_already_registered" }, 409);
+  }
+
+  const now = nowIso();
+  await env.DB.prepare(`
+    INSERT INTO wayon_devices (
+      device_id, key_hash, created_at, updated_at, last_seen_at, revoked_at
+    ) VALUES (?, ?, ?, ?, ?, NULL)
+    ON CONFLICT(device_id) DO UPDATE SET
+      key_hash = excluded.key_hash,
+      updated_at = excluded.updated_at,
+      last_seen_at = excluded.last_seen_at,
+      revoked_at = NULL
+  `).bind(deviceId, keyHash, now, now, now).run();
+  return json({ ok: true, deviceId });
+}
+
+function scopedDeviceRequest(request, deviceId) {
+  const url = new URL(request.url);
+  url.searchParams.set("deviceId", deviceId);
+  const headers = new Headers(request.headers);
+  headers.set(AUTH_DEVICE_HEADER, deviceId);
+  headers.set("x-wayon-device-id", deviceId);
+  return new Request(url.toString(), {
+    method: request.method,
+    headers,
+    body: request.body,
+    redirect: request.redirect,
+  });
+}
+
+function authenticatedDeviceId(request) {
+  const deviceId = String(request.headers.get(AUTH_DEVICE_HEADER) || "");
+  return validDeviceId(deviceId) ? deviceId : "";
+}
+
+function connectDeviceRelay(request, env, deviceId, kind, role, protocol = "") {
+  const id = env.DEVICE_RELAY.idFromName(`${deviceId}:${kind}`);
+  const headers = new Headers(request.headers);
+  headers.set("x-wayon-relay-role", role);
+  headers.set("x-wayon-relay-kind", kind);
+  headers.set("x-wayon-relay-device", deviceId);
+  if (protocol) headers.set("x-wayon-relay-protocol", protocol);
+  return env.DEVICE_RELAY.get(id).fetch(new Request(request.url, { headers }));
+}
+
+async function handleDeviceRelay(request, env, kind) {
+  if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
+    return json({ error: "websocket_required" }, 426);
+  }
+  if (!env.DEVICE_RELAY || !["ssh", "live"].includes(kind)) {
+    return json({ error: "relay_unavailable" }, 503);
+  }
+  const identity = await authenticateDeviceKey(request, env);
+  if (!identity) return json({ error: "unauthorized" }, 401);
+  return connectDeviceRelay(request, env, identity.deviceId, kind, "device");
+}
+
+export class WayonDeviceRelay {
+  constructor(state) {
+    this.state = state;
+  }
+
+  async fetch(request) {
+    if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
+      return new Response("websocket required", { status: 426 });
+    }
+    const role = request.headers.get("x-wayon-relay-role");
+    if (!['device', 'client'].includes(role)) {
+      return new Response("invalid relay role", { status: 400 });
+    }
+
+    for (const socket of this.state.getWebSockets(role)) {
+      try { socket.close(1000, "replaced"); } catch {}
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    server.serializeAttachment({ role });
+    this.state.acceptWebSocket(server, [role]);
+
+    if (role === "client") {
+      const device = this.state.getWebSockets("device")[0];
+      if (!device) {
+        server.close(1013, "device offline");
+      } else {
+        device.send("wayon-peer-open");
+      }
+    }
+
+    const protocol = request.headers.get("x-wayon-relay-protocol") || "";
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: protocol ? { "Sec-WebSocket-Protocol": protocol } : {},
     });
   }
 
+  webSocketMessage(socket, message) {
+    const role = socket.deserializeAttachment()?.role;
+    const destination = role === "device" ? "client" : "device";
+    for (const peer of this.state.getWebSockets(destination)) {
+      try { peer.send(message); } catch {}
+    }
+  }
+
+  webSocketClose(socket) {
+    const role = socket.deserializeAttachment()?.role;
+    if (role === "client") {
+      for (const device of this.state.getWebSockets("device")) {
+        try { device.send("wayon-peer-close"); } catch {}
+      }
+    } else if (role === "device") {
+      for (const client of this.state.getWebSockets("client")) {
+        try { client.close(1012, "device offline"); } catch {}
+      }
+    }
+  }
+
+  webSocketError(socket) {
+    this.webSocketClose(socket);
+  }
+}
+
+async function handleRemoteSession(request, env) {
+  if (!env.WAYON_SSH_SESSION_SECRET) {
+    return json({ error: "remote_access_unavailable" }, 503);
+  }
+  let identity = await authenticateDeviceKey(request, env);
+  if (!identity) {
+    const credentials = basicCredentials(request);
+    if (credentials && constantTimeEqual(credentials.username, env.WAYON_SSH_USERNAME || "")
+        && constantTimeEqual(credentials.password, env.WAYON_SSH_PASSWORD || "")) {
+      identity = { deviceId: LEGACY_REMOTE_DEVICE_ID };
+    }
+  }
+  if (!identity) return json({ error: "unauthorized" }, 401);
+
   const issuedAt = Math.floor(Date.now() / 1000);
   return json({
-    protocol: await issueRemoteSshProtocol(env.WAYON_SSH_SESSION_SECRET, issuedAt),
+    protocol: await issueRemoteSshProtocol(
+      env.WAYON_SSH_SESSION_SECRET,
+      identity.deviceId,
+      issuedAt,
+    ),
+    deviceId: identity.deviceId,
     expiresAt: issuedAt + REMOTE_SSH_MAX_AGE_SECONDS,
   });
 }
 
 function handleRemoteBootstrap(request, env) {
-  if (!authorize(request, env, true)) {
+  if (!constantTimeEqual(getBearerToken(request), env.WAYON_UPLOAD_TOKEN || "")) {
     return json({ error: "unauthorized" }, 401);
   }
   if (!env.WAYON_TUNNEL_TOKEN) {
@@ -311,20 +497,19 @@ function handleRemoteBootstrap(request, env) {
 }
 
 async function handleLiveSession(request, env) {
-  const liveToken = env.WAYON_LIVE_TOKEN || env.WAYON_PUSH_REGISTRATION_TOKEN || "";
-  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET || !liveToken) {
+  if (!env.DEVICE_RELAY || !env.WAYON_SSH_SESSION_SECRET) {
     return json({ error: "live_access_unavailable" }, 503);
   }
-  if (!constantTimeEqual(getBearerToken(request), liveToken)) {
-    return json({ error: "unauthorized" }, 401);
-  }
+  const identity = await authenticateDeviceKey(request, env);
+  if (!identity) return json({ error: "unauthorized" }, 401);
 
   const issuedAt = Math.floor(Date.now() / 1000);
   const websocketUrl = new URL(LIVE_STREAM_PATH, request.url);
   websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
   return json({
-    protocol: await issueLiveProtocol(env.WAYON_SSH_SESSION_SECRET, issuedAt),
+    protocol: await issueLiveProtocol(env.WAYON_SSH_SESSION_SECRET, identity.deviceId, issuedAt),
     websocketUrl: websocketUrl.toString(),
+    deviceId: identity.deviceId,
     expiresAt: issuedAt + LIVE_MAX_AGE_SECONDS,
   });
 }
@@ -489,58 +674,48 @@ async function handleRemoteSsh(request, env, ctx) {
   if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
     return json({ error: "websocket_required" }, 426);
   }
-  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET) {
+  if (!env.DEVICE_RELAY || !env.WAYON_SSH_SESSION_SECRET) {
     return json({ error: "remote_access_unavailable" }, 503);
   }
 
-  const protocol = await verifyRemoteSshProtocol(
+  const session = await verifyRemoteSshProtocol(
     request.headers.get("sec-websocket-protocol") || "",
     env.WAYON_SSH_SESSION_SECRET,
   );
-  if (!protocol) return json({ error: "unauthorized" }, 401);
+  if (!session) return json({ error: "unauthorized" }, 401);
 
-  return proxyTcpWebSocket(env, ctx, REMOTE_SSH_TARGET, protocol, "remote SSH");
+  if (session.deviceId === LEGACY_REMOTE_DEVICE_ID && env.COMMA_NETWORK) {
+    return proxyTcpWebSocket(
+      env, ctx, LEGACY_REMOTE_SSH_TARGET, session.protocol, "legacy remote SSH",
+    );
+  }
+
+  return connectDeviceRelay(request, env, session.deviceId, "ssh", "client", session.protocol);
 }
 
 async function handleLiveStream(request, env, ctx) {
   if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
     return json({ error: "websocket_required" }, 426);
   }
-  if (!env.COMMA_NETWORK || !env.WAYON_SSH_SESSION_SECRET) {
+  if (!env.DEVICE_RELAY || !env.WAYON_SSH_SESSION_SECRET) {
     return json({ error: "live_access_unavailable" }, 503);
   }
 
-  const protocol = await verifyLiveProtocol(
+  const session = await verifyLiveProtocol(
     request.headers.get("sec-websocket-protocol") || "",
     env.WAYON_SSH_SESSION_SECRET,
   );
-  if (!protocol) return json({ error: "unauthorized" }, 401);
+  if (!session) return json({ error: "unauthorized" }, 401);
 
-  return proxyTcpWebSocket(
-    env,
-    ctx,
-    LIVE_STREAM_TARGET,
-    protocol,
-    "live stream",
-    500,
-    100,
-    new WayonLiveFrameAssembler(),
-  );
+  return connectDeviceRelay(request, env, session.deviceId, "live", "client", session.protocol);
 }
 
 function authorize(request, env, write = false) {
-  const token = getBearerToken(request);
-  const uploadToken = env.WAYON_UPLOAD_TOKEN || "";
-  const viewToken = env.WAYON_VIEW_TOKEN || uploadToken;
-
-  if (write) {
-    return constantTimeEqual(token, uploadToken);
-  }
-  return constantTimeEqual(token, viewToken) || constantTimeEqual(token, uploadToken);
+  return validDeviceId(request.headers.get(AUTH_DEVICE_HEADER));
 }
 
 function authorizePushRegistration(request, env) {
-  return constantTimeEqual(getBearerToken(request), env.WAYON_PUSH_REGISTRATION_TOKEN || "");
+  return authorize(request, env, true);
 }
 
 function authorizeAi(request, env) {
@@ -636,7 +811,11 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-async function fetchVehicleStatus() {
+async function fetchVehicleStatus(env, deviceId) {
+  if (!env.WAYON_LEGACY_FIREBASE_DEVICE_ID
+      || !constantTimeEqual(deviceId, env.WAYON_LEGACY_FIREBASE_DEVICE_ID)) {
+    return { ok: false, error: "not_configured_for_device" };
+  }
   try {
     const response = await fetch(FIREBASE_CAR_STATUS_URL, {
       headers: { accept: "application/json" },
@@ -668,7 +847,7 @@ async function handleTelemetry(request, env) {
   }
 
   const payload = await request.json();
-  const deviceId = String(payload.deviceId || "unknown");
+  const deviceId = authenticatedDeviceId(request);
   const updatedAt = payload.updatedAt || nowIso();
   const [gps, previousState] = await Promise.all([
     resolveTelemetryGps(env, deviceId, payload.gps || {}),
@@ -867,7 +1046,7 @@ async function handleImpact(request, env) {
 
   const payload = await request.json();
   const id = String(payload.id || crypto.randomUUID()).slice(0, 128);
-  const deviceId = String(payload.deviceId || "unknown").slice(0, 128);
+  const deviceId = authenticatedDeviceId(request);
   const detectedAt = String(payload.detectedAt || nowIso()).slice(0, 64);
   const severity = ["light", "moderate", "severe"].includes(payload.severity)
     ? payload.severity : "light";
@@ -940,7 +1119,7 @@ async function handleImpactMedia(request, env) {
 
   const payload = await request.json();
   const id = String(payload.id || "").slice(0, 128);
-  const deviceId = String(payload.deviceId || "").slice(0, 128);
+  const deviceId = authenticatedDeviceId(request);
   const capturedAt = String(payload.capturedAt || nowIso()).slice(0, 64);
   const captureStatus = ["complete", "partial", "failed"].includes(payload.captureStatus)
     ? payload.captureStatus : "failed";
@@ -1016,7 +1195,7 @@ async function handleVehicleEvent(request, env) {
   }
 
   const id = String(payload.id || crypto.randomUUID()).slice(0, 128);
-  const deviceId = String(payload.deviceId || "unknown").slice(0, 128);
+  const deviceId = authenticatedDeviceId(request);
   const occurredAt = String(payload.occurredAt || nowIso()).slice(0, 64);
   const receivedAt = nowIso();
   const locked = doorLockEvent ? Boolean(payload.locked) : null;
@@ -1079,7 +1258,7 @@ async function handlePushRegistration(request, env) {
 
   const payload = await request.json();
   const token = String(payload.fcmToken || "").trim();
-  const deviceId = String(payload.deviceId || "*").trim().slice(0, 128) || "*";
+  const deviceId = authenticatedDeviceId(request);
   if (token.length < 32 || token.length > 4096) return json({ error: "invalid_fcm_token" }, 400);
 
   if (payload.action === "unregister") {
@@ -1106,7 +1285,7 @@ async function handlePushTest(request, env) {
   const payload = await request.json().catch(() => ({}));
   const event = {
     id: `test-${crypto.randomUUID()}`,
-    deviceId: String(payload.deviceId || "*"),
+    deviceId: authenticatedDeviceId(request),
     detectedAt: nowIso(),
     severity: "light",
     peakDynamicG: 0.62,
@@ -1122,6 +1301,7 @@ async function handlePushTest(request, env) {
 async function handleImpacts(request, env) {
   if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
   const url = new URL(request.url);
+  const deviceId = authenticatedDeviceId(request);
   const limit = Math.max(1, Math.min(100, Number.parseInt(url.searchParams.get("limit") || "25", 10)));
   const impacts = await env.DB.prepare(`
     SELECT id, device_id, detected_at, received_at, severity, peak_dynamic_g,
@@ -1137,8 +1317,8 @@ async function handleImpacts(request, env) {
                AND occurred_at <= impact_events.detected_at
              ORDER BY occurred_at DESC LIMIT 1
            ) AS vehicle_locked
-    FROM impact_events ORDER BY detected_at DESC LIMIT ?
-  `).bind(limit).all();
+    FROM impact_events WHERE device_id = ? ORDER BY detected_at DESC LIMIT ?
+  `).bind(deviceId, limit).all();
   return json({ impacts: impacts.results || [] });
 }
 
@@ -1216,7 +1396,7 @@ async function handleSnapshot(request, env) {
   }
 
   const payload = await request.json();
-  const deviceId = String(payload.deviceId || "unknown");
+  const deviceId = authenticatedDeviceId(request);
   const capturedAt = payload.capturedAt || nowIso();
 
   const saved = [];
@@ -1319,7 +1499,7 @@ async function handleLiveCapturePartUpload(request, env) {
 async function handleLiveCaptureCommit(request, env) {
   if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
   const payload = await request.json();
-  const deviceId = String(payload.deviceId || "unknown").slice(0, 128);
+  const deviceId = authenticatedDeviceId(request);
   const uploadId = String(payload.uploadId || "").slice(0, 64);
   const partCount = Number.parseInt(payload.partCount, 10);
   const totalSize = Number.parseInt(payload.sizeBytes, 10);
@@ -1464,23 +1644,26 @@ async function handleLiveCaptureUpload(request, env) {
 async function handleLiveCaptures(request, env) {
   if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
   const url = new URL(request.url);
+  const deviceId = authenticatedDeviceId(request);
   const limit = Math.max(1, Math.min(100, Number.parseInt(url.searchParams.get("limit") || "25", 10)));
   const captures = await env.DB.prepare(`
     SELECT id, device_id, kind, captured_at, duration_s, content_type,
            camera_layout, size_bytes, created_at
-    FROM live_captures ORDER BY captured_at DESC LIMIT ?
-  `).bind(limit).all();
+    FROM live_captures WHERE device_id = ? ORDER BY captured_at DESC LIMIT ?
+  `).bind(deviceId, limit).all();
   return json({ captures: captures.results || [] });
 }
 
 async function handleLiveCapture(request, env) {
   if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
   const id = String(new URL(request.url).searchParams.get("id") || "").slice(0, 128);
+  const deviceId = authenticatedDeviceId(request);
   if (!id) return json({ error: "missing_capture_id" }, 400);
 
   const capture = await env.DB.prepare(`
-    SELECT kind, captured_at, content_type, kv_key, size_bytes, metadata_json FROM live_captures WHERE id = ?
-  `).bind(id).first();
+    SELECT kind, captured_at, content_type, kv_key, size_bytes, metadata_json
+    FROM live_captures WHERE id = ? AND device_id = ?
+  `).bind(id, deviceId).first();
   if (!capture) return json({ error: "not_found" }, 404);
   const bytes = await getLiveCaptureBytes(env, capture);
   if (!bytes) return json({ error: "not_found" }, 404);
@@ -1506,7 +1689,7 @@ async function handleTrip(request, env) {
   const start = route[0] || {};
   const end = route[route.length - 1] || {};
   const id = String(payload.id || crypto.randomUUID());
-  const deviceId = String(payload.deviceId || "unknown");
+  const deviceId = authenticatedDeviceId(request);
 
   await env.DB.prepare(`
     INSERT OR REPLACE INTO trips (
@@ -1537,10 +1720,11 @@ async function handleState(request, env) {
     return json({ error: "unauthorized" }, 401);
   }
 
+  const deviceId = authenticatedDeviceId(request);
   const [state, snapshots, vehicleStatus, vehicleLock] = await Promise.all([
     env.DB.prepare(`
-      SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
-    `).first(),
+      SELECT * FROM latest_state WHERE device_id = ? LIMIT 1
+    `).bind(deviceId).first(),
     env.DB.prepare(`
       SELECT s.id, s.device_id, s.camera, s.captured_at, s.kv_key, s.size_bytes,
              i.id AS impact_id, i.severity AS impact_severity,
@@ -1550,22 +1734,22 @@ async function handleState(request, env) {
       FROM snapshots s
       LEFT JOIN impact_events i
         ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
-      ORDER BY s.captured_at DESC LIMIT 12
-    `).all(),
-    fetchVehicleStatus(),
-    latestVehicleLock(env),
+      WHERE s.device_id = ? ORDER BY s.captured_at DESC LIMIT 12
+    `).bind(deviceId).all(),
+    fetchVehicleStatus(env, deviceId),
+    latestVehicleLock(env, deviceId),
   ]);
 
   return json({ state, snapshots: snapshots.results || [], vehicleStatus, vehicleLock });
 }
 
-async function latestVehicleLock(env) {
+async function latestVehicleLock(env, deviceId) {
   const event = await env.DB.prepare(`
     SELECT locked, occurred_at, received_at
     FROM vehicle_events
-    WHERE event_type = 'door_lock' AND locked IS NOT NULL
+    WHERE device_id = ? AND event_type = 'door_lock' AND locked IS NOT NULL
     ORDER BY occurred_at DESC LIMIT 1
-  `).first();
+  `).bind(deviceId).first();
 
   return event ? {
     known: true,
@@ -1641,7 +1825,7 @@ async function fetchServerApi(env, path) {
   });
 }
 
-async function fetchServerTripList(env, limit) {
+async function fetchServerTripList(env, limit, deviceId) {
   const response = await fetchServerApi(
     env,
     `/v1/wayon/trips?limit=${encodeURIComponent(limit)}&offset=0&include_route=false`,
@@ -1654,10 +1838,12 @@ async function fetchServerTripList(env, limit) {
   if (payload?.schemaVersion !== "wayon-trip-read-v1" || !Array.isArray(payload.trips)) {
     throw new Error("server_trip_list_schema");
   }
-  return payload.trips.map(parseServerTripSummary);
+  return payload.trips
+    .filter((trip) => String(trip.device_id || trip.deviceId || "") === deviceId)
+    .map(parseServerTripSummary);
 }
 
-async function fetchServerTrip(env, tripId) {
+async function fetchServerTrip(env, tripId, deviceId) {
   const response = await fetchServerApi(
     env,
     `/v1/wayon/trips/${encodeURIComponent(tripId)}`,
@@ -1670,6 +1856,8 @@ async function fetchServerTrip(env, tripId) {
   if (payload?.schemaVersion !== "wayon-trip-read-v1" || !payload.trip) {
     throw new Error("server_trip_schema");
   }
+  const tripDeviceId = String(payload.trip.device_id || payload.trip.deviceId || "");
+  if (tripDeviceId !== deviceId) throw new Error("server_trip_device_mismatch");
   return payload.trip;
 }
 
@@ -1748,19 +1936,20 @@ async function handleExport(request, env) {
     return json({ error: "unauthorized" }, 401);
   }
 
+  const deviceId = authenticatedDeviceId(request);
   const [state, snapshots, trips, vehicleStatus, vehicleLock] = await Promise.all([
     env.DB.prepare(`
-      SELECT * FROM latest_state ORDER BY updated_at DESC LIMIT 1
-    `).first(),
+      SELECT * FROM latest_state WHERE device_id = ? LIMIT 1
+    `).bind(deviceId).first(),
     env.DB.prepare(`
       SELECT id, device_id, camera, captured_at, kv_key, size_bytes, created_at
-      FROM snapshots ORDER BY captured_at DESC LIMIT 24
-    `).all(),
+      FROM snapshots WHERE device_id = ? ORDER BY captured_at DESC LIMIT 24
+    `).bind(deviceId).all(),
     env.DB.prepare(`
-      SELECT * FROM trips ORDER BY ended_at DESC LIMIT 25
-    `).all(),
-    fetchVehicleStatus(),
-    latestVehicleLock(env),
+      SELECT * FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT 25
+    `).bind(deviceId).all(),
+    fetchVehicleStatus(env, deviceId),
+    latestVehicleLock(env, deviceId),
   ]);
 
   return json({
@@ -1779,9 +1968,12 @@ async function handleSnapshotsList(request, env) {
   }
 
   const url = new URL(request.url);
+  const deviceId = authenticatedDeviceId(request);
   const limit = boundedLimit(url.searchParams.get("limit"), 500, 1000);
   const date = url.searchParams.get("date");
-  const dateWhere = date ? "WHERE date(s.captured_at, '+9 hours') = ?" : "";
+  const dateWhere = date
+    ? "WHERE s.device_id = ? AND date(s.captured_at, '+9 hours') = ?"
+    : "WHERE s.device_id = ?";
   const snapshotQuery = `
     SELECT s.id, s.device_id, s.camera, s.captured_at, s.kv_key, s.size_bytes, s.created_at,
            i.id AS impact_id, i.severity AS impact_severity,
@@ -1795,13 +1987,14 @@ async function handleSnapshotsList(request, env) {
     ORDER BY s.captured_at DESC LIMIT ?
   `;
   const snapshots = date
-    ? await env.DB.prepare(snapshotQuery).bind(date, limit).all()
-    : await env.DB.prepare(snapshotQuery).bind(limit).all();
+    ? await env.DB.prepare(snapshotQuery).bind(deviceId, date, limit).all()
+    : await env.DB.prepare(snapshotQuery).bind(deviceId, limit).all();
   const days = await env.DB.prepare(`
     SELECT date(captured_at, '+9 hours') AS date, COUNT(*) AS count
-    FROM snapshots GROUP BY date ORDER BY date DESC
-  `).all();
-  const total = await env.DB.prepare(`SELECT COUNT(*) AS count FROM snapshots`).first();
+    FROM snapshots WHERE device_id = ? GROUP BY date ORDER BY date DESC
+  `).bind(deviceId).all();
+  const total = await env.DB.prepare(`SELECT COUNT(*) AS count FROM snapshots WHERE device_id = ?`)
+    .bind(deviceId).first();
 
   return json({
     generatedAt: nowIso(),
@@ -1817,16 +2010,17 @@ async function handleTrips(request, env, pathname) {
     return json({ error: "unauthorized" }, 401);
   }
 
+  const deviceId = authenticatedDeviceId(request);
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length === 3) {
     try {
-      return tripHistoryJson(await fetchServerTrip(env, parts[2]), "server");
+      return tripHistoryJson(await fetchServerTrip(env, parts[2], deviceId), "server");
     } catch (error) {
       console.warn("Wayon server trip detail unavailable; using D1", error?.message || error);
     }
 
-    const trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ?`)
-      .bind(parts[2])
+    const trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ? AND device_id = ?`)
+      .bind(parts[2], deviceId)
       .first();
     if (!trip) return json({ error: "not_found" }, 404);
 
@@ -1839,7 +2033,7 @@ async function handleTrips(request, env, pathname) {
   const url = new URL(request.url);
   const requestedLimit = boundedLimit(url.searchParams.get("limit"), 100, 5000);
   try {
-    return tripHistoryJson({ trips: await fetchServerTripList(env, requestedLimit) }, "server");
+    return tripHistoryJson({ trips: await fetchServerTripList(env, requestedLimit, deviceId) }, "server");
   } catch (error) {
     console.warn("Wayon server trip list unavailable; using D1", error?.message || error);
   }
@@ -1853,8 +2047,8 @@ async function handleTrips(request, env, pathname) {
              ELSE NULL
            END AS avg_speed_mps,
            route_json
-    FROM trips ORDER BY ended_at DESC LIMIT ?
-  `).bind(limit).all();
+    FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT ?
+  `).bind(deviceId, limit).all();
 
   return tripHistoryJson({ trips: (trips.results || []).map(parseTripSummary) }, "d1");
 }
@@ -1868,7 +2062,12 @@ async function handleSnapshotImage(request, env) {
   const key = url.searchParams.get("key");
   if (!key) return json({ error: "missing_key" }, 400);
 
-  const image = await env.SNAPSHOTS.get(key, "arrayBuffer");
+  const deviceId = authenticatedDeviceId(request);
+  const snapshot = await env.DB.prepare(`SELECT kv_key FROM snapshots WHERE kv_key = ? AND device_id = ?`)
+    .bind(key, deviceId).first();
+  if (!snapshot) return json({ error: "not_found" }, 404);
+
+  const image = await env.SNAPSHOTS.get(snapshot.kv_key, "arrayBuffer");
   if (!image) return json({ error: "not_found" }, 404);
 
   return new Response(image, {
@@ -2001,7 +2200,7 @@ async function handleAiContext(request, env) {
     `).bind(eventLimit).all(),
     env.DB.prepare("SELECT * FROM trips ORDER BY ended_at DESC LIMIT 1").first(),
     env.DB.prepare(`${AI_SNAPSHOT_SELECT} ORDER BY s.captured_at DESC LIMIT ?`).bind(snapshotLimit).all(),
-    fetchVehicleStatus(),
+    fetchVehicleStatus(env, env.WAYON_LEGACY_FIREBASE_DEVICE_ID || ""),
   ]);
 
   if (!state) return json({ error: "no_telemetry" }, 404);
@@ -2186,6 +2385,14 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
 
+    if (request.method === "POST" && pathname === DEVICE_REGISTER_PATH) {
+      return handleDeviceRegistration(request, env);
+    }
+    if (request.method === "GET" && pathname.startsWith(DEVICE_RELAY_PREFIX)) {
+      const kind = pathname.slice(DEVICE_RELAY_PREFIX.length);
+      return handleDeviceRelay(request, env, kind);
+    }
+
     if (request.method === "GET" && pathname === REMOTE_BOOTSTRAP_PATH) {
       return handleRemoteBootstrap(request, env);
     }
@@ -2200,6 +2407,14 @@ export default {
     }
     if (request.method === "GET" && pathname === LIVE_STREAM_PATH) {
       return handleLiveStream(request, env, ctx);
+    }
+
+    const separatelyAuthorized = pathname.startsWith("/api/ai/")
+      || pathname === "/api/server-sync/trips";
+    if (pathname.startsWith("/api/") && !separatelyAuthorized) {
+      const identity = await authenticateDeviceKey(request, env);
+      if (!identity) return json({ error: "unauthorized" }, 401);
+      request = scopedDeviceRequest(request, identity.deviceId);
     }
 
     if (request.method === "POST" && pathname === "/api/telemetry") {

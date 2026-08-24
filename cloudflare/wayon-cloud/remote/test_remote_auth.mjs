@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import worker, {
   issueLiveProtocol,
   issueRemoteSshProtocol,
@@ -12,17 +12,21 @@ import worker, {
 
 const secret = randomBytes(32).toString("hex");
 const now = 1_800_000_000;
-const protocol = await issueRemoteSshProtocol(secret, now);
+const deviceId = "test-dongle-001";
+const protocol = await issueRemoteSshProtocol(secret, deviceId, now);
 const tampered = `${protocol.slice(0, -1)}${protocol.endsWith("0") ? "1" : "0"}`;
 
-assert.equal(await verifyRemoteSshProtocol(protocol, secret, now), protocol);
-assert.equal(await verifyRemoteSshProtocol(protocol, secret, now + 61), "");
-assert.equal(await verifyRemoteSshProtocol(tampered, secret, now), "");
-assert.equal(await verifyRemoteSshProtocol("not-wayon", secret, now), "");
-const liveProtocol = await issueLiveProtocol(secret, now);
-assert.equal(await verifyLiveProtocol(liveProtocol, secret, now), liveProtocol);
-assert.equal(await verifyLiveProtocol(liveProtocol, secret, now + 31), "");
-assert.equal(await verifyRemoteSshProtocol(liveProtocol, secret, now), "");
+assert.deepEqual(await verifyRemoteSshProtocol(protocol, secret, now), { protocol, deviceId });
+assert.equal(await verifyRemoteSshProtocol(protocol, secret, now + 61), null);
+assert.equal(await verifyRemoteSshProtocol(tampered, secret, now), null);
+assert.equal(await verifyRemoteSshProtocol("not-wayon", secret, now), null);
+const liveProtocol = await issueLiveProtocol(secret, deviceId, now);
+assert.deepEqual(await verifyLiveProtocol(liveProtocol, secret, now), {
+  protocol: liveProtocol,
+  deviceId,
+});
+assert.equal(await verifyLiveProtocol(liveProtocol, secret, now + 31), null);
+assert.equal(await verifyRemoteSshProtocol(liveProtocol, secret, now), null);
 assert.deepEqual([...await websocketBytes(new Blob([Uint8Array.from([0, 127, 255])]))], [0, 127, 255]);
 
 const liveFrame = (type, payload) => {
@@ -58,32 +62,45 @@ assert.deepEqual(visibleFcmNotification({
 });
 assert.equal(visibleFcmNotification({ type: "wayon_impact" }), null);
 
+const wayonKey = `wayon_${randomBytes(32).toString("base64url")}`;
+const keyHash = createHash("sha256").update(wayonKey).digest("hex");
 const env = {
-  DB: {},
+  DB: {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              return sql.includes("FROM wayon_devices") && values[0] === keyHash
+                ? { device_id: deviceId }
+                : null;
+            },
+            async run() { return { success: true }; },
+          };
+        },
+      };
+    },
+  },
   SNAPSHOTS: {},
   WAYON_UPLOAD_TOKEN: "device-upload-token",
   WAYON_TUNNEL_TOKEN: "tunnel-token",
-  WAYON_SSH_USERNAME: "comma",
-  WAYON_SSH_PASSWORD: "test-password",
   WAYON_SSH_SESSION_SECRET: secret,
-  WAYON_PUSH_REGISTRATION_TOKEN: "mobile-token",
-  COMMA_NETWORK: {},
+  DEVICE_RELAY: {},
 };
-const login = (password) => worker.fetch(new Request("https://wayon.test/api/remote/session", {
+const login = (token) => worker.fetch(new Request("https://wayon.test/api/remote/session", {
   method: "POST",
-  headers: {
-    authorization: `Basic ${Buffer.from(`comma:${password}`, "utf8").toString("base64")}`,
-  },
+  headers: { authorization: `Bearer ${token}` },
 }), env, {});
 
-const denied = await login("wrong-password");
+const denied = await login("wayon_invalid_key_that_is_long_enough_but_unknown_0000");
 assert.equal(denied.status, 401);
 
-const accepted = await login("test-password");
+const accepted = await login(wayonKey);
 assert.equal(accepted.status, 200);
 const session = await accepted.json();
 assert.match(session.protocol, /^wayon-ssh-v1\./);
-assert.equal(await verifyRemoteSshProtocol(session.protocol, secret), session.protocol);
+assert.equal(session.deviceId, deviceId);
+assert.equal((await verifyRemoteSshProtocol(session.protocol, secret))?.deviceId, deviceId);
 
 const bootstrap = (token) => worker.fetch(new Request("https://wayon.test/api/remote/bootstrap", {
   headers: { authorization: `Bearer ${token}` },
@@ -98,10 +115,11 @@ const liveSession = (token) => worker.fetch(new Request("https://wayon.test/api/
   headers: { authorization: `Bearer ${token}` },
 }), env, {});
 assert.equal((await liveSession("wrong-token")).status, 401);
-const liveAccepted = await liveSession("mobile-token");
+const liveAccepted = await liveSession(wayonKey);
 assert.equal(liveAccepted.status, 200);
 const live = await liveAccepted.json();
 assert.match(live.protocol, /^wayon-live-v1\./);
 assert.equal(live.websocketUrl, "wss://wayon.test/api/live/stream");
-assert.equal(await verifyLiveProtocol(live.protocol, secret), live.protocol);
+assert.equal(live.deviceId, deviceId);
+assert.equal((await verifyLiveProtocol(live.protocol, secret))?.deviceId, deviceId);
 console.log("remote auth tests passed");

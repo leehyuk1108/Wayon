@@ -25,6 +25,7 @@ from openpilot.system.wayon_vehicle_events import (
   remove_vehicle_event,
   remove_vehicle_events,
 )
+from openpilot.system.wayon_identity import ensure_wayon_identity
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
 ROUTE_STATE_PATH = Path(os.getenv("WAYON_CLOUD_ROUTE_STATE", str(CONFIG_PATH.with_name("route_state.json"))))
@@ -75,6 +76,13 @@ def utc_now():
 
 
 def read_config():
+  try:
+    identity = ensure_wayon_identity(CONFIG_PATH)
+    if identity is not None:
+      return identity
+  except Exception as exc:
+    print(f"Wayon cloud: identity setup failed: {exc}")
+
   try:
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
       config = json.load(f)

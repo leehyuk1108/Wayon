@@ -83,7 +83,6 @@ const env = {
   },
   SNAPSHOTS: {},
   WAYON_UPLOAD_TOKEN: "device-upload-token",
-  WAYON_TUNNEL_TOKEN: "tunnel-token",
   WAYON_SSH_SESSION_SECRET: secret,
   DEVICE_RELAY: {},
 };
@@ -101,14 +100,6 @@ const session = await accepted.json();
 assert.match(session.protocol, /^wayon-ssh-v1\./);
 assert.equal(session.deviceId, deviceId);
 assert.equal((await verifyRemoteSshProtocol(session.protocol, secret))?.deviceId, deviceId);
-
-const bootstrap = (token) => worker.fetch(new Request("https://wayon.test/api/remote/bootstrap", {
-  headers: { authorization: `Bearer ${token}` },
-}), env, {});
-assert.equal((await bootstrap("wrong-token")).status, 401);
-const bootstrapAccepted = await bootstrap("device-upload-token");
-assert.equal(bootstrapAccepted.status, 200);
-assert.deepEqual(await bootstrapAccepted.json(), { tunnelToken: "tunnel-token" });
 
 const liveSession = (token) => worker.fetch(new Request("https://wayon.test/api/live/session", {
   method: "POST",

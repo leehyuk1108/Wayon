@@ -17,13 +17,10 @@ const JSON_HEADERS = {
 };
 
 const FIREBASE_CAR_STATUS_URL = "https://mycarserver-fb85e-default-rtdb.firebaseio.com/car_status.json";
-const REMOTE_BOOTSTRAP_PATH = "/api/remote/bootstrap";
 const REMOTE_SESSION_PATH = "/api/remote/session";
 const REMOTE_SSH_PATH = "/api/remote/ssh";
 const REMOTE_SSH_PROTOCOL_PREFIX = "wayon-ssh-v1";
 const REMOTE_SSH_MAX_AGE_SECONDS = 60;
-const LEGACY_REMOTE_DEVICE_ID = "legacy-vpc";
-const LEGACY_REMOTE_SSH_TARGET = "172.31.255.254:22";
 const LIVE_SESSION_PATH = "/api/live/session";
 const LIVE_STREAM_PATH = "/api/live/stream";
 const LIVE_PROTOCOL_PREFIX = "wayon-live-v1";
@@ -36,6 +33,9 @@ const LIVE_FRAME_MAX_PAYLOAD_SIZE = 4 * 1024 * 1024;
 const SERVER_API_TIMEOUT_MS = 5000;
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GMONE_MAX_PAYLOAD_BYTES = 256 * 1024;
+const GMONE_STALE_AFTER_SECONDS = 24 * 60 * 60;
+const REMOTE_START_IMPACT_SUPPRESSION_SECONDS = 45;
 let cachedFcmAccessToken = null;
 
 function json(data, status = 200) {
@@ -286,23 +286,6 @@ export async function verifyLiveProtocol(
   );
 }
 
-function basicCredentials(request) {
-  const header = request.headers.get("authorization") || "";
-  if (!header.toLowerCase().startsWith("basic ")) return null;
-
-  try {
-    const decoded = atob(header.slice(6).trim());
-    const separator = decoded.indexOf(":");
-    if (separator < 1) return null;
-    return {
-      username: decoded.slice(0, separator),
-      password: decoded.slice(separator + 1),
-    };
-  } catch {
-    return null;
-  }
-}
-
 async function authenticateDeviceKey(request, env) {
   const token = getBearerToken(request);
   if (!validWayonKey(token)) return null;
@@ -463,14 +446,7 @@ async function handleRemoteSession(request, env) {
   if (!env.WAYON_SSH_SESSION_SECRET) {
     return json({ error: "remote_access_unavailable" }, 503);
   }
-  let identity = await authenticateDeviceKey(request, env);
-  if (!identity) {
-    const credentials = basicCredentials(request);
-    if (credentials && constantTimeEqual(credentials.username, env.WAYON_SSH_USERNAME || "")
-        && constantTimeEqual(credentials.password, env.WAYON_SSH_PASSWORD || "")) {
-      identity = { deviceId: LEGACY_REMOTE_DEVICE_ID };
-    }
-  }
+  const identity = await authenticateDeviceKey(request, env);
   if (!identity) return json({ error: "unauthorized" }, 401);
 
   const issuedAt = Math.floor(Date.now() / 1000);
@@ -483,17 +459,6 @@ async function handleRemoteSession(request, env) {
     deviceId: identity.deviceId,
     expiresAt: issuedAt + REMOTE_SSH_MAX_AGE_SECONDS,
   });
-}
-
-function handleRemoteBootstrap(request, env) {
-  if (!constantTimeEqual(getBearerToken(request), env.WAYON_UPLOAD_TOKEN || "")) {
-    return json({ error: "unauthorized" }, 401);
-  }
-  if (!env.WAYON_TUNNEL_TOKEN) {
-    return json({ error: "remote_access_unavailable" }, 503);
-  }
-
-  return json({ tunnelToken: env.WAYON_TUNNEL_TOKEN });
 }
 
 async function handleLiveSession(request, env) {
@@ -584,92 +549,6 @@ export class WayonLiveFrameAssembler {
   }
 }
 
-async function proxyTcpWebSocket(
-  env,
-  ctx,
-  target,
-  protocol,
-  label,
-  closeDelayMs = 0,
-  startDelayMs = 0,
-  frameAssembler = null,
-) {
-  let socket;
-  try {
-    socket = env.COMMA_NETWORK.connect(target);
-    await socket.opened;
-  } catch (error) {
-    console.error(`Wayon ${label} origin connection failed`, error);
-    try { socket?.close(); } catch {}
-    return json({ error: "comma_offline" }, 503);
-  }
-
-  const pair = new WebSocketPair();
-  const [client, server] = Object.values(pair);
-  server.accept();
-
-  const writer = socket.writable.getWriter();
-  const reader = socket.readable.getReader();
-  let clientWriteQueue = Promise.resolve();
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    try { void reader.cancel().catch(() => {}); } catch {}
-    try {
-      void writer.abort().catch(() => {}).finally(() => {
-        try { writer.releaseLock(); } catch {}
-      });
-    } catch {}
-    try { socket.close(); } catch {}
-    try { server.close(1000, "closed"); } catch {}
-  };
-
-  server.addEventListener("message", (event) => {
-    if (closed) return;
-    clientWriteQueue = clientWriteQueue.then(async () => {
-      const bytes = await websocketBytes(event.data);
-      if (!bytes) throw new TypeError("unsupported WebSocket message");
-      await writer.write(bytes);
-    }).catch((error) => {
-      console.error(`Wayon ${label} client write failed`, error);
-      close();
-    });
-  });
-  server.addEventListener("close", close);
-  server.addEventListener("error", close);
-
-  ctx.waitUntil((async () => {
-    if (startDelayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, startDelayMs));
-    }
-    try {
-      while (!closed) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const messages = frameAssembler ? frameAssembler.push(value) : [value];
-        for (const message of messages) {
-          if (server.readyState === 1) server.send(message);
-        }
-      }
-    } catch {
-      // The client reports the closed transport.
-    } finally {
-      try { reader.releaseLock(); } catch {}
-      if (!closed && closeDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, closeDelayMs));
-      }
-      close();
-    }
-  })());
-
-  return new Response(null, {
-    status: 101,
-    webSocket: client,
-    headers: { "Sec-WebSocket-Protocol": protocol },
-  });
-}
-
 async function handleRemoteSsh(request, env, ctx) {
   if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
     return json({ error: "websocket_required" }, 426);
@@ -683,12 +562,6 @@ async function handleRemoteSsh(request, env, ctx) {
     env.WAYON_SSH_SESSION_SECRET,
   );
   if (!session) return json({ error: "unauthorized" }, 401);
-
-  if (session.deviceId === LEGACY_REMOTE_DEVICE_ID && env.COMMA_NETWORK) {
-    return proxyTcpWebSocket(
-      env, ctx, LEGACY_REMOTE_SSH_TARGET, session.protocol, "legacy remote SSH",
-    );
-  }
 
   return connectDeviceRelay(request, env, session.deviceId, "ssh", "client", session.protocol);
 }
@@ -716,6 +589,66 @@ function authorize(request, env, write = false) {
 
 function authorizePushRegistration(request, env) {
   return authorize(request, env, true);
+}
+
+function authorizeGmoneUpload(request, env) {
+  return authorize(request, env, true)
+    || constantTimeEqual(getBearerToken(request), env.WAYON_GMONE_TOKEN || "");
+}
+
+export function authorizeGmoneRefreshPoll(request, env) {
+  return authorizeGmoneUpload(request, env);
+}
+
+export function impactSuppressedByRemoteStart(detectedAt, suppression) {
+  const detectedAtMs = Date.parse(String(detectedAt || ""));
+  const suppressFromMs = Date.parse(String(suppression?.suppress_from || ""));
+  const suppressUntilMs = Date.parse(String(suppression?.suppress_until || ""));
+  return Number.isFinite(detectedAtMs) && Number.isFinite(suppressFromMs)
+    && Number.isFinite(suppressUntilMs)
+    && detectedAtMs >= suppressFromMs && detectedAtMs <= suppressUntilMs;
+}
+
+async function handleImpactSuppression(request, env) {
+  if (!authorizePushRegistration(request, env)) return json({ error: "unauthorized" }, 401);
+
+  const payload = await request.json().catch(() => ({}));
+  const deviceId = authenticatedDeviceId(request);
+  const requestId = String(payload.requestId || "").trim().slice(0, 128);
+  if (!deviceId || !requestId) return json({ error: "invalid_suppression" }, 400);
+
+  if (payload.action === "cancel") {
+    await env.DB.prepare(
+      "DELETE FROM impact_suppressions WHERE device_id = ? AND request_id = ?",
+    ).bind(deviceId, requestId).run();
+    return json({ ok: true, active: false, deviceId, requestId });
+  }
+
+  const suppressFrom = new Date();
+  const suppressUntil = new Date(
+    suppressFrom.getTime() + REMOTE_START_IMPACT_SUPPRESSION_SECONDS * 1000,
+  );
+  await env.DB.prepare(`
+    INSERT INTO impact_suppressions (
+      device_id, request_id, suppress_from, suppress_until, reason, updated_at
+    ) VALUES (?, ?, ?, ?, 'remote_start_request', ?)
+    ON CONFLICT(device_id) DO UPDATE SET
+      request_id = excluded.request_id,
+      suppress_from = excluded.suppress_from,
+      suppress_until = excluded.suppress_until,
+      reason = excluded.reason,
+      updated_at = excluded.updated_at
+  `).bind(
+    deviceId, requestId, suppressFrom.toISOString(), suppressUntil.toISOString(), nowIso(),
+  ).run();
+  return json({
+    ok: true,
+    active: true,
+    deviceId,
+    requestId,
+    suppressFrom: suppressFrom.toISOString(),
+    suppressUntil: suppressUntil.toISOString(),
+  });
 }
 
 function authorizeAi(request, env) {
@@ -829,6 +762,176 @@ async function fetchVehicleStatus(env, deviceId) {
   } catch (err) {
     return { ok: false, error: String(err?.message || err) };
   }
+}
+
+const GMONE_SENSITIVE_KEY_PARTS = [
+  "access_token", "api_key", "auth_token", "door_password", "email", "iccid",
+  "imei", "password", "phone_number", "secret", "session_token", "ticket_uuid",
+  "token_key", "user_uuid", "uuid", "vin",
+];
+const GMONE_VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/i;
+const GMONE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function gmoneSensitiveKey(key) {
+  const normalized = String(key || "").toLowerCase();
+  return GMONE_SENSITIVE_KEY_PARTS.some((part) => normalized.includes(part));
+}
+
+export function sanitizeGmonePayload(value) {
+  if (Array.isArray(value)) return value.map(sanitizeGmonePayload);
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (gmoneSensitiveKey(key)) continue;
+      const safeKey = GMONE_VIN_PATTERN.test(key) || GMONE_UUID_PATTERN.test(key) ? "redacted" : key;
+      result[safeKey] = sanitizeGmonePayload(item);
+    }
+    return result;
+  }
+  if (typeof value === "string" && (GMONE_VIN_PATTERN.test(value) || GMONE_UUID_PATTERN.test(value))) {
+    return "<redacted>";
+  }
+  return value;
+}
+
+function validIsoOrNow(value) {
+  const timestamp = Date.parse(String(value || ""));
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : nowIso();
+}
+
+async function latestGmoneStatus(env, deviceId) {
+  const row = await env.DB.prepare(`
+    SELECT source, collected_at, vehicle_updated_at, payload_json, updated_at
+    FROM gmone_latest WHERE id = ?
+  `).bind(deviceId).first();
+  if (!row) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(row.payload_json || "{}");
+  } catch {
+    return null;
+  }
+  const ageSeconds = isoAgeSeconds(row.collected_at);
+  return {
+    ok: true,
+    source: row.source || "gmone-direct",
+    updatedAt: row.vehicle_updated_at || row.collected_at,
+    collectedAt: row.collected_at,
+    receivedAt: row.updated_at,
+    ageSeconds,
+    stale: ageSeconds == null || ageSeconds > GMONE_STALE_AFTER_SECONDS,
+    data: payload.status && typeof payload.status === "object" ? payload.status : {},
+    health: payload.health && typeof payload.health === "object" ? payload.health : {},
+    module: payload.module && typeof payload.module === "object" ? payload.module : {},
+    diagnostic: payload.diagnostic && typeof payload.diagnostic === "object" ? payload.diagnostic : {},
+  };
+}
+
+export function mergeVehicleStatus(firebaseStatus, gmoneStatus) {
+  const firebaseOk = Boolean(firebaseStatus?.ok && firebaseStatus?.data);
+  const gmoneOk = Boolean(gmoneStatus?.ok && gmoneStatus?.data);
+  const useFreshGmone = gmoneOk && (!gmoneStatus.stale || !firebaseOk);
+  const data = {
+    ...(firebaseOk ? firebaseStatus.data : {}),
+    ...(useFreshGmone ? gmoneStatus.data : {}),
+  };
+  const preferred = useFreshGmone ? gmoneStatus : firebaseStatus;
+  const sourceNames = [firebaseOk ? "firebase" : null, useFreshGmone ? gmoneStatus.source : null]
+    .filter(Boolean);
+  return {
+    ok: firebaseOk || gmoneOk,
+    source: sourceNames.join("+") || gmoneStatus?.source || "unavailable",
+    updatedAt: preferred?.updatedAt || preferred?.collectedAt || nowIso(),
+    stale: useFreshGmone ? Boolean(gmoneStatus.stale) : false,
+    data,
+    sources: { firebase: firebaseStatus, gmone: gmoneStatus },
+  };
+}
+
+async function fetchMergedVehicleStatus(env, deviceId) {
+  const [firebaseStatus, gmoneStatus] = await Promise.all([
+    fetchVehicleStatus(env, deviceId),
+    latestGmoneStatus(env, deviceId),
+  ]);
+  return mergeVehicleStatus(firebaseStatus, gmoneStatus);
+}
+
+function gmoneDeviceId(request, env, payload = {}) {
+  return authenticatedDeviceId(request)
+    || (constantTimeEqual(getBearerToken(request), env.WAYON_GMONE_TOKEN || "")
+      ? String(payload.deviceId || env.WAYON_LEGACY_FIREBASE_DEVICE_ID || "")
+      : "");
+}
+
+async function handleGmoneStatus(request, env) {
+  if (!authorizeGmoneUpload(request, env)) return json({ error: "unauthorized" }, 401);
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > GMONE_MAX_PAYLOAD_BYTES) return json({ error: "payload_too_large" }, 413);
+
+  const rawPayload = await request.json();
+  const deviceId = gmoneDeviceId(request, env, rawPayload);
+  const payload = sanitizeGmonePayload(rawPayload);
+  if (!validDeviceId(deviceId) || payload?.schemaVersion !== "wayon-gmone-v1"
+      || !payload.status || typeof payload.status !== "object") {
+    return json({ error: "invalid_gmone_payload" }, 400);
+  }
+  const encoded = JSON.stringify(payload);
+  if (new TextEncoder().encode(encoded).byteLength > GMONE_MAX_PAYLOAD_BYTES) {
+    return json({ error: "payload_too_large" }, 413);
+  }
+
+  const source = String(payload.source || payload.status.source || "gmone-direct").slice(0, 64);
+  const collectedAt = validIsoOrNow(payload.collectedAt);
+  const vehicleUpdatedAt = payload.vehicleUpdatedAt ? validIsoOrNow(payload.vehicleUpdatedAt) : null;
+  const receivedAt = nowIso();
+  await env.DB.prepare(`
+    INSERT INTO gmone_latest (
+      id, source, collected_at, vehicle_updated_at, payload_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      source = excluded.source,
+      collected_at = excluded.collected_at,
+      vehicle_updated_at = excluded.vehicle_updated_at,
+      payload_json = excluded.payload_json,
+      updated_at = excluded.updated_at
+  `).bind(deviceId, source, collectedAt, vehicleUpdatedAt, encoded, receivedAt).run();
+  await env.DB.prepare(`
+    UPDATE gmone_refresh_requests SET completed_at = ?
+    WHERE id = ? AND requested_at <= ?
+  `).bind(receivedAt, deviceId, collectedAt).run();
+  return json({ ok: true, deviceId, collectedAt, receivedAt });
+}
+
+async function handleGmoneRefreshRequest(request, env) {
+  if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
+  const deviceId = authenticatedDeviceId(request);
+  const existing = await env.DB.prepare(`
+    SELECT requested_at, completed_at FROM gmone_refresh_requests WHERE id = ?
+  `).bind(deviceId).first();
+  const ageSeconds = existing?.requested_at ? isoAgeSeconds(existing.requested_at) : null;
+  if (ageSeconds != null && ageSeconds < 15) {
+    return json({ ok: true, deviceId, requestedAt: existing.requested_at, deduplicated: true });
+  }
+
+  const requestedAt = nowIso();
+  await env.DB.prepare(`
+    INSERT INTO gmone_refresh_requests (id, requested_at, completed_at)
+    VALUES (?, ?, NULL)
+    ON CONFLICT(id) DO UPDATE SET requested_at = excluded.requested_at, completed_at = NULL
+  `).bind(deviceId, requestedAt).run();
+  return json({ ok: true, deviceId, requestedAt, deduplicated: false });
+}
+
+async function handleGmoneRefreshPoll(request, env) {
+  if (!authorizeGmoneRefreshPoll(request, env)) return json({ error: "unauthorized" }, 401);
+  const deviceId = gmoneDeviceId(request, env, {});
+  if (!validDeviceId(deviceId)) return json({ error: "missing_device_id" }, 400);
+  const row = await env.DB.prepare(`
+    SELECT requested_at, completed_at FROM gmone_refresh_requests WHERE id = ?
+  `).bind(deviceId).first();
+  const pending = Boolean(row?.requested_at && (!row.completed_at || row.completed_at < row.requested_at));
+  return json({ deviceId, pending, requestedAt: row?.requested_at || null, completedAt: row?.completed_at || null });
 }
 
 function base64ToBytes(value) {
@@ -1048,6 +1151,19 @@ async function handleImpact(request, env) {
   const id = String(payload.id || crypto.randomUUID()).slice(0, 128);
   const deviceId = authenticatedDeviceId(request);
   const detectedAt = String(payload.detectedAt || nowIso()).slice(0, 64);
+  const suppression = await env.DB.prepare(`
+    SELECT request_id, suppress_from, suppress_until, reason
+    FROM impact_suppressions WHERE device_id = ?
+  `).bind(deviceId).first();
+  if (!payload.test && impactSuppressedByRemoteStart(detectedAt, suppression)) {
+    return json({
+      ok: true,
+      id,
+      suppressed: true,
+      reason: suppression.reason || "remote_start_request",
+      requestId: suppression.request_id,
+    });
+  }
   const severity = ["light", "moderate", "severe"].includes(payload.severity)
     ? payload.severity : "light";
   const state = await env.DB.prepare(
@@ -1736,7 +1852,7 @@ async function handleState(request, env) {
         ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
       WHERE s.device_id = ? ORDER BY s.captured_at DESC LIMIT 12
     `).bind(deviceId).all(),
-    fetchVehicleStatus(env, deviceId),
+    fetchMergedVehicleStatus(env, deviceId),
     latestVehicleLock(env, deviceId),
   ]);
 
@@ -1948,7 +2064,7 @@ async function handleExport(request, env) {
     env.DB.prepare(`
       SELECT * FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT 25
     `).bind(deviceId).all(),
-    fetchVehicleStatus(env, deviceId),
+    fetchMergedVehicleStatus(env, deviceId),
     latestVehicleLock(env, deviceId),
   ]);
 
@@ -2200,7 +2316,7 @@ async function handleAiContext(request, env) {
     `).bind(eventLimit).all(),
     env.DB.prepare("SELECT * FROM trips ORDER BY ended_at DESC LIMIT 1").first(),
     env.DB.prepare(`${AI_SNAPSHOT_SELECT} ORDER BY s.captured_at DESC LIMIT ?`).bind(snapshotLimit).all(),
-    fetchVehicleStatus(env, env.WAYON_LEGACY_FIREBASE_DEVICE_ID || ""),
+    fetchMergedVehicleStatus(env, env.WAYON_LEGACY_FIREBASE_DEVICE_ID || ""),
   ]);
 
   if (!state) return json({ error: "no_telemetry" }, 404);
@@ -2393,9 +2509,6 @@ export default {
       return handleDeviceRelay(request, env, kind);
     }
 
-    if (request.method === "GET" && pathname === REMOTE_BOOTSTRAP_PATH) {
-      return handleRemoteBootstrap(request, env);
-    }
     if (request.method === "POST" && pathname === REMOTE_SESSION_PATH) {
       return handleRemoteSession(request, env);
     }
@@ -2409,6 +2522,16 @@ export default {
       return handleLiveStream(request, env, ctx);
     }
 
+    const gmoneCollector = constantTimeEqual(
+      getBearerToken(request), env.WAYON_GMONE_TOKEN || "",
+    );
+    if (gmoneCollector && request.method === "POST" && pathname === "/api/gmone/status") {
+      return handleGmoneStatus(request, env);
+    }
+    if (gmoneCollector && request.method === "GET" && pathname === "/api/gmone/refresh") {
+      return handleGmoneRefreshPoll(request, env);
+    }
+
     const separatelyAuthorized = pathname.startsWith("/api/ai/")
       || pathname === "/api/server-sync/trips";
     if (pathname.startsWith("/api/") && !separatelyAuthorized) {
@@ -2419,6 +2542,15 @@ export default {
 
     if (request.method === "POST" && pathname === "/api/telemetry") {
       return handleTelemetry(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/gmone/status") {
+      return handleGmoneStatus(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/gmone/refresh") {
+      return handleGmoneRefreshRequest(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/gmone/refresh") {
+      return handleGmoneRefreshPoll(request, env);
     }
     if (request.method === "POST" && pathname === "/api/snapshot") {
       return handleSnapshot(request, env);
@@ -2437,6 +2569,9 @@ export default {
     }
     if (request.method === "POST" && pathname === "/api/impact") {
       return handleImpact(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/mobile/impact-suppression") {
+      return handleImpactSuppression(request, env);
     }
     if (request.method === "POST" && pathname === "/api/impact-media") {
       return handleImpactMedia(request, env);

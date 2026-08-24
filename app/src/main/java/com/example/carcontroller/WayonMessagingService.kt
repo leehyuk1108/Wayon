@@ -8,11 +8,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import java.util.Locale
+import org.json.JSONObject
 
 class WayonMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
@@ -21,10 +24,53 @@ class WayonMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         when (message.data["type"]) {
-            "wayon_impact" -> WayonImpactNotifications.show(this, message.data)
+            "wayon_impact" -> {
+                if (RemoteStartImpactGuard.shouldSuppress(this, message.data)) {
+                    Log.i("WayonImpact", "Suppressed remote-start vibration impact")
+                    return
+                }
+                WayonImpactStateStore.record(this, message.data)
+                LocalBroadcastManager.getInstance(this)
+                    .sendBroadcast(Intent(WayonImpactStateStore.ACTION_UPDATED))
+                WayonImpactNotifications.show(this, message.data)
+            }
             "wayon_door_lock" -> WayonDoorLockNotifications.show(this, message.data)
             "wayon_parking_unlocked" -> WayonParkingNotifications.show(this, message.data)
         }
+    }
+}
+
+object WayonImpactStateStore {
+    const val ACTION_UPDATED = "com.example.carcontroller.WAYON_IMPACT_UPDATED"
+    private const val PREFS = "wayon_impact_state"
+    private const val KEY_JSON = "latest_impact_json"
+    private const val KEY_RECEIVED_AT = "latest_impact_received_at"
+    private const val MAX_AGE_MS = 30 * 60 * 1000L
+
+    fun record(context: Context, data: Map<String, String>) {
+        if (data["test"] == "true") return
+        val payload = JSONObject().apply {
+            data.forEach { (key, value) -> put(key, value) }
+            put("receivedAtMs", System.currentTimeMillis())
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_JSON, payload.toString())
+            .putLong(KEY_RECEIVED_AT, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun currentJson(context: Context, nowMs: Long = System.currentTimeMillis()): String? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val receivedAt = prefs.getLong(KEY_RECEIVED_AT, 0L)
+        if (receivedAt <= 0L || nowMs - receivedAt > MAX_AGE_MS) {
+            clear(context)
+            return null
+        }
+        return prefs.getString(KEY_JSON, null)
+    }
+
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
     }
 }
 
@@ -77,7 +123,7 @@ object WayonDoorLockNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_chevrolet)
             .setContentTitle(title)
             .setContentText(detail)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -144,7 +190,7 @@ object WayonParkingNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_chevrolet)
             .setContentTitle(title)
             .setContentText("${minutes}분간 미잠금 · $location")
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -213,7 +259,7 @@ object WayonImpactNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_chevrolet)
             .setContentTitle(title)
             .setContentText(detail)
             .setStyle(NotificationCompat.BigTextStyle().bigText(

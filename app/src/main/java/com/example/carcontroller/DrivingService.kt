@@ -549,7 +549,7 @@ class DrivingService : Service(), CoroutineScope by CoroutineScope(Dispatchers.I
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_chevrolet)
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
             .build()

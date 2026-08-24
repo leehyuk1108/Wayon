@@ -13,9 +13,6 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import java.io.IOException
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -34,8 +31,6 @@ class TimerService : Service(), CoroutineScope {
     private var engineTimeLeft: String = ""
     private var extrasTimeLeft: String = ""
     private var extrasTaskTitle: String = ""
-
-    private var baseApiUrl: String? = null
 
     // === 3. 서비스가 포그라운드 상태인지 추적 ===
     private var isServiceInForeground = false
@@ -57,20 +52,10 @@ class TimerService : Service(), CoroutineScope {
 
     override fun onCreate() {
         super.onCreate()
-        baseApiUrl = getSavedBaseApiUrl()
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.getStringExtra("BASE_API_URL")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { apiUrl ->
-                baseApiUrl = apiUrl
-                getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit()
-                    .putString(MainActivity.PREF_KEY_API_URL, apiUrl)
-                    .apply()
-            }
         val action = intent?.action
         val taskType = intent?.getStringExtra("TASK_TYPE")
 
@@ -182,32 +167,25 @@ class TimerService : Service(), CoroutineScope {
         }
     }
 
-    private fun getSavedBaseApiUrl(): String? {
-        return getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(MainActivity.PREF_KEY_API_URL, null)
-    }
-
-    // 실제 API를 호출하는 내부 함수 (동일)
+    // Timed vehicle cleanup commands use the same verified GMONE path as the UI.
     private fun sendCommandInternal(cmd: String): Boolean {
-        val apiUrl = baseApiUrl ?: getSavedBaseApiUrl()?.also { baseApiUrl = it } ?: return false
-        val fullUrl = "$apiUrl&cmd=$cmd"
-        var connection: HttpsURLConnection? = null
-
-        return try {
-            val url = URL(fullUrl)
-            connection = (url.openConnection() as HttpsURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 5000
-                readTimeout = 5000
-            }
-            connection.responseCode in 200..299
-        } catch (e: IOException) {
-            e.printStackTrace()
-            Log.e("TimerService", "API Call Failed: ${e.message}")
-            false
-        } finally {
-            connection?.disconnect()
+        if (!GmoneAccountClient.supportsVehicleControl(cmd)) {
+            Log.e("TimerService", "Unsupported GMONE timer command: $cmd")
+            return false
         }
+        val store = GmoneAccountStore(this)
+        val account = store.account()
+        val password = store.password()
+        if (account == null || password.isNullOrBlank()) {
+            Log.e("TimerService", "GMONE account is unavailable for $cmd")
+            return false
+        }
+        return runCatching {
+            GmoneAccountClient.sendExtendedVehicleControl(account.email, password, cmd)
+            true
+        }.onFailure {
+            Log.e("TimerService", "GMONE command failed: $cmd", it)
+        }.getOrDefault(false)
     }
 
     // JS(WebView)로 현재 상태를 알림 (동일)
@@ -238,7 +216,7 @@ class TimerService : Service(), CoroutineScope {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_chevrolet)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true) // 진동/소리는 1회만
@@ -299,7 +277,7 @@ class TimerService : Service(), CoroutineScope {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_chevrolet)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

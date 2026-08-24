@@ -52,6 +52,13 @@ class BluetoothReceiver : BroadcastReceiver() {
             }
 
             if (device != null && device.name?.equals("myChevrolet", ignoreCase = true) == true) {
+                if (WayonCloudMode.isEnabled(context)) {
+                    WayonCloudMode.clearLocalTrackingState(context)
+                    context.stopService(Intent(context, DrivingService::class.java))
+                    Log.d("BluetoothReceiver", "Wayon Cloud enabled; skipping local driving service.")
+                    return
+                }
+
                 Log.d("BluetoothReceiver", "myChevrolet CONNECTED (Background). Starting DrivingService.")
 
                 // 서비스 시작 Intent
@@ -86,6 +93,12 @@ class BluetoothReceiver : BroadcastReceiver() {
 
             // 3. "myChevrolet" 기기가 맞는지 확인
             if (device != null && device.name?.equals("myChevrolet", ignoreCase = true) == true) {
+                if (WayonCloudMode.isEnabled(context)) {
+                    context.stopService(Intent(context, DrivingService::class.java))
+                    Log.d("BluetoothReceiver", "Wayon Cloud enabled; local driving service already disabled.")
+                    return
+                }
+
                 Log.d("BluetoothReceiver", "myChevrolet disconnected (Background). Stopping DrivingService...")
 
                 // ‼️‼️‼️ 4. (수정) DrivingService 중지 명령 ‼️‼️‼️
@@ -140,7 +153,7 @@ class BluetoothReceiver : BroadcastReceiver() {
         val notification = NotificationCompat.Builder(context, LOCATION_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(R.mipmap.ic_launcher) // (아이콘 확인 필요)
+            .setSmallIcon(R.drawable.ic_notification_chevrolet)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

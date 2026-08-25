@@ -276,7 +276,7 @@ internal object HylinkApiContract {
     data class Endpoint(val name: String, val path: String)
 
     val READ_ENDPOINTS = listOf(
-        Endpoint("feed", "/api/json"),
+        Endpoint("feed", "/api/state"),
         Endpoint("trips", "/api/trips?limit=250"),
         Endpoint("snapshots", "/api/snapshots?limit=100"),
         Endpoint("impacts", "/api/impacts?limit=100"),
@@ -286,7 +286,10 @@ internal object HylinkApiContract {
     val LIVE_SESSION_ENDPOINT = "/api/live/session"
 
     fun sanitize(name: String, payload: JSONObject): JSONObject {
-        if (name == "feed") payload.remove("vehicleStatus")
+        if (name == "feed") {
+            payload.remove("vehicleStatus")
+            payload.remove("vehicleLock")
+        }
         return payload
     }
 }

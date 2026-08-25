@@ -3,539 +3,161 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#08110f">
+  <meta name="theme-color" content="#07100e">
   <title>Hylink</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <style>
-    @font-face { font-family: Pretendard; src: url('Pretendard-SemiBold.otf'); font-weight: 600; }
-    :root {
-      color-scheme: dark;
-      --bg: #07100e;
-      --surface: #101b18;
-      --surface-2: #17241f;
-      --line: rgba(214, 238, 226, .1);
-      --text: #f4f8f6;
-      --muted: #91a49b;
-      --mint: #7de2b8;
-      --mint-2: #b8f4d8;
-      --amber: #ffcb74;
-      --red: #ff837d;
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: Pretendard, system-ui, sans-serif; }
-    body { overflow-x: hidden; }
-    button, input { font: inherit; }
-    button { color: inherit; }
-    .app { min-height: 100vh; padding-bottom: calc(88px + var(--safe-bottom)); }
-    .topbar {
-      position: sticky; top: 0; z-index: 40; display: flex; align-items: center; justify-content: space-between;
-      padding: calc(14px + env(safe-area-inset-top, 0px)) 20px 14px;
-      background: linear-gradient(180deg, rgba(7,16,14,.98), rgba(7,16,14,.82), transparent);
-      backdrop-filter: blur(18px);
-    }
-    .brand { display: flex; align-items: center; gap: 11px; }
-    .brand-mark { width: 38px; height: 38px; border-radius: 13px; display: grid; place-items: center; background: var(--mint); color: #06120d; font-weight: 900; font-size: 20px; box-shadow: 0 8px 30px rgba(125,226,184,.22); }
-    .brand strong { display: block; font-size: 19px; letter-spacing: -.4px; }
-    .brand span { display: block; margin-top: 2px; color: var(--muted); font: 500 11px/1.2 system-ui; letter-spacing: .08em; text-transform: uppercase; }
-    .sync-button { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 15px; background: rgba(23,36,31,.86); display: grid; place-items: center; }
-    .sync-button.loading svg { animation: spin .85s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    main { padding: 0 16px 28px; }
-    .page { display: none; animation: appear .22s ease; }
-    .page.active { display: block; }
-    @keyframes appear { from { opacity: 0; transform: translateY(5px); } }
-    .hero {
-      position: relative; min-height: 388px; overflow: hidden; border: 1px solid var(--line); border-radius: 30px;
-      background: radial-gradient(circle at 72% 15%, rgba(125,226,184,.18), transparent 35%), #0d1916;
-      box-shadow: 0 22px 55px rgba(0,0,0,.26);
-    }
-    #home-map { position: absolute; inset: 0; background: #0b1512; }
-    #home-map::after { content: ''; position: absolute; inset: 0; z-index: 400; pointer-events: none; background: linear-gradient(180deg, rgba(5,12,10,.12), rgba(5,12,10,.03) 45%, rgba(5,12,10,.92)); }
-    .leaflet-container { background: #0b1512; font-family: inherit; }
-    .leaflet-tile { filter: brightness(.66) saturate(.65) hue-rotate(92deg); }
-    .leaflet-control-attribution { display: none; }
-    .vehicle-pin { width: 46px; height: 46px; border-radius: 50% 50% 50% 13px; transform: rotate(-45deg); display: grid; place-items: center; background: var(--mint); color: #07100e; border: 4px solid rgba(7,16,14,.82); box-shadow: 0 8px 28px rgba(0,0,0,.4); }
-    .vehicle-pin span { transform: rotate(45deg); font-weight: 900; font-size: 16px; }
-    .hero-copy { position: absolute; z-index: 500; left: 21px; right: 21px; bottom: 20px; }
-    .live-pill { display: inline-flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 11px; border-radius: 999px; background: rgba(7,16,14,.78); border: 1px solid var(--line); color: var(--mint-2); font: 700 11px/1 system-ui; backdrop-filter: blur(12px); }
-    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-    .live-pill.online .live-dot { background: var(--mint); box-shadow: 0 0 0 5px rgba(125,226,184,.12); }
-    .hero-copy h1 { margin: 14px 0 6px; max-width: 86%; font-size: clamp(28px, 8vw, 42px); line-height: 1.02; letter-spacing: -1.6px; }
-    .hero-copy p { margin: 0; color: #c0cec8; font: 500 13px/1.5 system-ui; }
-    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
-    .metric { min-height: 96px; padding: 15px 14px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
-    .metric span { display: block; color: var(--muted); font: 600 11px/1.3 system-ui; }
-    .metric strong { display: block; margin-top: 10px; font-size: 21px; letter-spacing: -.7px; }
-    .metric small { display: block; margin-top: 4px; color: #687b72; font: 500 10px/1.2 system-ui; }
-    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 27px 3px 12px; }
-    .section-head h2 { margin: 0; font-size: 20px; letter-spacing: -.6px; }
-    .section-head p { margin: 4px 0 0; color: var(--muted); font: 500 12px/1.4 system-ui; }
-    .section-head button { border: 0; background: transparent; color: var(--mint); font-size: 12px; }
-    .status-list { display: grid; gap: 9px; }
-    .status-row { display: flex; align-items: center; min-height: 65px; padding: 13px 15px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
-    .status-icon { width: 38px; height: 38px; margin-right: 12px; border-radius: 13px; display: grid; place-items: center; background: rgba(125,226,184,.1); color: var(--mint); }
-    .status-copy { min-width: 0; flex: 1; }
-    .status-copy strong { display: block; font-size: 14px; }
-    .status-copy span { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 500 11px/1.3 system-ui; }
-    .status-value { margin-left: 10px; color: #d9e6e0; font: 700 12px/1.3 system-ui; text-align: right; }
-    .page-title { padding: 5px 3px 15px; }
-    .page-title h1 { margin: 0; font-size: 31px; letter-spacing: -1.2px; }
-    .page-title p { margin: 7px 0 0; color: var(--muted); font: 500 13px/1.5 system-ui; }
-    .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
-    .summary-card { padding: 17px; border-radius: 22px; border: 1px solid var(--line); background: var(--surface); }
-    .summary-card span { color: var(--muted); font: 600 11px/1.3 system-ui; }
-    .summary-card strong { display: block; margin-top: 9px; font-size: 24px; letter-spacing: -.8px; }
-    .trip-list, .media-list, .impact-list { display: grid; gap: 10px; }
-    .trip-card { width: 100%; border: 1px solid var(--line); border-radius: 23px; background: var(--surface); padding: 17px; text-align: left; }
-    .trip-top { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
-    .trip-top strong { font-size: 15px; }
-    .trip-top time { color: var(--muted); font: 500 11px/1.3 system-ui; }
-    .trip-route { margin-top: 11px; color: #bdcbc5; font: 500 12px/1.5 system-ui; }
-    .trip-stats { display: flex; gap: 18px; margin-top: 15px; color: var(--mint-2); font: 700 12px/1 system-ui; }
-    .media-hero { padding: 22px; border-radius: 28px; border: 1px solid var(--line); background: radial-gradient(circle at 80% 5%, rgba(125,226,184,.2), transparent 36%), var(--surface); }
-    .media-hero h2 { margin: 0; font-size: 25px; letter-spacing: -.8px; }
-    .media-hero p { margin: 8px 0 20px; max-width: 320px; color: var(--muted); font: 500 13px/1.55 system-ui; }
-    .primary-button { min-height: 52px; padding: 0 20px; border: 0; border-radius: 18px; background: var(--mint); color: #06120d; font-weight: 900; display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
-    .capture-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .capture-card { position: relative; min-height: 150px; overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: var(--surface-2); }
-    .capture-card img { width: 100%; height: 150px; object-fit: cover; display: block; opacity: .9; }
-    .capture-placeholder { height: 150px; display: grid; place-items: center; color: var(--muted); }
-    .capture-meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 30px 12px 11px; background: linear-gradient(transparent, rgba(5,11,9,.92)); }
-    .capture-meta strong { display: block; font-size: 12px; }
-    .capture-meta span { display: block; margin-top: 3px; color: #b9c8c1; font: 500 10px/1.2 system-ui; }
-    .impact-card { display: flex; gap: 13px; padding: 15px; border-radius: 21px; border: 1px solid rgba(255,131,125,.18); background: rgba(43,24,23,.54); }
-    .impact-card .status-icon { color: var(--red); background: rgba(255,131,125,.1); }
-    .impact-card strong { font-size: 14px; }
-    .impact-card p { margin: 5px 0 0; color: #c9aaa7; font: 500 11px/1.45 system-ui; }
-    .settings-card { margin-bottom: 12px; padding: 19px; border-radius: 24px; border: 1px solid var(--line); background: var(--surface); }
-    .settings-card h3 { margin: 0; font-size: 16px; }
-    .settings-card p { margin: 7px 0 16px; color: var(--muted); font: 500 12px/1.55 system-ui; }
-    .key-field { width: 100%; min-height: 52px; padding: 0 14px; border: 1px solid var(--line); border-radius: 16px; outline: none; background: #0a1411; color: var(--text); }
-    .key-field:focus { border-color: rgba(125,226,184,.55); }
-    .button-row { display: flex; gap: 9px; margin-top: 10px; }
-    .secondary-button, .danger-button { min-height: 46px; flex: 1; border-radius: 15px; border: 1px solid var(--line); background: var(--surface-2); }
-    .danger-button { color: var(--red); }
-    .read-only { display: flex; gap: 12px; align-items: flex-start; padding: 15px; border-radius: 18px; background: rgba(125,226,184,.07); color: #c4d7ce; font: 500 12px/1.55 system-ui; }
-    .empty { padding: 30px 18px; border: 1px dashed var(--line); border-radius: 22px; text-align: center; color: var(--muted); font: 500 12px/1.5 system-ui; }
-    .bottom-nav { position: fixed; z-index: 900; left: 14px; right: 14px; bottom: calc(10px + var(--safe-bottom)); height: 68px; display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px; border: 1px solid var(--line); border-radius: 25px; background: rgba(12,23,19,.94); backdrop-filter: blur(22px); box-shadow: 0 14px 45px rgba(0,0,0,.35); }
-    .nav-button { border: 0; border-radius: 19px; background: transparent; color: #71857b; display: grid; place-items: center; align-content: center; gap: 4px; }
-    .nav-button span { font: 700 9px/1 system-ui; }
-    .nav-button.active { background: rgba(125,226,184,.1); color: var(--mint); }
-    .toast { position: fixed; z-index: 1200; left: 50%; bottom: calc(91px + var(--safe-bottom)); max-width: calc(100% - 42px); transform: translate(-50%, 18px); opacity: 0; pointer-events: none; padding: 12px 16px; border-radius: 16px; background: #e8f6ef; color: #0b1813; font: 700 12px/1.4 system-ui; transition: .22s ease; }
-    .toast.visible { opacity: 1; transform: translate(-50%, 0); }
-    .trip-overlay { position: fixed; z-index: 950; inset: 0; display: none; overflow: auto; background: var(--bg); padding: calc(18px + env(safe-area-inset-top,0px)) 16px calc(28px + var(--safe-bottom)); }
-    .trip-overlay.visible { display: block; }
-    .overlay-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-    .overlay-close { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
-    #trip-map { height: 360px; border-radius: 26px; overflow: hidden; border: 1px solid var(--line); }
-    .trip-detail-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; margin-top: 12px; }
-    .trip-detail-stats div { padding: 15px 10px; border-radius: 18px; background: var(--surface); text-align: center; }
-    .trip-detail-stats span { display: block; color: var(--muted); font: 500 10px/1.2 system-ui; }
-    .trip-detail-stats strong { display: block; margin-top: 7px; font-size: 14px; }
-    .image-overlay { position: fixed; z-index: 2100; inset: 0; display: none; place-items: center; padding: calc(74px + env(safe-area-inset-top,0px)) 14px calc(22px + var(--safe-bottom)); background: rgba(0,0,0,.96); }
-    .image-overlay.visible { display: grid; }
-    .image-overlay img { max-width: 100%; max-height: 100%; border-radius: 18px; object-fit: contain; }
-    .image-overlay .overlay-close { position: absolute; top: calc(14px + env(safe-area-inset-top,0px)); left: 14px; z-index: 1; background: rgba(20,20,20,.9); }
-
-    #wayon-live-overlay { position: fixed; z-index: 2000; inset: 0; display: none; overflow: hidden; background: #000; touch-action: none; }
-    #wayon-live-overlay.active { display: block; }
-    #wayon-live-canvas { width: 100%; height: 100%; display: block; }
-    .wayon-live-toolbar { position: absolute; z-index: 4; top: calc(13px + env(safe-area-inset-top,0px)); left: 13px; right: 13px; display: flex; align-items: center; justify-content: space-between; }
-    .wayon-live-icon-button { width: 46px; height: 46px; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; background: rgba(0,0,0,.54); color: #fff; display: grid; place-items: center; backdrop-filter: blur(12px); }
-    .wayon-live-status { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border: 1px solid rgba(255,255,255,.15); border-radius: 999px; background: rgba(0,0,0,.52); font: 700 11px/1 system-ui; }
-    .wayon-live-status .wayon-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #999; }
-    .wayon-live-status.live .wayon-live-dot { background: #51efab; box-shadow: 0 0 12px #51efab; }
-    #wayon-live-compass { position: absolute; z-index: 3; top: calc(76px + env(safe-area-inset-top,0px)); left: 50%; transform: translateX(-50%); font: 800 11px/1 system-ui; letter-spacing: .16em; text-shadow: 0 2px 10px #000; }
-    .wayon-live-capture-bar { position: absolute; z-index: 4; left: 50%; bottom: calc(22px + var(--safe-bottom)); transform: translateX(-50%); display: flex; gap: 10px; }
-    .wayon-live-capture-button { min-width: 50px; height: 50px; border: 1px solid rgba(255,255,255,.2); border-radius: 18px; background: rgba(0,0,0,.58); color: #fff; font-weight: 800; backdrop-filter: blur(12px); }
-    .wayon-live-capture-button:disabled { opacity: .38; }
-    .wayon-live-playback-bar { position: absolute; z-index: 5; left: 18px; right: 18px; bottom: calc(22px + var(--safe-bottom)); display: flex; align-items: center; gap: 11px; padding: 12px; border-radius: 19px; background: rgba(0,0,0,.66); }
-    .wayon-live-playback-bar[hidden] { display: none; }
-    .wayon-live-playback-toggle { width: 36px; height: 36px; border: 0; border-radius: 50%; background: #fff; color: #000; }
-    .wayon-live-playback-track { flex: 1; height: 4px; overflow: hidden; border-radius: 9px; background: rgba(255,255,255,.23); }
-    .wayon-live-playback-progress { width: 0; height: 100%; background: var(--mint); }
-    .wayon-live-playback-time { font: 700 10px/1 system-ui; }
-    #wayon-live-overlay.playback .wayon-live-capture-bar, #wayon-live-overlay.playback .wayon-live-impact-panel, #wayon-live-overlay.playback #wayon-live-compass { display: none; }
-    .wayon-live-impact-panel { position: absolute; z-index: 4; left: 14px; right: 14px; bottom: calc(86px + var(--safe-bottom)); padding: 13px; border: 1px solid rgba(255,131,125,.25); border-radius: 18px; background: rgba(34,12,12,.72); backdrop-filter: blur(14px); }
-    .wayon-live-impact-panel[hidden] { display: none; }
-    .wayon-live-impact-title, .wayon-live-impact-primary, .wayon-live-impact-meta { display: flex; justify-content: space-between; gap: 10px; }
-    .wayon-live-impact-title { color: #ffaaa5; font: 800 10px/1.3 system-ui; }
-    .wayon-live-impact-primary { margin-top: 7px; font-size: 13px; }
-    .wayon-live-impact-meta { margin-top: 5px; color: #c8a7a5; font: 500 10px/1.3 system-ui; }
-    .wayon-live-save-toast { position: absolute; z-index: 8; top: 92px; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 11px 14px; border-radius: 15px; background: rgba(8,20,15,.86); font: 700 11px/1.3 system-ui; }
-    .wayon-live-save-toast[hidden] { display: none; }
-    #wayon-live-message { position: absolute; z-index: 3; inset: 0; display: grid; place-content: center; justify-items: center; gap: 13px; padding: 28px; text-align: center; background: rgba(0,0,0,.35); }
-    #wayon-live-message.hidden { display: none; }
-    .wayon-live-spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
-    #btnWayonLiveRetry { margin-top: 9px; min-height: 42px; padding: 0 16px; border: 0; border-radius: 14px; background: #fff; color: #000; font-weight: 800; }
-    [hidden] { display: none !important; }
-    @media (min-width: 760px) { main { max-width: 760px; margin: 0 auto; } .topbar { max-width: 800px; margin: 0 auto; } .bottom-nav { max-width: 690px; left: 50%; right: auto; width: calc(100% - 28px); transform: translateX(-50%); } }
-  </style>
+  <link rel="stylesheet" href="hylink.css">
 </head>
 <body>
-  <div class="app">
+  <div class="app-shell">
     <header class="topbar">
-      <div class="brand"><div class="brand-mark">H</div><div><strong>Hylink</strong><span>Wayon mobility cloud</span></div></div>
-      <button class="sync-button" id="btn-refresh" aria-label="새로고침"><i data-lucide="refresh-cw" width="19"></i></button>
+      <div class="brand"><div class="brand-mark">H</div><div><strong>Hylink</strong><span id="top-status">Wayon Cloud</span></div></div>
+      <div class="top-actions">
+        <button class="icon-button" id="btn-refresh" aria-label="새로고침"><i data-lucide="refresh-cw"></i></button>
+        <button class="icon-button" id="btn-settings" aria-label="연결 설정"><i data-lucide="settings-2"></i></button>
+      </div>
     </header>
 
     <main>
-      <section class="page active" id="page-home">
-        <div class="hero">
+      <section class="page active" id="page-overview">
+        <section class="map-hero">
           <div id="home-map"></div>
-          <div class="hero-copy">
-            <div class="live-pill" id="connection-pill"><span class="live-dot"></span><span id="connection-label">연결 대기</span></div>
-            <h1 id="hero-title">차량 위치를<br>확인하세요</h1>
-            <p id="hero-subtitle">Wayon Cloud 키를 연결하면 최신 위치가 표시됩니다.</p>
-          </div>
-        </div>
-        <div class="metrics">
-          <div class="metric"><span>현재 속도</span><strong id="metric-speed">--</strong><small>km/h</small></div>
-          <div class="metric"><span>12V 전압</span><strong id="metric-voltage">--</strong><small>volt</small></div>
-          <div class="metric"><span>상태</span><strong id="metric-state">--</strong><small id="metric-state-sub">vehicle</small></div>
-        </div>
-        <div class="section-head"><div><h2>연결 상태</h2><p>차량에서 수집된 Wayon 원본 텔레메트리</p></div></div>
-        <div class="status-list">
-          <div class="status-row"><div class="status-icon"><i data-lucide="map-pin" width="18"></i></div><div class="status-copy"><strong>차량 위치</strong><span id="status-location">위치 정보 없음</span></div><div class="status-value" id="status-gps">--</div></div>
-          <div class="status-row"><div class="status-icon"><i data-lucide="route" width="18"></i></div><div class="status-copy"><strong>최근 주행</strong><span id="status-trip">주행기록 없음</span></div><div class="status-value" id="status-trip-distance">--</div></div>
-          <div class="status-row"><div class="status-icon"><i data-lucide="cpu" width="18"></i></div><div class="status-copy"><strong>openpilot 장치</strong><span id="status-device">상태 정보 없음</span></div><div class="status-value" id="status-op">--</div></div>
-        </div>
+          <div class="map-shade"></div>
+          <div class="map-topline"><span class="signal-pill" id="connection-pill"><i></i><b id="connection-label">연결 대기</b></span><span class="freshness" id="freshness-label">--</span></div>
+          <div class="map-copy"><span class="eyebrow">CURRENT VEHICLE</span><h1 id="hero-title">차량 위치를<br>확인하세요</h1><p id="hero-subtitle">Wayon Cloud 연결이 필요합니다.</p></div>
+        </section>
+
+        <section class="glance-grid" aria-label="차량 핵심 정보">
+          <article class="glance-card accent"><span>주행 상태</span><strong id="glance-state">--</strong><small id="glance-state-sub">vehicle</small></article>
+          <article class="glance-card"><span>현재 속도</span><strong><b id="glance-speed">--</b><em>km/h</em></strong><small id="glance-bearing">방향 --</small></article>
+          <article class="glance-card"><span>12V 입력</span><strong><b id="glance-voltage">--</b><em>V</em></strong><small id="glance-current">전류 --</small></article>
+          <article class="glance-card"><span>소비 전력</span><strong><b id="glance-power">--</b><em>W</em></strong><small id="glance-device-power">기기 --</small></article>
+        </section>
+
+        <div class="section-heading"><div><span class="eyebrow">DRIVING INTELLIGENCE</span><h2>차량과 openpilot</h2></div><span class="section-badge" id="op-availability">--</span></div>
+        <section class="op-card">
+          <div class="op-orb" id="op-orb"><i data-lucide="sparkles"></i></div>
+          <div class="op-main"><span id="op-label">openpilot 상태</span><strong id="op-state">--</strong><p id="op-alert">수신된 알림이 없습니다.</p></div>
+          <div class="op-tags"><span id="op-personality">성향 --</span><span id="op-engageable">진입 --</span><span id="op-experimental">실험모드 --</span></div>
+        </section>
+
+        <div class="section-heading"><div><span class="eyebrow">LATEST DRIVE</span><h2>최근 주행</h2></div><button class="text-button" data-go="trips">전체 보기</button></div>
+        <button class="latest-trip" id="latest-trip-card">
+          <div class="route-glyph"><i data-lucide="route"></i></div>
+          <div class="latest-trip-copy"><strong id="latest-trip-date">주행기록 없음</strong><span id="latest-trip-route">경로가 수신되면 표시됩니다.</span></div>
+          <div class="latest-trip-value"><strong id="latest-trip-distance">--</strong><span id="latest-trip-duration">--</span></div>
+        </button>
+
+        <div class="section-heading"><div><span class="eyebrow">SYSTEM PULSE</span><h2>장치 요약</h2></div><button class="text-button" data-go="device">자세히</button></div>
+        <section class="pulse-strip">
+          <div><i data-lucide="thermometer"></i><span>최고 온도</span><strong id="pulse-temp">--</strong></div>
+          <div><i data-lucide="radio-tower"></i><span>네트워크</span><strong id="pulse-network">--</strong></div>
+          <div><i data-lucide="hard-drive"></i><span>여유 공간</span><strong id="pulse-storage">--</strong></div>
+          <div><i data-lucide="usb"></i><span>Panda</span><strong id="pulse-panda">--</strong></div>
+        </section>
       </section>
 
       <section class="page" id="page-trips">
-        <div class="page-title"><h1>주행기록</h1><p>Wayon Cloud에 실제 저장된 경로와 주행 통계입니다.</p></div>
-        <div class="summary-grid">
-          <div class="summary-card"><span>저장된 주행</span><strong id="summary-trip-count">0</strong></div>
-          <div class="summary-card"><span>누적 거리</span><strong id="summary-distance">0 km</strong></div>
-        </div>
-        <div class="trip-list" id="trip-list"><div class="empty">아직 불러온 주행기록이 없습니다.</div></div>
+        <header class="page-head"><span class="eyebrow">WAYON JOURNAL</span><h1>주행 인사이트</h1><p>Cloud에 저장된 경로에서 거리·시간·속도·경로 밀도를 계산합니다.</p></header>
+        <section class="trip-summary">
+          <article class="summary-primary"><span>불러온 주행</span><strong id="trip-total-count">0</strong><small>최근 최대 250건</small></article>
+          <article><span>누적 거리</span><strong id="trip-total-distance">0 km</strong></article>
+          <article><span>누적 시간</span><strong id="trip-total-time">0시간</strong></article>
+          <article><span>평균 주행</span><strong id="trip-average-distance">0 km</strong></article>
+          <article><span>최장 주행</span><strong id="trip-longest-distance">0 km</strong></article>
+        </section>
+        <section class="period-card"><div><span>최근 7일</span><strong id="trip-week-distance">0 km</strong></div><div class="period-track"><i id="trip-week-bar"></i></div><small id="trip-week-caption">주행 데이터 없음</small></section>
+        <div class="section-heading"><div><span class="eyebrow">TRIP HISTORY</span><h2>주행기록</h2></div><span class="section-badge" id="trip-result-count">0건</span></div>
+        <div class="trip-list" id="trip-list"><div class="empty-state">아직 불러온 주행기록이 없습니다.</div></div>
       </section>
 
-      <section class="page" id="page-camera">
-        <div class="page-title"><h1>360°</h1><p>실시간 주변 확인과 Wayon Cloud에 저장된 카메라 기록입니다.</p></div>
-        <div class="media-hero">
-          <h2>차량 주변을<br>한 화면으로</h2>
-          <p>차량이 Offroad이고 카메라가 준비된 경우에만 360° Live가 연결됩니다.</p>
-          <button class="primary-button" id="btnWayonLive"><i data-lucide="scan-line" width="20"></i>360° Live 열기</button>
-        </div>
-        <div class="section-head"><div><h2>저장된 360° 기록</h2><p>Live에서 저장한 사진과 10·30초 클립</p></div><span id="capture-count"></span></div>
-        <div class="capture-grid" id="live-capture-grid"><div class="empty" style="grid-column:1/-1">저장된 360° 기록이 없습니다.</div></div>
-        <div class="section-head"><div><h2>주차 카메라</h2><p>주차 및 충격 이벤트 이미지</p></div><span id="snapshot-count"></span></div>
-        <div class="capture-grid" id="snapshot-grid"><div class="empty" style="grid-column:1/-1">저장된 카메라 이미지가 없습니다.</div></div>
-        <div class="section-head"><div><h2>최근 충격 이벤트</h2><p>차량 센서가 Wayon Cloud에 기록한 이벤트</p></div></div>
-        <div class="impact-list" id="impact-list"><div class="empty">최근 충격 이벤트가 없습니다.</div></div>
+      <section class="page" id="page-media">
+        <header class="page-head"><span class="eyebrow">SURROUND VIEW</span><h1>360° & 이벤트</h1><p>실시간 주변 확인, 저장 기록과 충격 센서 정보를 한곳에서 봅니다.</p></header>
+        <section class="live-hero">
+          <div class="live-visual"><div class="camera-ring"><i data-lucide="scan-line"></i></div><span>OFFROAD CAMERA</span></div>
+          <div><h2>차량 주변을<br>실시간으로</h2><p>카메라 준비 상태에서 360° 스트림을 연결합니다.</p><button class="primary-button" id="btnWayonLive"><i data-lucide="aperture"></i>360° Live</button></div>
+        </section>
+        <section class="media-stats">
+          <div><span>360° 저장</span><strong id="media-live-count">0</strong><small id="media-live-size">0 MB</small></div>
+          <div><span>주차 이미지</span><strong id="media-snapshot-count">0</strong><small id="media-snapshot-size">0 MB</small></div>
+          <div><span>충격 이벤트</span><strong id="media-impact-count">0</strong><small id="media-impact-max">최대 --</small></div>
+        </section>
+        <div class="section-heading"><div><span class="eyebrow">LIVE ARCHIVE</span><h2>360° 저장 기록</h2></div><span class="section-badge" id="capture-count"></span></div>
+        <div class="capture-grid" id="live-capture-grid"><div class="empty-state span-all">저장된 360° 기록이 없습니다.</div></div>
+        <div class="section-heading"><div><span class="eyebrow">PARKING CAMERA</span><h2>주차 카메라</h2></div><span class="section-badge" id="snapshot-count"></span></div>
+        <div class="capture-grid" id="snapshot-grid"><div class="empty-state span-all">저장된 카메라 이미지가 없습니다.</div></div>
+        <div class="section-heading"><div><span class="eyebrow">IMPACT SENSOR</span><h2>충격 이벤트</h2></div></div>
+        <div class="impact-list" id="impact-list"><div class="empty-state">최근 충격 이벤트가 없습니다.</div></div>
       </section>
 
-      <section class="page" id="page-settings">
-        <div class="page-title"><h1>연결 설정</h1><p>Hylink는 하나의 Wayon Cloud 키로 읽기 전용 데이터에 접근합니다.</p></div>
-        <div class="settings-card">
-          <h3>Wayon Cloud 키</h3>
-          <p>차량의 Offroad 키 페이지에서 복사한 키를 입력하세요. 키는 이 휴대폰의 앱 저장소에만 보관됩니다.</p>
-          <input class="key-field" id="wayon-cloud-key-input" type="password" autocomplete="off" placeholder="Wayon Cloud key">
-          <div class="button-row"><button class="secondary-button" id="btn-save-key">저장 및 연결</button><button class="danger-button" id="btn-clear-key">키 삭제</button></div>
-        </div>
-        <div class="settings-card">
-          <h3>지원 기능</h3>
-          <p>차량 위치, 실시간 텔레메트리, 주행기록, 주차/충격 이미지, 360° Live와 저장 기록만 사용합니다.</p>
-          <div class="read-only"><i data-lucide="shield-check" width="21"></i><span>Hylink에는 차량 시동·잠금·공조·창문·진단 삭제 같은 명령 기능이 없으며, GM One 계정이나 데이터에도 접근하지 않습니다.</span></div>
-        </div>
-        <div class="settings-card"><h3>Cloud 주소</h3><p id="cloud-base-url">--</p></div>
+      <section class="page" id="page-device">
+        <header class="page-head"><span class="eyebrow">WAYON DEVICE</span><h1>장치 건강</h1><p>comma 장치와 Panda에서 수집되는 시스템 텔레메트리입니다.</p></header>
+        <section class="health-hero">
+          <div class="health-score"><div class="health-ring" id="health-ring"><strong id="health-score">--</strong><span>HEALTH</span></div></div>
+          <div class="health-copy"><span class="health-status" id="health-status"><i></i>연결 대기</span><h2 id="device-name">comma device</h2><p id="device-updated">최근 수신 시각 없음</p></div>
+        </section>
+
+        <div class="section-heading"><div><span class="eyebrow">RESOURCE</span><h2>시스템 사용량</h2></div></div>
+        <section class="resource-grid">
+          <article><div class="mini-ring" id="ring-cpu"><strong id="resource-cpu">--</strong></div><span>CPU 평균</span><small id="resource-cpu-detail">8 cores</small></article>
+          <article><div class="mini-ring" id="ring-memory"><strong id="resource-memory">--</strong></div><span>메모리</span><small>사용량</small></article>
+          <article><div class="mini-ring" id="ring-storage"><strong id="resource-storage">--</strong></div><span>저장공간</span><small>여유 공간</small></article>
+          <article><div class="mini-ring" id="ring-gpu"><strong id="resource-gpu">--</strong></div><span>GPU</span><small>사용량</small></article>
+        </section>
+
+        <div class="section-heading"><div><span class="eyebrow">THERMAL</span><h2>열 관리</h2></div><span class="section-badge" id="thermal-badge">--</span></div>
+        <section class="detail-card">
+          <div class="temperature-hero"><div><span>최고 온도</span><strong id="temp-max">--</strong></div><div class="fan-disc"><i data-lucide="fan"></i><strong id="temp-fan">--</strong><span>FAN</span></div></div>
+          <div class="bar-list" id="temperature-list"></div>
+        </section>
+
+        <div class="section-heading"><div><span class="eyebrow">ELECTRICAL</span><h2>전력 흐름</h2></div></div>
+        <section class="data-grid" id="electrical-grid"></section>
+
+        <div class="section-heading"><div><span class="eyebrow">CONNECTIVITY</span><h2>연결 상태</h2></div></div>
+        <section class="detail-list" id="connectivity-list"></section>
+
+        <div class="section-heading"><div><span class="eyebrow">PANDA INTERFACE</span><h2>안전 인터페이스</h2></div><span class="section-badge" id="panda-badge">--</span></div>
+        <section class="detail-list" id="panda-list"></section>
+        <p class="read-only-note"><i data-lucide="shield-check"></i>이 화면은 Panda와 openpilot의 상태만 표시하며 차량 명령을 보내지 않습니다.</p>
       </section>
     </main>
   </div>
 
   <nav class="bottom-nav">
-    <button class="nav-button active" data-page="home"><i data-lucide="home" width="20"></i><span>홈</span></button>
-    <button class="nav-button" data-page="trips"><i data-lucide="route" width="20"></i><span>주행</span></button>
-    <button class="nav-button" data-page="camera"><i data-lucide="aperture" width="20"></i><span>360°</span></button>
-    <button class="nav-button" data-page="settings"><i data-lucide="settings-2" width="20"></i><span>설정</span></button>
+    <button class="nav-button active" data-page="overview"><i data-lucide="layout-dashboard"></i><span>홈</span></button>
+    <button class="nav-button" data-page="trips"><i data-lucide="route"></i><span>주행</span></button>
+    <button class="nav-button" data-page="media"><i data-lucide="aperture"></i><span>360°</span></button>
+    <button class="nav-button" data-page="device"><i data-lucide="activity"></i><span>장치</span></button>
   </nav>
 
   <div class="toast" id="toast"></div>
+  <div class="sheet-backdrop" id="settings-backdrop"></div>
+  <section class="settings-sheet" id="settings-sheet" aria-hidden="true">
+    <div class="sheet-handle"></div><div class="sheet-head"><div><span class="eyebrow">PRIVATE CONNECTION</span><h2>Wayon 연결</h2></div><button class="icon-button" id="btn-close-settings"><i data-lucide="x"></i></button></div>
+    <div class="settings-card"><label for="wayon-cloud-key-input">Wayon Cloud 키</label><p>차량 Offroad 키 페이지에서 복사한 키입니다. 이 휴대폰에만 저장되며 백업되지 않습니다.</p><input id="wayon-cloud-key-input" type="password" autocomplete="off" placeholder="Wayon Cloud key"><div class="button-row"><button class="secondary-button" id="btn-save-key">저장 및 연결</button><button class="danger-button" id="btn-clear-key">키 삭제</button></div></div>
+    <div class="settings-card"><span class="setting-label">Cloud 주소</span><p class="mono" id="cloud-base-url">--</p></div>
+    <div class="read-only-note"><i data-lucide="shield-check"></i><span>Hylink는 위치·텔레메트리·주행·카메라 데이터만 읽습니다. 차량 제어와 GM One 데이터는 사용하지 않습니다.</span></div>
+  </section>
 
   <section class="trip-overlay" id="trip-overlay">
-    <div class="overlay-head"><button class="overlay-close" id="btn-close-trip"><i data-lucide="arrow-left" width="20"></i></button><div><strong id="trip-detail-title">주행 상세</strong><div id="trip-detail-date" style="color:var(--muted);font:500 11px/1.4 system-ui"></div></div></div>
-    <div id="trip-map"></div>
-    <div class="trip-detail-stats"><div><span>거리</span><strong id="trip-detail-distance">--</strong></div><div><span>시간</span><strong id="trip-detail-duration">--</strong></div><div><span>최고속도</span><strong id="trip-detail-speed">--</strong></div></div>
+    <header class="overlay-head"><button class="icon-button" id="btn-close-trip"><i data-lucide="arrow-left"></i></button><div><span class="eyebrow">TRIP DETAIL</span><strong id="trip-detail-title">주행 상세</strong><small id="trip-detail-date"></small></div></header>
+    <div id="trip-map"></div><div class="trip-detail-stats"><div><span>거리</span><strong id="trip-detail-distance">--</strong></div><div><span>시간</span><strong id="trip-detail-duration">--</strong></div><div><span>평균속도</span><strong id="trip-detail-average">--</strong></div><div><span>최고속도</span><strong id="trip-detail-speed">--</strong></div><div><span>경로 포인트</span><strong id="trip-detail-points">--</strong></div><div><span>종료</span><strong id="trip-detail-end">--</strong></div></div>
   </section>
 
-  <section class="image-overlay" id="image-overlay" aria-hidden="true">
-    <button class="overlay-close" id="btn-close-image" aria-label="이미지 닫기"><i data-lucide="x" width="20"></i></button>
-    <img id="full-image" alt="Wayon Cloud 카메라 이미지">
-  </section>
+  <section class="image-overlay" id="image-overlay" aria-hidden="true"><button class="icon-button" id="btn-close-image"><i data-lucide="x"></i></button><img id="full-image" alt="Wayon 카메라 이미지"></section>
 
   <div id="wayon-live-overlay" aria-hidden="true">
     <canvas id="wayon-live-canvas"></canvas>
-    <div class="wayon-live-toolbar">
-      <button class="wayon-live-icon-button" id="btnWayonLiveClose" aria-label="닫기"><i data-lucide="x" width="21"></i></button>
-      <div class="wayon-live-status" id="wayon-live-status"><span class="wayon-live-dot"></span><span id="wayon-live-status-text">연결 중</span></div>
-      <button class="wayon-live-icon-button" id="btnWayonLiveCenter" aria-label="정면 보기"><i data-lucide="focus" width="21"></i></button>
-    </div>
-    <div id="wayon-live-compass">FRONT</div>
-    <div class="wayon-live-save-toast" id="wayon-live-save-toast" hidden>Wayon Cloud에 저장 중</div>
-    <div class="wayon-live-capture-bar">
-      <button class="wayon-live-capture-button" id="btnWayonLivePhoto" aria-label="360도 사진 저장"><i data-lucide="camera" width="20"></i></button>
-      <button class="wayon-live-capture-button" id="btnWayonLiveClip10" aria-label="최근 10초 영상 저장">10s</button>
-      <button class="wayon-live-capture-button" id="btnWayonLiveClip30" aria-label="최근 30초 영상 저장">30s</button>
-    </div>
-    <div class="wayon-live-playback-bar" id="wayon-live-playback-bar" hidden>
-      <button class="wayon-live-playback-toggle" id="btnWayonLivePlaybackToggle" aria-label="일시정지"><i data-lucide="pause" width="16"></i></button>
-      <div class="wayon-live-playback-track"><div class="wayon-live-playback-progress" id="wayon-live-playback-progress"></div></div>
-      <span class="wayon-live-playback-time" id="wayon-live-playback-time">0:00 / 0:00</span>
-    </div>
-    <aside class="wayon-live-impact-panel" id="wayon-live-impact-panel" hidden>
-      <div class="wayon-live-impact-title"><span>최근 충격 이벤트</span><span>WAYON</span></div>
-      <div class="wayon-live-impact-primary"><span class="wayon-live-impact-time" id="wayon-live-impact-time">--</span><span class="wayon-live-impact-force" id="wayon-live-impact-force">-- g</span></div>
-      <div class="wayon-live-impact-meta"><span class="wayon-live-impact-location" id="wayon-live-impact-location">위치 정보 없음</span><span class="wayon-live-impact-lock" id="wayon-live-impact-lock">상태 미상</span></div>
-    </aside>
+    <div class="wayon-live-toolbar"><button class="wayon-live-icon-button" id="btnWayonLiveClose"><i data-lucide="x"></i></button><div class="wayon-live-status" id="wayon-live-status"><span class="wayon-live-dot"></span><span id="wayon-live-status-text">연결 중</span></div><button class="wayon-live-icon-button" id="btnWayonLiveCenter"><i data-lucide="focus"></i></button></div>
+    <div id="wayon-live-compass">FRONT</div><div class="wayon-live-save-toast" id="wayon-live-save-toast" hidden>Wayon Cloud에 저장 중</div>
+    <div class="wayon-live-capture-bar"><button class="wayon-live-capture-button" id="btnWayonLivePhoto"><i data-lucide="camera"></i></button><button class="wayon-live-capture-button" id="btnWayonLiveClip10">10s</button><button class="wayon-live-capture-button" id="btnWayonLiveClip30">30s</button></div>
+    <div class="wayon-live-playback-bar" id="wayon-live-playback-bar" hidden><button class="wayon-live-playback-toggle" id="btnWayonLivePlaybackToggle"><i data-lucide="pause"></i></button><div class="wayon-live-playback-track"><div class="wayon-live-playback-progress" id="wayon-live-playback-progress"></div></div><span class="wayon-live-playback-time" id="wayon-live-playback-time">0:00 / 0:00</span></div>
+    <aside class="wayon-live-impact-panel" id="wayon-live-impact-panel" hidden><div class="wayon-live-impact-title"><span>최근 충격 이벤트</span><span>WAYON</span></div><div class="wayon-live-impact-primary"><span id="wayon-live-impact-time">--</span><span id="wayon-live-impact-force">-- g</span></div><div class="wayon-live-impact-meta"><span id="wayon-live-impact-location">위치 정보 없음</span><span id="wayon-live-impact-lock">상태 미상</span></div></aside>
     <div id="wayon-live-message"><div class="wayon-live-spinner" id="wayon-live-spinner"></div><div id="wayon-live-message-text">차량 카메라 연결 중</div><button id="btnWayonLiveRetry" hidden>다시 연결</button></div>
   </div>
 
-  <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="vendor/lucide.min.js"></script>
-  <script>
-    const hylink = {
-      token: '', baseUrl: '', data: null, homeMap: null, homeMarker: null, tripMap: null,
-      mediaUrls: new Map(), currentPage: 'home', loading: false,
-    };
-
-    const $ = (id) => document.getElementById(id);
-    const finite = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
-    const parseObject = (value) => {
-      if (value && typeof value === 'object') return value;
-      if (typeof value !== 'string') return {};
-      try { return JSON.parse(value); } catch (_) { return {}; }
-    };
-    const formatDate = (value, options = {}) => {
-      const date = new Date(value || 0);
-      if (!Number.isFinite(date.getTime())) return '시각 정보 없음';
-      return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', ...options }).format(date);
-    };
-    const formatDistance = (meters) => finite(meters) === null ? '--' : `${(Number(meters) / 1000).toFixed(Number(meters) >= 100000 ? 0 : 1)} km`;
-    const formatDuration = (seconds) => {
-      const value = Math.max(0, Math.round(finite(seconds) || 0));
-      const hours = Math.floor(value / 3600); const minutes = Math.floor(value % 3600 / 60);
-      return hours ? `${hours}시간 ${minutes}분` : `${minutes}분`;
-    };
-    const formatSpeed = (mps) => finite(mps) === null ? '--' : `${Math.round(Number(mps) * 3.6)} km/h`;
-    const coordinates = (item, prefix = '') => {
-      const lat = finite(item?.[`${prefix}lat`] ?? item?.[`${prefix}latitude`] ?? item?.latitude ?? item?.lat);
-      const lon = finite(item?.[`${prefix}lon`] ?? item?.[`${prefix}longitude`] ?? item?.longitude ?? item?.lon ?? item?.lng);
-      return lat !== null && lon !== null && Math.abs(lat) > .001 && Math.abs(lon) > .001 ? [lat, lon] : null;
-    };
-
-    function toast(message) {
-      const node = $('toast'); node.textContent = message; node.classList.add('visible');
-      clearTimeout(toast.timer); toast.timer = setTimeout(() => node.classList.remove('visible'), 2800);
-    }
-
-    function switchPage(name) {
-      hylink.currentPage = name;
-      document.querySelectorAll('.page').forEach((node) => node.classList.toggle('active', node.id === `page-${name}`));
-      document.querySelectorAll('.nav-button').forEach((node) => node.classList.toggle('active', node.dataset.page === name));
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      if (name === 'home') setTimeout(() => hylink.homeMap?.invalidateSize(), 40);
-    }
-
-    function initMap(target, center = [37.5665, 126.9780], zoom = 12) {
-      const map = L.map(target, { zoomControl: false, attributionControl: false }).setView(center, zoom);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-      return map;
-    }
-
-    function vehicleIcon() {
-      return L.divIcon({ className: '', html: '<div class="vehicle-pin"><span>H</span></div>', iconSize: [46, 46], iconAnchor: [23, 43] });
-    }
-
-    function currentVehicleState() {
-      const feed = hylink.data?.feed || {};
-      const state = feed.state || {};
-      const raw = parseObject(state.raw_json);
-      const gps = raw.gps || {};
-      const latestTrip = (feed.trips || [])[0] || {};
-      const point = coordinates(state) || coordinates(gps) || coordinates(latestTrip, 'end_');
-      return { feed, state, raw, gps, latestTrip, point };
-    }
-
-    function renderHome() {
-      const { state, raw, gps, latestTrip, point } = currentVehicleState();
-      const onroad = state.onroad === 1 || state.onroad === true;
-      const ignition = state.ignition === 1 || state.ignition === true || raw.ignition === true;
-      const updatedAt = state.updated_at;
-      const speed = finite(state.speed_mps ?? gps.speedMps);
-      const voltage = finite(state.voltage_v ?? raw.voltageV);
-      const op = raw.openpilot || {};
-      const pill = $('connection-pill'); pill.classList.toggle('online', Boolean(updatedAt));
-      $('connection-label').textContent = updatedAt ? (onroad ? 'LIVE TELEMETRY' : 'WAYON CONNECTED') : '연결 대기';
-      $('hero-title').innerHTML = onroad ? '지금 차량은<br>주행 중입니다' : (point ? '차량 위치를<br>확인했습니다' : '위치 정보가<br>도착하지 않았습니다');
-      $('hero-subtitle').textContent = updatedAt ? `${formatDate(updatedAt, { month:'long', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false })} 기준` : 'Wayon Cloud 키를 연결하면 최신 위치가 표시됩니다.';
-      $('metric-speed').textContent = speed === null ? '--' : Math.round(speed * 3.6);
-      $('metric-voltage').textContent = voltage === null ? '--' : voltage.toFixed(2);
-      $('metric-state').textContent = onroad ? '주행' : (ignition ? '시동' : '주차');
-      $('metric-state-sub').textContent = onroad ? 'onroad' : (ignition ? 'ignition' : 'offroad');
-      $('status-location').textContent = point ? `${point[0].toFixed(5)}, ${point[1].toFixed(5)}` : '위치 정보 없음';
-      $('status-gps').textContent = gps.fresh === false ? '지연' : (point ? '수신' : '--');
-      $('status-trip').textContent = latestTrip.started_at ? formatDate(latestTrip.started_at, { month:'long', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false }) : '주행기록 없음';
-      $('status-trip-distance').textContent = formatDistance(latestTrip.distance_m);
-      $('status-device').textContent = state.thermal_status ? `열 상태 ${state.thermal_status}` : 'Wayon 장치 상태';
-      $('status-op').textContent = op.active ? 'ACTIVE' : (op.enabled ? 'READY' : (state.thermal_status || '--'));
-      if (!hylink.homeMap) hylink.homeMap = initMap('home-map', point || undefined, point ? 16 : 11);
-      if (point) {
-        hylink.homeMap.setView(point, 16, { animate: true });
-        if (!hylink.homeMarker) hylink.homeMarker = L.marker(point, { icon: vehicleIcon() }).addTo(hylink.homeMap);
-        else hylink.homeMarker.setLatLng(point);
-      }
-      setTimeout(() => hylink.homeMap.invalidateSize(), 60);
-    }
-
-    function tripArray() { return hylink.data?.trips?.trips || hylink.data?.feed?.trips || []; }
-    function renderTrips() {
-      const trips = tripArray();
-      $('summary-trip-count').textContent = trips.length.toLocaleString('ko-KR');
-      const distance = trips.reduce((sum, trip) => sum + (finite(trip.distance_m) || 0), 0);
-      $('summary-distance').textContent = formatDistance(distance);
-      const list = $('trip-list');
-      if (!trips.length) { list.innerHTML = '<div class="empty">Wayon Cloud에 저장된 주행기록이 없습니다.</div>'; return; }
-      list.innerHTML = trips.map((trip) => {
-        const started = formatDate(trip.started_at, { year:'numeric', month:'long', day:'numeric' });
-        const time = formatDate(trip.started_at, { hour:'2-digit', minute:'2-digit', hour12:false });
-        const start = coordinates(trip, 'start_'); const end = coordinates(trip, 'end_');
-        const route = start && end ? `${start[0].toFixed(4)}, ${start[1].toFixed(4)} → ${end[0].toFixed(4)}, ${end[1].toFixed(4)}` : '저장된 경로를 눌러 확인하세요';
-        return `<button class="trip-card" data-trip-id="${String(trip.id || '').replace(/"/g, '&quot;')}"><div class="trip-top"><strong>${started}</strong><time>${time}</time></div><div class="trip-route">${route}</div><div class="trip-stats"><span>${formatDistance(trip.distance_m)}</span><span>${formatDuration(trip.duration_s)}</span><span>${formatSpeed(trip.max_speed_mps)}</span></div></button>`;
-      }).join('');
-      list.querySelectorAll('[data-trip-id]').forEach((node) => node.addEventListener('click', () => {
-        if (!node.dataset.tripId) return;
-        $('trip-overlay').classList.add('visible'); $('trip-detail-title').textContent = '경로 불러오는 중';
-        window.Android?.requestTripDetail?.(node.dataset.tripId);
-      }));
-    }
-
-    function routePoints(detail) {
-      const route = Array.isArray(detail?.route) ? detail.route : [];
-      return route.map((point) => coordinates(point)).filter(Boolean);
-    }
-    window.onHylinkTripDetail = (detail) => {
-      const points = routePoints(detail);
-      $('trip-detail-title').textContent = '주행 상세';
-      $('trip-detail-date').textContent = formatDate(detail.started_at, { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false });
-      $('trip-detail-distance').textContent = formatDistance(detail.distance_m);
-      $('trip-detail-duration').textContent = formatDuration(detail.duration_s);
-      let topSpeed = finite(detail.max_speed_mps);
-      if (topSpeed === null && Array.isArray(detail.route)) topSpeed = Math.max(0, ...detail.route.map((point) => finite(point.speedMps ?? point.speed_mps ?? point.speed) || 0));
-      $('trip-detail-speed').textContent = formatSpeed(topSpeed);
-      if (!hylink.tripMap) hylink.tripMap = initMap('trip-map', points[0] || undefined, 13);
-      hylink.tripMap.eachLayer((layer) => { if (!(layer instanceof L.TileLayer)) hylink.tripMap.removeLayer(layer); });
-      if (points.length > 1) {
-        const line = L.polyline(points, { color: '#7de2b8', weight: 5, opacity: .88 }).addTo(hylink.tripMap);
-        L.circleMarker(points[0], { radius: 7, color: '#b8f4d8', fillOpacity: 1 }).addTo(hylink.tripMap);
-        L.circleMarker(points.at(-1), { radius: 7, color: '#ffcb74', fillOpacity: 1 }).addTo(hylink.tripMap);
-        hylink.tripMap.fitBounds(line.getBounds(), { padding: [28,28] });
-      }
-      setTimeout(() => hylink.tripMap.invalidateSize(), 60);
-    };
-    window.onHylinkTripError = (message) => { toast(message || '주행 경로를 불러오지 못했습니다.'); $('trip-overlay').classList.remove('visible'); };
-
-    async function authenticatedImage(url, image) {
-      try {
-        const response = await fetch(url, { cache: 'no-store', headers: { Authorization: `Bearer ${hylink.token}` } });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const objectUrl = URL.createObjectURL(await response.blob()); hylink.mediaUrls.set(image, objectUrl); image.src = objectUrl;
-        return true;
-      } catch (_) { image.closest('.capture-card')?.classList.add('failed'); return false; }
-    }
-    function renderMedia() {
-      for (const url of hylink.mediaUrls.values()) URL.revokeObjectURL(url); hylink.mediaUrls.clear();
-      const captures = hylink.data?.liveCaptures?.captures || [];
-      $('capture-count').textContent = captures.length ? `${captures.length}개` : '';
-      const captureGrid = $('live-capture-grid');
-      captureGrid.innerHTML = captures.length ? captures.slice(0, 30).map((capture) => {
-        const isPhoto = capture.kind === 'photo';
-        return `<button class="capture-card" data-live-id="${capture.id}" data-kind="${capture.kind}">${isPhoto ? '<div class="capture-placeholder"><i data-lucide="image" width="25"></i></div><img hidden>' : '<div class="capture-placeholder"><i data-lucide="play" width="28"></i></div>'}<div class="capture-meta"><strong>${isPhoto ? '360° 사진' : `${Math.round(capture.duration_s || 0)}초 클립`}</strong><span>${formatDate(capture.captured_at, { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false })}</span></div></button>`;
-      }).join('') : '<div class="empty" style="grid-column:1/-1">저장된 360° 기록이 없습니다.</div>';
-      captureGrid.querySelectorAll('[data-live-id]').forEach((card) => {
-        const capture = captures.find((item) => String(item.id) === card.dataset.liveId);
-        if (!capture) return;
-        const url = `${hylink.baseUrl}/api/live-capture?id=${encodeURIComponent(capture.id)}`;
-        if (capture.kind === 'photo') { const image = card.querySelector('img'); authenticatedImage(url, image).then((loaded) => { if (loaded) { image.hidden = false; card.querySelector('.capture-placeholder')?.remove(); } }); card.addEventListener('click', () => openImage(url)); }
-        else card.addEventListener('click', () => window.startWayonSavedClip?.({ url, token: hylink.token, capture: { durationS: capture.duration_s } }));
-      });
-
-      const snapshots = hylink.data?.snapshots?.snapshots || hylink.data?.feed?.snapshots || [];
-      $('snapshot-count').textContent = snapshots.length ? `${snapshots.length}개` : '';
-      const snapshotGrid = $('snapshot-grid');
-      snapshotGrid.innerHTML = snapshots.length ? snapshots.slice(0, 30).map((snapshot) => `<button class="capture-card" data-snapshot-key="${encodeURIComponent(snapshot.kv_key || '')}"><div class="capture-placeholder"><i data-lucide="camera" width="24"></i></div><img hidden><div class="capture-meta"><strong>${snapshot.camera === 'driver' ? '실내 카메라' : '외부 카메라'}${snapshot.impact_id ? ' · 충격' : ''}</strong><span>${formatDate(snapshot.captured_at, { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false })}</span></div></button>`).join('') : '<div class="empty" style="grid-column:1/-1">저장된 카메라 이미지가 없습니다.</div>';
-      snapshotGrid.querySelectorAll('[data-snapshot-key]').forEach((card) => {
-        const url = `${hylink.baseUrl}/api/snapshot?key=${card.dataset.snapshotKey}`; const image = card.querySelector('img');
-        authenticatedImage(url, image).then((loaded) => { if (loaded) { image.hidden = false; card.querySelector('.capture-placeholder')?.remove(); } });
-        card.addEventListener('click', () => openImage(url));
-      });
-
-      const impacts = hylink.data?.impacts?.impacts || [];
-      $('impact-list').innerHTML = impacts.length ? impacts.slice(0, 30).map((impact) => {
-        const force = finite(impact.peak_dynamic_g ?? impact.peak_total_g); const point = coordinates(impact);
-        return `<div class="impact-card"><div class="status-icon"><i data-lucide="triangle-alert" width="18"></i></div><div><strong>${force === null ? '충격 이벤트' : `${force.toFixed(2)} g 감지`}</strong><p>${formatDate(impact.detected_at, { month:'long', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false })}<br>${point ? `${point[0].toFixed(5)}, ${point[1].toFixed(5)}` : '위치 정보 없음'}</p></div></div>`;
-      }).join('') : '<div class="empty">최근 충격 이벤트가 없습니다.</div>';
-      window.lucide?.createIcons();
-    }
-
-    async function openImage(url) {
-      try {
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${hylink.token}` } });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        closeImage();
-        hylink.openImageUrl = URL.createObjectURL(await response.blob());
-        $('full-image').src = hylink.openImageUrl;
-        $('image-overlay').classList.add('visible');
-        $('image-overlay').setAttribute('aria-hidden', 'false');
-      } catch (_) { toast('이미지를 열지 못했습니다.'); }
-    }
-    function closeImage() {
-      $('image-overlay').classList.remove('visible');
-      $('image-overlay').setAttribute('aria-hidden', 'true');
-      $('full-image').removeAttribute('src');
-      if (hylink.openImageUrl) URL.revokeObjectURL(hylink.openImageUrl);
-      hylink.openImageUrl = '';
-    }
-
-    window.getWayonCloudViewToken = () => hylink.token;
-    window.getWayonCloudBaseUrl = () => hylink.baseUrl;
-    window.onHylinkNativeReady = (key, baseUrl) => {
-      hylink.token = key || ''; hylink.baseUrl = (baseUrl || '').replace(/\/$/, '');
-      $('wayon-cloud-key-input').value = hylink.token; $('cloud-base-url').textContent = hylink.baseUrl || '--';
-      if (!hylink.token) switchPage('settings');
-    };
-    window.onHylinkKeySaved = (key) => { hylink.token = key || ''; toast('Wayon Cloud 키를 저장했습니다.'); };
-    window.onHylinkKeyCleared = () => { hylink.token = ''; hylink.data = null; $('wayon-cloud-key-input').value = ''; toast('저장된 키를 삭제했습니다.'); switchPage('settings'); };
-    window.onHylinkLoading = () => { hylink.loading = true; $('btn-refresh').classList.add('loading'); };
-    window.onHylinkError = (message) => { hylink.loading = false; $('btn-refresh').classList.remove('loading'); toast(message || 'Wayon Cloud 연결에 실패했습니다.'); };
-    window.onHylinkData = (data) => {
-      hylink.loading = false; hylink.data = data; $('btn-refresh').classList.remove('loading');
-      renderHome(); renderTrips(); renderMedia();
-      const errors = data.errors || []; if (errors.length) toast(`일부 데이터 ${errors.length}개를 다시 시도합니다.`);
-    };
-    window.handleHylinkBack = () => {
-      if ($('wayon-live-overlay').classList.contains('active')) { window.stopWayonLiveView?.(); return true; }
-      if ($('image-overlay').classList.contains('visible')) { closeImage(); return true; }
-      if ($('trip-overlay').classList.contains('visible')) { $('trip-overlay').classList.remove('visible'); return true; }
-      if (hylink.currentPage !== 'home') { switchPage('home'); return true; }
-      return false;
-    };
-
-    document.querySelectorAll('.nav-button').forEach((button) => button.addEventListener('click', () => switchPage(button.dataset.page)));
-    $('btn-refresh').addEventListener('click', () => window.Android?.refreshWayonData?.());
-    $('btn-save-key').addEventListener('click', () => {
-      const key = $('wayon-cloud-key-input').value.trim(); if (!key) return toast('Wayon Cloud 키를 입력해 주세요.');
-      window.Android?.saveWayonCloudKey?.(key);
-    });
-    $('btn-clear-key').addEventListener('click', () => window.Android?.clearWayonCloudKey?.());
-    $('btn-close-trip').addEventListener('click', () => $('trip-overlay').classList.remove('visible'));
-    $('btn-close-image').addEventListener('click', closeImage);
-    window.addEventListener('wayon-live-capture-saved', () => setTimeout(() => window.Android?.refreshWayonData?.(), 1200));
-    window.addEventListener('beforeunload', () => { closeImage(); for (const url of hylink.mediaUrls.values()) URL.revokeObjectURL(url); });
-    window.lucide?.createIcons();
-  </script>
-  <script src="wayon_live.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script><script src="vendor/lucide.min.js"></script><script src="hylink.js"></script><script src="wayon_live.js"></script>
 </body>
 </html>

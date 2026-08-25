@@ -227,8 +227,9 @@ class TestGMTraverseAutoHold(unittest.TestCase):
       _, frame_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS,
                                     10_100_000_000 + frame * 10_000_000)
       button_sends = [msg for msg in frame_sends if msg[0] == 0x1E1]
-      self.assertEqual(1, len(button_sends))
-      self.assertEqual(CanBus.CAMERA, button_sends[0][2])
+      self.assertEqual(2, len(button_sends))
+      self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in button_sends})
+      self.assertEqual(button_sends[0][1], button_sends[1][1])
       button_data = button_sends[0][1]
       self.assertEqual(CruiseButtons.RES_ACCEL, get_raw_value(button_data, button_msg.sigs["ACCButtons"]))
       resume_counters.append(get_raw_value(button_data, button_msg.sigs["RollingCounter"]))
@@ -257,8 +258,9 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CI.CC.frame = 23
     _, exhausted_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_330_000_000)
     release_sends = [msg for msg in exhausted_sends if msg[0] == 0x1E1]
-    self.assertEqual(1, len(release_sends))
-    self.assertEqual(CanBus.CAMERA, release_sends[0][2])
+    self.assertEqual(2, len(release_sends))
+    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in release_sends})
+    self.assertEqual(release_sends[0][1], release_sends[1][1])
     self.assertEqual(CruiseButtons.UNPRESS, get_raw_value(release_sends[0][1], button_msg.sigs["ACCButtons"]))
     self.assertEqual(2, get_raw_value(release_sends[0][1], button_msg.sigs["RollingCounter"]))
 
@@ -303,14 +305,15 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CS.buttons_counter = 1
     controller.frame = 3
     self.assertTrue(controller.update_sng_resume(CC, CS, actuators, sends))
-    self.assertEqual([1, 2], [get_raw_value(msg[1], button_msg.sigs["RollingCounter"]) for msg in sends])
+    self.assertEqual([1, 1, 2, 2], [get_raw_value(msg[1], button_msg.sigs["RollingCounter"]) for msg in sends])
 
     CS.out.cruiseState.standstill = False
     controller.frame = 4
     release = []
     self.assertTrue(controller.update_sng_resume(CC, CS, actuators, release))
-    self.assertEqual(1, len(release))
-    self.assertEqual(CanBus.CAMERA, release[0][2])
+    self.assertEqual(2, len(release))
+    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in release})
+    self.assertEqual(release[0][1], release[1][1])
     self.assertEqual(CruiseButtons.UNPRESS, get_raw_value(release[0][1], button_msg.sigs["ACCButtons"]))
     self.assertEqual(3, get_raw_value(release[0][1], button_msg.sigs["RollingCounter"]))
 
@@ -336,6 +339,9 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     first = []
     controller.frame = 0
     controller.update_sng_resume(CC, CS, actuators, first)
+    self.assertEqual(2, len(first))
+    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in first})
+    self.assertEqual(first[0][1], first[1][1])
     self.assertEqual(1, get_raw_value(first[0][1], button_msg.sigs["RollingCounter"]))
 
     CS.buttons_counter = 1
@@ -343,7 +349,8 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     cancel = []
     controller.frame = 3
     self.assertTrue(controller.update_sng_resume(CC, CS, actuators, cancel))
-    self.assertEqual(1, len(cancel))
-    self.assertEqual(CanBus.CAMERA, cancel[0][2])
+    self.assertEqual(2, len(cancel))
+    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in cancel})
+    self.assertEqual(cancel[0][1], cancel[1][1])
     self.assertEqual(CruiseButtons.CANCEL, get_raw_value(cancel[0][1], button_msg.sigs["ACCButtons"]))
     self.assertEqual(2, get_raw_value(cancel[0][1], button_msg.sigs["RollingCounter"]))

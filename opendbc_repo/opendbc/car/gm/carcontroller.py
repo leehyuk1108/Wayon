@@ -106,7 +106,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       if self.sng_last_sent_counter is None:
         return False
       counter = (self.sng_last_sent_counter + 1) & 0x3
+    # A physical Traverse RES frame is visible on the powertrain side before
+    # it reaches the isolated camera side. Mirror the same payload and rolling
+    # counter onto both sides so both receivers observe one coherent press.
     can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, counter, button))
+    can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.POWERTRAIN, counter, button))
     self.sng_last_sent_counter = counter
     return True
 

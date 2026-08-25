@@ -334,6 +334,7 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     release = self.packer.make_can_msg_safety("ASCMSteeringButton", 2, {"ACCButtons": Buttons.UNPRESS})
     set_button = self.packer.make_can_msg_safety("ASCMSteeringButton", 2, {"ACCButtons": Buttons.DECEL_SET})
     powertrain_resume = self.packer.make_can_msg_safety("ASCMSteeringButton", 0, {"ACCButtons": Buttons.RES_ACCEL})
+    powertrain_release = self.packer.make_can_msg_safety("ASCMSteeringButton", 0, {"ACCButtons": Buttons.UNPRESS})
     self._rx(self._speed_msg(0))
     self._rx(self._user_gas_msg(False))
     self._rx(self._user_brake_msg(False))
@@ -341,25 +342,30 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.safety.set_controls_allowed(True)
     self.assertTrue(self._tx(resume))
     self.assertTrue(self._tx(release))
+    self.assertTrue(self._tx(powertrain_resume))
+    self.assertTrue(self._tx(powertrain_release))
     self.assertFalse(self._tx(set_button))
-    self.assertFalse(self._tx(powertrain_resume))
 
     self.safety.set_controls_allowed(False)
     self.assertFalse(self._tx(resume))
+    self.assertFalse(self._tx(powertrain_resume))
 
     self.safety.set_controls_allowed(True)
     self._rx(self._speed_msg(1.0))
     self.assertFalse(self._tx(resume))
+    self.assertFalse(self._tx(powertrain_resume))
 
     self._rx(self._speed_msg(0))
     self.safety.set_controls_allowed(True)
     self._rx(self._user_brake_msg(True))
     self.assertFalse(self._tx(resume))
+    self.assertFalse(self._tx(powertrain_resume))
 
     self._rx(self._user_brake_msg(False))
     self.safety.set_controls_allowed(True)
     self._rx(self._user_gas_msg(True))
     self.assertFalse(self._tx(resume))
+    self.assertFalse(self._tx(powertrain_resume))
     self.safety.set_current_safety_param_sp(0)
 
   def test_sng_resume_temporarily_replaces_only_stock_button_frames(self):

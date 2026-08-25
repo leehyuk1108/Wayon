@@ -203,7 +203,8 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     }
     // A confirmed Traverse lead departure may send at most the controller's
     // bounded RES sequence while longitudinal control is still engaged.
-    bool sng_button_conditions = gm_auto_resume_sng && gm_sdgm && (msg->bus == 2U) &&
+    bool sng_button_bus = (msg->bus == 0U) || (msg->bus == 2U);
+    bool sng_button_conditions = gm_auto_resume_sng && gm_sdgm && sng_button_bus &&
                                  controls_allowed && !vehicle_moving &&
                                  !gas_pressed_prev && !brake_pressed;
     if (sng_button_conditions) {
@@ -214,7 +215,9 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
       tx = false;
     }
 
-    if (tx && sng_button_conditions && (button == GM_BTN_RESUME)) {
+    // Only the camera-side copy owns forwarding replacement state. The
+    // powertrain copy gives the vehicle-side ECU the same RES edge.
+    if (tx && sng_button_conditions && (msg->bus == 2U) && (button == GM_BTN_RESUME)) {
       gm_sng_button_filter_active = true;
       gm_sng_button_release_pending = false;
       gm_sng_button_filter_ts = microsecond_timer_get();
@@ -264,7 +267,7 @@ static safety_config gm_init(uint16_t param) {
   // SDGM routes friction-brake commands on the camera-side bus. Keeping 0x315
   // off bus 0 prevents the stock ACC controller from conditionally owning the
   // EBCM command path when it reports a lead vehicle.
-  static const CanMsg GM_SDGM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true},  // pt bus
+  static const CanMsg GM_SDGM_LONG_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true}, {0x1E1, 0, 7, .check_relay = false},  // pt bus
                                                 {0x1E1, 2, 7, .check_relay = false}, {0x315, 2, 5, .check_relay = false}, {0x184, 2, 8, .check_relay = true}};  // camera bus
 
 

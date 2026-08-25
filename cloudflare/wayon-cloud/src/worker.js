@@ -442,8 +442,13 @@ export class WayonDeviceRelay {
         }
       }
     } else if (role === "device") {
-      for (const client of this.state.getWebSockets("client")) {
-        try { client.close(1012, "device offline"); } catch {}
+      // Device relay reconnects use the same replacement flow. Ignore the
+      // delayed close callback from the old socket when its replacement is
+      // already registered, or it will tear down an otherwise healthy SSH.
+      if (this.state.getWebSockets("device").length === 0) {
+        for (const client of this.state.getWebSockets("client")) {
+          try { client.close(1012, "device offline"); } catch {}
+        }
       }
     }
   }

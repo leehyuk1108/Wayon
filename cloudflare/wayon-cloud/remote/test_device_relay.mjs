@@ -45,8 +45,14 @@ state.clients = [];
 relay.webSocketClose(new FakeSocket("client"));
 assert.deepEqual(device.messages, ["wayon-peer-close"]);
 
-// Losing the device relay invalidates every waiting client.
+// A delayed callback from a replaced device must not close the active client.
 state.clients = [replacementClient];
+state.devices = [new FakeSocket("device")];
+relay.webSocketClose(device);
+assert.deepEqual(replacementClient.closes, []);
+
+// Losing the final device relay invalidates every waiting client.
+state.devices = [];
 relay.webSocketClose(device);
 assert.deepEqual(replacementClient.closes, [[1012, "device offline"]]);
 

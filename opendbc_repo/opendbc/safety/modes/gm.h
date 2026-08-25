@@ -157,12 +157,12 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
   if (msg->addr == 0x315U) {
     int brake = ((msg->data[0] & 0xFU) << 8) + msg->data[1];
     brake = (0x1000 - brake) & 0xFFF;
-    // GM Auto Hold may retain the already-established hydraulic hold only at
-    // standstill. All moving, gas/regen, and stronger brake commands continue
-    // through the normal longitudinal safety checks.
+    // GM Auto Hold may retain hydraulic pressure only at standstill. All
+    // moving, gas/regen, and stronger brake commands continue through the
+    // normal longitudinal safety checks.
     bool auto_hold_brake = gm_auto_hold && !controls_allowed && !vehicle_moving &&
                            !gas_pressed_prev && !regen_braking_prev &&
-                           (brake > 0) && (brake <= 1);
+                           (brake > 0) && (brake <= 40);
     if (longitudinal_brake_checks(brake, *gm_long_limits) && !auto_hold_brake) {
       tx = false;
     }

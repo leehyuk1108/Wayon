@@ -292,15 +292,15 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.safety.set_controls_allowed(False)
     self._rx(self._speed_msg(0))
     self._rx(self._user_gas_msg(False))
-    self.assertTrue(self._tx(self._send_brake_msg(1)))
-    self.assertFalse(self._tx(self._send_brake_msg(2)))
+    self.assertTrue(self._tx(self._send_brake_msg(40)))
+    self.assertFalse(self._tx(self._send_brake_msg(41)))
 
     self._rx(self._speed_msg(1.0))
-    self.assertFalse(self._tx(self._send_brake_msg(1)))
+    self.assertFalse(self._tx(self._send_brake_msg(40)))
 
     self._rx(self._speed_msg(0))
     self._rx(self._user_gas_msg(True))
-    self.assertFalse(self._tx(self._send_brake_msg(1)))
+    self.assertFalse(self._tx(self._send_brake_msg(40)))
     self.safety.set_current_safety_param_sp(0)
 
   def test_sng_resume_keeps_active_gas_under_normal_longitudinal_safety(self):

@@ -22,9 +22,8 @@ TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
 GM_AUTO_HOLD_BRAKE = 1
-GM_SNG_BUTTON_INTERVAL_FRAMES = max(1, round(0.12 / DT_CTRL))
 GM_SNG_RELEASE_WINDOW_FRAMES = max(1, round(0.30 / DT_CTRL))
-GM_SNG_BUTTON_ATTEMPTS = 2
+GM_SNG_BUTTON_FRAMES = 4
 
 
 def get_friction_brake_bus(CP):
@@ -83,9 +82,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.traverse_coasting = False
     self.sng_resume_request_prev = False
     self.sng_resume_frame = -1
-    self.sng_last_button_frame = -GM_SNG_BUTTON_INTERVAL_FRAMES
-    self.sng_button_attempts = 0
-    self.sng_button_counter = 0
+    self.sng_last_stock_counter = None
+    self.sng_button_frames_remaining = 0
 
     self.lka_steering_cmd_counter = 0
     self.lka_icon_status_last = (False, False)
@@ -98,8 +96,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
   def reset_sng_resume(self):
     self.sng_resume_frame = -1
-    self.sng_last_button_frame = -GM_SNG_BUTTON_INTERVAL_FRAMES
-    self.sng_button_attempts = 0
+    self.sng_last_stock_counter = None
+    self.sng_button_frames_remaining = 0
 
   def update_sng_resume(self, CC, CS, actuators, can_sends):
     resume_request = (
@@ -116,9 +114,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
     if not self.sng_resume_request_prev:
       self.sng_resume_frame = self.frame
-      self.sng_last_button_frame = self.frame - GM_SNG_BUTTON_INTERVAL_FRAMES
-      self.sng_button_attempts = 0
-      self.sng_button_counter = int(CS.buttons_counter) & 0x3
+      self.sng_last_stock_counter = None
+      self.sng_button_frames_remaining = GM_SNG_BUTTON_FRAMES
     self.sng_resume_request_prev = True
 
     elapsed_frames = self.frame - self.sng_resume_frame
@@ -126,13 +123,18 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     if not resume_active:
       return False
 
-    if (self.sng_button_attempts < GM_SNG_BUTTON_ATTEMPTS and
-        self.frame - self.sng_last_button_frame >= GM_SNG_BUTTON_INTERVAL_FRAMES):
-      self.sng_button_counter = (self.sng_button_counter + 1) & 0x3
+    # Traverse's stock button message runs at about 33 Hz. Mirror each newly
+    # observed rolling counter so RES replaces four consecutive UNPRESS frames
+    # instead of colliding with the stock stream using a stale/duplicate count.
+    stock_counter = int(CS.buttons_counter) & 0x3
+    stock_frame_updated = self.sng_last_stock_counter is None or stock_counter != self.sng_last_stock_counter
+    if stock_frame_updated:
+      self.sng_last_stock_counter = stock_counter
+
+    if stock_frame_updated and self.sng_button_frames_remaining > 0:
       can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA,
-                                            self.sng_button_counter, CruiseButtons.RES_ACCEL))
-      self.sng_last_button_frame = self.frame
-      self.sng_button_attempts += 1
+                                            stock_counter, CruiseButtons.RES_ACCEL))
+      self.sng_button_frames_remaining -= 1
 
     return True
 
@@ -181,6 +183,10 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       can_sends.append(gmcan.create_steering_control(self.packer_pt, CanBus.POWERTRAIN, apply_torque, idx, CC.latActive))
 
     if self.CP.openpilotLongitudinalControl:
+      # Button counters update faster than the 25 Hz longitudinal messages.
+      # Track them on every control frame so no stock 0x1E1 count is skipped.
+      sng_resume_active = self.update_sng_resume(CC, CS, actuators, can_sends)
+
       # Gas/regen, brakes, and UI commands - all at 25Hz
       if self.frame % 4 == 0:
         stopping = actuators.longControlState == LongCtrlState.stopping
@@ -219,7 +225,6 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         manual_auto_hold = gm_auto_hold_command(self.CP, CC, CS)
         long_auto_hold = gm_long_auto_hold_command(self.CP, CC, CS, actuators)
-        sng_resume_active = self.update_sng_resume(CC, CS, actuators, can_sends)
 
         if sng_resume_active:
           # Match the Volt launch sequence: release hydraulic hold, keep the

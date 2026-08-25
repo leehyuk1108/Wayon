@@ -9,7 +9,7 @@ from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_frict
                                          gm_long_auto_hold_command, gm_uses_auto_hold_sng, update_traverse_coasting)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.fingerprints import FINGERPRINTS
-from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus
+from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CruiseButtons
 from opendbc.car.structs import CarControl, CarParams, CarState
 from opendbc.testing import parameterized
 
@@ -214,10 +214,21 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     control.actuators.accel = CP.startAccel
     control.cruiseControl.resume = True
     CS.longAutoHoldActive = False
-    CI.CC.frame = 8
-    _, launch_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_100_000_000)
-    launch_by_address = {msg[0]: msg for msg in launch_sends}
-    self.assertIn(0x1E1, launch_by_address)
+    button_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1]
+    resume_sends = []
+    for counter, frame in enumerate((8, 11, 14, 17)):
+      CS.buttons_counter = counter
+      CI.CC.frame = frame
+      _, frame_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS,
+                                    10_100_000_000 + counter * 30_000_000)
+      frame_by_address = {msg[0]: msg for msg in frame_sends}
+      self.assertIn(0x1E1, frame_by_address)
+      button_data = frame_by_address[0x1E1][1]
+      self.assertEqual(counter, get_raw_value(button_data, button_msg.sigs["RollingCounter"]))
+      self.assertEqual(CruiseButtons.RES_ACCEL, get_raw_value(button_data, button_msg.sigs["ACCButtons"]))
+      resume_sends.append(frame_by_address)
+
+    launch_by_address = resume_sends[0]
     launch_gas_data = launch_by_address[0x2CB][1]
     self.assertEqual(1, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenCmdActive"]))
     self.assertEqual(0, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenFullStopActive"]))
@@ -225,12 +236,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     launch_brake_data = launch_by_address[0x315][1]
     self.assertEqual(0, get_raw_value(launch_brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
 
-    CI.CC.frame = 20
-    _, second_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_200_000_000)
-    second_by_address = {msg[0]: msg for msg in second_sends}
-    self.assertIn(0x1E1, second_by_address)
-
     CI.CC.frame = 24
-    _, third_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_300_000_000)
-    third_by_address = {msg[0]: msg for msg in third_sends}
-    self.assertNotIn(0x1E1, third_by_address)
+    _, held_counter_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_300_000_000)
+    held_counter_by_address = {msg[0]: msg for msg in held_counter_sends}
+    self.assertNotIn(0x1E1, held_counter_by_address)

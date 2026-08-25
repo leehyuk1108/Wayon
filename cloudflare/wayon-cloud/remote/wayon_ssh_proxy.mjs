@@ -55,13 +55,14 @@ if (typeof session?.protocol !== "string" || !session.protocol.startsWith("wayon
   exitWithError("invalid login response");
 }
 
-const websocket = new WebSocket(endpoint, session.protocol);
-websocket.binaryType = "arraybuffer";
 process.stdin.pause();
 let stdinEnded = false;
 let remoteReady = false;
 const pendingInput = [];
 let pumpTimer = null;
+let retryTimer = null;
+let originTimer = null;
+let websocket = null;
 const connectTimeout = setTimeout(() => exitWithError("connection timed out"), connectTimeoutMs);
 
 function fail(message) {
@@ -82,7 +83,7 @@ function scheduleInputPump() {
 
 function pumpInput() {
   pumpTimer = null;
-  if (!remoteReady || websocket.readyState !== 1) return;
+  if (!remoteReady || websocket?.readyState !== 1) return;
   while (pendingInput.length && websocket.bufferedAmount < highWaterBytes) {
     sendInput(pendingInput.shift());
   }
@@ -97,29 +98,64 @@ function pumpInput() {
   }
 }
 
-websocket.addEventListener("open", () => {
-  debugLog("websocket open");
-});
-websocket.addEventListener("message", (event) => {
-  const bytes = event.data instanceof ArrayBuffer
-    ? Buffer.from(event.data)
-    : Buffer.from(event.data);
-  process.stdout.write(bytes);
-  if (!remoteReady) {
-    debugLog(`origin ready; flushing ${pendingInput.length} chunks`);
-    remoteReady = true;
-    clearTimeout(connectTimeout);
-    pumpInput();
-  } else if (pendingInput.length || websocket.bufferedAmount >= highWaterBytes) {
-    scheduleInputPump();
+function scheduleReconnect(ws, reason) {
+  if (remoteReady) {
+    fail(reason);
+    return;
   }
-});
-websocket.addEventListener("error", () => fail("remote tunnel unavailable"));
-websocket.addEventListener("close", (event) => {
-  clearTimeout(connectTimeout);
-  if (event.code !== 1000 && !process.exitCode) fail(`connection closed (${event.code})`);
-  else process.stdout.end();
-});
+  if (websocket !== ws) return;
+  debugLog(`${reason}; retrying origin`);
+  websocket = null;
+  clearTimeout(originTimer);
+  try { ws.close(1012, "retry origin"); } catch {}
+  if (retryTimer === null) {
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connectWebSocket();
+    }, 1000);
+  }
+}
+
+function connectWebSocket() {
+  const ws = new WebSocket(endpoint, session.protocol);
+  websocket = ws;
+  ws.binaryType = "arraybuffer";
+
+  ws.addEventListener("open", () => {
+    if (websocket !== ws) return;
+    debugLog("websocket open");
+    clearTimeout(originTimer);
+    originTimer = setTimeout(() => {
+      if (!remoteReady) scheduleReconnect(ws, "origin banner timeout");
+    }, 5000);
+  });
+  ws.addEventListener("message", (event) => {
+    if (websocket !== ws) return;
+    clearTimeout(originTimer);
+    const bytes = event.data instanceof ArrayBuffer
+      ? Buffer.from(event.data)
+      : Buffer.from(event.data);
+    process.stdout.write(bytes);
+    if (!remoteReady) {
+      debugLog(`origin ready; flushing ${pendingInput.length} chunks`);
+      remoteReady = true;
+      clearTimeout(connectTimeout);
+      pumpInput();
+    } else if (pendingInput.length || ws.bufferedAmount >= highWaterBytes) {
+      scheduleInputPump();
+    }
+  });
+  ws.addEventListener("error", () => scheduleReconnect(ws, "remote tunnel unavailable"));
+  ws.addEventListener("close", (event) => {
+    if (websocket !== ws) return;
+    clearTimeout(originTimer);
+    if (!remoteReady) scheduleReconnect(ws, `connection closed (${event.code})`);
+    else if (event.code !== 1000 && !process.exitCode) fail(`connection closed (${event.code})`);
+    else process.stdout.end();
+  });
+}
+
+connectWebSocket();
 
 process.stdin.on("data", (chunk) => {
   debugLog(`stdin ${chunk.length} bytes; ready=${remoteReady}`);

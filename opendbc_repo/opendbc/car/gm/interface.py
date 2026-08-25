@@ -15,6 +15,8 @@ from opendbc.sunnypilot.car.gm.values_ext import GMFlagsSP, GMSafetyFlagsSP
 
 TransmissionType = structs.CarParams.TransmissionType
 NetworkLocation = structs.CarParams.NetworkLocation
+GM_AUTO_HOLD_ARM_BRAKE = 20
+GM_AUTO_HOLD_ARM_SPEED = 1.5
 
 # sunnypilot-specific torque parameters for Bolt cars that actually use the d parameter
 NON_LINEAR_TORQUE_PARAMS_SP = {
@@ -49,13 +51,20 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
 
     if not self.CS.autoHold:
       self.CS.autoHoldActive = False
+      self.CS.autoHoldBrakeArmed = False
     elif self.CS.out.gasPressed or self.CS.out.regenBraking:
       self.CS.autoHoldActive = False
+      self.CS.autoHoldBrakeArmed = False
     elif self.CS.autoHoldActive:
       self.CS.autoHoldActivated = True
     else:
-      brake_hold_pressed = self.CS.out.brakePressed and self.CS.brake_pedal_position >= 8
-      if self.CS.out.vEgo < 0.05 and brake_hold_pressed:
+      strong_brake = self.CS.out.brakePressed and self.CS.brake_pedal_position >= GM_AUTO_HOLD_ARM_BRAKE
+      if strong_brake and (self.CS.out.standstill or self.CS.out.vEgo <= GM_AUTO_HOLD_ARM_SPEED):
+        self.CS.autoHoldBrakeArmed = True
+      elif not self.CS.out.brakePressed:
+        self.CS.autoHoldBrakeArmed = False
+
+      if self.CS.out.standstill and self.CS.out.brakePressed and self.CS.autoHoldBrakeArmed:
         self.CS.autoHoldActive = True
         self.CS.autoHoldActivated = True
 
@@ -66,6 +75,15 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
         self.CS.out.gearShifter in (structs.CarState.GearShifter.drive, *self.DRIVABLE_GEARS)
       )
       self.CS.autoHoldActivated |= self.CS.longAutoHoldActive
+    else:
+      self.CS.out.brakeHoldActive = bool(
+        self.CS.autoHoldActive and not self.CS.out.cruiseState.enabled
+      )
+
+  def update(self, can_packets):
+    ret, ret_sp = super().update(can_packets)
+    self.update_auto_hold()
+    return ret, ret_sp
 
   def apply(self, c, c_sp, now_nanos=None):
     self.update_auto_hold(c)

@@ -83,15 +83,21 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.CI.CS = SimpleNamespace(
       autoHold=True,
       autoHoldActive=False,
+      autoHoldBrakeArmed=False,
       autoHoldActivated=False,
       brake_pedal_position=8,
-      out=SimpleNamespace(vEgo=0.0, brakePressed=True, gasPressed=False, regenBraking=False),
+      out=SimpleNamespace(
+        vEgo=0.0, standstill=True, brakePressed=True, gasPressed=False, regenBraking=False,
+        cruiseState=SimpleNamespace(enabled=False),
+      ),
     )
 
   def test_enters_and_latches_after_brake_press(self):
+    self.CI.CS.brake_pedal_position = 40
     self.CI.update_auto_hold()
     self.assertTrue(self.CI.CS.autoHoldActive)
     self.assertTrue(self.CI.CS.autoHoldActivated)
+    self.assertTrue(self.CI.CS.out.brakeHoldActive)
 
     self.CI.CS.out.brakePressed = False
     self.CI.CS.brake_pedal_position = 0
@@ -100,10 +106,33 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertTrue(self.CI.CS.autoHoldActivated)
 
   def test_gas_releases_hold(self):
+    self.CI.CS.brake_pedal_position = 40
     self.CI.update_auto_hold()
     self.CI.CS.out.gasPressed = True
     self.CI.update_auto_hold()
     self.assertFalse(self.CI.CS.autoHoldActive)
+
+  def test_strong_brake_arms_before_stop_and_activates_at_standstill(self):
+    self.CI.CS.out.vEgo = 1.0
+    self.CI.CS.out.standstill = False
+    self.CI.CS.brake_pedal_position = 40
+    self.CI.update_auto_hold()
+    self.assertTrue(self.CI.CS.autoHoldBrakeArmed)
+    self.assertFalse(self.CI.CS.autoHoldActive)
+
+    self.CI.CS.brake_pedal_position = 10
+    self.CI.CS.out.vEgo = 0.0
+    self.CI.CS.out.standstill = True
+    self.CI.update_auto_hold()
+    self.assertTrue(self.CI.CS.autoHoldActive)
+    self.assertTrue(self.CI.CS.out.brakeHoldActive)
+
+  def test_gentle_brake_does_not_activate_manual_hold(self):
+    self.CI.CS.brake_pedal_position = 10
+    self.CI.update_auto_hold()
+    self.assertFalse(self.CI.CS.autoHoldBrakeArmed)
+    self.assertFalse(self.CI.CS.autoHoldActive)
+    self.assertFalse(self.CI.CS.out.brakeHoldActive)
 
   def test_controller_only_commands_hold_while_disengaged(self):
     CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)

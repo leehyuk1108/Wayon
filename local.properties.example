@@ -3,8 +3,3 @@ sdk.dir=/path/to/Android/sdk
 
 # Public Wayon Cloud endpoint. Override only when the deployment changes.
 wayon.cloudUrl=https://wayon-cloud.example.com
-
-# Private values. Never commit a populated local.properties file.
-wayon.deviceId=REPLACE_ME
-wayon.pushRegistrationToken=REPLACE_ME
-firebase.databaseUrl=https://YOUR_PROJECT-default-rtdb.firebaseio.com/

@@ -121,6 +121,14 @@
         <div class="section-heading"><div><span class="eyebrow">PANDA INTERFACE</span><h2>안전 인터페이스</h2></div><span class="section-badge" id="panda-badge">--</span></div>
         <section class="detail-list" id="panda-list"></section>
         <p class="read-only-note"><i data-lucide="shield-check"></i>이 화면은 Panda와 openpilot의 상태만 표시하며 차량 명령을 보내지 않습니다.</p>
+
+        <div class="section-heading"><div><span class="eyebrow">OFFROAD ACCESS</span><h2>원격 터미널</h2></div><span class="section-badge" id="terminal-availability">상태 확인 중</span></div>
+        <section class="terminal-launch-card">
+          <div class="terminal-launch-icon"><i data-lucide="square-terminal"></i></div>
+          <div class="terminal-launch-copy"><strong>Wayon Secure Shell</strong><span id="terminal-launch-caption">차량이 Offroad일 때만 연결됩니다.</span></div>
+          <button class="primary-button" id="btn-open-terminal"><i data-lucide="arrow-up-right"></i>열기</button>
+        </section>
+        <p class="read-only-note terminal-note"><i data-lucide="shield-alert"></i>Wayon Cloud 키로 해당 동글의 릴레이만 열며, 차량이 Onroad로 전환되면 연결이 종료됩니다.</p>
       </section>
     </main>
   </div>
@@ -138,7 +146,7 @@
     <div class="sheet-handle"></div><div class="sheet-head"><div><span class="eyebrow">PRIVATE CONNECTION</span><h2>Wayon 연결</h2></div><button class="icon-button" id="btn-close-settings"><i data-lucide="x"></i></button></div>
     <div class="settings-card"><label for="wayon-cloud-key-input">Wayon Cloud 키</label><p>차량 Offroad 키 페이지에서 복사한 키입니다. 이 휴대폰에만 저장되며 백업되지 않습니다.</p><input id="wayon-cloud-key-input" type="password" autocomplete="off" placeholder="Wayon Cloud key"><div class="button-row"><button class="secondary-button" id="btn-save-key">저장 및 연결</button><button class="danger-button" id="btn-clear-key">키 삭제</button></div></div>
     <div class="settings-card"><span class="setting-label">Cloud 주소</span><p class="mono" id="cloud-base-url">--</p></div>
-    <div class="read-only-note"><i data-lucide="shield-check"></i><span>Hylink는 위치·텔레메트리·주행·카메라 데이터만 읽습니다. 차량 제어와 GM One 데이터는 사용하지 않습니다.</span></div>
+    <div class="read-only-note"><i data-lucide="shield-check"></i><span>Hylink는 Wayon Cloud의 위치·텔레메트리·주행·충격·360° 카메라와 Offroad 원격 터미널만 사용합니다. GM One과 차량 제어 기능은 포함하지 않습니다.</span></div>
   </section>
 
   <section class="trip-overlay" id="trip-overlay">
@@ -147,6 +155,31 @@
   </section>
 
   <section class="image-overlay" id="image-overlay" aria-hidden="true"><button class="icon-button" id="btn-close-image"><i data-lucide="x"></i></button><img id="full-image" alt="Wayon 카메라 이미지"></section>
+
+  <section class="terminal-overlay" id="terminal-overlay" aria-hidden="true">
+    <header class="terminal-toolbar">
+      <button class="terminal-toolbar-button" id="btn-close-terminal" aria-label="터미널 닫기"><i data-lucide="x"></i></button>
+      <div class="terminal-title"><span>WAYON OFFROAD</span><strong>Hylink Terminal</strong></div>
+      <div class="terminal-state" id="terminal-state"><i></i><span id="terminal-state-label">연결 대기</span></div>
+    </header>
+    <div class="terminal-screen" id="terminal-screen" role="log" aria-live="polite"><span class="terminal-welcome">Wayon Cloud 원격 터미널\nOffroad 장치에 암호화된 세션으로 연결합니다.\n\n</span></div>
+    <div class="terminal-key-card" id="terminal-key-card" hidden>
+      <strong>이 휴대폰의 SSH 키 등록이 필요합니다.</strong>
+      <p>초기 1회 차량의 SSH 키 목록에 아래 공개키를 등록하세요.</p>
+      <code id="terminal-public-key"></code>
+      <button class="secondary-button" id="btn-copy-terminal-key">공개키 복사</button>
+    </div>
+    <div class="terminal-quick-actions" id="terminal-quick-actions">
+      <button data-terminal-command="uptime">uptime</button>
+      <button data-terminal-command="df -h /data">storage</button>
+      <button data-terminal-command="systemctl --no-pager --failed">health</button>
+      <button data-terminal-command="exit">exit</button>
+    </div>
+    <form class="terminal-command-form" id="terminal-command-form">
+      <span>$</span><input id="terminal-command-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="명령 입력" disabled>
+      <button type="submit" id="btn-terminal-send" disabled><i data-lucide="arrow-up"></i></button>
+    </form>
+  </section>
 
   <div id="wayon-live-overlay" aria-hidden="true">
     <canvas id="wayon-live-canvas"></canvas>
@@ -158,6 +191,6 @@
     <div id="wayon-live-message"><div class="wayon-live-spinner" id="wayon-live-spinner"></div><div id="wayon-live-message-text">차량 카메라 연결 중</div><button id="btnWayonLiveRetry" hidden>다시 연결</button></div>
   </div>
 
-  <script src="vendor/leaflet/leaflet.js"></script><script src="vendor/lucide.min.js"></script><script src="hylink.js"></script><script src="wayon_live.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script><script src="vendor/lucide.min.js"></script><script src="hylink.js"></script><script src="wayon_terminal.js"></script><script src="wayon_live.js"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -29,12 +30,14 @@ class MainActivity : AppCompatActivity() {
     private var pageReady = false
     private var activityVisible = false
     private var liveActive = false
+    @Volatile private var terminalActive = false
+    private lateinit var terminalClient: WayonTerminalClient
 
     private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
 
     private val autoRefresh = object : Runnable {
         override fun run() {
-            if (activityVisible && pageReady && !liveActive) refreshWayonData()
+            if (activityVisible && pageReady && !liveActive && !terminalActive) refreshWayonData()
             mainHandler.postDelayed(this, AUTO_REFRESH_INTERVAL_MS)
         }
     }
@@ -43,6 +46,21 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        terminalClient = WayonTerminalClient(
+            context = this,
+            onState = { state, message ->
+                terminalActive = state == "connecting" || state == "connected"
+                runJs(
+                    "window.onWayonTerminalState?.(" +
+                        "${JSONObject.quote(state)},${JSONObject.quote(message)})",
+                )
+            },
+            onOutput = { bytes ->
+                val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                runJs("window.onWayonTerminalOutput?.(${JSONObject.quote(encoded)})")
+            },
+        )
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         webView = findViewById(R.id.webview)
@@ -91,11 +109,14 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         activityVisible = false
         mainHandler.removeCallbacks(autoRefresh)
+        terminalClient.disconnect()
+        terminalActive = false
         super.onPause()
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        terminalClient.shutdown()
         networkExecutor.shutdownNow()
         webView.removeJavascriptInterface("Android")
         webView.destroy()
@@ -118,6 +139,8 @@ class MainActivity : AppCompatActivity() {
 
     @JavascriptInterface
     fun clearWayonCloudKey() {
+        terminalClient.disconnect()
+        terminalActive = false
         preferences.edit().remove(PREFERENCE_WAYON_KEY).apply()
         runJs("window.onHylinkKeyCleared?.()")
     }
@@ -201,6 +224,52 @@ class MainActivity : AppCompatActivity() {
         if (!active && activityVisible) refreshWayonData()
     }
 
+    @JavascriptInterface
+    fun connectWayonTerminal() {
+        val key = loadWayonCloudKey()
+        if (key.isBlank()) {
+            runJs("window.onWayonTerminalState?.('error','Wayon Cloud 키가 없습니다.')")
+            return
+        }
+        if (terminalActive) return
+        terminalActive = true
+        runJs("window.onWayonTerminalState?.('connecting','Wayon 릴레이 인증')")
+        networkExecutor.execute {
+            try {
+                val response = postJson(HylinkApiContract.REMOTE_SESSION_ENDPOINT, key, JSONObject())
+                val protocol = response.getString("protocol")
+                if (!terminalActive) return@execute
+                val websocketUrl = BuildConfig.WAYON_CLOUD_URL
+                    .replaceFirst("https://", "wss://")
+                    .replaceFirst("http://", "ws://") + HylinkApiContract.REMOTE_SSH_ENDPOINT
+                terminalClient.connect(websocketUrl, protocol)
+            } catch (error: Exception) {
+                terminalActive = false
+                Log.w(TAG, "Wayon terminal session failed", error)
+                runJs(
+                    "window.onWayonTerminalState?.('error'," +
+                        "${JSONObject.quote(safeMessage(error))})",
+                )
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun sendWayonTerminalInput(value: String) {
+        terminalClient.send(value.take(MAX_TERMINAL_INPUT_CHARS))
+    }
+
+    @JavascriptInterface
+    fun disconnectWayonTerminal() {
+        terminalActive = false
+        terminalClient.disconnect()
+    }
+
+    @JavascriptInterface
+    fun getWayonTerminalPublicKey(): String = runCatching {
+        terminalClient.publicKey()
+    }.getOrDefault("")
+
     private fun sendNativeConfiguration() {
         runJs(
             "window.onHylinkNativeReady?.(" +
@@ -269,6 +338,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREFERENCE_WAYON_KEY = "wayon_cloud_key"
         private const val AUTO_REFRESH_INTERVAL_MS = 30_000L
         private const val NETWORK_TIMEOUT_MS = 15_000
+        private const val MAX_TERMINAL_INPUT_CHARS = 4096
     }
 }
 
@@ -283,7 +353,9 @@ internal object HylinkApiContract {
         Endpoint("liveCaptures", "/api/live-captures?limit=100"),
     )
 
-    val LIVE_SESSION_ENDPOINT = "/api/live/session"
+    const val LIVE_SESSION_ENDPOINT = "/api/live/session"
+    const val REMOTE_SESSION_ENDPOINT = "/api/remote/session"
+    const val REMOTE_SSH_ENDPOINT = "/api/remote/ssh"
 
     fun sanitize(name: String, payload: JSONObject): JSONObject {
         if (name == "feed") {

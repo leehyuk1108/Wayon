@@ -26,6 +26,14 @@ class HylinkApiContractTest {
     }
 
     @Test
+    fun remoteTerminalUsesOnlyWayonOffroadRelay() {
+        assertTrue(HylinkApiContract.REMOTE_SESSION_ENDPOINT == "/api/remote/session")
+        assertTrue(HylinkApiContract.REMOTE_SSH_ENDPOINT == "/api/remote/ssh")
+        assertFalse(HylinkApiContract.REMOTE_SESSION_ENDPOINT.contains("gmone", ignoreCase = true))
+        assertFalse(HylinkApiContract.REMOTE_SSH_ENDPOINT.contains("control", ignoreCase = true))
+    }
+
+    @Test
     fun feedDropsBundledAccountVehicleStatus() {
         val payload = JSONObject()
             .put("state", JSONObject().put("onroad", false))

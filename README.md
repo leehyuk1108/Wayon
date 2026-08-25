@@ -1,6 +1,6 @@
 # Hylink
 
-Hylink is a read-only Android companion for a vehicle connected to Wayon Cloud.
+Hylink is an Android companion for a vehicle connected to Wayon Cloud.
 It is a separate application from My Traverse and uses a distinct package ID:
 `app.hylink.mobile`.
 
@@ -17,8 +17,9 @@ It is a separate application from My Traverse and uses a distinct package ID:
 - Device CPU/GPU/memory/storage usage and detailed thermal sensors
 - Network quality, screen state, electrical flow, and estimated offroad energy
 - Panda connection, harness, safety model, counters, fault health, and uptime
+- Offroad-only remote SSH terminal through the per-device Wayon relay
 
-Only Wayon Cloud read endpoints and the camera Live session are used. Account
+Only Wayon Cloud data, camera, and remote-session endpoints are used. Account
 vehicle status and lock state bundled by the Cloud are removed before rendering. Hylink
 contains no vehicle commands, account integration, diagnostic clearing, remote
 start, door lock, climate, window, widget command, or Wear OS command code.
@@ -27,6 +28,12 @@ start, door lock, climate, window, widget command, or Wear OS command code.
 
 The Wayon Cloud key is entered in the app and stored in its private Android
 preferences. No key is committed or embedded in the APK.
+
+The first terminal connection creates a dedicated 3072-bit RSA key inside the
+app-private, non-backed-up files directory. Its public key must be added to the
+comma device's SSH key list once. The private key never leaves the phone. Wayon
+still restricts the relay to the Dongle ID bound to the supplied Cloud key, and
+the device-side relay stops on Onroad transition.
 
 The default Cloud address is:
 

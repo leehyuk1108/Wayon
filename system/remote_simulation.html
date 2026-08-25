@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <title>Remote Simulation</title>
+  <style>
+    :root { color-scheme: dark; --bg:#090a0c; --panel:#15171b; --line:#2a2d32; --text:#f5f5f7; --muted:#8d929a; --blue:#4a9eff; --red:#ff5757; --green:#41d17d; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:none; }
+    body { margin:0; min-height:100svh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Pretendard",sans-serif; overflow:hidden; }
+    main { width:min(100%,720px); min-height:100svh; margin:auto; padding:18px 18px max(18px,env(safe-area-inset-bottom)); display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:14px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .eyebrow { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; }
+    h1 { margin:4px 0 0; font-size:25px; line-height:1; letter-spacing:0; }
+    .status { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-weight:700; }
+    .dot { width:9px; height:9px; border-radius:50%; background:#676b72; box-shadow:0 0 0 4px #676b7220; }
+    .status.online .dot { background:var(--green); box-shadow:0 0 0 4px #41d17d20; }
+    .guard { min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#111317; }
+    .guard strong { font-size:12px; }
+    .guard span { color:var(--muted); font-size:10px; text-align:right; }
+    .controls { min-height:0; display:grid; grid-template-columns:minmax(116px,.7fr) minmax(0,1.3fr); gap:12px; }
+    .steering,.pedals { position:relative; min-height:0; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--panel); user-select:none; }
+    .steering { display:grid; place-items:center; }
+    .steering::before,.steering::after { content:""; position:absolute; background:#2b2e34; }
+    .steering::before { left:18px; right:18px; top:50%; height:1px; }
+    .steering::after { top:18px; bottom:18px; left:50%; width:1px; }
+    .wheel { position:absolute; width:82px; aspect-ratio:1; border:9px solid #e6e8eb; border-radius:50%; filter:drop-shadow(0 8px 18px #0008); transform:translate(-50%,-50%); left:50%; top:50%; }
+    .wheel::before { content:""; position:absolute; left:50%; top:50%; width:10px; height:42px; border-radius:5px; background:#e6e8eb; transform:translate(-50%,-50%); }
+    .value { position:absolute; left:14px; top:13px; color:var(--muted); font:700 11px/1 ui-monospace,SFMono-Regular,monospace; }
+    .pedals::before { content:""; position:absolute; left:14px; right:14px; top:50%; height:1px; background:#34373d; }
+    .pedal-fill { position:absolute; left:0; right:0; height:0; opacity:.85; transition:height 40ms linear; }
+    .pedal-fill.accel { bottom:50%; background:linear-gradient(to top,#246fca,var(--blue)); }
+    .pedal-fill.brake { top:50%; background:linear-gradient(to bottom,#bd3838,var(--red)); }
+    .pedal-knob { position:absolute; left:12px; right:12px; top:50%; height:54px; border-radius:8px; background:#eceef1; box-shadow:0 8px 24px #0009; transform:translateY(-50%); }
+    .pedal-knob::after { content:""; position:absolute; left:50%; top:50%; width:38px; height:4px; border-radius:2px; background:#8c9097; transform:translate(-50%,-50%); }
+    .pedal-label { position:absolute; z-index:1; left:14px; font-size:11px; font-weight:800; letter-spacing:.08em; }
+    .pedal-label.accel { top:14px; }
+    .pedal-label.brake { bottom:14px; }
+    .pedal-value { position:absolute; z-index:1; right:14px; font:700 11px/1 ui-monospace,SFMono-Regular,monospace; }
+    .pedal-value.accel { top:14px; }
+    .pedal-value.brake { bottom:14px; }
+    @media (max-height:560px) { main { padding-top:10px; gap:8px; } .guard { min-height:34px; padding:7px 10px; } h1 { font-size:20px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><div class="eyebrow">WAYON LAB</div><h1>Remote Simulation</h1></div>
+      <div class="status" id="status"><i class="dot"></i><span>CONNECTING</span></div>
+    </header>
+    <div class="guard"><strong>SIMULATION ONLY</strong><span>VEHICLE OUTPUT BLOCKED</span></div>
+    <section class="controls">
+      <div class="pedals" id="pedals">
+        <div class="pedal-fill accel"></div><div class="pedal-fill brake"></div><div class="pedal-knob" id="pedalKnob"></div>
+        <span class="pedal-label accel">ACCEL</span><span class="pedal-value accel" id="accelValue">0%</span>
+        <span class="pedal-label brake">BRAKE</span><span class="pedal-value brake" id="brakeValue">0%</span>
+      </div>
+      <div class="steering" id="steering"><span class="value" id="steerValue">0%</span><div class="wheel" id="wheel"></div></div>
+    </section>
+  </main>
+  <script>
+    const state={steering:0,accelerator:0,brake:0,sequence:0,connected:false};
+    const statusEl=document.querySelector('#status');
+    const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
+    function render(){
+      document.querySelector('#wheel').style.left=`${50+state.steering*39}%`;
+      document.querySelector('#steerValue').textContent=`${Math.round(state.steering*100)}%`;
+      const accel=Math.round(state.accelerator*100),brake=Math.round(state.brake*100),axis=state.accelerator-state.brake;
+      document.querySelector('.pedal-fill.accel').style.height=`${accel*0.5}%`;
+      document.querySelector('.pedal-fill.brake').style.height=`${brake*0.5}%`;
+      document.querySelector('#pedalKnob').style.top=`${50-axis*41}%`;
+      document.querySelector('#accelValue').textContent=`${accel}%`;
+      document.querySelector('#brakeValue').textContent=`${brake}%`;
+    }
+    async function send(reset=false){
+      state.sequence++;
+      try{
+        const response=await fetch(reset?'/api/reset':'/api/input',{method:'POST',headers:{'Content-Type':'application/json'},body:reset?'{}':JSON.stringify(state)});
+        state.connected=response.ok; updateStatus();
+      }catch(_){state.connected=false;updateStatus();}
+    }
+    function updateStatus(){statusEl.classList.toggle('online',state.connected);statusEl.querySelector('span').textContent=state.connected?'READY':'OFFLINE';}
+    function bindSteering(){
+      const el=document.querySelector('#steering'); let pointer=null;
+      const update=e=>{const r=el.getBoundingClientRect();state.steering=clamp(((e.clientX-r.left)/r.width-.5)/.39,-1,1);render();send();};
+      el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});
+      el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});
+      const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.steering=0;render();send();};
+      el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.steering=0;render();send();});
+    }
+    function bindPedals(){
+      const el=document.querySelector('#pedals');let pointer=null;
+      const update=e=>{const r=el.getBoundingClientRect(),axis=clamp((.5-(e.clientY-r.top)/r.height)/.41,-1,1);state.accelerator=Math.max(0,axis);state.brake=Math.max(0,-axis);render();send();};
+      el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});
+      el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});
+      const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.accelerator=0;state.brake=0;render();send();};
+      el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.accelerator=0;state.brake=0;render();send();});
+    }
+    bindSteering();bindPedals();render();
+    setInterval(async()=>{try{const r=await fetch('/api/status',{cache:'no-store'}),j=await r.json();state.connected=r.ok&&j.available;updateStatus();}catch(_){state.connected=false;updateStatus();}},500);
+    setInterval(()=>{if(state.steering||state.accelerator||state.brake)send();},100);
+    window.addEventListener('pagehide',()=>navigator.sendBeacon('/api/reset','{}'));
+  </script>
+</body>
+</html>

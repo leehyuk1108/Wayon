@@ -15,6 +15,7 @@ from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnyl
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
 WAYON_LIVE_ACTIVE_PATH = "/tmp/wayon_live.active"
+REMOTE_SIMULATION_FLAG = "/data/RemoteSimulation"
 
 def driverview(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started or params.get_bool("IsDriverViewEnabled")
@@ -72,6 +73,9 @@ def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
 
 def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started
+
+def remote_simulation_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return not started and os.path.isfile(REMOTE_SIMULATION_FLAG)
 
 def wayon_impact_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started and os.path.isfile("/data/wayon_cloud/config.json") \
@@ -201,6 +205,8 @@ procs = [
   # Official Athena is disabled above, so reuse its persistent daemon PID slot for remote SSH.
   DaemonProcess("wayon_remote_installer", "system.wayon_remote_installer", "AthenadPid", enabled=False),
   PythonProcess("gm_button_test_web", "system.gm_button_test_server", always_run,
+                enabled=not PC, restart_if_crash=True),
+  PythonProcess("remote_simulation_web", "system.remote_simulation_server", remote_simulation_ready,
                 enabled=not PC, restart_if_crash=True),
   PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", only_offroad, enabled=not PC),
   PythonProcess("statsd", "system.statsd", always_run),

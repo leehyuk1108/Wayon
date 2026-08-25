@@ -82,12 +82,23 @@ def test_gm_hold_blocks_launch_without_confirmed_lead_departure():
 
   next_state = long_control_state_trans(CP, CP_SP, True, LongCtrlState.stopping, v_ego=0.0,
                                         should_stop=False, brake_pressed=False, cruise_standstill=False,
-                                        sng_resume=False)
+                                        sng_resume=False, vehicle_standstill=True)
   assert next_state == LongCtrlState.stopping
 
   next_state = long_control_state_trans(CP, CP_SP, True, LongCtrlState.stopping, v_ego=0.0,
                                         should_stop=False, brake_pressed=False, cruise_standstill=False,
-                                        sng_resume=True)
+                                        sng_resume=True, vehicle_standstill=True)
+  assert next_state == LongCtrlState.starting
+
+
+def test_gm_hold_does_not_latch_while_creeping_below_stopping_speed():
+  CP = car.CarParams.new_message(brand="gm", autoResumeSng=True, startingState=True,
+                                 vEgoStopping=0.5, vEgoStarting=0.25)
+  CP_SP = custom.CarParamsSP.new_message()
+
+  next_state = long_control_state_trans(CP, CP_SP, True, LongCtrlState.stopping, v_ego=0.3,
+                                        should_stop=False, brake_pressed=False, cruise_standstill=False,
+                                        sng_resume=False, vehicle_standstill=False)
   assert next_state == LongCtrlState.starting
 
 

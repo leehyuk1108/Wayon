@@ -32,15 +32,16 @@ def use_gm_auto_hold_sng(CP) -> bool:
 
 def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
                              should_stop, brake_pressed, cruise_standstill,
-                             sng_resume=False):
+                             sng_resume=False, vehicle_standstill=False):
   # Gas Interceptor
   cruise_standstill = cruise_standstill and not CP_SP.enableGasInterceptor
 
   stopping_condition = should_stop
   # Traverse keeps the ACC full-stop latch clear and uses GM hydraulic hold.
-  # Treat a physically stopped GM Hold as latched until the existing lead
-  # departure detector explicitly opens the launch window.
-  gm_hold_standstill = use_gm_auto_hold_sng(CP) and v_ego <= max(CP.vEgoStopping, 0.05)
+  # Treat only a physically stopped GM Hold as latched. Using vEgoStopping here
+  # made a creeping Traverse alternate between stopping and starting below
+  # 0.5 m/s even though the wheels were still moving.
+  gm_hold_standstill = use_gm_auto_hold_sng(CP) and vehicle_standstill
   launch_latched = cruise_standstill or gm_hold_standstill
   starting_condition = (not should_stop and
                         (not launch_latched or sng_resume) and
@@ -172,7 +173,7 @@ class LongControl:
 
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop or sng_launch_failed, CS.brakePressed,
-                                                       CS.cruiseState.standstill, sng_resume)
+                                                       CS.cruiseState.standstill, sng_resume, CS.standstill)
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.

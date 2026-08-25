@@ -172,11 +172,7 @@ class Controls(ControlsExt):
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    # GM Auto Hold launches directly through longitudinal actuation. Sending a
-    # stock RES command would put the Traverse back into its non-resumable ACC
-    # standstill path.
-    direct_gm_hold_launch = self.CP.brand == 'gm' and self.CP.autoResumeSng
-    resume_requested = (not direct_gm_hold_launch and CC.enabled and CS.cruiseState.standstill and
+    resume_requested = (CC.enabled and CS.cruiseState.standstill and
                         not self.sm['longitudinalPlan'].shouldStop)
     CC.cruiseControl.resume = resume_requested and (not self.CP.autoResumeSng or self.LoC.sng_resume_ready)
 

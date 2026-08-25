@@ -303,6 +303,51 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.assertFalse(self._tx(self._send_brake_msg(1)))
     self.safety.set_current_safety_param_sp(0)
 
+  def test_sng_resume_keeps_active_gas_under_normal_longitudinal_safety(self):
+    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_RESUME_SNG)
+    safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
+    self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
+    self.safety.init_tests()
+
+    def gas_msg(gas, active):
+      values = {"GasRegenCmd": gas, "GasRegenCmdActive": active}
+      return self.packer.make_can_msg_safety("ASCMGasRegenCmd", 0, values)
+
+    self.safety.set_controls_allowed(False)
+    self._rx(self._speed_msg(0))
+    self._rx(self._user_gas_msg(False))
+    self._rx(self._user_brake_msg(False))
+
+    self.assertFalse(self._tx(gas_msg(235, False)))
+    self.assertFalse(self._tx(gas_msg(235, True)))
+    self.safety.set_controls_allowed(True)
+    self.assertTrue(self._tx(gas_msg(235, True)))
+    self.safety.set_current_safety_param_sp(0)
+
+  def test_sng_resume_button_is_only_allowed_while_engaged_and_stopped(self):
+    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_RESUME_SNG)
+    safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
+    self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
+    self.safety.init_tests()
+
+    resume = self.packer.make_can_msg_safety("ASCMSteeringButton", 2, {"ACCButtons": Buttons.RES_ACCEL})
+    set_button = self.packer.make_can_msg_safety("ASCMSteeringButton", 2, {"ACCButtons": Buttons.DECEL_SET})
+    self._rx(self._speed_msg(0))
+    self._rx(self._user_gas_msg(False))
+    self._rx(self._user_brake_msg(False))
+
+    self.safety.set_controls_allowed(True)
+    self.assertTrue(self._tx(resume))
+    self.assertFalse(self._tx(set_button))
+
+    self.safety.set_controls_allowed(False)
+    self.assertFalse(self._tx(resume))
+
+    self.safety.set_controls_allowed(True)
+    self._rx(self._speed_msg(1.0))
+    self.assertFalse(self._tx(resume))
+    self.safety.set_current_safety_param_sp(0)
+
   def test_gm_auto_hold_does_not_reenable_resume_button_spam(self):
     self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.GM_AUTO_HOLD)
     safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM

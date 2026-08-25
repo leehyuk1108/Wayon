@@ -160,7 +160,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.CI.update_auto_hold(control)
     self.assertFalse(self.CI.CS.longAutoHoldActive)
 
-  def test_controller_holds_without_full_stop_or_resume_button(self):
+  def test_controller_holds_then_runs_volt_style_resume_sequence(self):
     fingerprint = gen_empty_fingerprint()
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
@@ -184,7 +184,16 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CS.loopback_lka_steering_cmd_ts_nanos = 0
     CS.pt_lka_steering_cmd_counter = 0
     CS.cam_lka_steering_cmd_counter = 0
-    CS.pscm_status = {}
+    CS.pscm_status = {
+      "HandsOffSWDetectionMode": 0,
+      "HandsOffSWlDetectionStatus": 0,
+      "LKATorqueDeliveredStatus": 0,
+      "LKADriverAppldTrq": 0,
+      "LKATorqueDelivered": 0,
+      "LKATotalTorqueDelivered": 0,
+      "RollingCounter": 0,
+      "PSCMStatusChecksum": 0,
+    }
     CI.CC.frame = 4
 
     _, sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_000_000_000)
@@ -203,12 +212,25 @@ class TestGMTraverseAutoHold(unittest.TestCase):
 
     control.actuators.longControlState = car.CarControl.Actuators.LongControlState.starting
     control.actuators.accel = CP.startAccel
+    control.cruiseControl.resume = True
     CS.longAutoHoldActive = False
     CI.CC.frame = 8
     _, launch_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_100_000_000)
     launch_by_address = {msg[0]: msg for msg in launch_sends}
-    self.assertNotIn(0x1E1, launch_by_address)
+    self.assertIn(0x1E1, launch_by_address)
     launch_gas_data = launch_by_address[0x2CB][1]
+    self.assertEqual(1, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenCmdActive"]))
     self.assertEqual(0, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenFullStopActive"]))
+    self.assertGreater(get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenCmd"]), 0)
     launch_brake_data = launch_by_address[0x315][1]
     self.assertEqual(0, get_raw_value(launch_brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
+
+    CI.CC.frame = 20
+    _, second_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_200_000_000)
+    second_by_address = {msg[0]: msg for msg in second_sends}
+    self.assertIn(0x1E1, second_by_address)
+
+    CI.CC.frame = 24
+    _, third_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_300_000_000)
+    third_by_address = {msg[0]: msg for msg in third_sends}
+    self.assertNotIn(0x1E1, third_by_address)

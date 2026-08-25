@@ -22,6 +22,7 @@ TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
 GM_AUTO_HOLD_BRAKE = 1
+GM_SNG_LAUNCH_GAS = 950.0
 GM_SNG_RESET_TIMEOUT_FRAMES = max(1, round(2.5 / DT_CTRL))
 GM_SNG_BUTTON_FRAMES = 5
 
@@ -66,6 +67,15 @@ def gm_long_auto_hold_command(CP, CC, CS, actuators):
 
 def gm_uses_auto_hold_sng(CP):
   return CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.autoResumeSng
+
+
+def gm_sng_launch_command(CP, CC, CS, actuators):
+  return (
+    gm_uses_auto_hold_sng(CP) and CC.enabled and CC.longActive and
+    CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.starting and
+    not CS.out.brakePressed and not CS.out.gasPressed and
+    CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
+  )
 
 
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
@@ -230,11 +240,12 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     if self.CP.openpilotLongitudinalControl:
       # Stock steering-button frames update faster than the 25 Hz longitudinal
       # messages, so track every control frame without skipping counters.
-      sng_resume_active = self.update_sng_resume(CC, CS, actuators, can_sends)
+      self.update_sng_resume(CC, CS, actuators, can_sends)
 
       # Gas/regen, brakes, and UI commands - all at 25Hz
       if self.frame % 4 == 0:
         stopping = actuators.longControlState == LongCtrlState.stopping
+        sng_launch_active = gm_sng_launch_command(self.CP, CC, CS, actuators)
         if not CC.longActive:
           self.traverse_coasting = False
           # ASCM sends max regen when not enabled
@@ -271,22 +282,19 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         manual_auto_hold = gm_auto_hold_command(self.CP, CC, CS)
         long_auto_hold = gm_long_auto_hold_command(self.CP, CC, CS, actuators)
 
-        if sng_resume_active:
-          # Preserve hydraulic hold and inactive gas until the ECU acknowledges
-          # RES by clearing CruiseState.standstill. Only then may normal launch
-          # acceleration proceed.
-          self.apply_brake = GM_AUTO_HOLD_BRAKE
+        if sng_launch_active:
+          # SDGM Traverse does not clear its reported ACC standstill latch from
+          # a synthetic RES press. Match the working Volt launch path instead:
+          # release hydraulic hold and send a bounded gas pulse while the
+          # confirmed lead-departure window remains open.
+          self.apply_brake = 0
           at_full_stop = False
-          self.apply_gas = self.params.INACTIVE_REGEN
+          self.apply_gas = max(self.apply_gas, GM_SNG_LAUNCH_GAS)
 
         # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
         can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, self.apply_gas,
                                                         idx, CC.enabled, at_full_stop))
-        if sng_resume_active:
-          can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, GM_AUTO_HOLD_BRAKE,
-                                                               idx, CC.enabled, True, False, self.CP))
-          CS.autoHoldActivated = True
-        elif manual_auto_hold or long_auto_hold:
+        if manual_auto_hold or (long_auto_hold and not sng_launch_active):
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, GM_AUTO_HOLD_BRAKE,
                                                                idx, CC.enabled and long_auto_hold, True, False, self.CP))
           CS.autoHoldActivated = True

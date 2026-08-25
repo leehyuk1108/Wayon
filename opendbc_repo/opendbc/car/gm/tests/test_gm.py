@@ -6,7 +6,8 @@ from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, gm_auto_hold_command,
-                                         gm_long_auto_hold_command, gm_uses_auto_hold_sng, update_traverse_coasting)
+                                         gm_long_auto_hold_command, gm_sng_launch_command, gm_uses_auto_hold_sng,
+                                         GM_SNG_LAUNCH_GAS, update_traverse_coasting)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CruiseButtons
@@ -202,7 +203,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
 
     gas_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x2CB]
     gas_signal = gas_msg.sigs["GasRegenCmd"]
-    inactive_gas_raw = round((CI.CC.params.INACTIVE_REGEN - gas_signal.offset) / gas_signal.factor)
+    launch_gas_raw = round((GM_SNG_LAUNCH_GAS - gas_signal.offset) / gas_signal.factor)
     zero_gas_raw = round(-gas_signal.offset / gas_signal.factor)
     gas_data = by_address[0x2CB][1]
     self.assertEqual(1, get_raw_value(gas_data, gas_msg.sigs["GasRegenCmdActive"]))
@@ -237,13 +238,12 @@ class TestGMTraverseAutoHold(unittest.TestCase):
 
       if frame % 4 == 0:
         frame_by_address = {msg[0]: msg for msg in frame_sends}
-        waiting_gas_data = frame_by_address[0x2CB][1]
-        self.assertEqual(1, get_raw_value(waiting_gas_data, gas_msg.sigs["GasRegenCmdActive"]))
-        self.assertEqual(0, get_raw_value(waiting_gas_data, gas_msg.sigs["GasRegenFullStopActive"]))
-        self.assertEqual(inactive_gas_raw, get_raw_value(waiting_gas_data, gas_signal))
-        waiting_brake_data = frame_by_address[0x315][1]
-        self.assertEqual(0xA, get_raw_value(waiting_brake_data, brake_msg.sigs["FrictionBrakeMode"]))
-        self.assertEqual(0xFFF, get_raw_value(waiting_brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
+        launch_gas_data = frame_by_address[0x2CB][1]
+        self.assertEqual(1, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenCmdActive"]))
+        self.assertEqual(0, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenFullStopActive"]))
+        self.assertEqual(launch_gas_raw, get_raw_value(launch_gas_data, gas_signal))
+        launch_brake_data = frame_by_address[0x315][1]
+        self.assertEqual(0, get_raw_value(launch_brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
 
     self.assertEqual([1, 2, 3, 0, 1], resume_counters)
     self.assertEqual([
@@ -279,6 +279,34 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertGreater(get_raw_value(resumed_gas_data, gas_signal), zero_gas_raw)
     resumed_brake_data = resumed_by_address[0x315][1]
     self.assertEqual(0, get_raw_value(resumed_brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
+
+  def test_sng_launch_pulse_requires_active_starting_without_driver_input(self):
+    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE, autoResumeSng=True)
+    CC = SimpleNamespace(
+      enabled=True, longActive=True,
+      cruiseControl=SimpleNamespace(resume=True),
+    )
+    CS = SimpleNamespace(
+      out=SimpleNamespace(
+        brakePressed=False, gasPressed=False,
+        gearShifter=GearShifter.drive,
+      ),
+    )
+    actuators = SimpleNamespace(longControlState=LongCtrlState.starting)
+
+    self.assertTrue(gm_sng_launch_command(CP, CC, CS, actuators))
+
+    CS.out.brakePressed = True
+    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
+    CS.out.brakePressed = False
+    CS.out.gasPressed = True
+    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
+    CS.out.gasPressed = False
+    CC.cruiseControl.resume = False
+    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
+    CC.cruiseControl.resume = True
+    actuators.longControlState = LongCtrlState.pid
+    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
 
   def test_controller_releases_counter_stream_on_early_ack(self):
     fingerprint = gen_empty_fingerprint()

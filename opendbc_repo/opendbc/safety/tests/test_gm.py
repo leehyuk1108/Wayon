@@ -322,6 +322,8 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.assertFalse(self._tx(gas_msg(235, True)))
     self.safety.set_controls_allowed(True)
     self.assertTrue(self._tx(gas_msg(235, True)))
+    self.assertTrue(self._tx(gas_msg(950, True)))
+    self.assertFalse(self._tx(gas_msg(self.MAX_GAS + 1, True)))
     self.safety.set_current_safety_param_sp(0)
 
   def test_sng_resume_button_is_only_allowed_while_engaged_and_stopped(self):

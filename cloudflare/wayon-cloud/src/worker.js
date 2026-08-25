@@ -406,6 +406,12 @@ export class WayonDeviceRelay {
       } else {
         device.send("wayon-peer-open");
       }
+    } else {
+      // A device relay can reconnect while an SSH client is still waiting for
+      // its local socket. Re-open the peer instead of leaving that client with
+      // an idle WebSocket until its SSH banner timeout expires.
+      const client = this.state.getWebSockets("client")[0];
+      if (client) server.send("wayon-peer-open");
     }
 
     const protocol = request.headers.get("x-wayon-relay-protocol") || "";
@@ -427,8 +433,13 @@ export class WayonDeviceRelay {
   webSocketClose(socket) {
     const role = socket.deserializeAttachment()?.role;
     if (role === "client") {
-      for (const device of this.state.getWebSockets("device")) {
-        try { device.send("wayon-peer-close"); } catch {}
+      // fetch() replaces an older client before accepting the new one. Its
+      // delayed close callback must not tear down the local SSH socket that
+      // was just opened for the replacement client.
+      if (this.state.getWebSockets("client").length === 0) {
+        for (const device of this.state.getWebSockets("device")) {
+          try { device.send("wayon-peer-close"); } catch {}
+        }
       }
     } else if (role === "device") {
       for (const client of this.state.getWebSockets("client")) {

@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-import json
 import socket
 import subprocess
 import threading
 import time
-from pathlib import Path
 
-from websocket import ABNF, WebSocketException, create_connection
+from websocket import ABNF, WebSocketException, WebSocketTimeoutException, create_connection
 
 from openpilot.system.wayon_identity import DEFAULT_CONFIG_PATH, ensure_wayon_identity
 
 
 USER_AGENT = "wayon-device-relay/1.0"
 RELAY_TARGETS = {"ssh": ("127.0.0.1", 22), "live": ("127.0.0.1", 8765)}
+HEARTBEAT_INTERVAL_SECONDS = 20
+MAX_MISSED_HEARTBEATS = 3
+RECONNECT_DELAY_SECONDS = 3
 
 
 class RelayChannel:
@@ -48,7 +49,7 @@ class RelayChannel:
         while True:
           try:
             data = local.recv(64 * 1024)
-          except socket.timeout:
+          except TimeoutError:
             continue
           if not data:
             break
@@ -59,6 +60,37 @@ class RelayChannel:
         self.close_local()
 
     threading.Thread(target=forward, name=f"wayon-{self.kind}-local", daemon=True).start()
+
+  def relay_connected(self, websocket) -> None:
+    missed_heartbeats = 0
+    websocket.settimeout(HEARTBEAT_INTERVAL_SECONDS)
+
+    while True:
+      try:
+        opcode, data = websocket.recv_data(control_frame=True)
+      except WebSocketTimeoutException:
+        missed_heartbeats += 1
+        if missed_heartbeats >= MAX_MISSED_HEARTBEATS:
+          raise
+        # An idle relay is healthy. Ping it instead of tearing it down on every
+        # receive timeout; the next pong resets the missed-heartbeat counter.
+        websocket.ping(f"wayon-{self.kind}".encode())
+        continue
+
+      missed_heartbeats = 0
+      if opcode == ABNF.OPCODE_TEXT:
+        command = data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
+        if command == "wayon-peer-open":
+          self.open_local(websocket)
+        elif command == "wayon-peer-close":
+          self.close_local()
+      elif opcode == ABNF.OPCODE_BINARY:
+        with self.local_lock:
+          local = self.local
+        if local is not None:
+          local.sendall(data)
+      elif opcode == ABNF.OPCODE_CLOSE:
+        return
 
   def run(self) -> None:
     websocket_url = self.endpoint.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
@@ -72,22 +104,7 @@ class RelayChannel:
           timeout=30,
           enable_multithread=True,
         )
-        websocket.settimeout(45)
-        while True:
-          opcode, data = websocket.recv_data(control_frame=True)
-          if opcode == ABNF.OPCODE_TEXT:
-            command = data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
-            if command == "wayon-peer-open":
-              self.open_local(websocket)
-            elif command == "wayon-peer-close":
-              self.close_local()
-          elif opcode == ABNF.OPCODE_BINARY:
-            with self.local_lock:
-              local = self.local
-            if local is not None:
-              local.sendall(data)
-          elif opcode == ABNF.OPCODE_CLOSE:
-            break
+        self.relay_connected(websocket)
       except (OSError, WebSocketException) as exc:
         print(f"Wayon relay {self.kind}: reconnecting after {type(exc).__name__}", flush=True)
       finally:
@@ -96,7 +113,7 @@ class RelayChannel:
           websocket.close()
         except Exception:
           pass
-      time.sleep(3)
+      time.sleep(RECONNECT_DELAY_SECONDS)
 
 
 def main() -> None:

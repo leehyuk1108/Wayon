@@ -22,6 +22,8 @@ TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
 GM_AUTO_HOLD_BRAKE = 40
+GM_STOPPING_BRAKE_TAPER_SPEED = 0.6
+GM_STOPPING_BRAKE_TAPER_MAX = 80
 GM_SNG_CREEP_RESUME_MIN_SPEED = 1.45  # m/s; physical RES succeeded at 1.59 m/s in the Traverse route
 GM_SNG_CREEP_RESUME_MAX_SPEED = 1.90
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(12.0 / DT_CTRL)
@@ -45,6 +47,15 @@ def update_traverse_coasting(CP, coasting, long_active, stopping, v_ego, accel):
     return False
   accel_range = TRAVERSE_COAST_STAY_ACCEL if coasting else TRAVERSE_COAST_ENTER_ACCEL
   return accel_range[0] <= accel <= accel_range[1]
+
+
+def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
+  if CP.carFingerprint != CAR.CHEVROLET_TRAVERSE or not stopping or v_ego >= GM_STOPPING_BRAKE_TAPER_SPEED:
+    return apply_brake
+  brake_limit = round(np.interp(max(v_ego, 0.0),
+                                [0.0, GM_STOPPING_BRAKE_TAPER_SPEED],
+                                [GM_AUTO_HOLD_BRAKE, GM_STOPPING_BRAKE_TAPER_MAX]))
+  return min(apply_brake, brake_limit)
 
 
 def gm_auto_hold_command(CP, CC, CS):
@@ -267,6 +278,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
           # FIXME: brakes aren't applied immediately when enabling at a stop
           if stopping:
             self.apply_gas = self.params.INACTIVE_REGEN
+            self.apply_brake = limit_traverse_stopping_brake(
+              self.CP, stopping, CS.out.vEgo, self.apply_brake)
 
         idx = (self.frame // 4) % 4
 

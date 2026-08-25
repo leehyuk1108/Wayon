@@ -6,7 +6,8 @@ from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, gm_auto_hold_command,
-                                         gm_long_auto_hold_command, gm_uses_auto_hold_sng, update_traverse_coasting)
+                                         gm_long_auto_hold_command, gm_uses_auto_hold_sng,
+                                         limit_traverse_stopping_brake, update_traverse_coasting)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CruiseButtons
@@ -75,6 +76,25 @@ class TestGMTraverseCoasting(unittest.TestCase):
   def test_other_gm_cars_are_unchanged(self):
     CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertFalse(update_traverse_coasting(CP, False, True, False, 20.0, -0.25))
+
+
+class TestGMTraverseStoppingBrake(unittest.TestCase):
+  def setUp(self):
+    self.CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
+
+  def test_tapers_to_auto_hold_pressure_near_stop(self):
+    self.assertEqual(80, limit_traverse_stopping_brake(self.CP, True, 0.6 - 1e-3, 132))
+    self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 0.3, 132))
+    self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
+
+  def test_does_not_increase_requested_brake(self):
+    self.assertEqual(30, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
+
+  def test_only_changes_traverse_final_stopping_phase(self):
+    self.assertEqual(132, limit_traverse_stopping_brake(self.CP, False, 0.2, 132))
+    self.assertEqual(132, limit_traverse_stopping_brake(self.CP, True, 0.7, 132))
+    other = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
+    self.assertEqual(132, limit_traverse_stopping_brake(other, True, 0.2, 132))
 
 
 class TestGMTraverseAutoHold(unittest.TestCase):

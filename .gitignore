@@ -9,3 +9,5 @@ keystore.properties
 *.keystore
 *.apk
 *.aab
+.playwright-cli/
+output/

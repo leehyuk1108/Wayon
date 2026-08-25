@@ -1123,7 +1123,8 @@
 
         const requestSequence = ++impactRequestSequence;
         try {
-            const response = await fetch("https://wayon-cloud.hyuklee.workers.dev/api/impacts?limit=1", {
+            const cloudBaseUrl = window.getWayonCloudBaseUrl?.() || "https://wayon-cloud.hyuklee.workers.dev";
+            const response = await fetch(`${cloudBaseUrl.replace(/\/$/, "")}/api/impacts?limit=1`, {
                 cache: "no-store",
                 headers: { Authorization: `Bearer ${token}` },
             });

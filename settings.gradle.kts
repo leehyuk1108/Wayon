@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MyTraverseNext"
+rootProject.name = "Hylink"
 include(":app")

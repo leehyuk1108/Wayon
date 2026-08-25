@@ -22,9 +22,7 @@ TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
 GM_AUTO_HOLD_BRAKE = 1
-GM_SNG_LAUNCH_GAS = 950.0
-GM_SNG_RESET_TIMEOUT_FRAMES = max(1, round(2.5 / DT_CTRL))
-GM_SNG_BUTTON_FRAMES = 5
+GM_SNG_RESUME_HOLD_SPEED = 0.5  # m/s; begin before the GM standstill latch is entered
 
 
 def get_friction_brake_bus(CP):
@@ -69,15 +67,6 @@ def gm_uses_auto_hold_sng(CP):
   return CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.autoResumeSng
 
 
-def gm_sng_launch_command(CP, CC, CS, actuators):
-  return (
-    gm_uses_auto_hold_sng(CP) and CC.enabled and CC.longActive and
-    CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.starting and
-    not CS.out.brakePressed and not CS.out.gasPressed and
-    CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
-  )
-
-
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
@@ -90,11 +79,9 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.last_button_frame = 0
     self.cancel_counter = 0
     self.traverse_coasting = False
-    self.sng_resume_request_prev = False
     self.sng_resume_frame = -1
     self.sng_last_stock_counter = None
     self.sng_last_sent_counter = None
-    self.sng_button_frames_remaining = 0
 
     self.lka_steering_cmd_counter = 0
     self.lka_icon_status_last = (False, False)
@@ -109,7 +96,6 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.sng_resume_frame = -1
     self.sng_last_stock_counter = None
     self.sng_last_sent_counter = None
-    self.sng_button_frames_remaining = 0
 
   def send_sng_button(self, can_sends, button, counter=None):
     if counter is None:
@@ -125,18 +111,22 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     return True
 
   def update_sng_resume(self, CC, CS, actuators, can_sends):
-    resume_request = (
-      gm_uses_auto_hold_sng(self.CP) and CC.enabled and CC.longActive and
-      CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.starting and
-      not CS.out.brakePressed and not CS.out.gasPressed and
-      CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
-    )
-
     resume_eligible = (
       gm_uses_auto_hold_sng(self.CP) and CC.enabled and CC.longActive and
       not CS.out.brakePressed and not CS.out.gasPressed and
       CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
     )
+
+    # GM's low-speed longitudinal gate latches as the vehicle enters standstill.
+    # A physical RES hold before zero speed keeps that gate resumable. Start the
+    # replacement stream while stopping, then retain it through the stop and
+    # starting transition until the car is moving again.
+    near_stop = CS.out.vEgo <= GM_SNG_RESUME_HOLD_SPEED
+    begin_hold = near_stop and (
+      actuators.longControlState == LongCtrlState.stopping or
+      CS.out.cruiseState.standstill or CC.cruiseControl.resume
+    )
+    retain_hold = self.sng_resume_frame >= 0 and near_stop
 
     stock_counter = int(CS.buttons_counter) & 0x3
     stock_frame_updated = self.sng_last_stock_counter is None or stock_counter != self.sng_last_stock_counter
@@ -147,49 +137,36 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         CS.cruise_buttons == CruiseButtons.CANCEL):
       self.send_sng_button(can_sends, CruiseButtons.CANCEL)
       self.reset_sng_resume()
-      self.sng_resume_request_prev = False
       return True
 
     if not resume_eligible:
+      if self.sng_resume_frame >= 0:
+        self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
-      self.sng_resume_request_prev = False
       return False
 
-    if resume_request and not self.sng_resume_request_prev and self.sng_resume_frame < 0:
+    if begin_hold and self.sng_resume_frame < 0:
       self.sng_resume_frame = self.frame
       self.sng_last_stock_counter = None
       self.sng_last_sent_counter = None
-      self.sng_button_frames_remaining = GM_SNG_BUTTON_FRAMES
-    self.sng_resume_request_prev = resume_request
 
     if self.sng_resume_frame < 0:
       return False
 
-    if not CS.out.cruiseState.standstill:
+    if not retain_hold and not begin_hold:
       self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
       return True
 
-    if self.frame - self.sng_resume_frame > GM_SNG_RESET_TIMEOUT_FRAMES:
-      self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
-      self.reset_sng_resume()
-      return True
-
-    # A physical RES press replaces about five consecutive 33 Hz button
-    # messages. Transmit the next rolling counter to the camera side as soon as
-    # each stock UNPRESS arrives; Panda suppresses the matching stock frame.
+    # A physical RES hold replaces consecutive 33 Hz button messages. Transmit
+    # the next counter as each stock UNPRESS arrives; Panda suppresses the
+    # matching stock frame until the low-speed hold ends.
     if stock_frame_updated:
       self.sng_last_stock_counter = stock_counter
 
-    if (stock_frame_updated and self.sng_button_frames_remaining > 0 and
-        CS.cruise_buttons == CruiseButtons.UNPRESS):
+    if stock_frame_updated and CS.cruise_buttons == CruiseButtons.UNPRESS:
       resume_counter = (stock_counter + 1) & 0x3 if self.sng_last_sent_counter is None else None
       self.send_sng_button(can_sends, CruiseButtons.RES_ACCEL, resume_counter)
-      self.sng_button_frames_remaining -= 1
-    elif (stock_frame_updated and self.sng_button_frames_remaining == 0 and
-          CS.cruise_buttons == CruiseButtons.UNPRESS):
-      self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
-      self.reset_sng_resume()
 
     return True
 
@@ -245,7 +222,6 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       # Gas/regen, brakes, and UI commands - all at 25Hz
       if self.frame % 4 == 0:
         stopping = actuators.longControlState == LongCtrlState.stopping
-        sng_launch_active = gm_sng_launch_command(self.CP, CC, CS, actuators)
         if not CC.longActive:
           self.traverse_coasting = False
           # ASCM sends max regen when not enabled
@@ -282,19 +258,10 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         manual_auto_hold = gm_auto_hold_command(self.CP, CC, CS)
         long_auto_hold = gm_long_auto_hold_command(self.CP, CC, CS, actuators)
 
-        if sng_launch_active:
-          # SDGM Traverse does not clear its reported ACC standstill latch from
-          # a synthetic RES press. Match the working Volt launch path instead:
-          # release hydraulic hold and send a bounded gas pulse while the
-          # confirmed lead-departure window remains open.
-          self.apply_brake = 0
-          at_full_stop = False
-          self.apply_gas = max(self.apply_gas, GM_SNG_LAUNCH_GAS)
-
         # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
         can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, self.apply_gas,
                                                         idx, CC.enabled, at_full_stop))
-        if manual_auto_hold or (long_auto_hold and not sng_launch_active):
+        if manual_auto_hold or long_auto_hold:
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, GM_AUTO_HOLD_BRAKE,
                                                                idx, CC.enabled and long_auto_hold, True, False, self.CP))
           CS.autoHoldActivated = True

@@ -354,6 +354,10 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
 
     self.safety.set_controls_allowed(True)
     self._rx(self._speed_msg(1.0))
+    self.assertTrue(self._tx(resume))
+    self.assertTrue(self._tx(powertrain_resume))
+
+    self._rx(self._speed_msg(3.0))
     self.assertFalse(self._tx(resume))
     self.assertFalse(self._tx(powertrain_resume))
 
@@ -427,7 +431,7 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self._rx(self._user_brake_msg(False))
     self.safety.set_controls_allowed(True)
     self.assertTrue(self._tx(resume))
-    self._rx(self._speed_msg(1.0))
+    self._rx(self._speed_msg(3.0))
     self.assertEqual(2, self.safety.safety_fwd_hook(0, 0x1E1))
     self.safety.set_current_safety_param_sp(0)
 

@@ -39,6 +39,7 @@ static bool gm_icbm = false;
 static bool gm_sdgm = false;
 static bool gm_auto_resume_sng = false;
 static bool gm_auto_hold = false;
+static bool gm_sng_resume_speed_ok = false;
 static bool gm_sng_button_filter_active = false;
 static bool gm_sng_button_release_pending = false;
 static uint32_t gm_sng_button_filter_ts = 0U;
@@ -53,6 +54,7 @@ static void gm_reset_sng_button_filter(void) {
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
+  const int GM_SNG_RESUME_SPEED_THRSLD = 65;  // 2.02kph, before the standstill latch
 
   if (msg->bus == 0U) {
     if (msg->addr == 0x184U) {
@@ -67,6 +69,8 @@ static void gm_rx_hook(const CANPacket_t *msg) {
       int left_rear_speed = (msg->data[0] << 8) | msg->data[1];
       int right_rear_speed = (msg->data[2] << 8) | msg->data[3];
       vehicle_moving = (left_rear_speed > GM_STANDSTILL_THRSLD) || (right_rear_speed > GM_STANDSTILL_THRSLD);
+      gm_sng_resume_speed_ok = (left_rear_speed <= GM_SNG_RESUME_SPEED_THRSLD) &&
+                               (right_rear_speed <= GM_SNG_RESUME_SPEED_THRSLD);
     }
 
     // ACC steering wheel buttons (GM_CAM is tied to the PCM)
@@ -130,7 +134,7 @@ static void gm_rx_hook(const CANPacket_t *msg) {
     }
 
     if (gm_sng_button_filter_active &&
-        (!controls_allowed || vehicle_moving || gas_pressed || brake_pressed)) {
+        (!controls_allowed || !gm_sng_resume_speed_ok || gas_pressed || brake_pressed)) {
       gm_reset_sng_button_filter();
     }
   }
@@ -201,11 +205,11 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     if (gm_icbm && controls_allowed && cruise_engaged_prev) {
       allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_SET) || (button == GM_BTN_UNPRESS);
     }
-    // A confirmed Traverse lead departure may send at most the controller's
-    // bounded RES sequence while longitudinal control is still engaged.
+    // The Traverse may replace stock button frames with a RES hold only while
+    // longitudinal control is engaged and the vehicle remains at crawl speed.
     bool sng_button_bus = (msg->bus == 0U) || (msg->bus == 2U);
     bool sng_button_conditions = gm_auto_resume_sng && gm_sdgm && sng_button_bus &&
-                                 controls_allowed && !vehicle_moving &&
+                                 controls_allowed && gm_sng_resume_speed_ok &&
                                  !gas_pressed_prev && !brake_pressed;
     if (sng_button_conditions) {
       allowed_button |= button == GM_BTN_RESUME;
@@ -319,6 +323,7 @@ static safety_config gm_init(uint16_t param) {
   gm_icbm = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_ICBM);
   gm_auto_resume_sng = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_RESUME_SNG);
   gm_auto_hold = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_HOLD);
+  gm_sng_resume_speed_ok = false;
   gm_reset_sng_button_filter();
 
   safety_config ret;

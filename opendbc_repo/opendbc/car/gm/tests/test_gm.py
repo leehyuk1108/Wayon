@@ -6,8 +6,7 @@ from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, gm_auto_hold_command,
-                                         gm_long_auto_hold_command, gm_sng_launch_command, gm_uses_auto_hold_sng,
-                                         GM_SNG_LAUNCH_GAS, update_traverse_coasting)
+                                         gm_long_auto_hold_command, gm_uses_auto_hold_sng, update_traverse_coasting)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CruiseButtons
@@ -161,7 +160,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.CI.update_auto_hold(control)
     self.assertFalse(self.CI.CS.longAutoHoldActive)
 
-  def test_controller_holds_until_powertrain_res_is_acknowledged(self):
+  def test_controller_holds_resume_from_near_stop_through_start(self):
     fingerprint = gen_empty_fingerprint()
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
@@ -175,12 +174,14 @@ class TestGMTraverseAutoHold(unittest.TestCase):
 
     CS = CI.CS
     CS.out = car.CarState.new_message()
-    CS.out.standstill = True
-    CS.out.vEgo = 0.0
+    CS.out.standstill = False
+    CS.out.vEgo = 0.45
     CS.out.gearShifter = car.CarState.GearShifter.drive
     CS.out.cruiseState.enabled = True
-    CS.out.cruiseState.standstill = True
-    CS.longAutoHoldActive = True
+    CS.out.cruiseState.standstill = False
+    CS.longAutoHoldActive = False
+    CS.cruise_buttons = CruiseButtons.UNPRESS
+    CS.buttons_counter = 0
     CS.loopback_lka_steering_cmd_updated = False
     CS.loopback_lka_steering_cmd_ts_nanos = 0
     CS.pt_lka_steering_cmd_counter = 0
@@ -199,114 +200,56 @@ class TestGMTraverseAutoHold(unittest.TestCase):
 
     _, sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_000_000_000)
     by_address = {msg[0]: msg for msg in sends}
-    self.assertNotIn(0x1E1, by_address)
+    button_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1]
+    button_sends = [msg for msg in sends if msg[0] == 0x1E1]
+    self.assertEqual(2, len(button_sends))
+    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in button_sends})
+    self.assertEqual(CruiseButtons.RES_ACCEL, get_raw_value(button_sends[0][1], button_msg.sigs["ACCButtons"]))
 
     gas_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x2CB]
     gas_signal = gas_msg.sigs["GasRegenCmd"]
-    launch_gas_raw = round((GM_SNG_LAUNCH_GAS - gas_signal.offset) / gas_signal.factor)
-    zero_gas_raw = round(-gas_signal.offset / gas_signal.factor)
     gas_data = by_address[0x2CB][1]
     self.assertEqual(1, get_raw_value(gas_data, gas_msg.sigs["GasRegenCmdActive"]))
     self.assertEqual(0, get_raw_value(gas_data, gas_msg.sigs["GasRegenFullStopActive"]))
 
-    brake_msg = DBC("gm_global_a_chassis").addr_to_msg[0x315]
-    brake_data = by_address[0x315][1]
-    self.assertEqual(0xA, get_raw_value(brake_data, brake_msg.sigs["FrictionBrakeMode"]))
-    self.assertEqual(0xFFF, get_raw_value(brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
+    # Continue the synthetic physical hold while stopped.
+    CS.out.standstill = True
+    CS.out.vEgo = 0.0
+    CS.out.cruiseState.standstill = True
+    CS.longAutoHoldActive = True
+    CS.buttons_counter = 1
+    CI.CC.frame = 7
+    _, stopped_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_030_000_000)
+    stopped_buttons = [msg for msg in stopped_sends if msg[0] == 0x1E1]
+    self.assertEqual(2, len(stopped_buttons))
+    self.assertEqual(CruiseButtons.RES_ACCEL, get_raw_value(stopped_buttons[0][1], button_msg.sigs["ACCButtons"]))
 
+    # Lead departure releases the hydraulic hold, but does not inject a fixed
+    # maximum gas pulse. The planner's normal starting acceleration is used.
     control.actuators.longControlState = car.CarControl.Actuators.LongControlState.starting
-    control.actuators.accel = CP.startAccel
+    control.actuators.accel = 0.35
     control.cruiseControl.resume = True
     CS.longAutoHoldActive = False
-    CS.cruise_buttons = CruiseButtons.UNPRESS
-    button_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1]
-    resume_counters = []
-    resume_payloads = []
-    for stock_counter, frame in zip((0, 1, 2, 3, 0), (8, 11, 14, 17, 20), strict=True):
-      CS.buttons_counter = stock_counter
-      CI.CC.frame = frame
-      _, frame_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS,
-                                    10_100_000_000 + frame * 10_000_000)
-      button_sends = [msg for msg in frame_sends if msg[0] == 0x1E1]
-      self.assertEqual(2, len(button_sends))
-      self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in button_sends})
-      self.assertEqual(button_sends[0][1], button_sends[1][1])
-      button_data = button_sends[0][1]
-      self.assertEqual(CruiseButtons.RES_ACCEL, get_raw_value(button_data, button_msg.sigs["ACCButtons"]))
-      resume_counters.append(get_raw_value(button_data, button_msg.sigs["RollingCounter"]))
-      resume_payloads.append(button_data.hex())
+    CS.buttons_counter = 2
+    CI.CC.frame = 8
+    _, starting_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_040_000_000)
+    starting_by_address = {msg[0]: msg for msg in starting_sends}
+    starting_gas = get_raw_value(starting_by_address[0x2CB][1], gas_signal) * gas_signal.factor + gas_signal.offset
+    self.assertLess(starting_gas, 950)
+    self.assertEqual(0, get_raw_value(starting_by_address[0x315][1], DBC("gm_global_a_chassis").addr_to_msg[0x315].sigs["FrictionBrakeCmd"]))
 
-      if frame % 4 == 0:
-        frame_by_address = {msg[0]: msg for msg in frame_sends}
-        launch_gas_data = frame_by_address[0x2CB][1]
-        self.assertEqual(1, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenCmdActive"]))
-        self.assertEqual(0, get_raw_value(launch_gas_data, gas_msg.sigs["GasRegenFullStopActive"]))
-        self.assertEqual(launch_gas_raw, get_raw_value(launch_gas_data, gas_signal))
-        launch_brake_data = frame_by_address[0x315][1]
-        self.assertEqual(0, get_raw_value(launch_brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
-
-    self.assertEqual([1, 2, 3, 0, 1], resume_counters)
-    self.assertEqual([
-      "000000010125de",
-      "00000001022acd",
-      "00000001032fbc",
-      "000000010020ef",
-      "000000010125de",
-    ], resume_payloads)
-
-    CS.buttons_counter = 1
-    CI.CC.frame = 23
-    _, exhausted_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_330_000_000)
-    release_sends = [msg for msg in exhausted_sends if msg[0] == 0x1E1]
-    self.assertEqual(2, len(release_sends))
-    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in release_sends})
-    self.assertEqual(release_sends[0][1], release_sends[1][1])
-    self.assertEqual(CruiseButtons.UNPRESS, get_raw_value(release_sends[0][1], button_msg.sigs["ACCButtons"]))
-    self.assertEqual(2, get_raw_value(release_sends[0][1], button_msg.sigs["RollingCounter"]))
-
-    # Once the ECU reports that its standstill latch cleared, normal active
-    # longitudinal commands resume on the next 25 Hz tick.
+    # Release the synthetic hold once the car has cleared the low-speed gate.
     CS.out.cruiseState.standstill = False
     CS.out.standstill = False
+    CS.out.vEgo = 0.6
+    CS.buttons_counter = 3
     control.cruiseControl.resume = False
     control.actuators.longControlState = car.CarControl.Actuators.LongControlState.pid
-    CI.CC.frame = 24
-    _, resumed_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_340_000_000)
-    resumed_by_address = {msg[0]: msg for msg in resumed_sends}
-    resumed_gas_data = resumed_by_address[0x2CB][1]
-    self.assertEqual(1, get_raw_value(resumed_gas_data, gas_msg.sigs["GasRegenCmdActive"]))
-    self.assertEqual(0, get_raw_value(resumed_gas_data, gas_msg.sigs["GasRegenFullStopActive"]))
-    self.assertGreater(get_raw_value(resumed_gas_data, gas_signal), zero_gas_raw)
-    resumed_brake_data = resumed_by_address[0x315][1]
-    self.assertEqual(0, get_raw_value(resumed_brake_data, brake_msg.sigs["FrictionBrakeCmd"]))
-
-  def test_sng_launch_pulse_requires_active_starting_without_driver_input(self):
-    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE, autoResumeSng=True)
-    CC = SimpleNamespace(
-      enabled=True, longActive=True,
-      cruiseControl=SimpleNamespace(resume=True),
-    )
-    CS = SimpleNamespace(
-      out=SimpleNamespace(
-        brakePressed=False, gasPressed=False,
-        gearShifter=GearShifter.drive,
-      ),
-    )
-    actuators = SimpleNamespace(longControlState=LongCtrlState.starting)
-
-    self.assertTrue(gm_sng_launch_command(CP, CC, CS, actuators))
-
-    CS.out.brakePressed = True
-    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
-    CS.out.brakePressed = False
-    CS.out.gasPressed = True
-    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
-    CS.out.gasPressed = False
-    CC.cruiseControl.resume = False
-    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
-    CC.cruiseControl.resume = True
-    actuators.longControlState = LongCtrlState.pid
-    self.assertFalse(gm_sng_launch_command(CP, CC, CS, actuators))
+    CI.CC.frame = 11
+    _, release_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_070_000_000)
+    release_buttons = [msg for msg in release_sends if msg[0] == 0x1E1]
+    self.assertEqual(2, len(release_buttons))
+    self.assertEqual(CruiseButtons.UNPRESS, get_raw_value(release_buttons[0][1], button_msg.sigs["ACCButtons"]))
 
   def test_controller_releases_counter_stream_on_early_ack(self):
     fingerprint = gen_empty_fingerprint()
@@ -321,7 +264,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CS = SimpleNamespace(
       buttons_counter=0, cruise_buttons=CruiseButtons.UNPRESS,
       out=SimpleNamespace(
-        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive,
+        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive, vEgo=0.0,
         cruiseState=SimpleNamespace(standstill=True),
       ),
     )
@@ -336,6 +279,9 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertEqual([1, 1, 2, 2], [get_raw_value(msg[1], button_msg.sigs["RollingCounter"]) for msg in sends])
 
     CS.out.cruiseState.standstill = False
+    CS.out.vEgo = 0.6
+    CC.cruiseControl.resume = False
+    actuators.longControlState = LongCtrlState.pid
     controller.frame = 4
     release = []
     self.assertTrue(controller.update_sng_resume(CC, CS, actuators, release))
@@ -358,7 +304,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CS = SimpleNamespace(
       buttons_counter=0, cruise_buttons=CruiseButtons.UNPRESS,
       out=SimpleNamespace(
-        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive,
+        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive, vEgo=0.0,
         cruiseState=SimpleNamespace(standstill=True),
       ),
     )

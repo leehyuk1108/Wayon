@@ -38,14 +38,25 @@ def test_idle_timeout_keeps_relay_connected_until_pong():
   assert websocket.pings == [b"wayon-ssh"]
 
 
-def test_unresponsive_relay_reconnects_after_missed_heartbeats():
+def test_idle_relay_does_not_reconnect_without_an_io_failure():
   websocket = FakeWebSocket([
     WebSocketTimeoutException("idle"),
     WebSocketTimeoutException("idle"),
-    WebSocketTimeoutException("idle"),
+    (ABNF.OPCODE_CLOSE, b""),
   ])
 
-  with pytest.raises(WebSocketTimeoutException):
-    relay.RelayChannel("live", "https://wayon.test", "token").relay_connected(websocket)
+  relay.RelayChannel("live", "https://wayon.test", "token").relay_connected(websocket)
 
   assert websocket.pings == [b"wayon-live", b"wayon-live"]
+
+
+def test_failed_heartbeat_reconnects_relay():
+  websocket = FakeWebSocket([WebSocketTimeoutException("idle")])
+
+  def fail_ping(payload):
+    raise OSError("network down")
+
+  websocket.ping = fail_ping
+
+  with pytest.raises(OSError):
+    relay.RelayChannel("ssh", "https://wayon.test", "token").relay_connected(websocket)

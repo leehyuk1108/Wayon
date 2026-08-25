@@ -12,7 +12,6 @@ from openpilot.system.wayon_identity import DEFAULT_CONFIG_PATH, ensure_wayon_id
 USER_AGENT = "wayon-device-relay/1.0"
 RELAY_TARGETS = {"ssh": ("127.0.0.1", 22), "live": ("127.0.0.1", 8765)}
 HEARTBEAT_INTERVAL_SECONDS = 20
-MAX_MISSED_HEARTBEATS = 3
 RECONNECT_DELAY_SECONDS = 1
 
 
@@ -62,22 +61,18 @@ class RelayChannel:
     threading.Thread(target=forward, name=f"wayon-{self.kind}-local", daemon=True).start()
 
   def relay_connected(self, websocket) -> None:
-    missed_heartbeats = 0
     websocket.settimeout(HEARTBEAT_INTERVAL_SECONDS)
 
     while True:
       try:
         opcode, data = websocket.recv_data(control_frame=True)
       except WebSocketTimeoutException:
-        missed_heartbeats += 1
-        if missed_heartbeats >= MAX_MISSED_HEARTBEATS:
-          raise
-        # An idle relay is healthy. Ping it instead of tearing it down on every
-        # receive timeout; the next pong resets the missed-heartbeat counter.
+        # Cloudflare answers protocol pings at the edge and does not always
+        # expose the pong to this client. Keep the healthy idle socket until a
+        # ping/send actually fails instead of forcing periodic reconnects.
         websocket.ping(f"wayon-{self.kind}".encode())
         continue
 
-      missed_heartbeats = 0
       if opcode == ABNF.OPCODE_TEXT:
         command = data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
         if command == "wayon-peer-open":

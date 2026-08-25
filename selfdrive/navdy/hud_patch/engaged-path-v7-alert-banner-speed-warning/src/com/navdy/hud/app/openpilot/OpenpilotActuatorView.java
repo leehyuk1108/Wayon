@@ -68,16 +68,16 @@ public final class OpenpilotActuatorView extends View {
   protected void onDraw(Canvas canvas) {
     super.onDraw(canvas);
     float centerY = getHeight() * 0.5f;
-    float acceleratorCenterX = getWidth() * 0.25f;
-    float brakeCenterX = getWidth() * 0.75f;
-    drawIndicator(canvas, acceleratorCenterX, centerY,
-        actuator == ACTUATOR_ACCELERATOR, COLOR_ACCELERATOR);
+    float brakeCenterX = getWidth() * 0.25f;
+    float acceleratorCenterX = getWidth() * 0.75f;
     drawIndicator(canvas, brakeCenterX, centerY,
         actuator == ACTUATOR_BRAKE, COLOR_BRAKE);
-    drawIcon(canvas, acceleratorBitmap, acceleratorCenterX, centerY,
-        actuator == ACTUATOR_ACCELERATOR);
+    drawIndicator(canvas, acceleratorCenterX, centerY,
+        actuator == ACTUATOR_ACCELERATOR, COLOR_ACCELERATOR);
     drawIcon(canvas, brakeBitmap, brakeCenterX, centerY,
         actuator == ACTUATOR_BRAKE);
+    drawIcon(canvas, acceleratorBitmap, acceleratorCenterX, centerY,
+        actuator == ACTUATOR_ACCELERATOR);
   }
 
   private void drawIndicator(Canvas canvas, float centerX, float centerY,

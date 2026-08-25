@@ -1130,8 +1130,8 @@ def test_navdy_hud_draws_actual_longitudinal_actuator_with_user_assets():
   assert '"accelerator".equals(value)' in java
   assert '"brake".equals(value)' in java
   assert "setVisibility(active ? VISIBLE : GONE)" in java
-  assert "getWidth() * 0.25f" in java
-  assert "getWidth() * 0.75f" in java
+  assert "float brakeCenterX = getWidth() * 0.25f" in java
+  assert "float acceleratorCenterX = getWidth() * 0.75f" in java
   assert "fillPaint.setStyle(Paint.Style.FILL)" in java
   assert "canvas.drawCircle(centerX, centerY, INDICATOR_RADIUS_PX, fillPaint)" in java
   assert "bitmapPaint.setAlpha(selected ? 255 : 180)" in java

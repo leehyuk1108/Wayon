@@ -370,7 +370,7 @@
 
     int-to-float v0, v0
 
-    const/high16 v1, 0x3e800000    # 0.25f
+    const/high16 v1, 0x3f400000    # 0.75f
 
     mul-float v4, v0, v1
 
@@ -381,7 +381,7 @@
 
     int-to-float v0, v0
 
-    const/high16 v1, 0x3f400000    # 0.75f
+    const/high16 v1, 0x3e800000    # 0.25f
 
     mul-float v0, v0, v1
 

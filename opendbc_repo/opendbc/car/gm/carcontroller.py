@@ -22,7 +22,10 @@ TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
 GM_AUTO_HOLD_BRAKE = 1
-GM_SNG_RESUME_HOLD_SPEED = 0.5  # m/s; begin before the GM standstill latch is entered
+GM_SNG_CREEP_RESUME_MIN_SPEED = 1.45  # m/s; physical RES succeeded at 1.59 m/s in the Traverse route
+GM_SNG_CREEP_RESUME_MAX_SPEED = 1.90
+GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(12.0 / DT_CTRL)
+GM_SNG_BUTTON_FRAMES = 7  # about 0.18 seconds at the stock 33 Hz button rate
 
 
 def get_friction_brake_bus(CP):
@@ -79,9 +82,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.last_button_frame = 0
     self.cancel_counter = 0
     self.traverse_coasting = False
+    self.sng_resume_request_prev = False
     self.sng_resume_frame = -1
     self.sng_last_stock_counter = None
     self.sng_last_sent_counter = None
+    self.sng_button_frames_remaining = 0
 
     self.lka_steering_cmd_counter = 0
     self.lka_icon_status_last = (False, False)
@@ -96,6 +101,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.sng_resume_frame = -1
     self.sng_last_stock_counter = None
     self.sng_last_sent_counter = None
+    self.sng_button_frames_remaining = 0
 
   def send_sng_button(self, can_sends, button, counter=None):
     if counter is None:
@@ -111,22 +117,17 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     return True
 
   def update_sng_resume(self, CC, CS, actuators, can_sends):
+    resume_request = (
+      gm_uses_auto_hold_sng(self.CP) and CC.enabled and CC.longActive and
+      CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.starting and
+      not CS.out.brakePressed and not CS.out.gasPressed and
+      CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
+    )
     resume_eligible = (
       gm_uses_auto_hold_sng(self.CP) and CC.enabled and CC.longActive and
       not CS.out.brakePressed and not CS.out.gasPressed and
       CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
     )
-
-    # GM's low-speed longitudinal gate latches as the vehicle enters standstill.
-    # A physical RES hold before zero speed keeps that gate resumable. Start the
-    # replacement stream while stopping, then retain it through the stop and
-    # starting transition until the car is moving again.
-    near_stop = CS.out.vEgo <= GM_SNG_RESUME_HOLD_SPEED
-    begin_hold = near_stop and (
-      actuators.longControlState == LongCtrlState.stopping or
-      CS.out.cruiseState.standstill or CC.cruiseControl.resume
-    )
-    retain_hold = self.sng_resume_frame >= 0 and near_stop
 
     stock_counter = int(CS.buttons_counter) & 0x3
     stock_frame_updated = self.sng_last_stock_counter is None or stock_counter != self.sng_last_stock_counter
@@ -135,38 +136,64 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     # the next synthetic counter before aborting so driver input wins.
     if (self.sng_resume_frame >= 0 and stock_frame_updated and
         CS.cruise_buttons == CruiseButtons.CANCEL):
-      self.send_sng_button(can_sends, CruiseButtons.CANCEL)
+      was_intercepting = self.sng_last_sent_counter is not None
+      if was_intercepting:
+        self.send_sng_button(can_sends, CruiseButtons.CANCEL)
       self.reset_sng_resume()
-      return True
+      self.sng_resume_request_prev = resume_request
+      return was_intercepting
 
     if not resume_eligible:
       if self.sng_resume_frame >= 0:
         self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
+      self.sng_resume_request_prev = resume_request
       return False
 
-    if begin_hold and self.sng_resume_frame < 0:
+    # The Traverse route showed that RES at zero speed does not release the ECU
+    # launch gate. Arm on lead departure, release the hydraulic hold, then wait
+    # for natural creep to reach the speed where a physical RES press succeeded.
+    if resume_request and not self.sng_resume_request_prev and self.sng_resume_frame < 0:
       self.sng_resume_frame = self.frame
       self.sng_last_stock_counter = None
       self.sng_last_sent_counter = None
+      self.sng_button_frames_remaining = GM_SNG_BUTTON_FRAMES
+    self.sng_resume_request_prev = resume_request
 
     if self.sng_resume_frame < 0:
       return False
 
-    if not retain_hold and not begin_hold:
-      self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
+    if self.frame - self.sng_resume_frame > GM_SNG_RESUME_ARM_TIMEOUT_FRAMES:
+      if self.sng_last_sent_counter is not None:
+        self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
       return True
 
-    # A physical RES hold replaces consecutive 33 Hz button messages. Transmit
-    # the next counter as each stock UNPRESS arrives; Panda suppresses the
-    # matching stock frame until the low-speed hold ends.
+    # An early standstill acknowledgement means the launch gate is already open.
+    if not CS.out.cruiseState.standstill:
+      if self.sng_last_sent_counter is not None:
+        self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
+      self.reset_sng_resume()
+      return True
+
+    creep_speed_ready = GM_SNG_CREEP_RESUME_MIN_SPEED <= CS.out.vEgo <= GM_SNG_CREEP_RESUME_MAX_SPEED
+    if not creep_speed_ready and self.sng_button_frames_remaining == GM_SNG_BUTTON_FRAMES:
+      return True
+
+    # Match the successful physical press: seven consecutive stock-rate RES
+    # frames, mirrored to both sides, followed by one explicit release.
     if stock_frame_updated:
       self.sng_last_stock_counter = stock_counter
 
-    if stock_frame_updated and CS.cruise_buttons == CruiseButtons.UNPRESS:
+    if (stock_frame_updated and self.sng_button_frames_remaining > 0 and
+        CS.cruise_buttons == CruiseButtons.UNPRESS):
       resume_counter = (stock_counter + 1) & 0x3 if self.sng_last_sent_counter is None else None
       self.send_sng_button(can_sends, CruiseButtons.RES_ACCEL, resume_counter)
+      self.sng_button_frames_remaining -= 1
+    elif (stock_frame_updated and self.sng_button_frames_remaining == 0 and
+          CS.cruise_buttons == CruiseButtons.UNPRESS):
+      self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
+      self.reset_sng_resume()
 
     return True
 

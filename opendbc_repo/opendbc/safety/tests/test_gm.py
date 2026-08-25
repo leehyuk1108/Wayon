@@ -326,7 +326,7 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.assertFalse(self._tx(gas_msg(self.MAX_GAS + 1, True)))
     self.safety.set_current_safety_param_sp(0)
 
-  def test_sng_resume_button_is_only_allowed_while_engaged_and_stopped(self):
+  def test_sng_resume_button_is_only_allowed_while_engaged_at_low_creep_speed(self):
     self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_RESUME_SNG)
     safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
     self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
@@ -353,11 +353,12 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.assertFalse(self._tx(powertrain_resume))
 
     self.safety.set_controls_allowed(True)
-    self._rx(self._speed_msg(1.0))
+    # The successful physical Traverse press occurred at about 5.7 km/h.
+    self._rx(self._speed_msg(5.7))
     self.assertTrue(self._tx(resume))
     self.assertTrue(self._tx(powertrain_resume))
 
-    self._rx(self._speed_msg(3.0))
+    self._rx(self._speed_msg(7.1))
     self.assertFalse(self._tx(resume))
     self.assertFalse(self._tx(powertrain_resume))
 
@@ -431,7 +432,7 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self._rx(self._user_brake_msg(False))
     self.safety.set_controls_allowed(True)
     self.assertTrue(self._tx(resume))
-    self._rx(self._speed_msg(3.0))
+    self._rx(self._speed_msg(7.1))
     self.assertEqual(2, self.safety.safety_fwd_hook(0, 0x1E1))
     self.safety.set_current_safety_param_sp(0)
 

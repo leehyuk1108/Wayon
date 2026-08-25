@@ -54,7 +54,7 @@ static void gm_reset_sng_button_filter(void) {
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
-  const int GM_SNG_RESUME_SPEED_THRSLD = 65;  // 2.02kph, before the standstill latch
+  const int GM_SNG_RESUME_SPEED_THRSLD = 225;  // 7.0kph, bounded around the proven 5.7kph creep resume
 
   if (msg->bus == 0U) {
     if (msg->addr == 0x184U) {
@@ -205,8 +205,9 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     if (gm_icbm && controls_allowed && cruise_engaged_prev) {
       allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_SET) || (button == GM_BTN_UNPRESS);
     }
-    // The Traverse may replace stock button frames with a RES hold only while
-    // longitudinal control is engaged and the vehicle remains at crawl speed.
+    // The Traverse may replace stock button frames with one bounded RES pulse
+    // only while longitudinal control is engaged and the vehicle remains at
+    // low creep speed. Controller state further limits this to a lead departure.
     bool sng_button_bus = (msg->bus == 0U) || (msg->bus == 2U);
     bool sng_button_conditions = gm_auto_resume_sng && gm_sdgm && sng_button_bus &&
                                  controls_allowed && gm_sng_resume_speed_ok &&

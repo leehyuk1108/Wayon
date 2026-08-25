@@ -39,6 +39,17 @@ static bool gm_icbm = false;
 static bool gm_sdgm = false;
 static bool gm_auto_resume_sng = false;
 static bool gm_auto_hold = false;
+static bool gm_sng_button_filter_active = false;
+static bool gm_sng_button_release_pending = false;
+static uint32_t gm_sng_button_filter_ts = 0U;
+static uint8_t gm_sng_button_release_counter = 0U;
+
+static void gm_reset_sng_button_filter(void) {
+  gm_sng_button_filter_active = false;
+  gm_sng_button_release_pending = false;
+  gm_sng_button_filter_ts = 0U;
+  gm_sng_button_release_counter = 0U;
+}
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
@@ -75,6 +86,14 @@ static void gm_rx_hook(const CANPacket_t *msg) {
       }
 
       cruise_button_prev = button;
+
+      // Forwarding runs before RX processing. Thus the matching stock frame
+      // has already been blocked when this clears a completed interception.
+      uint8_t stock_counter = msg->data[4] & 0x3U;
+      bool release_matched = gm_sng_button_release_pending && (stock_counter == gm_sng_button_release_counter);
+      if (gm_sng_button_filter_active && ((button == GM_BTN_CANCEL) || release_matched)) {
+        gm_reset_sng_button_filter();
+      }
     }
 
     // Reference for brake pressed signals:
@@ -108,6 +127,11 @@ static void gm_rx_hook(const CANPacket_t *msg) {
     if (msg->addr == 0x3D1U) {
       bool cruise_engaged = GET_BIT(msg, 39U);
       pcm_cruise_check(cruise_engaged);
+    }
+
+    if (gm_sng_button_filter_active &&
+        (!controls_allowed || vehicle_moving || gas_pressed || brake_pressed)) {
+      gm_reset_sng_button_filter();
     }
   }
 }
@@ -173,17 +197,33 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     int button = (msg->data[5] >> 4) & 0x7U;
 
     bool allowed_button = (button == GM_BTN_CANCEL) && cruise_engaged_prev;
+    allowed_button |= gm_auto_resume_sng && gm_sdgm && (msg->bus == 2U) && (button == GM_BTN_CANCEL);
     if (gm_icbm && controls_allowed && cruise_engaged_prev) {
       allowed_button |= (button == GM_BTN_RESUME) || (button == GM_BTN_SET) || (button == GM_BTN_UNPRESS);
     }
     // A confirmed Traverse lead departure may send at most the controller's
     // bounded RES sequence while longitudinal control is still engaged.
-    if (gm_auto_resume_sng && controls_allowed && !vehicle_moving &&
-        !gas_pressed_prev && !brake_pressed) {
+    bool sng_button_conditions = gm_auto_resume_sng && gm_sdgm && (msg->bus == 2U) &&
+                                 controls_allowed && !vehicle_moving &&
+                                 !gas_pressed_prev && !brake_pressed;
+    if (sng_button_conditions) {
       allowed_button |= button == GM_BTN_RESUME;
+      allowed_button |= gm_sng_button_filter_active && (button == GM_BTN_UNPRESS);
     }
     if (!allowed_button) {
       tx = false;
+    }
+
+    if (tx && sng_button_conditions && (button == GM_BTN_RESUME)) {
+      gm_sng_button_filter_active = true;
+      gm_sng_button_release_pending = false;
+      gm_sng_button_filter_ts = microsecond_timer_get();
+    } else if (tx && gm_sng_button_filter_active && (msg->bus == 2U) && (button == GM_BTN_UNPRESS)) {
+      gm_sng_button_release_pending = true;
+      gm_sng_button_release_counter = msg->data[4] & 0x3U;
+      gm_sng_button_filter_ts = microsecond_timer_get();
+    } else if (tx && (button == GM_BTN_CANCEL)) {
+      gm_reset_sng_button_filter();
     }
   }
 
@@ -276,6 +316,7 @@ static safety_config gm_init(uint16_t param) {
   gm_icbm = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_ICBM);
   gm_auto_resume_sng = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_RESUME_SNG);
   gm_auto_hold = GET_FLAG(current_safety_param_sp, GM_PARAM_SP_AUTO_HOLD);
+  gm_reset_sng_button_filter();
 
   safety_config ret;
   if (gm_hw == GM_CAM) {
@@ -312,8 +353,20 @@ static safety_config gm_init(uint16_t param) {
   return ret;
 }
 
+static bool gm_fwd_hook(int bus_num, int addr) {
+  const uint32_t GM_SNG_BUTTON_FILTER_TIMEOUT_US = 500000U;
+
+  if (gm_sng_button_filter_active &&
+      safety_get_ts_elapsed(microsecond_timer_get(), gm_sng_button_filter_ts) > GM_SNG_BUTTON_FILTER_TIMEOUT_US) {
+    gm_reset_sng_button_filter();
+  }
+
+  return gm_sng_button_filter_active && (bus_num == 0) && (addr == 0x1E1);
+}
+
 const safety_hooks gm_hooks = {
   .init = gm_init,
   .rx = gm_rx_hook,
   .tx = gm_tx_hook,
+  .fwd = gm_fwd_hook,
 };

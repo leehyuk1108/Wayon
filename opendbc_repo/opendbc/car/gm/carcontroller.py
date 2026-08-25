@@ -21,7 +21,8 @@ MIN_STEER_MSG_INTERVAL_MS = 15
 TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
-GM_AUTO_HOLD_BRAKE = 40
+GM_AUTO_HOLD_BRAKE = 80
+GM_STOPPING_BRAKE_TAPER_MIN = 40
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 3.0 * CV.KPH_TO_MS
 GM_STOPPING_BRAKE_TAPER_END_SPEED = 1.0 * CV.KPH_TO_MS
 GM_STOPPING_BRAKE_TAPER_MAX = 80
@@ -57,7 +58,7 @@ def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
     return apply_brake
   brake_limit = round(np.interp(max(v_ego, 0.0),
                                 [GM_STOPPING_BRAKE_TAPER_END_SPEED, GM_STOPPING_BRAKE_TAPER_START_SPEED],
-                                [GM_AUTO_HOLD_BRAKE, GM_STOPPING_BRAKE_TAPER_MAX]))
+                                [GM_STOPPING_BRAKE_TAPER_MIN, GM_STOPPING_BRAKE_TAPER_MAX]))
   return min(apply_brake, brake_limit)
 
 

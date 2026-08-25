@@ -83,8 +83,9 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
     self.CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
 
   def test_tapers_to_auto_hold_pressure_near_stop(self):
-    self.assertEqual(80, limit_traverse_stopping_brake(self.CP, True, 0.6 - 1e-3, 132))
-    self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 0.3, 132))
+    self.assertEqual(80, limit_traverse_stopping_brake(self.CP, True, 3.0 / 3.6 - 1e-3, 132))
+    self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 2.0 / 3.6, 132))
+    self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
     self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
 
   def test_does_not_increase_requested_brake(self):
@@ -92,7 +93,8 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
 
   def test_only_changes_traverse_final_stopping_phase(self):
     self.assertEqual(132, limit_traverse_stopping_brake(self.CP, False, 0.2, 132))
-    self.assertEqual(132, limit_traverse_stopping_brake(self.CP, True, 0.7, 132))
+    self.assertEqual(132, limit_traverse_stopping_brake(self.CP, True, 3.1 / 3.6, 132))
+    self.assertEqual(180, limit_traverse_stopping_brake(self.CP, True, 0.2, 180))
     other = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertEqual(132, limit_traverse_stopping_brake(other, True, 0.2, 132))
 

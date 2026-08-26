@@ -93,8 +93,8 @@ internal class WayonTerminalClient(
                 if (!disconnectRequested.get()) {
                     val message = error.message.orEmpty()
                     if (error is JSchException && message.contains("auth fail", ignoreCase = true)) {
-                        terminalState = "auth_required"
-                        onState("auth_required", "SSH 키 등록 필요")
+                        terminalState = "error"
+                        onState("error", "Wayon 키 기반 SSH 승인에 실패했습니다.")
                     } else {
                         terminalState = "error"
                         onState("error", userMessage(error))

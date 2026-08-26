@@ -236,7 +236,11 @@ class MainActivity : AppCompatActivity() {
         runJs("window.onWayonTerminalState?.('connecting','Wayon 릴레이 인증')")
         networkExecutor.execute {
             try {
-                val response = postJson(HylinkApiContract.REMOTE_SESSION_ENDPOINT, key, JSONObject())
+                val response = postJson(
+                    HylinkApiContract.REMOTE_SESSION_ENDPOINT,
+                    key,
+                    JSONObject().put("publicKey", terminalClient.publicKey()),
+                )
                 val protocol = response.getString("protocol")
                 if (!terminalActive) return@execute
                 val websocketUrl = BuildConfig.WAYON_CLOUD_URL
@@ -264,11 +268,6 @@ class MainActivity : AppCompatActivity() {
         terminalActive = false
         terminalClient.disconnect()
     }
-
-    @JavascriptInterface
-    fun getWayonTerminalPublicKey(): String = runCatching {
-        terminalClient.publicKey()
-    }.getOrDefault("")
 
     private fun sendNativeConfiguration() {
         runJs(

@@ -14,8 +14,6 @@
   const stateLabel = byId("terminal-state-label");
   const input = byId("terminal-command-input");
   const send = byId("btn-terminal-send");
-  const keyCard = byId("terminal-key-card");
-  const publicKey = byId("terminal-public-key");
   const quickActions = [...document.querySelectorAll("[data-terminal-command]")];
   const openButtons = [...document.querySelectorAll("[data-open-terminal]")];
   const welcome = "Wayon Cloud 원격 터미널\nOffroad 장치에 암호화된 세션으로 연결합니다.\n\n";
@@ -65,12 +63,6 @@
     screen.textContent = terminal.output;
   }
 
-  function showPublicKey() {
-    const key = window.Android?.getWayonTerminalPublicKey?.() || "";
-    publicKey.textContent = key;
-    keyCard.hidden = !key;
-  }
-
   function openTerminal() {
     if (!window.hylink?.token) {
       window.toast?.("Wayon Cloud 키를 먼저 저장해 주세요.");
@@ -82,7 +74,6 @@
     }
     overlay.classList.add("visible");
     overlay.setAttribute("aria-hidden", "false");
-    keyCard.hidden = true;
     resetOutput();
     setState("connecting", "보안 세션 준비");
     window.Android?.connectWayonTerminal?.();
@@ -103,12 +94,7 @@
   window.onWayonTerminalState = (next, message) => {
     setState(next, message);
     if (next === "connected") {
-      keyCard.hidden = true;
       input.focus();
-    } else if (next === "auth_required") {
-      setState("error", message || "SSH 키 등록 필요");
-      appendOutput("\n이 휴대폰의 SSH 공개키가 차량에 등록되지 않았습니다.\n");
-      showPublicKey();
     } else if (next === "error") {
       appendOutput(`\n${message || "원격 터미널 연결에 실패했습니다."}\n`);
     }
@@ -155,19 +141,6 @@
     writeCommand(command);
   });
   quickActions.forEach(button => button.addEventListener("click", () => writeCommand(button.dataset.terminalCommand)));
-  byId("btn-copy-terminal-key").addEventListener("click", () => {
-    const text = publicKey.textContent || "";
-    const field = document.createElement("textarea");
-    field.value = text;
-    field.style.position = "fixed";
-    field.style.opacity = "0";
-    document.body.appendChild(field);
-    field.select();
-    document.execCommand("copy");
-    field.remove();
-    window.toast?.("SSH 공개키를 복사했습니다.");
-  });
-
   resetOutput();
   setState("closed", "연결 대기");
   window.updateWayonTerminalAvailability();

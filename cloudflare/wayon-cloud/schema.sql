@@ -65,6 +65,9 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE INDEX IF NOT EXISTS snapshots_device_captured_idx
   ON snapshots(device_id, captured_at DESC);
 
+CREATE INDEX IF NOT EXISTS snapshots_captured_idx
+  ON snapshots(captured_at DESC);
+
 CREATE INDEX IF NOT EXISTS snapshots_kv_key_device_idx
   ON snapshots(kv_key, device_id);
 

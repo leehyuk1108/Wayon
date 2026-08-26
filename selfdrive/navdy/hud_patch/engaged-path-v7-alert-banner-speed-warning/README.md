@@ -77,6 +77,15 @@ Behavior:
 - Does not restart animation for repeated copies of the same event.
 - Slides up and hides when the alert clears.
 - Uses the same camera speed limit as the ambient-light overspeed warning.
+- Keeps the current-speed text red immediately above the camera limit, but
+  applies a separate comfort filter to the ambient warning: enter at limit +2
+  km/h after one continuous second, leave at or below the limit after two
+  continuous seconds, and keep each warning active for at least three seconds.
+- Uses a steady red warning instead of blinking when the screen-driven Zone 1
+  level is 3 percent or lower. During that night warning Zone 2 is temporarily
+  limited to 8 percent, then restored to its normal fixed 40 percent level.
+- Uses a three-second red/restore interval for daytime overspeed warnings so
+  small speed fluctuations cannot create rapid flashes.
 - Changes the openpilot current-speed value to red only while current speed is
   greater than the camera speed limit, then restores white immediately.
 - Applies the same camera overspeed red/white behavior to the stock current

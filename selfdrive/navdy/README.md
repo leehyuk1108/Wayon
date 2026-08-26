@@ -968,7 +968,9 @@ rightRisk
 | radar reader 재생성 | 5초 |
 | Android lane frame | 66 ms |
 | Navdy turn blink | 450 ms |
-| Ambient overspeed blink | 1초 |
+| Ambient overspeed enter | 제한속도 +2 km/h를 1초 유지 |
+| Ambient overspeed exit | 제한속도 이하를 2초 유지, 최소 활성 3초 |
+| Ambient daytime blink | 3초 |
 | Ambient brightness sync | 5초 |
 
 Bridge는 `ts`와 `seq`가 아니라 표시 내용으로 signature를 만든다. 다음 값이 바뀌었을 때만 즉시
@@ -1250,12 +1252,15 @@ queue, address 역할 mapping이 필요하다.
 | --- | --- |
 | Reverse | blink 중지, brightness sync 중지, `PACKET_OFF` |
 | Park/Neutral/Drive | ambient 활성, brightness sync, restore |
-| Camera overspeed | 빨강과 restore를 1초마다 교차 |
-| Overspeed 해제 | blink 중지, restore |
+| Camera overspeed | 제한속도 +2 km/h를 1초 유지하면 경고 진입 |
+| Day overspeed | 빨강과 restore를 3초마다 교차 |
+| Night overspeed | Zone 1이 3 이하이면 점멸 없이 고정 빨강, Zone 2는 임시 8% |
+| Overspeed 해제 | 제한속도 이하를 2초 유지하면 중지, 최소 활성 3초 후 restore |
 | 재연결 | reverse/overspeed/active 상태를 다시 적용 |
 
 화면 brightness를 Zone 1 ambient brightness 1에서 50으로 mapping하고 5초마다 동기화한다.
-Zone 2는 같은 밝기 패킷의 독립 채널을 사용해 40%로 고정한다.
+Zone 2는 같은 밝기 패킷의 독립 채널을 사용해 평상시 40%로 고정한다. 야간
+과속 경고 중에는 눈부심을 줄이기 위해 8%로 제한하고 경고 해제 즉시 40%로 복원한다.
 
 ## Navdy 화면 전원 관리
 

@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="hylink.css">
 </head>
-<body class="my-traverse-skin">
+<body class="my-traverse-skin home-active">
   <div class="app-shell">
     <header class="topbar traverse-topbar">
       <div class="brand"><img class="brand-logo" src="logo.png" alt=""><div><strong>Hylink</strong><span id="top-status">Wayon Cloud</span></div></div>
@@ -42,12 +42,6 @@
             <button class="home-command-slot" data-open-terminal><span class="home-quick-icon"><i data-lucide="square-terminal"></i></span><strong>터미널</strong><small>Offroad SSH</small></button>
             <button class="home-command-slot" data-go="info"><span class="home-quick-icon"><i data-lucide="shield-check"></i></span><strong>장치 상태</strong><small>Wayon 진단</small></button>
           </section>
-          <section class="home-flow">
-            <article class="flow-card"><div class="flow-card-head"><span><small>DRIVE ASSIST</small><strong>openpilot</strong></span><span class="section-badge" id="op-availability">--</span></div><div class="op-card"><div class="op-orb" id="op-orb"><i data-lucide="sparkles"></i></div><div class="op-main"><span id="op-label">openpilot 상태</span><strong id="op-state">--</strong><p id="op-alert">수신된 알림이 없습니다.</p></div><div class="op-tags"><span id="op-personality">성향 --</span><span id="op-engageable">진입 --</span><span id="op-experimental">실험모드 --</span></div></div></article>
-            <article class="flow-card"><div class="flow-card-head"><span><small>LATEST TRIP</small><strong>최근 주행</strong></span><button class="text-button" data-go="extras">기록 보기</button></div><button class="latest-trip" id="latest-trip-card"><div class="route-glyph"><i data-lucide="route"></i></div><div class="latest-trip-copy"><strong id="latest-trip-date">주행기록 없음</strong><span id="latest-trip-route">경로가 수신되면 표시됩니다.</span></div><div class="latest-trip-value"><strong id="latest-trip-distance">--</strong><span id="latest-trip-duration">--</span></div></button></article>
-          </section>
-          <div class="compact-heading"><span>장치 상태</span><button class="text-button" data-go="info">전체 보기</button></div>
-          <section class="pulse-strip"><div><i data-lucide="thermometer"></i><span>온도</span><strong id="pulse-temp">--</strong></div><div><i data-lucide="radio-tower"></i><span>통신</span><strong id="pulse-network">--</strong></div><div><i data-lucide="hard-drive"></i><span>저장공간</span><strong id="pulse-storage">--</strong></div><div><i data-lucide="usb"></i><span>Panda</span><strong id="pulse-panda">--</strong></div></section>
         </article>
       </section>
 

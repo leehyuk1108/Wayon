@@ -105,3 +105,13 @@ body.map-fullscreen .finder-map-control.active{border-color:transparent;backgrou
 body.map-fullscreen .finder-map-control svg{width:19px}
 @keyframes vehicleLocationRipple{0%{opacity:0;transform:scale(.72)}14%{opacity:.72}100%{opacity:0;transform:scale(6.7)}}
 @keyframes vehicleLocationBreath{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.12)}}
+
+/* Single-screen home dashboard */
+body.home-active{height:100dvh;overflow:hidden}
+body.home-active .app-shell{height:100dvh;min-height:0;display:flex;flex-direction:column;padding-bottom:0}
+body.home-active .traverse-topbar{flex:0 0 auto}
+body.home-active main{height:auto;min-height:0;flex:1 1 auto;padding-bottom:calc(64px + var(--safe-bottom))}
+body.home-active #page-overview{height:100%;min-height:0}
+body.home-active #page-overview .home-dashboard{height:100%;min-height:0;display:flex;flex-direction:column}
+.my-traverse-skin #page-overview .home-map-hero{height:auto;min-height:220px;flex:1 1 auto}
+.my-traverse-skin #page-overview .home-status-button,.my-traverse-skin #page-overview .home-vehicle-summary,.my-traverse-skin #page-overview .home-command-bar{flex:0 0 auto}

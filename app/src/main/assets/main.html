@@ -15,138 +15,158 @@
       <div class="brand"><div class="brand-mark">H</div><div><strong>Hylink</strong><span id="top-status">Wayon Cloud</span></div></div>
       <div class="top-actions">
         <button class="icon-button" id="btn-refresh" aria-label="새로고침"><i data-lucide="refresh-cw"></i></button>
-        <button class="icon-button" id="btn-settings" aria-label="연결 설정"><i data-lucide="settings-2"></i></button>
+        <button class="icon-button" id="btn-settings" aria-label="Wayon 연결 설정"><i data-lucide="sliders-horizontal"></i></button>
       </div>
     </header>
 
     <main>
       <section class="page active" id="page-overview">
         <section class="map-hero">
-          <div id="home-map"></div>
-          <div class="map-shade"></div>
+          <div id="home-map"></div><div class="map-shade"></div>
           <div class="map-topline"><span class="signal-pill" id="connection-pill"><i></i><b id="connection-label">연결 대기</b></span><span class="freshness" id="freshness-label">--</span></div>
-          <div class="map-copy"><span class="eyebrow">CURRENT VEHICLE</span><h1 id="hero-title">차량 위치를<br>확인하세요</h1><p id="hero-subtitle">Wayon Cloud 연결이 필요합니다.</p></div>
+          <div class="map-copy"><span class="eyebrow">MY VEHICLE</span><h1 id="hero-title">차량 위치를<br>확인하세요</h1><p id="hero-subtitle">Wayon Cloud 연결이 필요합니다.</p></div>
+          <button class="map-live-button" data-open-live aria-label="360도 라이브 열기"><i data-lucide="aperture"></i></button>
         </section>
 
         <section class="glance-grid" aria-label="차량 핵심 정보">
-          <article class="glance-card accent"><span>주행 상태</span><strong id="glance-state">--</strong><small id="glance-state-sub">vehicle</small></article>
-          <article class="glance-card"><span>현재 속도</span><strong><b id="glance-speed">--</b><em>km/h</em></strong><small id="glance-bearing">방향 --</small></article>
-          <article class="glance-card"><span>12V 입력</span><strong><b id="glance-voltage">--</b><em>V</em></strong><small id="glance-current">전류 --</small></article>
-          <article class="glance-card"><span>소비 전력</span><strong><b id="glance-power">--</b><em>W</em></strong><small id="glance-device-power">기기 --</small></article>
+          <article class="glance-card accent"><span>상태</span><strong id="glance-state">--</strong><small id="glance-state-sub">vehicle</small></article>
+          <article class="glance-card"><span>속도</span><strong><b id="glance-speed">--</b><em>km/h</em></strong><small id="glance-bearing">방향 --</small></article>
+          <article class="glance-card"><span>배터리 입력</span><strong><b id="glance-voltage">--</b><em>V</em></strong><small id="glance-current">전류 --</small></article>
+          <article class="glance-card"><span>현재 전력</span><strong><b id="glance-power">--</b><em>W</em></strong><small id="glance-device-power">기기 --</small></article>
         </section>
 
-        <div class="section-heading"><div><span class="eyebrow">DRIVING INTELLIGENCE</span><h2>차량과 openpilot</h2></div><span class="section-badge" id="op-availability">--</span></div>
-        <section class="op-card">
-          <div class="op-orb" id="op-orb"><i data-lucide="sparkles"></i></div>
-          <div class="op-main"><span id="op-label">openpilot 상태</span><strong id="op-state">--</strong><p id="op-alert">수신된 알림이 없습니다.</p></div>
-          <div class="op-tags"><span id="op-personality">성향 --</span><span id="op-engageable">진입 --</span><span id="op-experimental">실험모드 --</span></div>
+        <section class="home-actions" aria-label="빠른 기능">
+          <button class="action-card camera" data-open-live><span class="action-icon"><i data-lucide="scan-line"></i></span><span><small>차량 주변</small><strong>360° Live</strong></span><i data-lucide="arrow-up-right"></i></button>
+          <button class="action-card terminal" data-open-terminal><span class="action-icon"><i data-lucide="square-terminal"></i></span><span><small>Offroad 접속</small><strong>터미널</strong></span><i data-lucide="arrow-up-right"></i></button>
         </section>
 
-        <div class="section-heading"><div><span class="eyebrow">LATEST DRIVE</span><h2>최근 주행</h2></div><button class="text-button" data-go="trips">전체 보기</button></div>
-        <button class="latest-trip" id="latest-trip-card">
-          <div class="route-glyph"><i data-lucide="route"></i></div>
-          <div class="latest-trip-copy"><strong id="latest-trip-date">주행기록 없음</strong><span id="latest-trip-route">경로가 수신되면 표시됩니다.</span></div>
-          <div class="latest-trip-value"><strong id="latest-trip-distance">--</strong><span id="latest-trip-duration">--</span></div>
-        </button>
+        <section class="home-flow">
+          <article class="flow-card intelligence-card">
+            <div class="flow-card-head"><span><small>DRIVE ASSIST</small><strong>openpilot</strong></span><span class="section-badge" id="op-availability">--</span></div>
+            <div class="op-card">
+              <div class="op-orb" id="op-orb"><i data-lucide="sparkles"></i></div>
+              <div class="op-main"><span id="op-label">openpilot 상태</span><strong id="op-state">--</strong><p id="op-alert">수신된 알림이 없습니다.</p></div>
+              <div class="op-tags"><span id="op-personality">성향 --</span><span id="op-engageable">진입 --</span><span id="op-experimental">실험모드 --</span></div>
+            </div>
+          </article>
 
-        <div class="section-heading"><div><span class="eyebrow">SYSTEM PULSE</span><h2>장치 요약</h2></div><button class="text-button" data-go="device">자세히</button></div>
+          <article class="flow-card trip-flow-card">
+            <div class="flow-card-head"><span><small>LATEST TRIP</small><strong>최근 주행</strong></span><button class="text-button" data-go="trips">기록 보기</button></div>
+            <button class="latest-trip" id="latest-trip-card">
+              <div class="route-glyph"><i data-lucide="route"></i></div>
+              <div class="latest-trip-copy"><strong id="latest-trip-date">주행기록 없음</strong><span id="latest-trip-route">경로가 수신되면 표시됩니다.</span></div>
+              <div class="latest-trip-value"><strong id="latest-trip-distance">--</strong><span id="latest-trip-duration">--</span></div>
+            </button>
+          </article>
+        </section>
+
+        <div class="compact-heading"><span>장치 상태</span><button class="text-button" data-go="device">전체 보기</button></div>
         <section class="pulse-strip">
-          <div><i data-lucide="thermometer"></i><span>최고 온도</span><strong id="pulse-temp">--</strong></div>
-          <div><i data-lucide="radio-tower"></i><span>네트워크</span><strong id="pulse-network">--</strong></div>
-          <div><i data-lucide="hard-drive"></i><span>여유 공간</span><strong id="pulse-storage">--</strong></div>
+          <div><i data-lucide="thermometer"></i><span>온도</span><strong id="pulse-temp">--</strong></div>
+          <div><i data-lucide="radio-tower"></i><span>통신</span><strong id="pulse-network">--</strong></div>
+          <div><i data-lucide="hard-drive"></i><span>저장공간</span><strong id="pulse-storage">--</strong></div>
           <div><i data-lucide="usb"></i><span>Panda</span><strong id="pulse-panda">--</strong></div>
         </section>
       </section>
 
       <section class="page" id="page-trips">
-        <header class="page-head"><span class="eyebrow">WAYON JOURNAL</span><h1>주행 인사이트</h1><p>Cloud에 저장된 경로에서 거리·시간·속도·경로 밀도를 계산합니다.</p></header>
+        <header class="page-head"><span class="eyebrow">DRIVE LOG</span><h1>나의 주행</h1><p>Wayon Cloud에 남은 이동을 거리와 시간으로 가볍게 살펴봅니다.</p></header>
         <section class="trip-summary">
-          <article class="summary-primary"><span>불러온 주행</span><strong id="trip-total-count">0</strong><small>최근 최대 250건</small></article>
+          <article class="summary-primary"><span>기록된 주행</span><strong id="trip-total-count">0</strong><small>최근 최대 250건</small></article>
           <article><span>누적 거리</span><strong id="trip-total-distance">0 km</strong></article>
           <article><span>누적 시간</span><strong id="trip-total-time">0시간</strong></article>
-          <article><span>평균 주행</span><strong id="trip-average-distance">0 km</strong></article>
-          <article><span>최장 주행</span><strong id="trip-longest-distance">0 km</strong></article>
+          <article><span>평균 거리</span><strong id="trip-average-distance">0 km</strong></article>
+          <article><span>가장 긴 주행</span><strong id="trip-longest-distance">0 km</strong></article>
         </section>
         <section class="period-card"><div><span>최근 7일</span><strong id="trip-week-distance">0 km</strong></div><div class="period-track"><i id="trip-week-bar"></i></div><small id="trip-week-caption">주행 데이터 없음</small></section>
-        <div class="section-heading"><div><span class="eyebrow">TRIP HISTORY</span><h2>주행기록</h2></div><span class="section-badge" id="trip-result-count">0건</span></div>
+        <div class="inline-error" id="trip-error" hidden><i data-lucide="cloud-off"></i><span>주행기록을 불러오지 못했습니다.</span><button data-refresh>다시 시도</button></div>
+        <div class="section-heading"><div><span class="eyebrow">RECENT</span><h2>최근 기록</h2></div><span class="section-badge" id="trip-result-count">0건</span></div>
         <div class="trip-list" id="trip-list"><div class="empty-state">아직 불러온 주행기록이 없습니다.</div></div>
+        <button class="more-button" id="btn-more-trips" hidden><i data-lucide="chevrons-down"></i><span>기록 더 보기</span></button>
       </section>
 
       <section class="page" id="page-media">
-        <header class="page-head"><span class="eyebrow">SURROUND VIEW</span><h1>360° & 이벤트</h1><p>실시간 주변 확인, 저장 기록과 충격 센서 정보를 한곳에서 봅니다.</p></header>
+        <header class="page-head media-head"><span class="eyebrow">WAYON VISION</span><h1>차량의 시야</h1><p>실시간 360° 화면과 주차·충격 기록을 시간순으로 확인합니다.</p></header>
         <section class="live-hero">
-          <div class="live-visual"><div class="camera-ring"><i data-lucide="scan-line"></i></div><span>OFFROAD CAMERA</span></div>
-          <div><h2>차량 주변을<br>실시간으로</h2><p>카메라 준비 상태에서 360° 스트림을 연결합니다.</p><button class="primary-button" id="btnWayonLive"><i data-lucide="aperture"></i>360° Live</button></div>
+          <div class="live-visual"><div class="camera-ring"><i data-lucide="scan-line"></i></div><span>OFFROAD READY</span></div>
+          <div><span class="live-kicker">LIVE VIEW</span><h2>지금 차량<br>주변 보기</h2><p>두 카메라를 하나의 360° 화면으로 연결합니다.</p><button class="primary-button" id="btnWayonLive"><i data-lucide="aperture"></i>라이브 열기</button></div>
         </section>
         <section class="media-stats">
           <div><span>360° 저장</span><strong id="media-live-count">0</strong><small id="media-live-size">0 MB</small></div>
           <div><span>주차 이미지</span><strong id="media-snapshot-count">0</strong><small id="media-snapshot-size">0 MB</small></div>
-          <div><span>충격 이벤트</span><strong id="media-impact-count">0</strong><small id="media-impact-max">최대 --</small></div>
+          <div><span>감지 이벤트</span><strong id="media-impact-count">0</strong><small id="media-impact-max">최대 --</small></div>
         </section>
-        <div class="section-heading"><div><span class="eyebrow">LIVE ARCHIVE</span><h2>360° 저장 기록</h2></div><span class="section-badge" id="capture-count"></span></div>
+
+        <div class="section-heading"><div><span class="eyebrow">360° ARCHIVE</span><h2>저장된 장면</h2></div><span class="section-badge" id="capture-count"></span></div>
         <div class="capture-grid" id="live-capture-grid"><div class="empty-state span-all">저장된 360° 기록이 없습니다.</div></div>
-        <div class="section-heading"><div><span class="eyebrow">PARKING CAMERA</span><h2>주차 카메라</h2></div><span class="section-badge" id="snapshot-count"></span></div>
+        <button class="more-button compact" id="btn-more-captures" hidden>저장 기록 더 보기</button>
+
+        <div class="section-heading"><div><span class="eyebrow">PARKED</span><h2>주차 카메라</h2></div><span class="section-badge" id="snapshot-count"></span></div>
         <div class="capture-grid" id="snapshot-grid"><div class="empty-state span-all">저장된 카메라 이미지가 없습니다.</div></div>
-        <div class="section-heading"><div><span class="eyebrow">IMPACT SENSOR</span><h2>충격 이벤트</h2></div></div>
+        <button class="more-button compact" id="btn-more-snapshots" hidden>이미지 더 보기</button>
+
+        <div class="section-heading"><div><span class="eyebrow">IMPACT</span><h2>충격 타임라인</h2></div></div>
         <div class="impact-list" id="impact-list"><div class="empty-state">최근 충격 이벤트가 없습니다.</div></div>
+        <button class="more-button compact" id="btn-more-impacts" hidden>이벤트 더 보기</button>
       </section>
 
       <section class="page" id="page-device">
-        <header class="page-head"><span class="eyebrow">WAYON DEVICE</span><h1>장치 건강</h1><p>comma 장치와 Panda에서 수집되는 시스템 텔레메트리입니다.</p></header>
+        <header class="page-head"><span class="eyebrow">DEVICE PULSE</span><h1>장치 상태</h1><p>중요한 상태는 먼저, 전문 데이터는 필요할 때 펼쳐봅니다.</p></header>
         <section class="health-hero">
           <div class="health-score"><div class="health-ring" id="health-ring"><strong id="health-score">--</strong><span>HEALTH</span></div></div>
           <div class="health-copy"><span class="health-status" id="health-status"><i></i>연결 대기</span><h2 id="device-name">comma device</h2><p id="device-updated">최근 수신 시각 없음</p></div>
         </section>
 
-        <div class="section-heading"><div><span class="eyebrow">RESOURCE</span><h2>시스템 사용량</h2></div></div>
+        <section class="terminal-launch-card featured-terminal">
+          <div class="terminal-launch-icon"><i data-lucide="square-terminal"></i></div>
+          <div class="terminal-launch-copy"><span class="eyebrow">OFFROAD</span><strong>원격 터미널</strong><span id="terminal-launch-caption">차량이 Offroad일 때 연결됩니다.</span></div>
+          <div class="terminal-side"><span class="section-badge" id="terminal-availability">확인 중</span><button class="primary-button" id="btn-open-terminal" data-open-terminal><i data-lucide="arrow-up-right"></i>열기</button></div>
+        </section>
+
+        <div class="compact-heading"><span>시스템 사용량</span><span class="soft-label">실시간</span></div>
         <section class="resource-grid">
-          <article><div class="mini-ring" id="ring-cpu"><strong id="resource-cpu">--</strong></div><span>CPU 평균</span><small id="resource-cpu-detail">8 cores</small></article>
+          <article><div class="mini-ring" id="ring-cpu"><strong id="resource-cpu">--</strong></div><span>CPU</span><small id="resource-cpu-detail">8 cores</small></article>
           <article><div class="mini-ring" id="ring-memory"><strong id="resource-memory">--</strong></div><span>메모리</span><small>사용량</small></article>
-          <article><div class="mini-ring" id="ring-storage"><strong id="resource-storage">--</strong></div><span>저장공간</span><small>여유 공간</small></article>
+          <article><div class="mini-ring" id="ring-storage"><strong id="resource-storage">--</strong></div><span>저장공간</span><small>여유</small></article>
           <article><div class="mini-ring" id="ring-gpu"><strong id="resource-gpu">--</strong></div><span>GPU</span><small>사용량</small></article>
         </section>
 
-        <div class="section-heading"><div><span class="eyebrow">THERMAL</span><h2>열 관리</h2></div><span class="section-badge" id="thermal-badge">--</span></div>
-        <section class="detail-card">
-          <div class="temperature-hero"><div><span>최고 온도</span><strong id="temp-max">--</strong></div><div class="fan-disc"><i data-lucide="fan"></i><strong id="temp-fan">--</strong><span>FAN</span></div></div>
-          <div class="bar-list" id="temperature-list"></div>
+        <section class="telemetry-stack">
+          <details class="telemetry-panel" open>
+            <summary><span class="summary-icon"><i data-lucide="thermometer"></i></span><span><small>THERMAL</small><strong>열 관리</strong></span><span class="section-badge" id="thermal-badge">--</span><i data-lucide="chevron-down"></i></summary>
+            <div class="panel-body detail-card"><div class="temperature-hero"><div><span>최고 온도</span><strong id="temp-max">--</strong></div><div class="fan-disc"><i data-lucide="fan"></i><strong id="temp-fan">--</strong><span>FAN</span></div></div><div class="bar-list" id="temperature-list"></div></div>
+          </details>
+          <details class="telemetry-panel">
+            <summary><span class="summary-icon"><i data-lucide="battery-charging"></i></span><span><small>ELECTRICAL</small><strong>전력 흐름</strong></span><span></span><i data-lucide="chevron-down"></i></summary>
+            <div class="panel-body data-grid" id="electrical-grid"></div>
+          </details>
+          <details class="telemetry-panel">
+            <summary><span class="summary-icon"><i data-lucide="radio-tower"></i></span><span><small>CONNECTION</small><strong>연결 상태</strong></span><span></span><i data-lucide="chevron-down"></i></summary>
+            <div class="panel-body detail-list" id="connectivity-list"></div>
+          </details>
+          <details class="telemetry-panel">
+            <summary><span class="summary-icon"><i data-lucide="shield-check"></i></span><span><small>PANDA</small><strong>안전 인터페이스</strong></span><span class="section-badge" id="panda-badge">--</span><i data-lucide="chevron-down"></i></summary>
+            <div class="panel-body detail-list" id="panda-list"></div>
+          </details>
         </section>
-
-        <div class="section-heading"><div><span class="eyebrow">ELECTRICAL</span><h2>전력 흐름</h2></div></div>
-        <section class="data-grid" id="electrical-grid"></section>
-
-        <div class="section-heading"><div><span class="eyebrow">CONNECTIVITY</span><h2>연결 상태</h2></div></div>
-        <section class="detail-list" id="connectivity-list"></section>
-
-        <div class="section-heading"><div><span class="eyebrow">PANDA INTERFACE</span><h2>안전 인터페이스</h2></div><span class="section-badge" id="panda-badge">--</span></div>
-        <section class="detail-list" id="panda-list"></section>
-        <p class="read-only-note"><i data-lucide="shield-check"></i>이 화면은 Panda와 openpilot의 상태만 표시하며 차량 명령을 보내지 않습니다.</p>
-
-        <div class="section-heading"><div><span class="eyebrow">OFFROAD ACCESS</span><h2>원격 터미널</h2></div><span class="section-badge" id="terminal-availability">상태 확인 중</span></div>
-        <section class="terminal-launch-card">
-          <div class="terminal-launch-icon"><i data-lucide="square-terminal"></i></div>
-          <div class="terminal-launch-copy"><strong>Wayon Secure Shell</strong><span id="terminal-launch-caption">차량이 Offroad일 때만 연결됩니다.</span></div>
-          <button class="primary-button" id="btn-open-terminal"><i data-lucide="arrow-up-right"></i>열기</button>
-        </section>
-        <p class="read-only-note terminal-note"><i data-lucide="shield-alert"></i>Wayon Cloud 키로 해당 동글의 릴레이만 열며, 차량이 Onroad로 전환되면 연결이 종료됩니다.</p>
       </section>
     </main>
   </div>
 
   <nav class="bottom-nav">
-    <button class="nav-button active" data-page="overview"><i data-lucide="layout-dashboard"></i><span>홈</span></button>
+    <button class="nav-button active" data-page="overview"><i data-lucide="house"></i><span>홈</span></button>
     <button class="nav-button" data-page="trips"><i data-lucide="route"></i><span>주행</span></button>
     <button class="nav-button" data-page="media"><i data-lucide="aperture"></i><span>360°</span></button>
-    <button class="nav-button" data-page="device"><i data-lucide="activity"></i><span>장치</span></button>
+    <button class="nav-button" data-page="device"><i data-lucide="gauge"></i><span>장치</span></button>
   </nav>
 
   <div class="toast" id="toast"></div>
   <div class="sheet-backdrop" id="settings-backdrop"></div>
   <section class="settings-sheet" id="settings-sheet" aria-hidden="true">
-    <div class="sheet-handle"></div><div class="sheet-head"><div><span class="eyebrow">PRIVATE CONNECTION</span><h2>Wayon 연결</h2></div><button class="icon-button" id="btn-close-settings"><i data-lucide="x"></i></button></div>
+    <div class="sheet-handle"></div><div class="sheet-head"><div><span class="eyebrow">PRIVATE & SECURE</span><h2>Wayon 연결</h2></div><button class="icon-button" id="btn-close-settings" aria-label="설정 닫기"><i data-lucide="x"></i></button></div>
     <div class="settings-card"><label for="wayon-cloud-key-input">Wayon Cloud 키</label><p>차량 Offroad 키 페이지에서 복사한 키입니다. 이 휴대폰에만 저장되며 백업되지 않습니다.</p><input id="wayon-cloud-key-input" type="password" autocomplete="off" placeholder="Wayon Cloud key"><div class="button-row"><button class="secondary-button" id="btn-save-key">저장 및 연결</button><button class="danger-button" id="btn-clear-key">키 삭제</button></div></div>
     <div class="settings-card"><span class="setting-label">Cloud 주소</span><p class="mono" id="cloud-base-url">--</p></div>
-    <div class="read-only-note"><i data-lucide="shield-check"></i><span>Hylink는 Wayon Cloud의 위치·텔레메트리·주행·충격·360° 카메라와 Offroad 원격 터미널만 사용합니다. GM One과 차량 제어 기능은 포함하지 않습니다.</span></div>
+    <div class="read-only-note"><i data-lucide="shield-check"></i><span>Hylink는 이 휴대폰에 저장된 키로 Wayon Cloud에 직접 연결합니다.</span></div>
   </section>
 
   <section class="trip-overlay" id="trip-overlay">

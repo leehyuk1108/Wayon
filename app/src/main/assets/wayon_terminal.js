@@ -17,6 +17,7 @@
   const keyCard = byId("terminal-key-card");
   const publicKey = byId("terminal-public-key");
   const quickActions = [...document.querySelectorAll("[data-terminal-command]")];
+  const openButtons = [...document.querySelectorAll("[data-open-terminal]")];
   const welcome = "Wayon Cloud 원격 터미널\nOffroad 장치에 암호화된 세션으로 연결합니다.\n\n";
 
   function vehicleOnroad() {
@@ -125,12 +126,11 @@
 
   window.updateWayonTerminalAvailability = () => {
     const available = byId("terminal-availability");
-    const button = byId("btn-open-terminal");
     const caption = byId("terminal-launch-caption");
     const hasFeed = Boolean(window.hylink?.data?.feed?.state);
     const onroad = vehicleOnroad();
     available.textContent = !hasFeed ? "상태 확인 중" : onroad ? "ONROAD 차단" : "OFFROAD 사용 가능";
-    button.disabled = !window.hylink?.token || !hasFeed || onroad;
+    openButtons.forEach(button => { button.disabled = !window.hylink?.token || !hasFeed || onroad; });
     caption.textContent = onroad
       ? "주행 중에는 Wayon 릴레이가 터미널을 차단합니다."
       : "Wayon 키로 해당 동글의 SSH 세션에 연결합니다.";
@@ -146,7 +146,7 @@
     return previousBack?.() || false;
   };
 
-  byId("btn-open-terminal").addEventListener("click", openTerminal);
+  openButtons.forEach(button => button.addEventListener("click", openTerminal));
   byId("btn-close-terminal").addEventListener("click", closeTerminal);
   byId("terminal-command-form").addEventListener("submit", event => {
     event.preventDefault();

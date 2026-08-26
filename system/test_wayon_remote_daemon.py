@@ -1,6 +1,8 @@
 import subprocess
+from pathlib import Path
 
 from openpilot.system import wayon_remote_daemon as daemon
+from openpilot.system.wayon_ssh_keys import ensure_persistent_ssh_keys, read_persistent_ssh_keys
 
 
 class FakeProcess:
@@ -69,3 +71,34 @@ def test_supervisor_kills_child_that_ignores_terminate():
 
   assert child.terminated
   assert child.killed
+
+
+class FakeParams:
+  def __init__(self, keys=""):
+    self.values = {"GithubSshKeys": keys} if keys else {}
+
+  def get(self, key):
+    return self.values.get(key)
+
+  def put(self, key, value, block=False):
+    self.values[key] = value
+
+
+def test_persistent_ssh_key_is_merged_without_replacing_session_key(tmp_path: Path):
+  persistent = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG0q8swD6V0R8M1U+6TXQqNl6UeHj5J6ybbD/1CV owner"
+  session = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBJnQxRlWCEFxGXQCbNIB9ddRtJPd1vVY1GcKfK1fc83 owner-session"
+  key_file = tmp_path / "authorized_keys"
+  key_file.write_text(persistent + "\n")
+  params = FakeParams(session + "\n")
+
+  assert ensure_persistent_ssh_keys(params, key_file)
+  assert params.values["GithubSshKeys"].splitlines() == [session, persistent]
+  assert not ensure_persistent_ssh_keys(params, key_file)
+
+
+def test_invalid_persistent_ssh_keys_are_ignored(tmp_path: Path):
+  key_file = tmp_path / "authorized_keys"
+  key_file.write_text("not-a-key\nssh-rsa invalid\n")
+
+  assert read_persistent_ssh_keys(key_file) == []
+  assert not ensure_persistent_ssh_keys(FakeParams(), key_file)

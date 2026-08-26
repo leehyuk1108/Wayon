@@ -5,6 +5,7 @@ import sys
 import time
 
 from openpilot.common.params import Params
+from openpilot.system.wayon_ssh_keys import ensure_persistent_ssh_keys
 
 
 POLL_INTERVAL_SECONDS = 1
@@ -65,6 +66,7 @@ def main() -> None:
 
   try:
     while not stopping:
+      ensure_persistent_ssh_keys(params)
       supervisor.update(is_offroad(params))
       time.sleep(POLL_INTERVAL_SECONDS)
   finally:

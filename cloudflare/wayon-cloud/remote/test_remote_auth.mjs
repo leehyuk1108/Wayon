@@ -64,6 +64,7 @@ assert.equal(visibleFcmNotification({ type: "wayon_impact" }), null);
 
 const wayonKey = `wayon_${randomBytes(32).toString("base64url")}`;
 const keyHash = createHash("sha256").update(wayonKey).digest("hex");
+const relayRequests = [];
 const env = {
   DB: {
     prepare(sql) {
@@ -84,11 +85,22 @@ const env = {
   SNAPSHOTS: {},
   WAYON_UPLOAD_TOKEN: "device-upload-token",
   WAYON_SSH_SESSION_SECRET: secret,
-  DEVICE_RELAY: {},
+  DEVICE_RELAY: {
+    idFromName(name) { return name; },
+    get(id) {
+      return {
+        async fetch(request) {
+          relayRequests.push({ id, request, payload: await request.json() });
+          return new Response(null, { status: 204 });
+        },
+      };
+    },
+  },
 };
-const login = (token) => worker.fetch(new Request("https://wayon.test/api/remote/session", {
+const login = (token, payload = {}) => worker.fetch(new Request("https://wayon.test/api/remote/session", {
   method: "POST",
-  headers: { authorization: `Bearer ${token}` },
+  headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  body: JSON.stringify(payload),
 }), env, {});
 
 const denied = await login("wayon_invalid_key_that_is_long_enough_but_unknown_0000");
@@ -99,7 +111,20 @@ assert.equal(accepted.status, 200);
 const session = await accepted.json();
 assert.match(session.protocol, /^wayon-ssh-v1\./);
 assert.equal(session.deviceId, deviceId);
+assert.equal(session.credentialMode, "existing_ssh_key");
 assert.equal((await verifyRemoteSshProtocol(session.protocol, secret))?.deviceId, deviceId);
+
+const publicKey = `ssh-rsa ${randomBytes(96).toString("base64")} hylink-android`;
+const automatic = await login(wayonKey, { publicKey });
+assert.equal(automatic.status, 200);
+assert.equal((await automatic.json()).credentialMode, "wayon_key_ephemeral");
+assert.equal(relayRequests.length, 1);
+assert.equal(relayRequests[0].id, `${deviceId}:ssh`);
+assert.equal(relayRequests[0].request.url, "https://wayon.internal/authorize-ssh-key");
+assert.equal(relayRequests[0].payload.publicKey, publicKey);
+assert.match(relayRequests[0].payload.authorizationId, /^[0-9a-f]{32}$/);
+assert.equal(relayRequests[0].payload.ttlSeconds, 90);
+assert.equal((await login(wayonKey, { publicKey: "ssh-rsa not-base64" })).status, 400);
 
 const liveSession = (token) => worker.fetch(new Request("https://wayon.test/api/live/session", {
   method: "POST",

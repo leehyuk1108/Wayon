@@ -56,4 +56,29 @@ state.devices = [];
 relay.webSocketClose(device);
 assert.deepEqual(replacementClient.closes, [[1012, "device offline"]]);
 
+// A key authenticated session can send one short-lived public key to the
+// connected device, while client text can never forge relay control messages.
+const authorizationDevice = new FakeSocket("device");
+state.devices = [authorizationDevice];
+state.clients = [replacementClient];
+const publicKey = `ssh-rsa ${Buffer.alloc(96, 7).toString("base64")} hylink-android`;
+const authorization = await relay.fetch(new Request("https://wayon.internal/authorize-ssh-key", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    publicKey,
+    authorizationId: "0123456789abcdef0123456789abcdef",
+    ttlSeconds: 90,
+  }),
+}));
+assert.equal(authorization.status, 204);
+assert.match(authorizationDevice.messages[0], /^wayon-ssh-authorize-v1\./);
+
+const messageCount = authorizationDevice.messages.length;
+relay.webSocketMessage(replacementClient, "wayon-ssh-authorize-v1.forged");
+assert.equal(authorizationDevice.messages.length, messageCount);
+const binary = Uint8Array.from([1, 2, 3]).buffer;
+relay.webSocketMessage(replacementClient, binary);
+assert.equal(authorizationDevice.messages.at(-1), binary);
+
 console.log("device relay lifecycle tests passed");

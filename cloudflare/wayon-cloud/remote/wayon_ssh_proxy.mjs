@@ -8,6 +8,7 @@ const endpoint = process.env.WAYON_SSH_URL
 const connectTimeoutMs = Number.parseInt(process.env.WAYON_SSH_CONNECT_TIMEOUT_MS || "30000", 10);
 const credentialsPath = process.env.WAYON_SSH_CREDENTIALS_FILE
   || join(homedir(), ".config", "wayon", "ssh.credentials.json");
+const publicKeyPath = process.env.WAYON_SSH_PUBLIC_KEY_FILE || "";
 const debug = process.env.WAYON_SSH_DEBUG === "1";
 const highWaterBytes = Number.parseInt(process.env.WAYON_SSH_HIGH_WATER_BYTES || "262144", 10);
 
@@ -31,6 +32,15 @@ if (!wayonKey.startsWith("wayon_")) {
   exitWithError(`invalid credentials: ${credentialsPath}`);
 }
 
+let publicKey = "";
+if (publicKeyPath) {
+  try {
+    publicKey = readFileSync(publicKeyPath, "utf8").trim();
+  } catch {
+    exitWithError(`cannot read temporary public key: ${publicKeyPath}`);
+  }
+}
+
 const sessionEndpoint = new URL(endpoint);
 sessionEndpoint.protocol = sessionEndpoint.protocol === "wss:" ? "https:" : "http:";
 sessionEndpoint.pathname = sessionEndpoint.pathname.replace(/\/ssh$/, "/session");
@@ -43,7 +53,9 @@ try {
       authorization: `Bearer ${wayonKey}`,
       accept: "application/json",
       "user-agent": "wayon-ssh-proxy/1.0",
+      "content-type": "application/json",
     },
+    body: JSON.stringify(publicKey ? { publicKey } : {}),
   });
 } catch {
   exitWithError("login endpoint unavailable");

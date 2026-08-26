@@ -34,7 +34,22 @@ device-authenticated outbound WebSockets to one Durable Object per Dongle ID.
 protocol token containing that Dongle ID. The relay opens local port 22 or 8765
 only while an SSH or 360 Live client is connected.
 
-The Mac connects through the included SSH `ProxyCommand` client:
+When the session request includes the client's public key, the Worker forwards
+it only to the relay for the Wayon-key-matched Dongle ID. The comma appends that
+key to its existing authorized keys for 90 seconds and then removes the exact
+session entry. Existing user SSH keys are preserved, raw Wayon keys never reach
+the SSH daemon, and client text frames cannot forge relay control messages.
+Hylink performs this exchange automatically, so the Wayon Cloud Key is the only
+credential the user enters.
+
+The Mac can also create an ephemeral SSH identity automatically and connect with
+only the stored Wayon Cloud Key:
+
+```sh
+node /path/to/remote/wayon_ssh.mjs
+```
+
+For an existing SSH identity, the lower-level `ProxyCommand` remains available:
 
 ```sshconfig
 Host wayon-comma

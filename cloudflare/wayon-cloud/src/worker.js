@@ -21,6 +21,8 @@ const REMOTE_SESSION_PATH = "/api/remote/session";
 const REMOTE_SSH_PATH = "/api/remote/ssh";
 const REMOTE_SSH_PROTOCOL_PREFIX = "wayon-ssh-v1";
 const REMOTE_SSH_MAX_AGE_SECONDS = 60;
+const REMOTE_SSH_KEY_TTL_SECONDS = 90;
+const REMOTE_SSH_AUTHORIZE_PREFIX = "wayon-ssh-authorize-v1";
 const LIVE_SESSION_PATH = "/api/live/session";
 const LIVE_STREAM_PATH = "/api/live/stream";
 const LIVE_PROTOCOL_PREFIX = "wayon-live-v1";
@@ -190,6 +192,19 @@ function validDeviceId(value) {
 
 function validWayonKey(value) {
   return /^wayon_[A-Za-z0-9_-]{40,96}$/.test(String(value || ""));
+}
+
+function validSshPublicKey(value) {
+  const match = String(value || "").trim().match(
+    /^(ssh-rsa|ssh-ed25519) ([A-Za-z0-9+/]{40,4096}={0,2})(?: [A-Za-z0-9@._-]{1,128})?$/,
+  );
+  if (!match) return false;
+  try {
+    atob(match[2]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function issueSignedProtocol(prefix, sessionSecret, deviceId, nowSeconds) {
@@ -364,6 +379,27 @@ function connectDeviceRelay(request, env, deviceId, kind, role, protocol = "") {
   return env.DEVICE_RELAY.get(id).fetch(new Request(request.url, { headers }));
 }
 
+async function authorizeDeviceSshKey(env, deviceId, publicKey, authorizationId) {
+  try {
+    const id = env.DEVICE_RELAY.idFromName(`${deviceId}:ssh`);
+    const response = await env.DEVICE_RELAY.get(id).fetch(new Request(
+      "https://wayon.internal/authorize-ssh-key",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          publicKey,
+          authorizationId,
+          ttlSeconds: REMOTE_SSH_KEY_TTL_SECONDS,
+        }),
+      },
+    ));
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function handleDeviceRelay(request, env, kind) {
   if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
     return json({ error: "websocket_required" }, 426);
@@ -382,6 +418,28 @@ export class WayonDeviceRelay {
   }
 
   async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/authorize-ssh-key") {
+      const payload = await request.json().catch(() => ({}));
+      const publicKey = String(payload.publicKey || "").trim();
+      const authorizationId = String(payload.authorizationId || "");
+      const ttlSeconds = Number(payload.ttlSeconds);
+      if (!validSshPublicKey(publicKey)
+          || !/^[0-9a-f]{32}$/i.test(authorizationId)
+          || ttlSeconds < REMOTE_SSH_MAX_AGE_SECONDS
+          || ttlSeconds > 120) {
+        return new Response("invalid authorization", { status: 400 });
+      }
+      const device = this.state.getWebSockets("device")[0];
+      if (!device) return new Response("device offline", { status: 409 });
+      device.send(`${REMOTE_SSH_AUTHORIZE_PREFIX}.${textToBase64Url(JSON.stringify({
+        publicKey,
+        authorizationId,
+        ttlSeconds,
+      }))}`);
+      return new Response(null, { status: 204 });
+    }
+
     if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
       return new Response("websocket required", { status: 426 });
     }
@@ -424,6 +482,10 @@ export class WayonDeviceRelay {
 
   webSocketMessage(socket, message) {
     const role = socket.deserializeAttachment()?.role;
+    // Relay control messages are text. SSH and camera payloads are binary, so
+    // never allow an authenticated client to impersonate Durable Object
+    // control messages sent to the device.
+    if (role === "client" && typeof message === "string") return;
     const destination = role === "device" ? "client" : "device";
     for (const peer of this.state.getWebSockets(destination)) {
       try { peer.send(message); } catch {}
@@ -459,21 +521,35 @@ export class WayonDeviceRelay {
 }
 
 async function handleRemoteSession(request, env) {
-  if (!env.WAYON_SSH_SESSION_SECRET) {
+  if (!env.DEVICE_RELAY || !env.WAYON_SSH_SESSION_SECRET) {
     return json({ error: "remote_access_unavailable" }, 503);
   }
   const identity = await authenticateDeviceKey(request, env);
   if (!identity) return json({ error: "unauthorized" }, 401);
 
+  const payload = await request.json().catch(() => ({}));
+  const publicKey = String(payload.publicKey || "").trim();
+  if (publicKey && !validSshPublicKey(publicKey)) {
+    return json({ error: "invalid_ssh_public_key" }, 400);
+  }
+
   const issuedAt = Math.floor(Date.now() / 1000);
+  const protocol = await issueRemoteSshProtocol(
+    env.WAYON_SSH_SESSION_SECRET,
+    identity.deviceId,
+    issuedAt,
+  );
+  if (publicKey) {
+    const authorizationId = protocol.split(".")[2];
+    if (!await authorizeDeviceSshKey(env, identity.deviceId, publicKey, authorizationId)) {
+      return json({ error: "device_offline" }, 409);
+    }
+  }
   return json({
-    protocol: await issueRemoteSshProtocol(
-      env.WAYON_SSH_SESSION_SECRET,
-      identity.deviceId,
-      issuedAt,
-    ),
+    protocol,
     deviceId: identity.deviceId,
     expiresAt: issuedAt + REMOTE_SSH_MAX_AGE_SECONDS,
+    credentialMode: publicKey ? "wayon_key_ephemeral" : "existing_ssh_key",
   });
 }
 

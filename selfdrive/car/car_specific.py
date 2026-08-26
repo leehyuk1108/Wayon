@@ -76,9 +76,13 @@ class CarSpecificEvents:
       if CS.vEgo < self.CP.minEnableSpeed and not (CS.standstill and CS.brakePressed and
                                                    self.CP.networkLocation == NetworkLocation.fwdCamera):
         events.add(EventName.belowEngageSpeed)
-      gm_hold_stop = (self.CP.openpilotLongitudinalControl and self.CP.autoResumeSng and CC.longActive and
-                      CS.standstill and CC.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping)
-      if gm_hold_stop or (not self.CP.autoResumeSng and CS.cruiseState.standstill and CS.standstill):
+      gm_hold_available = not CS.parkingBrake and CS.gearShifter in (GearShifter.drive, GearShifter.low)
+      gm_hold_stop = (gm_hold_available and self.CP.openpilotLongitudinalControl and self.CP.autoResumeSng and
+                      CC.longActive and CS.standstill and
+                      CC.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping)
+      gm_pcm_hold_stop = (gm_hold_available and not self.CP.autoResumeSng and
+                          CS.cruiseState.standstill and CS.standstill)
+      if gm_hold_stop or gm_pcm_hold_stop:
         # Keep the existing timer visible, but derive it from physical GM Hold
         # rather than the ECU ACC standstill state on the Traverse.
         events.remove(EventName.belowSteerSpeed)

@@ -48,8 +48,12 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     """Maintain manual GM Hold and the engaged stop-and-go hold state."""
     self.CS.autoHoldActivated = False
     self.CS.longAutoHoldActive = False
+    hold_allowed = (
+      not self.CS.out.parkingBrake and
+      self.CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.low)
+    )
 
-    if not self.CS.autoHold:
+    if not self.CS.autoHold or not hold_allowed:
       self.CS.autoHoldActive = False
       self.CS.autoHoldBrakeArmed = False
     elif self.CS.out.gasPressed or self.CS.out.regenBraking:
@@ -72,12 +76,12 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
       self.CS.longAutoHoldActive = bool(
         control.longActive and control.actuators.longControlState == structs.CarControl.Actuators.LongControlState.stopping and
         self.CS.out.standstill and not self.CS.out.gasPressed and not self.CS.out.regenBraking and
-        self.CS.out.gearShifter in (structs.CarState.GearShifter.drive, *self.DRIVABLE_GEARS)
+        hold_allowed
       )
       self.CS.autoHoldActivated |= self.CS.longAutoHoldActive
     else:
       self.CS.out.brakeHoldActive = bool(
-        self.CS.autoHoldActive and not self.CS.out.cruiseState.enabled
+        self.CS.autoHoldActive and hold_allowed and not self.CS.out.cruiseState.enabled
       )
 
   def update(self, can_packets):
@@ -91,7 +95,8 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     # separately and remains under longitudinal control.
     self.CS.out.brakeHoldActive = bool(
       self.CS.autoHoldActive and not c.enabled and not c.longActive and
-      not self.CS.out.cruiseState.enabled
+      not self.CS.out.cruiseState.enabled and not self.CS.out.parkingBrake and
+      self.CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.low)
     )
     return super().apply(c, c_sp, now_nanos)
 

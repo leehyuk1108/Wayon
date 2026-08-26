@@ -68,7 +68,7 @@ def gm_auto_hold_command(CP, CC, CS):
     not CC.longActive and not CC.enabled and not CS.out.cruiseState.enabled and
     CS.autoHold and CS.autoHoldActive and not CS.out.gasPressed and
     CS.out.gearShifter in (GearShifter.drive, GearShifter.low) and
-    CS.out.vEgo < 0.05 and not CS.out.regenBraking
+    CS.out.vEgo < 0.05 and not CS.out.regenBraking and not CS.out.parkingBrake
   )
 
 
@@ -77,7 +77,8 @@ def gm_long_auto_hold_command(CP, CC, CS, actuators):
     CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.autoResumeSng and
     CC.longActive and actuators.longControlState == LongCtrlState.stopping and
     CS.longAutoHoldActive and not CS.out.gasPressed and not CS.out.regenBraking and
-    CS.out.gearShifter in (GearShifter.drive, GearShifter.low) and CS.out.standstill
+    CS.out.gearShifter in (GearShifter.drive, GearShifter.low) and CS.out.standstill and
+    not CS.out.parkingBrake
   )
 
 

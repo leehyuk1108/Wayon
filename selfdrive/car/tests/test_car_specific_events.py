@@ -8,7 +8,8 @@ EventName = log.OnroadEvent.EventName
 
 
 def gm_events(cruise_standstill: bool, vehicle_standstill: bool | None = None,
-              auto_resume_sng: bool = False) -> list[int]:
+              auto_resume_sng: bool = False, parking_brake: bool = False,
+              gear=car.CarState.GearShifter.drive) -> list[int]:
   CP = car.CarParams.new_message()
   CP.brand = "gm"
   CP.carFingerprint = CAR.CHEVROLET_TRAVERSE
@@ -17,7 +18,8 @@ def gm_events(cruise_standstill: bool, vehicle_standstill: bool | None = None,
   CP.autoResumeSng = auto_resume_sng
 
   CS = car.CarState.new_message()
-  CS.gearShifter = car.CarState.GearShifter.drive
+  CS.gearShifter = gear
+  CS.parkingBrake = parking_brake
   CS.cruiseState.available = True
   CS.cruiseState.enabled = True
   CS.cruiseState.standstill = cruise_standstill
@@ -60,3 +62,21 @@ def test_gm_hold_timer_uses_physical_stop_without_ecu_standstill():
 
   assert EventName.resumeRequired in events
   assert EventName.belowSteerSpeed not in events
+
+
+def test_gm_hold_timer_is_hidden_with_parking_brake():
+  events = gm_events(cruise_standstill=False, vehicle_standstill=True,
+                     auto_resume_sng=True, parking_brake=True)
+
+  assert EventName.resumeRequired not in events
+  assert EventName.parkBrake in events
+
+  pcm_events = gm_events(cruise_standstill=True, parking_brake=True)
+  assert EventName.resumeRequired not in pcm_events
+
+
+def test_gm_hold_timer_is_hidden_outside_drive():
+  events = gm_events(cruise_standstill=False, vehicle_standstill=True,
+                     auto_resume_sng=True, gear=car.CarState.GearShifter.park)
+
+  assert EventName.resumeRequired not in events

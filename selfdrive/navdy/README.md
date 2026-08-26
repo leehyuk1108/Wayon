@@ -1254,7 +1254,8 @@ queue, address 역할 mapping이 필요하다.
 | Overspeed 해제 | blink 중지, restore |
 | 재연결 | reverse/overspeed/active 상태를 다시 적용 |
 
-화면 brightness를 ambient brightness 1에서 50으로 mapping하고 5초마다 동기화한다.
+화면 brightness를 Zone 1 ambient brightness 1에서 50으로 mapping하고 5초마다 동기화한다.
+Zone 2는 같은 밝기 패킷의 독립 채널을 사용해 30%로 고정한다.
 
 ## Navdy 화면 전원 관리
 

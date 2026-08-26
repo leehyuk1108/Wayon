@@ -333,6 +333,30 @@ public final class AmbientLightController {
     });
   }
 
+  public static void onCameraSpeedChanged(final Context context, final int speed, final int limit) {
+    if (context == null) {
+      return;
+    }
+    final AmbientLightController controller = get(context);
+    controller.mHandler.post(new Runnable() {
+      @Override
+      public void run() {
+        controller.requestCameraSpeed(speed, limit);
+      }
+    });
+  }
+
+  private void requestCameraSpeed(int speed, int limit) {
+    if (limit <= 0 || speed <= limit) {
+      requestOverspeed(false);
+    } else if (speed >= limit + 2) {
+      requestOverspeed(true);
+    } else {
+      // In the +1 km/h deadband, retain the active state and cancel a pending transition.
+      requestOverspeed(mOverspeedActive);
+    }
+  }
+
   private void requestOverspeed(boolean overspeed) {
     if (mRequestedOverspeed == overspeed) {
       return;

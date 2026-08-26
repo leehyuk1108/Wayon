@@ -357,8 +357,9 @@ def test_navdy_ambient_overspeed_uses_hysteresis_and_night_comfort_mode():
   assert "OVERSPEED_BLINK_INTERVAL_MS = 3000" in source
   assert "NIGHT_AMBIENT_BRIGHTNESS_MAX = 3" in source
   assert "NIGHT_OVERSPEED_ZONE_2_BRIGHTNESS = 8" in source
-  assert "add-int/lit8 v5, v8, 0x2" in speed_view
-  assert "if-lt v0, v5" in speed_view
+  assert "onCameraSpeedChanged(Landroid/content/Context;II)V" in speed_view
+  assert "speed >= limit + 2" in source
+  assert "requestOverspeed(mOverspeedActive)" in source
   assert "OVERSPEED_ON_DELAY_MS:J = 0x3e8L" in controller
   assert "OVERSPEED_OFF_DELAY_MS:J = 0x7d0L" in controller
   assert "OVERSPEED_MIN_ACTIVE_MS:J = 0xbb8L" in controller

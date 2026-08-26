@@ -211,6 +211,12 @@
 
     move-result v8
 
+    invoke-virtual {p0}, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->getContext()Landroid/content/Context;
+
+    move-result-object v7
+
+    invoke-static {v7, v0, v8}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onCameraSpeedChanged(Landroid/content/Context;II)V
+
     if-lez v8, :cond_3
 
     if-le v0, v8, :cond_3
@@ -221,39 +227,19 @@
 
     invoke-virtual {v4, v5}, Landroid/widget/TextView;->setTextColor(I)V
 
-    add-int/lit8 v5, v8, 0x2
-
-    if-lt v0, v5, :cond_4
-
-    invoke-virtual {p0}, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->getContext()Landroid/content/Context;
-
-    move-result-object v7
-
-    const/4 v5, 0x1
-
-    invoke-static {v7, v5}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onOverspeedChanged(Landroid/content/Context;Z)V
-
     goto :goto_2
 
     :cond_3
-    invoke-virtual {p0}, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->getContext()Landroid/content/Context;
-
-    move-result-object v7
-
-    const/4 v5, 0x0
-
-    invoke-static {v7, v5}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onOverspeedChanged(Landroid/content/Context;Z)V
-
     iget v4, p0, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->speedLimit:I
 
-    if-lez v4, :cond_7
+    if-lez v4, :cond_6
 
     .line 145
     iget v4, p0, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->speedLimit:I
 
     add-int/2addr v4, v1
 
-    if-lt v0, v4, :cond_5
+    if-lt v0, v4, :cond_4
 
     .line 147
     iget-object v4, p0, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->speedView:Landroid/widget/TextView;
@@ -263,7 +249,6 @@
     invoke-virtual {v4, v5}, Landroid/widget/TextView;->setTextColor(I)V
 
     .line 159
-    :cond_4
     :goto_2
     return-void
 
@@ -305,10 +290,10 @@
     goto :goto_1
 
     .line 148
-    :cond_5
+    :cond_4
     iget v4, p0, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->speedLimit:I
 
-    if-lt v0, v4, :cond_6
+    if-lt v0, v4, :cond_5
 
     .line 150
     iget-object v4, p0, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->speedView:Landroid/widget/TextView;
@@ -320,7 +305,7 @@
     goto :goto_2
 
     .line 153
-    :cond_6
+    :cond_5
     iget-object v4, p0, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->speedView:Landroid/widget/TextView;
 
     invoke-virtual {v4, v6}, Landroid/widget/TextView;->setTextColor(I)V
@@ -328,7 +313,7 @@
     goto :goto_2
 
     .line 157
-    :cond_7
+    :cond_6
     iget-object v4, p0, Lcom/navdy/hud/app/ui/component/homescreen/SpeedView;->speedView:Landroid/widget/TextView;
 
     invoke-virtual {v4, v6}, Landroid/widget/TextView;->setTextColor(I)V
@@ -336,8 +321,6 @@
     goto :goto_2
 
     .line 119
-    nop
-
     :pswitch_data_0
     .packed-switch 0x1
         :pswitch_0

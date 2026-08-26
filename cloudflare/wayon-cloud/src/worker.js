@@ -45,7 +45,7 @@ function json(data, status = 200) {
   });
 }
 
-function tripHistoryJson(data, source) {
+function historyJson(data, source) {
   return new Response(JSON.stringify(data), {
     headers: {
       ...JSON_HEADERS,
@@ -1435,6 +1435,12 @@ async function handleImpacts(request, env) {
   const url = new URL(request.url);
   const deviceId = authenticatedDeviceId(request);
   const limit = Math.max(1, Math.min(100, Number.parseInt(url.searchParams.get("limit") || "25", 10)));
+  try {
+    return historyJson({ impacts: await fetchServerImpactList(env, limit, deviceId) }, "server");
+  } catch (error) {
+    console.warn("Wayon server impact list unavailable; using D1", error?.message || error);
+  }
+
   const impacts = await env.DB.prepare(`
     SELECT id, device_id, detected_at, received_at, severity, peak_dynamic_g,
            peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
@@ -1451,7 +1457,7 @@ async function handleImpacts(request, env) {
            ) AS vehicle_locked
     FROM impact_events WHERE device_id = ? ORDER BY detected_at DESC LIMIT ?
   `).bind(deviceId, limit).all();
-  return json({ impacts: impacts.results || [] });
+  return historyJson({ impacts: impacts.results || [] }, "d1");
 }
 
 async function handleMobileImpacts(request, env) {
@@ -1859,13 +1865,14 @@ async function handleState(request, env) {
     `).bind(deviceId).first(),
     env.DB.prepare(`
       SELECT s.id, s.device_id, s.camera, s.captured_at, s.kv_key, s.size_bytes,
-             i.id AS impact_id, i.severity AS impact_severity,
-             i.peak_dynamic_g AS impact_peak_dynamic_g,
-             i.peak_total_g AS impact_peak_total_g,
-             i.detected_at AS impact_detected_at
+             COALESCE(iw.id, idr.id) AS impact_id,
+             COALESCE(iw.severity, idr.severity) AS impact_severity,
+             COALESCE(iw.peak_dynamic_g, idr.peak_dynamic_g) AS impact_peak_dynamic_g,
+             COALESCE(iw.peak_total_g, idr.peak_total_g) AS impact_peak_total_g,
+             COALESCE(iw.detected_at, idr.detected_at) AS impact_detected_at
       FROM snapshots s
-      LEFT JOIN impact_events i
-        ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
+      LEFT JOIN impact_events iw ON s.id = iw.wide_snapshot_id
+      LEFT JOIN impact_events idr ON s.id = idr.driver_snapshot_id
       WHERE s.device_id = ? ORDER BY s.captured_at DESC LIMIT 12
     `).bind(deviceId).all(),
     fetchMergedVehicleStatus(env, deviceId),
@@ -1945,13 +1952,14 @@ function parseServerTripSummary(trip) {
   };
 }
 
-async function fetchServerApi(env, path) {
+async function fetchServerApi(env, path, deviceId) {
   if (!env.WAYON_SERVER_API || !env.WAYON_SERVER_SYNC_TOKEN) return null;
 
   return env.WAYON_SERVER_API.fetch(`http://wayon-server${path}`, {
     headers: {
       accept: "application/json",
       authorization: `Bearer ${env.WAYON_SERVER_SYNC_TOKEN}`,
+      "x-wayon-device-id": deviceId,
     },
     signal: AbortSignal.timeout(SERVER_API_TIMEOUT_MS),
   });
@@ -1961,6 +1969,7 @@ async function fetchServerTripList(env, limit, deviceId) {
   const response = await fetchServerApi(
     env,
     `/v1/wayon/trips?limit=${encodeURIComponent(limit)}&offset=0&include_route=false`,
+    deviceId,
   );
   if (!response || !response.ok) {
     throw new Error(`server_trip_list_${response?.status || "unavailable"}`);
@@ -1979,6 +1988,7 @@ async function fetchServerTrip(env, tripId, deviceId) {
   const response = await fetchServerApi(
     env,
     `/v1/wayon/trips/${encodeURIComponent(tripId)}`,
+    deviceId,
   );
   if (!response || !response.ok) {
     throw new Error(`server_trip_${response?.status || "unavailable"}`);
@@ -1993,7 +2003,52 @@ async function fetchServerTrip(env, tripId, deviceId) {
   return payload.trip;
 }
 
-function parseTripSyncCursor(value) {
+async function fetchServerImpactList(env, limit, deviceId) {
+  const response = await fetchServerApi(
+    env,
+    `/v1/wayon/impacts?limit=${encodeURIComponent(limit)}&offset=0`,
+    deviceId,
+  );
+  if (!response || !response.ok) {
+    throw new Error(`server_impact_list_${response?.status || "unavailable"}`);
+  }
+
+  const payload = await response.json();
+  if (payload?.schemaVersion !== "wayon-impact-read-v1" || !Array.isArray(payload.impacts)) {
+    throw new Error("server_impact_list_schema");
+  }
+  return payload.impacts.filter(
+    (impact) => String(impact.device_id || impact.deviceId || "") === deviceId,
+  );
+}
+
+async function fetchServerSnapshotList(env, limit, date, deviceId) {
+  const dateQuery = date ? `&date=${encodeURIComponent(date)}` : "";
+  const response = await fetchServerApi(
+    env,
+    `/v1/wayon/snapshots?limit=${encodeURIComponent(limit)}&offset=0${dateQuery}`,
+    deviceId,
+  );
+  if (!response || !response.ok) {
+    throw new Error(`server_snapshot_list_${response?.status || "unavailable"}`);
+  }
+
+  const payload = await response.json();
+  if (payload?.schemaVersion !== "wayon-snapshot-read-v1" || !Array.isArray(payload.snapshots)) {
+    throw new Error("server_snapshot_list_schema");
+  }
+  return {
+    generatedAt: payload.generatedAt || nowIso(),
+    snapshots: payload.snapshots.filter(
+      (snapshot) => String(snapshot.device_id || snapshot.deviceId || "") === deviceId,
+    ),
+    days: Array.isArray(payload.days) ? payload.days : [],
+    total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : 0,
+    limit,
+  };
+}
+
+function parseSyncCursor(value) {
   if (!value) return { valid: true, cursor: null };
   if (value.length > 512) return { valid: false, cursor: null };
 
@@ -2010,10 +2065,10 @@ function parseTripSyncCursor(value) {
   }
 }
 
-function tripSyncCursor(trip) {
+function syncCursor(row, timestampField = "created_at") {
   return textToBase64Url(JSON.stringify({
-    createdAt: trip.created_at,
-    id: trip.id,
+    createdAt: row[timestampField],
+    id: row.id,
   }));
 }
 
@@ -2024,7 +2079,7 @@ async function handleServerSyncTrips(request, env) {
 
   const url = new URL(request.url);
   const cursorValue = url.searchParams.get("cursor") || "";
-  const parsedCursor = parseTripSyncCursor(cursorValue);
+  const parsedCursor = parseSyncCursor(cursorValue);
   if (!parsedCursor.valid) return json({ error: "invalid_cursor" }, 400);
 
   const limit = boundedLimit(url.searchParams.get("limit"), 50, 100);
@@ -2058,7 +2113,95 @@ async function handleServerSyncTrips(request, env) {
     schemaVersion: "wayon-trip-sync-v1",
     generatedAt: nowIso(),
     trips: page.map(parseTripRoute),
-    nextCursor: page.length ? tripSyncCursor(page[page.length - 1]) : (cursorValue || null),
+    nextCursor: page.length ? syncCursor(page[page.length - 1]) : (cursorValue || null),
+    hasMore,
+  });
+}
+
+async function handleServerSyncImpacts(request, env) {
+  if (!authorizeServerSync(request, env)) return json({ error: "unauthorized" }, 401);
+
+  const url = new URL(request.url);
+  const cursorValue = url.searchParams.get("cursor") || "";
+  const parsedCursor = parseSyncCursor(cursorValue);
+  if (!parsedCursor.valid) return json({ error: "invalid_cursor" }, 400);
+
+  const limit = boundedLimit(url.searchParams.get("limit"), 50, 100);
+  const queryLimit = limit + 1;
+  const select = `
+    SELECT id, device_id, detected_at, received_at, severity, peak_dynamic_g,
+           peak_total_g, peak_jerk_g_per_s, peak_gyro_rad_per_s, duration_ms,
+           sample_count, sensor_clipped, latitude, longitude, capture_status,
+           captured_at, capture_attempts, wide_snapshot_id, driver_snapshot_id,
+           notified_count, raw_json
+    FROM impact_events
+  `;
+  const result = parsedCursor.cursor
+    ? await env.DB.prepare(`
+        ${select}
+        WHERE received_at > ? OR (received_at = ? AND id > ?)
+        ORDER BY received_at ASC, id ASC LIMIT ?
+      `).bind(
+        parsedCursor.cursor.createdAt,
+        parsedCursor.cursor.createdAt,
+        parsedCursor.cursor.id,
+        queryLimit,
+      ).all()
+    : await env.DB.prepare(`
+        ${select}
+        ORDER BY received_at ASC, id ASC LIMIT ?
+      `).bind(queryLimit).all();
+
+  const rows = result.results || [];
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  return json({
+    schemaVersion: "wayon-impact-sync-v1",
+    generatedAt: nowIso(),
+    impacts: page,
+    nextCursor: page.length ? syncCursor(page[page.length - 1], "received_at") : (cursorValue || null),
+    hasMore,
+  });
+}
+
+async function handleServerSyncSnapshots(request, env) {
+  if (!authorizeServerSync(request, env)) return json({ error: "unauthorized" }, 401);
+
+  const url = new URL(request.url);
+  const cursorValue = url.searchParams.get("cursor") || "";
+  const parsedCursor = parseSyncCursor(cursorValue);
+  if (!parsedCursor.valid) return json({ error: "invalid_cursor" }, 400);
+
+  const limit = boundedLimit(url.searchParams.get("limit"), 50, 100);
+  const queryLimit = limit + 1;
+  const select = `
+    SELECT id, device_id, camera, captured_at, kv_key, size_bytes, created_at
+    FROM snapshots
+  `;
+  const result = parsedCursor.cursor
+    ? await env.DB.prepare(`
+        ${select}
+        WHERE created_at > ? OR (created_at = ? AND id > ?)
+        ORDER BY created_at ASC, id ASC LIMIT ?
+      `).bind(
+        parsedCursor.cursor.createdAt,
+        parsedCursor.cursor.createdAt,
+        parsedCursor.cursor.id,
+        queryLimit,
+      ).all()
+    : await env.DB.prepare(`
+        ${select}
+        ORDER BY created_at ASC, id ASC LIMIT ?
+      `).bind(queryLimit).all();
+
+  const rows = result.results || [];
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  return json({
+    schemaVersion: "wayon-snapshot-sync-v1",
+    generatedAt: nowIso(),
+    snapshots: page,
+    nextCursor: page.length ? syncCursor(page[page.length - 1]) : (cursorValue || null),
     hasMore,
   });
 }
@@ -2103,18 +2246,25 @@ async function handleSnapshotsList(request, env) {
   const deviceId = authenticatedDeviceId(request);
   const limit = boundedLimit(url.searchParams.get("limit"), 500, 1000);
   const date = url.searchParams.get("date");
+  try {
+    return historyJson(await fetchServerSnapshotList(env, limit, date, deviceId), "server");
+  } catch (error) {
+    console.warn("Wayon server snapshot list unavailable; using D1", error?.message || error);
+  }
+
   const dateWhere = date
     ? "WHERE s.device_id = ? AND date(s.captured_at, '+9 hours') = ?"
     : "WHERE s.device_id = ?";
   const snapshotQuery = `
     SELECT s.id, s.device_id, s.camera, s.captured_at, s.kv_key, s.size_bytes, s.created_at,
-           i.id AS impact_id, i.severity AS impact_severity,
-           i.peak_dynamic_g AS impact_peak_dynamic_g,
-           i.peak_total_g AS impact_peak_total_g,
-           i.detected_at AS impact_detected_at
+           COALESCE(iw.id, idr.id) AS impact_id,
+           COALESCE(iw.severity, idr.severity) AS impact_severity,
+           COALESCE(iw.peak_dynamic_g, idr.peak_dynamic_g) AS impact_peak_dynamic_g,
+           COALESCE(iw.peak_total_g, idr.peak_total_g) AS impact_peak_total_g,
+           COALESCE(iw.detected_at, idr.detected_at) AS impact_detected_at
     FROM snapshots s
-    LEFT JOIN impact_events i
-      ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
+    LEFT JOIN impact_events iw ON s.id = iw.wide_snapshot_id
+    LEFT JOIN impact_events idr ON s.id = idr.driver_snapshot_id
     ${dateWhere}
     ORDER BY s.captured_at DESC LIMIT ?
   `;
@@ -2128,13 +2278,13 @@ async function handleSnapshotsList(request, env) {
   const total = await env.DB.prepare(`SELECT COUNT(*) AS count FROM snapshots WHERE device_id = ?`)
     .bind(deviceId).first();
 
-  return json({
+  return historyJson({
     generatedAt: nowIso(),
     snapshots: snapshots.results || [],
     days: days.results || [],
     total: total?.count || 0,
     limit,
-  });
+  }, "d1");
 }
 
 async function handleTrips(request, env, pathname) {
@@ -2146,7 +2296,7 @@ async function handleTrips(request, env, pathname) {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length === 3) {
     try {
-      return tripHistoryJson(await fetchServerTrip(env, parts[2], deviceId), "server");
+      return historyJson(await fetchServerTrip(env, parts[2], deviceId), "server");
     } catch (error) {
       console.warn("Wayon server trip detail unavailable; using D1", error?.message || error);
     }
@@ -2156,7 +2306,7 @@ async function handleTrips(request, env, pathname) {
       .first();
     if (!trip) return json({ error: "not_found" }, 404);
 
-    return tripHistoryJson({
+    return historyJson({
       ...trip,
       route: JSON.parse(trip.route_json || "[]"),
     }, "d1");
@@ -2165,7 +2315,7 @@ async function handleTrips(request, env, pathname) {
   const url = new URL(request.url);
   const requestedLimit = boundedLimit(url.searchParams.get("limit"), 100, 5000);
   try {
-    return tripHistoryJson({ trips: await fetchServerTripList(env, requestedLimit, deviceId) }, "server");
+    return historyJson({ trips: await fetchServerTripList(env, requestedLimit, deviceId) }, "server");
   } catch (error) {
     console.warn("Wayon server trip list unavailable; using D1", error?.message || error);
   }
@@ -2182,7 +2332,7 @@ async function handleTrips(request, env, pathname) {
     FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT ?
   `).bind(deviceId, limit).all();
 
-  return tripHistoryJson({ trips: (trips.results || []).map(parseTripSummary) }, "d1");
+  return historyJson({ trips: (trips.results || []).map(parseTripSummary) }, "d1");
 }
 
 async function handleSnapshotImage(request, env) {
@@ -2307,13 +2457,14 @@ const AI_IMPACT_SELECT = `
 
 const AI_SNAPSHOT_SELECT = `
   SELECT s.id, s.device_id, s.camera, s.captured_at, s.size_bytes, s.created_at,
-         i.id AS impact_id, i.severity AS impact_severity,
-         i.peak_dynamic_g AS impact_peak_dynamic_g,
-         i.peak_total_g AS impact_peak_total_g,
-         i.detected_at AS impact_detected_at
+         COALESCE(iw.id, idr.id) AS impact_id,
+         COALESCE(iw.severity, idr.severity) AS impact_severity,
+         COALESCE(iw.peak_dynamic_g, idr.peak_dynamic_g) AS impact_peak_dynamic_g,
+         COALESCE(iw.peak_total_g, idr.peak_total_g) AS impact_peak_total_g,
+         COALESCE(iw.detected_at, idr.detected_at) AS impact_detected_at
   FROM snapshots s
-  LEFT JOIN impact_events i
-    ON s.id = i.wide_snapshot_id OR s.id = i.driver_snapshot_id
+  LEFT JOIN impact_events iw ON s.id = iw.wide_snapshot_id
+  LEFT JOIN impact_events idr ON s.id = idr.driver_snapshot_id
 `;
 
 async function handleAiContext(request, env) {
@@ -2549,7 +2700,7 @@ export default {
     }
 
     const separatelyAuthorized = pathname.startsWith("/api/ai/")
-      || pathname === "/api/server-sync/trips";
+      || pathname.startsWith("/api/server-sync/");
     if (pathname.startsWith("/api/") && !separatelyAuthorized) {
       const identity = await authenticateDeviceKey(request, env);
       if (!identity) return json({ error: "unauthorized" }, 401);
@@ -2612,6 +2763,12 @@ export default {
     }
     if (request.method === "GET" && pathname === "/api/server-sync/trips") {
       return handleServerSyncTrips(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/server-sync/impacts") {
+      return handleServerSyncImpacts(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/server-sync/snapshots") {
+      return handleServerSyncSnapshots(request, env);
     }
     if (request.method === "GET" && pathname === "/api/ai/impacts") {
       return handleAiImpacts(request, env);

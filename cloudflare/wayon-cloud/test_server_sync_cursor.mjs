@@ -48,3 +48,40 @@ assert.deepEqual(payload, {
 });
 
 console.log("server-sync-cursor: PASS");
+
+for (const [resource, timestampColumn, schemaVersion, collection] of [
+  ["impacts", "received_at", "wayon-impact-sync-v1", "impacts"],
+  ["snapshots", "created_at", "wayon-snapshot-sync-v1", "snapshots"],
+]) {
+  const syncRequest = new Request(
+    `https://wayon-cloud.test/api/server-sync/${resource}?limit=100&cursor=${cursor}`,
+    { headers: { authorization: "Bearer sync-token" } },
+  );
+  const syncEnv = {
+    WAYON_SERVER_SYNC_TOKEN: "sync-token",
+    SNAPSHOTS: {},
+    DB: {
+      prepare(query) {
+        assert.match(query, new RegExp(`WHERE ${timestampColumn} > \\?`));
+        return {
+          bind(createdAt, sameCreatedAt, id, queryLimit) {
+            assert.equal(createdAt, "2026-07-29T00:00:00.000Z");
+            assert.equal(sameCreatedAt, createdAt);
+            assert.equal(id, "last-trip");
+            assert.equal(queryLimit, 101);
+            return { async all() { return { results: [] }; } };
+          },
+        };
+      },
+    },
+  };
+  const syncResponse = await worker.fetch(syncRequest, syncEnv, {});
+  assert.equal(syncResponse.status, 200);
+  const syncPayload = await syncResponse.json();
+  assert.equal(syncPayload.schemaVersion, schemaVersion);
+  assert.deepEqual(syncPayload[collection], []);
+  assert.equal(syncPayload.nextCursor, cursor);
+  assert.equal(syncPayload.hasMore, false);
+}
+
+console.log("server-sync-history-cursors: PASS");

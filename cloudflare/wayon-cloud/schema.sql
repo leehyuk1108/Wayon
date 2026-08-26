@@ -65,6 +65,9 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE INDEX IF NOT EXISTS snapshots_device_captured_idx
   ON snapshots(device_id, captured_at DESC);
 
+CREATE INDEX IF NOT EXISTS snapshots_kv_key_device_idx
+  ON snapshots(kv_key, device_id);
+
 CREATE TABLE IF NOT EXISTS live_captures (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,
@@ -108,6 +111,12 @@ CREATE TABLE IF NOT EXISTS impact_events (
 
 CREATE INDEX IF NOT EXISTS impact_events_device_detected_idx
   ON impact_events(device_id, detected_at DESC);
+
+CREATE INDEX IF NOT EXISTS impact_events_wide_snapshot_idx
+  ON impact_events(wide_snapshot_id);
+
+CREATE INDEX IF NOT EXISTS impact_events_driver_snapshot_idx
+  ON impact_events(driver_snapshot_id);
 
 CREATE TABLE IF NOT EXISTS impact_suppressions (
   device_id TEXT PRIMARY KEY,

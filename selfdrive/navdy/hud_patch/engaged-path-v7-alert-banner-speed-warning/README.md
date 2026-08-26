@@ -23,7 +23,7 @@ Behavior:
 
 - Keeps Zone 1 ambient lighting on the existing screen-driven automatic
   brightness curve while fixing the independent Zone 2 brightness channel at
-  30 percent.
+  40 percent.
 - Keeps the stock driving HUD visible while openpilot is disengaged and shows
   set speed, openpilot status, turn-signal, and BSM icons in dashboard positions.
 - Uses the same Android system typeface for the center speed while disengaged as

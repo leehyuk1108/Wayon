@@ -314,7 +314,7 @@ def test_navdy_ambient_write_failure_discards_stale_gatt_and_rescans():
   assert "->connectIfNeeded()V" not in fixed
 
 
-def test_navdy_ambient_keeps_zone1_auto_and_fixes_zone2_at_30_percent():
+def test_navdy_ambient_keeps_zone1_auto_and_fixes_zone2_at_40_percent():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning" / \
           "patch_ambient_zone_brightness.py"
   namespace = {}
@@ -333,10 +333,16 @@ def test_navdy_ambient_keeps_zone1_auto_and_fixes_zone2_at_30_percent():
 """
   fixed = namespace["patch_brightness_packet"](original)
 
-  assert "const/16 v1, 0x1e" in fixed
+  assert "const/16 v1, 0x28" in fixed
   assert "filled-new-array {v0, p0, p1, v1}, [I" in fixed
   assert fixed.index("const/16 v1, 0x8d") > fixed.index("move-result-object p0")
   assert namespace["patch_brightness_packet"](fixed) == fixed
+
+  old_30_percent = fixed.replace("const/16 v1, 0x28", "const/16 v1, 0x1e", 1)
+  assert namespace["patch_brightness_packet"](old_30_percent) == fixed
+
+  old_70_percent = fixed.replace("const/16 v1, 0x28", "const/16 v1, 0x46", 1)
+  assert namespace["patch_brightness_packet"](old_70_percent) == fixed
 
 
 def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():

@@ -14,7 +14,27 @@ UNIFORM_BRIGHTNESS = """    const/16 v1, 0x8d
 
     invoke-static {v1, p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildPacket(I[I)[B"""
 
-ZONE_2_FIXED_BRIGHTNESS = """    const/16 v1, 0x1e
+ZONE_2_30_PERCENT_BRIGHTNESS = """    const/16 v1, 0x1e
+
+    filled-new-array {v0, p0, p1, v1}, [I
+
+    move-result-object p0
+
+    const/16 v1, 0x8d
+
+    invoke-static {v1, p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildPacket(I[I)[B"""
+
+ZONE_2_70_PERCENT_BRIGHTNESS = """    const/16 v1, 0x46
+
+    filled-new-array {v0, p0, p1, v1}, [I
+
+    move-result-object p0
+
+    const/16 v1, 0x8d
+
+    invoke-static {v1, p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildPacket(I[I)[B"""
+
+ZONE_2_FIXED_BRIGHTNESS = """    const/16 v1, 0x28
 
     filled-new-array {v0, p0, p1, v1}, [I
 
@@ -31,9 +51,14 @@ def patch_brightness_packet(smali: str) -> str:
   method = smali[start:end]
   if ZONE_2_FIXED_BRIGHTNESS in method:
     return smali
-  if method.count(UNIFORM_BRIGHTNESS) != 1:
-    raise ValueError("expected one uniform Zone 1/Zone 2 brightness payload")
-  method = method.replace(UNIFORM_BRIGHTNESS, ZONE_2_FIXED_BRIGHTNESS)
+  for old_brightness in (ZONE_2_30_PERCENT_BRIGHTNESS, ZONE_2_70_PERCENT_BRIGHTNESS):
+    if old_brightness in method:
+      method = method.replace(old_brightness, ZONE_2_FIXED_BRIGHTNESS)
+      break
+  else:
+    if method.count(UNIFORM_BRIGHTNESS) != 1:
+      raise ValueError("expected one uniform Zone 1/Zone 2 brightness payload")
+    method = method.replace(UNIFORM_BRIGHTNESS, ZONE_2_FIXED_BRIGHTNESS)
   return smali[:start] + method + smali[end:]
 
 

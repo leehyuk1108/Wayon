@@ -38,12 +38,17 @@ public final class AmbientLightController {
   private static final int SCREEN_BRIGHTNESS_FIFTY_PERCENT = 100;
   private static final int OUTDOOR_AMBIENT_BRIGHTNESS = 50;
   private static final int ZONE_2_AMBIENT_BRIGHTNESS = 40;
-  private static final int NIGHT_AMBIENT_BRIGHTNESS_MAX = 3;
-  private static final int NIGHT_OVERSPEED_ZONE_2_BRIGHTNESS = 8;
+  private static final int MIN_FADE_AMBIENT_BRIGHTNESS = 8;
+  private static final int FADE_PHASE_WHITE_DOWN = 0;
+  private static final int FADE_PHASE_RED_UP = 1;
+  private static final int FADE_PHASE_RED_DOWN = 2;
+  private static final int FADE_PHASE_WHITE_UP = 3;
+  private static final int FADE_STEPS = 5;
   private static final int BRIGHTNESS_UPDATE_DELTA = 2;
   private static final long BRIGHTNESS_SYNC_INTERVAL_MS = 5000;
   private static final long CONNECT_RETRY_MS = 5000;
-  private static final long OVERSPEED_BLINK_INTERVAL_MS = 3000;
+  private static final long FADE_STEP_INTERVAL_MS = 450;
+  private static final long LOW_LIGHT_CHECK_INTERVAL_MS = 1000;
   private static final long OVERSPEED_ON_DELAY_MS = 1000;
   private static final long OVERSPEED_OFF_DELAY_MS = 2000;
   private static final long OVERSPEED_MIN_ACTIVE_MS = 3000;
@@ -60,11 +65,11 @@ public final class AmbientLightController {
   };
   private static final byte[] PACKET_RED = new byte[] {
       0x2e, (byte) 0x8d, 0x08, 0x01, 0x08, (byte) 0xff, 0x00, 0x00,
-      (byte) 0xff, 0x00, 0x00, 0x63
+      (byte) 0xff, (byte) 0xeb, (byte) 0xcd, (byte) 0xab
   };
   private static final byte[] PACKET_RESTORE = new byte[] {
       0x2e, (byte) 0x8d, 0x08, 0x01, 0x08, (byte) 0xff, (byte) 0xff,
-      (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, 0x67
+      (byte) 0xff, (byte) 0xff, (byte) 0xeb, (byte) 0xcd, (byte) 0xad
   };
 
   private static AmbientLightController sInstance;
@@ -206,16 +211,54 @@ public final class AmbientLightController {
       if (!mOverspeedActive || mReverseActive) {
         return;
       }
-      if (readAmbientBrightness() <= NIGHT_AMBIENT_BRIGHTNESS_MAX) {
-        if (!mBlinkRed) {
+      int brightness = readAmbientBrightness();
+      if (brightness < MIN_FADE_AMBIENT_BRIGHTNESS) {
+        if (!mWarningAnimationStarted || !mLowLightWarning) {
           sendPacket(PACKET_RED);
-          mBlinkRed = true;
+          sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
+          mWarningAnimationStarted = true;
+          mLowLightWarning = true;
+          mFadePhase = FADE_PHASE_WHITE_DOWN;
+          mFadeStep = 0;
+        } else if (mLastAmbientBrightness < 0
+            || Math.abs(brightness - mLastAmbientBrightness) >= BRIGHTNESS_UPDATE_DELTA) {
+          sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
         }
-      } else {
-        sendPacket(mBlinkRed ? PACKET_RESTORE : PACKET_RED);
-        mBlinkRed = !mBlinkRed;
+        mLastAmbientBrightness = brightness;
+        mHandler.postDelayed(this, LOW_LIGHT_CHECK_INTERVAL_MS);
+        return;
       }
-      mHandler.postDelayed(this, OVERSPEED_BLINK_INTERVAL_MS);
+
+      if (!mWarningAnimationStarted || mLowLightWarning) {
+        sendPacket(PACKET_RESTORE);
+        mWarningAnimationStarted = true;
+        mLowLightWarning = false;
+        mFadePhase = FADE_PHASE_WHITE_DOWN;
+        mFadeStep = 0;
+      }
+
+      int directionStep = (mFadePhase == FADE_PHASE_WHITE_DOWN || mFadePhase == FADE_PHASE_RED_DOWN)
+          ? FADE_STEPS - mFadeStep : mFadeStep;
+      int zone1Level = (brightness * directionStep + (FADE_STEPS / 2)) / FADE_STEPS;
+      sendPacket(buildBrightnessPacket(true, zone1Level, ZONE_2_AMBIENT_BRIGHTNESS));
+      mLastAmbientBrightness = brightness;
+
+      mFadeStep++;
+      if (mFadeStep > FADE_STEPS) {
+        mFadeStep = 0;
+        if (mFadePhase == FADE_PHASE_WHITE_DOWN) {
+          mFadePhase = FADE_PHASE_RED_UP;
+          sendPacket(PACKET_RED);
+        } else if (mFadePhase == FADE_PHASE_RED_UP) {
+          mFadePhase = FADE_PHASE_RED_DOWN;
+        } else if (mFadePhase == FADE_PHASE_RED_DOWN) {
+          mFadePhase = FADE_PHASE_WHITE_UP;
+          sendPacket(PACKET_RESTORE);
+        } else {
+          mFadePhase = FADE_PHASE_WHITE_DOWN;
+        }
+      }
+      mHandler.postDelayed(this, FADE_STEP_INTERVAL_MS);
     }
   };
 
@@ -277,7 +320,10 @@ public final class AmbientLightController {
   private boolean mRequestedOverspeed;
   private long mOverspeedActivatedAtMs;
   private boolean mAmbientActive;
-  private boolean mBlinkRed;
+  private boolean mWarningAnimationStarted;
+  private boolean mLowLightWarning;
+  private int mFadePhase;
+  private int mFadeStep;
   private int mLastAmbientBrightness = -1;
   private String mLastGear = "";
 
@@ -428,14 +474,16 @@ public final class AmbientLightController {
   private void startBlink() {
     stopBlink();
     mAmbientActive = true;
-    mBlinkRed = false;
     startBrightnessSync();
     mHandler.post(mBlinkRunnable);
   }
 
   private void stopBlink() {
     mHandler.removeCallbacks(mBlinkRunnable);
-    mBlinkRed = false;
+    mWarningAnimationStarted = false;
+    mLowLightWarning = false;
+    mFadePhase = FADE_PHASE_WHITE_DOWN;
+    mFadeStep = 0;
   }
 
   private void startBrightnessSync() {
@@ -451,15 +499,17 @@ public final class AmbientLightController {
 
   private void syncAmbientBrightness(boolean force) {
     int brightness = readAmbientBrightness();
+    if (mOverspeedActive && mWarningAnimationStarted) {
+      mLastAmbientBrightness = brightness;
+      return;
+    }
     if (!force && mLastAmbientBrightness >= 0
         && Math.abs(brightness - mLastAmbientBrightness) < BRIGHTNESS_UPDATE_DELTA) {
       return;
     }
     mLastAmbientBrightness = brightness;
     Log.i(TAG, "ambient brightness=" + brightness + " screen=" + readScreenBrightness());
-    int zone2Brightness = mOverspeedActive && brightness <= NIGHT_AMBIENT_BRIGHTNESS_MAX
-        ? NIGHT_OVERSPEED_ZONE_2_BRIGHTNESS : ZONE_2_AMBIENT_BRIGHTNESS;
-    sendPacket(buildBrightnessPacket(true, brightness, zone2Brightness));
+    sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
   }
 
   private void sendPacket(byte[] packet) {

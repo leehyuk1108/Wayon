@@ -25,7 +25,7 @@
 .method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
 
-    .line 222
+    .line 265
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$7;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -38,7 +38,7 @@
 .method public run()V
     .locals 2
 
-    .line 225
+    .line 268
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$7;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$500(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
@@ -47,10 +47,10 @@
 
     if-nez v0, :cond_0
 
-    .line 226
+    .line 269
     return-void
 
-    .line 228
+    .line 271
     :cond_0
     const-string v0, "NavdyAmbient"
 
@@ -58,7 +58,7 @@
 
     invoke-static {v0, v1}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 229
+    .line 272
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$7;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$300(Lcom/navdy/hud/app/ambient/AmbientLightController;)Landroid/os/Handler;
@@ -73,18 +73,18 @@
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 230
+    .line 273
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$7;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     const/4 v1, 0x0
 
     invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$502(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
 
-    .line 231
+    .line 274
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$7;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2200(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
 
-    .line 232
+    .line 275
     return-void
 .end method

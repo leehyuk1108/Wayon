@@ -345,7 +345,7 @@ def test_navdy_ambient_keeps_zone1_auto_and_fixes_zone2_at_40_percent():
   assert namespace["patch_brightness_packet"](old_70_percent) == fixed
 
 
-def test_navdy_ambient_overspeed_uses_hysteresis_and_night_comfort_mode():
+def test_navdy_ambient_overspeed_uses_hysteresis_and_zone_specific_fade():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
   source = (patch / "src/com/navdy/hud/app/ambient/AmbientLightController.java").read_text()
   speed_view = (patch / "smali/com/navdy/hud/app/ui/component/homescreen/SpeedView.smali").read_text()
@@ -354,15 +354,22 @@ def test_navdy_ambient_overspeed_uses_hysteresis_and_night_comfort_mode():
   assert "OVERSPEED_ON_DELAY_MS = 1000" in source
   assert "OVERSPEED_OFF_DELAY_MS = 2000" in source
   assert "OVERSPEED_MIN_ACTIVE_MS = 3000" in source
-  assert "OVERSPEED_BLINK_INTERVAL_MS = 3000" in source
-  assert "NIGHT_AMBIENT_BRIGHTNESS_MAX = 3" in source
-  assert "NIGHT_OVERSPEED_ZONE_2_BRIGHTNESS = 8" in source
+  assert "MIN_FADE_AMBIENT_BRIGHTNESS = 8" in source
+  assert "FADE_STEPS = 5" in source
+  assert "FADE_STEP_INTERVAL_MS = 450" in source
+  assert "LOW_LIGHT_CHECK_INTERVAL_MS = 1000" in source
+  assert "(byte) 0xeb, (byte) 0xcd, (byte) 0xab" in source
+  assert "(byte) 0xeb, (byte) 0xcd, (byte) 0xad" in source
+  assert "buildBrightnessPacket(true, zone1Level, ZONE_2_AMBIENT_BRIGHTNESS)" in source
   assert "onCameraSpeedChanged(Landroid/content/Context;II)V" in speed_view
   assert "speed >= limit + 2" in source
   assert "requestOverspeed(mOverspeedActive)" in source
   assert "OVERSPEED_ON_DELAY_MS:J = 0x3e8L" in controller
   assert "OVERSPEED_OFF_DELAY_MS:J = 0x7d0L" in controller
   assert "OVERSPEED_MIN_ACTIVE_MS:J = 0xbb8L" in controller
+  assert "MIN_FADE_AMBIENT_BRIGHTNESS:I = 0x8" in controller
+  assert "FADE_STEP_INTERVAL_MS:J = 0x1c2L" in controller
+  assert "ZONE_2_AMBIENT_BRIGHTNESS:I = 0x28" in controller
 
 
 def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():

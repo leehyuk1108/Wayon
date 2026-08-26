@@ -25,7 +25,7 @@
 .method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
 
-    .line 247
+    .line 290
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$9;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -38,11 +38,11 @@
 .method public run()V
     .locals 1
 
-    .line 250
+    .line 293
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$9;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2200(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
 
-    .line 251
+    .line 294
     return-void
 .end method

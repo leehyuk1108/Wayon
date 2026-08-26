@@ -32,7 +32,7 @@
         }
     .end annotation
 
-    .line 328
+    .line 374
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$12;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     iput-boolean p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$12;->val$overspeed:Z
@@ -47,13 +47,13 @@
 .method public run()V
     .locals 2
 
-    .line 331
+    .line 377
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$12;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$12;->val$overspeed:Z
 
-    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$4300(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)V
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$4800(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)V
 
-    .line 332
+    .line 378
     return-void
 .end method

@@ -81,11 +81,14 @@ Behavior:
   applies a separate comfort filter to the ambient warning: enter at limit +2
   km/h after one continuous second, leave at or below the limit after two
   continuous seconds, and keep each warning active for at least three seconds.
-- Uses a steady red warning instead of blinking when the screen-driven Zone 1
-  level is 3 percent or lower. During that night warning Zone 2 is temporarily
-  limited to 8 percent, then restored to its normal fixed 40 percent level.
-- Uses a three-second red/restore interval for daytime overspeed warnings so
-  small speed fluctuations cannot create rapid flashes.
+- Holds Zone 1 at a steady red when its screen-driven brightness is below 8,
+  avoiding low-PWM color steps at night.
+- At Zone 1 brightness 8 or higher, fades white down to off, switches color
+  while dark, fades red up and down, then switches back to white while dark.
+  Five brightness steps at 450 ms each make a complete cycle about 10.8 seconds.
+- Keeps Zone 2 at 40 percent with a warmer RGB(255, 235, 205) white during both
+  normal operation and warnings. Only Zone 1 participates in the warning fade,
+  so the footwell remains stable.
 - Changes the openpilot current-speed value to red only while current speed is
   greater than the camera speed limit, then restores white immediately.
 - Applies the same camera overspeed red/white behavior to the stock current

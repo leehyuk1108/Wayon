@@ -68,3 +68,40 @@ main{padding:0 12px 28px}.page-head{padding:14px 4px 18px}.page-head h1{font-siz
 .my-traverse-skin .settings-sheet{border-radius:15px 15px 0 0;background:#151515}.my-traverse-skin .settings-card{border-radius:8px;background:#1b1b1b}.my-traverse-skin .settings-card input{border-radius:7px;background:#101010}.my-traverse-skin .secondary-button,.my-traverse-skin .danger-button{border-radius:7px}.my-traverse-skin .read-only-note{border-radius:8px;background:rgba(255,122,24,.07)}.my-traverse-skin .read-only-note svg{color:#ff8a2a}
 .my-traverse-skin .terminal-overlay{background:#090909}.my-traverse-skin .terminal-title span,.my-traverse-skin .terminal-command-form{color:#ff8a2a}.my-traverse-skin .terminal-command-form button{background:#ff7a18;color:#fff}.my-traverse-skin .terminal-state.connected{color:#67d792}
 @media(max-width:350px){.my-traverse-skin .home-metric-row{grid-template-columns:1fr}.my-traverse-skin .home-command-bar{grid-template-columns:1fr 1fr}.my-traverse-skin .vehicle-hero-container{height:270px}}
+
+/* My Traverse New vehicle map */
+.my-traverse-skin .home-map-hero{height:clamp(350px,47vh,430px);background:#080808}
+.my-traverse-skin .home-map-hero::before{content:"";position:absolute;z-index:401;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:34px 34px;mask-image:radial-gradient(circle at center,#000 34%,transparent 76%);opacity:.7}
+.my-traverse-skin #home-map{inset:-28px;pointer-events:none;transition:inset .38s cubic-bezier(.22,1,.36,1)}
+.my-traverse-skin #home-map .leaflet-tile{filter:grayscale(1) brightness(2.9) contrast(1.02)}
+.my-traverse-skin .map-shade{z-index:402;background:radial-gradient(ellipse at center,transparent 0 44%,rgba(11,11,11,.08) 64%,rgba(11,11,11,.5) 86%,rgba(11,11,11,.96) 100%),linear-gradient(90deg,#0b0b0b 0%,rgba(11,11,11,.86) 8%,rgba(11,11,11,.38) 20%,transparent 36%,transparent 64%,rgba(11,11,11,.38) 80%,rgba(11,11,11,.86) 92%,#0b0b0b 100%),linear-gradient(180deg,#0b0b0b 0%,rgba(11,11,11,.76) 9%,rgba(11,11,11,.28) 24%,transparent 39%,transparent 62%,rgba(11,11,11,.34) 82%,rgba(11,11,11,.88) 95%,#0b0b0b 100%)}
+.my-traverse-skin .leaflet-vehicle-marker{position:relative;width:84px;height:84px}
+.my-traverse-skin .leaflet-vehicle-dot{position:absolute;left:50%;top:50%;width:15px;height:15px;border-radius:50%;background:#f0f0f0;box-shadow:0 0 0 7px rgba(255,255,255,.12),0 0 26px rgba(255,255,255,.2),0 8px 20px rgba(0,0,0,.65);transform:translate(-50%,-50%);animation:vehicleLocationBreath 1.8s ease-in-out infinite}
+.my-traverse-skin .leaflet-vehicle-dot::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:#080808;transform:translate(-50%,-50%)}
+.my-traverse-skin .leaflet-vehicle-ripple{position:absolute;left:50%;top:50%;width:22px;height:22px;border-radius:50%;transform:translate(-50%,-50%)}
+.my-traverse-skin .leaflet-vehicle-ripple::before,.my-traverse-skin .leaflet-vehicle-ripple::after{content:"";position:absolute;inset:0;border:1px solid rgba(255,255,255,.58);border-radius:50%;box-shadow:0 0 20px rgba(255,255,255,.14);opacity:0;transform:scale(.72);animation:vehicleLocationRipple 2.7s cubic-bezier(.18,.7,.22,1) infinite}
+.my-traverse-skin .leaflet-vehicle-ripple::after{animation-delay:1.25s;border-color:rgba(255,255,255,.38)}
+.my-traverse-skin .map-expand-button{position:absolute;z-index:510;right:14px;bottom:72px;width:46px;height:46px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.12);border-radius:50%;background:rgba(8,8,8,.72);color:#f0f0f0;backdrop-filter:blur(14px)}
+.my-traverse-skin .map-expand-button svg{width:18px}
+.my-traverse-skin .finder-map-close,.my-traverse-skin .finder-map-controls{display:none}
+.my-traverse-skin .extras-trip-section{margin-top:22px;padding-top:4px;border-top:1px solid #242424}
+body.map-fullscreen{overflow:hidden;background:#0b0b0b}
+body.map-fullscreen .traverse-topbar,body.map-fullscreen .footer-nav{display:none}
+body.map-fullscreen main{width:100%;max-width:none;height:100%;padding:0}
+body.map-fullscreen #page-overview{position:fixed;z-index:2200;inset:0;display:block;margin:0;background:#0b0b0b}
+body.map-fullscreen #page-overview .home-dashboard{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
+body.map-fullscreen #page-overview .home-dashboard> :not(.home-map-hero){display:none}
+body.map-fullscreen .home-map-hero{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
+body.map-fullscreen #home-map{inset:0;pointer-events:auto}
+body.map-fullscreen #home-map .leaflet-tile{filter:grayscale(1) brightness(3.25) contrast(1)}
+body.map-fullscreen .home-map-hero::before{opacity:.34}
+body.map-fullscreen .map-shade{background:radial-gradient(ellipse at center,transparent 0 64%,rgba(11,11,11,.03) 82%,rgba(11,11,11,.22) 100%),linear-gradient(180deg,rgba(11,11,11,.24) 0%,transparent 15%,transparent 86%,rgba(11,11,11,.28) 100%)}
+body.map-fullscreen .map-topline,body.map-fullscreen .hero-location-label,body.map-fullscreen .map-live-button,body.map-fullscreen .map-expand-button{display:none}
+body.map-fullscreen .finder-map-close{position:absolute;z-index:520;top:calc(env(safe-area-inset-top,0px) + 18px);left:18px;width:44px;height:44px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.12);border-radius:50%;background:rgba(8,8,8,.62);color:#f2f2f2;box-shadow:0 12px 28px rgba(0,0,0,.28);backdrop-filter:blur(14px)}
+body.map-fullscreen .finder-map-close svg{width:20px}
+body.map-fullscreen .finder-map-controls{position:absolute;z-index:520;top:calc(env(safe-area-inset-top,0px) + 18px);right:18px;display:flex;flex-direction:column;gap:10px}
+body.map-fullscreen .finder-map-control{width:44px;height:44px;display:grid;place-items:center;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:50%;background:rgba(8,8,8,.62);color:rgba(255,255,255,.86);box-shadow:0 12px 28px rgba(0,0,0,.28);backdrop-filter:blur(14px)}
+body.map-fullscreen .finder-map-control.active{border-color:transparent;background:rgba(244,245,246,.94);color:#111214}
+body.map-fullscreen .finder-map-control svg{width:19px}
+@keyframes vehicleLocationRipple{0%{opacity:0;transform:scale(.72)}14%{opacity:.72}100%{opacity:0;transform:scale(6.7)}}
+@keyframes vehicleLocationBreath{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.12)}}

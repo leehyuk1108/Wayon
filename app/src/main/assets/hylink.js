@@ -1,4 +1,4 @@
-const hylink={token:'',baseUrl:'',data:null,homeMap:null,homeMarker:null,tripMap:null,mediaUrls:new Map(),currentPage:'overview',loading:false,openImageUrl:'',tripLimit:8,captureLimit:6,snapshotLimit:6,impactLimit:5};window.hylink=hylink;
+const hylink={token:'',baseUrl:'',data:null,homeMap:null,homeMarker:null,homePoint:null,mapFullscreen:false,tripMap:null,mediaUrls:new Map(),currentPage:'overview',loading:false,openImageUrl:'',tripLimit:8,captureLimit:6,snapshotLimit:6,impactLimit:5};window.hylink=hylink;
 const $=id=>document.getElementById(id);
 const finite=value=>Number.isFinite(Number(value))?Number(value):null;
 const parseObject=value=>{if(value&&typeof value==='object')return value;if(typeof value!=='string')return{};try{return JSON.parse(value)}catch(_){return{}}};
@@ -24,12 +24,15 @@ const ageLabel=value=>{const age=ageSeconds(value);if(age===null)return'수신 �
 
 function toast(message){const node=$('toast');node.textContent=message;node.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>node.classList.remove('visible'),2800)}window.toast=toast;
 function setRing(id,value){const node=$(id);if(node)node.style.setProperty('--value',clamp(value))}
-function switchPage(name){hylink.currentPage=name;document.querySelectorAll('.page').forEach(node=>node.classList.toggle('active',node.id===`page-${name}`));document.querySelectorAll('.nav-button').forEach(node=>node.classList.toggle('active',node.dataset.page===name));document.documentElement.scrollTop=0;document.body.scrollTop=0;window.scrollTo(0,0);if(name==='overview')setTimeout(()=>hylink.homeMap?.invalidateSize(),50)}
+function switchPage(name){if(hylink.mapFullscreen)closeHomeMap();hylink.currentPage=name;document.querySelectorAll('.page').forEach(node=>node.classList.toggle('active',node.id===`page-${name}`));document.querySelectorAll('.nav-button').forEach(node=>node.classList.toggle('active',node.dataset.page===name));document.documentElement.scrollTop=0;document.body.scrollTop=0;window.scrollTo(0,0);if(name==='overview')setTimeout(()=>hylink.homeMap?.invalidateSize(),50)}
 function showSettings(show=true){$('settings-sheet').classList.toggle('visible',show);$('settings-backdrop').classList.toggle('visible',show);$('settings-sheet').setAttribute('aria-hidden',String(!show))}
-function initMap(target,center=[37.5665,126.978],zoom=11){const map=L.map(target,{zoomControl:false,attributionControl:false}).setView(center,zoom);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);return map}
-function vehicleIcon(){return L.divIcon({className:'',html:'<div class="vehicle-pin"><span>H</span></div>',iconSize:[44,44],iconAnchor:[22,41]})}
+function initMap(target,center=[37.5665,126.978],zoom=11,tiles='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'){const map=L.map(target,{zoomControl:false,attributionControl:false}).setView(center,zoom);L.tileLayer(tiles,{maxZoom:19}).addTo(map);return map}
+function vehicleIcon(){return L.divIcon({className:'wayon-leaflet-icon',html:'<div class="leaflet-vehicle-marker"><div class="leaflet-vehicle-ripple"></div><div class="leaflet-vehicle-dot"></div></div>',iconSize:[84,84],iconAnchor:[42,42]})}
 function stateModel(){const feed=hylink.data?.feed||{},state=feed.state||{},raw=parseObject(state.raw_json),device=raw.device||{},gps=raw.gps||{},openpilot=raw.openpilot||{},panda=raw.panda||{},trips=tripArray(),latestTrip=trips[0]||{},point=coordinates(state)||coordinates(gps)||coordinates(latestTrip,'end_');return{feed,state,raw,device,gps,openpilot,panda,latestTrip,point}}
 function tripArray(){return hylink.data?.trips?.trips||hylink.data?.feed?.trips||[]}
+function centerHomeVehicle(animate=true){if(!hylink.homeMap||!hylink.homePoint)return toast('차량 위치를 아직 받지 못했습니다.');hylink.homeMap.setView(hylink.homePoint,Math.max(16,hylink.homeMap.getZoom()),{animate});$('btn-center-vehicle')?.classList.add('active')}
+function openHomeMap(){hylink.mapFullscreen=true;document.body.classList.add('map-fullscreen');setTimeout(()=>{hylink.homeMap?.invalidateSize();centerHomeVehicle(false)},60);setTimeout(()=>hylink.homeMap?.invalidateSize(),420)}
+function closeHomeMap(){hylink.mapFullscreen=false;document.body.classList.remove('map-fullscreen');setTimeout(()=>{hylink.homeMap?.invalidateSize();if(hylink.homePoint)hylink.homeMap.setView(hylink.homePoint,16,{animate:false})},60)}
 
 function renderOverview(){
   const{state,raw,device,gps,openpilot,panda,latestTrip,point}=stateModel();
@@ -42,7 +45,7 @@ function renderOverview(){
   $('latest-trip-date').textContent=latestTrip.started_at?formatDate(latestTrip.started_at,{month:'long',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}):'주행기록 없음';const start=coordinates(latestTrip,'start_'),end=coordinates(latestTrip,'end_');$('latest-trip-route').textContent=start&&end?`${start[0].toFixed(4)}, ${start[1].toFixed(4)} → ${end[0].toFixed(4)}, ${end[1].toFixed(4)}`:'경로가 수신되면 표시됩니다.';$('latest-trip-distance').textContent=formatDistance(latestTrip.distance_m);$('latest-trip-duration').textContent=formatDuration(latestTrip.duration_s);
   const temps=device.thermal?.temperaturesC||{},free=finite(device.usage?.freeSpacePercent),maxTemp=finite(temps.max);$('pulse-temp').textContent=maxTemp===null?'--':`${maxTemp.toFixed(1)}°C`;$('pulse-network').textContent=networkLabel(device.network?.type);$('pulse-storage').textContent=free===null?'--':`${free.toFixed(0)}%`;$('pulse-panda').textContent=panda.faultStatus&&panda.faultStatus!=='none'?'점검':panda.type||'--';
   $('home-vehicle-updated').textContent=updated?ageLabel(updated):'업데이트 대기 중';$('info-updated-at').textContent=updated?ageLabel(updated):'업데이트 대기 중';$('vehicle-float-gps').textContent=accuracy===null?'--':`±${Math.round(accuracy)}m`;$('vehicle-float-voltage').textContent=voltage===null?'--':`${voltage.toFixed(2)}V`;$('vehicle-float-temperature').textContent=maxTemp===null?'--':`${maxTemp.toFixed(1)}°`;$('vehicle-float-storage').textContent=free===null?'--':`${free.toFixed(0)}%`;
-  if(!hylink.homeMap)hylink.homeMap=initMap('home-map',point||undefined,point?16:11);if(point){hylink.homeMap.setView(point,16,{animate:true});if(!hylink.homeMarker)hylink.homeMarker=L.marker(point,{icon:vehicleIcon()}).addTo(hylink.homeMap);else hylink.homeMarker.setLatLng(point)}setTimeout(()=>hylink.homeMap.invalidateSize(),60);
+  if(!hylink.homeMap){hylink.homeMap=initMap('home-map',point||undefined,point?16:11,'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png');hylink.homeMap.on('dragstart zoomstart',()=>$('btn-center-vehicle')?.classList.remove('active'))}if(point){hylink.homePoint=point;if(!hylink.mapFullscreen)hylink.homeMap.setView(point,16,{animate:true});if(!hylink.homeMarker)hylink.homeMarker=L.marker(point,{icon:vehicleIcon(),interactive:false}).addTo(hylink.homeMap);else hylink.homeMarker.setLatLng(point)}setTimeout(()=>hylink.homeMap.invalidateSize(),60);
 }
 
 function renderTrips(){
@@ -86,7 +89,7 @@ function closeImage(){$('image-overlay').classList.remove('visible');$('image-ov
 window.getWayonCloudViewToken=()=>hylink.token;window.getWayonCloudBaseUrl=()=>hylink.baseUrl;
 window.onHylinkNativeReady=(key,baseUrl)=>{hylink.token=key||'';hylink.baseUrl=(baseUrl||'').replace(/\/$/,'');$('wayon-cloud-key-input').value=hylink.token;$('cloud-base-url').textContent=hylink.baseUrl||'--';showSettings(!hylink.token)};
 window.onHylinkKeySaved=key=>{hylink.token=key||'';toast('Wayon Cloud 키를 저장했습니다.');showSettings(false)};window.onHylinkKeyCleared=()=>{hylink.token='';hylink.data=null;$('wayon-cloud-key-input').value='';toast('저장된 키를 삭제했습니다.');showSettings(true)};window.onHylinkLoading=()=>{hylink.loading=true;$('btn-refresh').classList.add('loading')};window.onHylinkError=message=>{hylink.loading=false;$('btn-refresh').classList.remove('loading');toast(message||'Wayon Cloud 연결에 실패했습니다.')};window.onHylinkData=data=>{hylink.loading=false;hylink.data=data;$('btn-refresh').classList.remove('loading');renderAll();const errors=data.errors||[];if(errors.length)toast(`일부 데이터 ${errors.length}개를 다시 시도합니다.`)};
-window.handleHylinkBack=()=>{if($('wayon-live-overlay').classList.contains('active')){window.stopWayonLiveView?.();return true}if($('image-overlay').classList.contains('visible')){closeImage();return true}if($('trip-overlay').classList.contains('visible')){$('trip-overlay').classList.remove('visible');return true}if($('settings-sheet').classList.contains('visible')){showSettings(false);return true}if(hylink.currentPage!=='overview'){switchPage('overview');return true}return false};
+window.handleHylinkBack=()=>{if($('wayon-live-overlay').classList.contains('active')){window.stopWayonLiveView?.();return true}if($('image-overlay').classList.contains('visible')){closeImage();return true}if($('trip-overlay').classList.contains('visible')){$('trip-overlay').classList.remove('visible');return true}if($('settings-sheet').classList.contains('visible')){showSettings(false);return true}if(hylink.mapFullscreen){closeHomeMap();return true}if(hylink.currentPage!=='overview'){switchPage('overview');return true}return false};
 
 document.querySelectorAll('.nav-button').forEach(button=>button.addEventListener('click',()=>switchPage(button.dataset.page)));
 document.querySelectorAll('[data-go]').forEach(button=>button.addEventListener('click',()=>switchPage(button.dataset.go)));
@@ -97,6 +100,11 @@ $('btn-more-captures').addEventListener('click',()=>{hylink.captureLimit+=6;rend
 $('btn-more-snapshots').addEventListener('click',()=>{hylink.snapshotLimit+=6;renderMedia()});
 $('btn-more-impacts').addEventListener('click',()=>{hylink.impactLimit+=5;renderMedia()});
 $('btn-refresh').addEventListener('click',()=>window.Android?.refreshWayonData?.());
+$('btn-open-map').addEventListener('click',openHomeMap);
+$('btn-close-map').addEventListener('click',closeHomeMap);
+$('btn-center-vehicle').addEventListener('click',()=>centerHomeVehicle());
+$('btn-map-zoom-in').addEventListener('click',()=>hylink.homeMap?.zoomIn());
+$('btn-map-zoom-out').addEventListener('click',()=>hylink.homeMap?.zoomOut());
 $('btn-settings').addEventListener('click',()=>showSettings(true));
 $('btn-close-settings').addEventListener('click',()=>showSettings(false));
 $('settings-backdrop').addEventListener('click',()=>showSettings(false));
@@ -104,7 +112,7 @@ $('btn-save-key').addEventListener('click',()=>{const key=$('wayon-cloud-key-inp
 $('btn-clear-key').addEventListener('click',()=>window.Android?.clearWayonCloudKey?.());
 $('btn-close-trip').addEventListener('click',()=>{$('trip-overlay').classList.remove('visible')});
 $('btn-close-image').addEventListener('click',closeImage);
-$('latest-trip-card').addEventListener('click',()=>switchPage('info'));
+$('latest-trip-card').addEventListener('click',()=>switchPage('extras'));
 window.addEventListener('wayon-live-capture-saved',()=>setTimeout(()=>window.Android?.refreshWayonData?.(),1200));
 window.addEventListener('beforeunload',()=>{closeImage();for(const url of hylink.mediaUrls.values())URL.revokeObjectURL(url)});
 window.lucide?.createIcons();renderAll();

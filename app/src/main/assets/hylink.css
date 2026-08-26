@@ -110,8 +110,14 @@ body.map-fullscreen .finder-map-control svg{width:19px}
 body.home-active{height:100dvh;overflow:hidden}
 body.home-active .app-shell{height:100dvh;min-height:0;display:flex;flex-direction:column;padding-bottom:0}
 body.home-active .traverse-topbar{flex:0 0 auto}
-body.home-active main{height:auto;min-height:0;flex:1 1 auto;padding-bottom:calc(64px + var(--safe-bottom))}
+body.home-active main{height:auto;min-height:0;flex:1 1 auto;padding:0 0 calc(64px + var(--safe-bottom))}
 body.home-active #page-overview{height:100%;min-height:0}
-body.home-active #page-overview .home-dashboard{height:100%;min-height:0;display:flex;flex-direction:column}
-.my-traverse-skin #page-overview .home-map-hero{height:auto;min-height:220px;flex:1 1 auto}
+body.home-active #page-overview .home-dashboard{height:100%;min-height:0;display:flex;flex-direction:column;border:0;border-radius:0;background:#121212;box-shadow:none}
+.my-traverse-skin #page-overview .home-map-hero{height:auto;min-height:220px;flex:1 1 auto;border-radius:0}
 .my-traverse-skin #page-overview .home-status-button,.my-traverse-skin #page-overview .home-vehicle-summary,.my-traverse-skin #page-overview .home-command-bar{flex:0 0 auto}
+.my-traverse-skin #page-overview .home-status-button{padding:14px 18px;border:0;background:linear-gradient(180deg,#151515,#131313)}
+.my-traverse-skin #page-overview .home-vehicle-summary{padding:15px 18px 16px;background:#131313}
+.my-traverse-skin #page-overview .home-metric-row{gap:9px;margin-top:14px}
+.my-traverse-skin #page-overview .home-metric-row>div{padding:11px 10px;border:0;border-radius:12px;background:#1b1b1b}
+.my-traverse-skin #page-overview .home-command-bar{gap:0;padding:1px 8px 0;border:0;background:#121212}
+.my-traverse-skin #page-overview .home-command-slot{background:transparent}

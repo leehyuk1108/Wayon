@@ -115,7 +115,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     )
 
   def test_enters_and_latches_after_brake_press(self):
-    self.CI.CS.brake_pedal_position = 40
+    self.CI.CS.brake_pedal_position = 80
     self.CI.update_auto_hold()
     self.assertTrue(self.CI.CS.autoHoldActive)
     self.assertTrue(self.CI.CS.autoHoldActivated)
@@ -128,7 +128,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertTrue(self.CI.CS.autoHoldActivated)
 
   def test_gas_releases_hold(self):
-    self.CI.CS.brake_pedal_position = 40
+    self.CI.CS.brake_pedal_position = 80
     self.CI.update_auto_hold()
     self.CI.CS.out.gasPressed = True
     self.CI.update_auto_hold()
@@ -137,7 +137,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
   def test_strong_brake_arms_before_stop_and_activates_at_standstill(self):
     self.CI.CS.out.vEgo = 1.0
     self.CI.CS.out.standstill = False
-    self.CI.CS.brake_pedal_position = 40
+    self.CI.CS.brake_pedal_position = 80
     self.CI.update_auto_hold()
     self.assertTrue(self.CI.CS.autoHoldBrakeArmed)
     self.assertFalse(self.CI.CS.autoHoldActive)
@@ -150,7 +150,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertTrue(self.CI.CS.out.brakeHoldActive)
 
   def test_gentle_brake_does_not_activate_manual_hold(self):
-    self.CI.CS.brake_pedal_position = 10
+    self.CI.CS.brake_pedal_position = 79
     self.CI.update_auto_hold()
     self.assertFalse(self.CI.CS.autoHoldBrakeArmed)
     self.assertFalse(self.CI.CS.autoHoldActive)

@@ -15,7 +15,7 @@ from opendbc.sunnypilot.car.gm.values_ext import GMFlagsSP, GMSafetyFlagsSP
 
 TransmissionType = structs.CarParams.TransmissionType
 NetworkLocation = structs.CarParams.NetworkLocation
-GM_AUTO_HOLD_ARM_BRAKE = 20
+GM_AUTO_HOLD_ARM_BRAKE = 80
 GM_AUTO_HOLD_ARM_SPEED = 1.5
 
 # sunnypilot-specific torque parameters for Bolt cars that actually use the d parameter

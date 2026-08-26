@@ -2484,6 +2484,21 @@
     return-void
 .end method
 
+.method public static onOpenpilotPayload(Landroid/content/Context;Lorg/json/JSONObject;)V
+    .locals 0
+
+    if-eqz p1, :cond_0
+
+    invoke-virtual {p1}, Lorg/json/JSONObject;->toString()Ljava/lang/String;
+
+    move-result-object p1
+
+    invoke-static {p0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onOpenpilotPayload(Landroid/content/Context;Ljava/lang/String;)V
+
+    :cond_0
+    return-void
+.end method
+
 .method public static onOpenpilotPayload(Landroid/content/Context;Ljava/lang/String;)V
     .locals 3
 

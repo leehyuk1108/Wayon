@@ -370,6 +370,7 @@ def test_navdy_ambient_overspeed_uses_hysteresis_and_zone_specific_fade():
   assert "MIN_FADE_AMBIENT_BRIGHTNESS:I = 0x8" in controller
   assert "FADE_STEP_INTERVAL_MS:J = 0x1c2L" in controller
   assert "ZONE_2_AMBIENT_BRIGHTNESS:I = 0x28" in controller
+  assert "onOpenpilotPayload(Landroid/content/Context;Lorg/json/JSONObject;)V" in controller
 
 
 def test_navdy_hud_centers_restore_speed_and_separates_icbm_status():

@@ -353,6 +353,12 @@ public final class AmbientLightController {
     }
   }
 
+  public static void onOpenpilotPayload(Context context, JSONObject payload) {
+    if (payload != null) {
+      onOpenpilotPayload(context, payload.toString());
+    }
+  }
+
   public static void onGearText(final Context context, final String gear) {
     if (context == null || gear == null) {
       return;

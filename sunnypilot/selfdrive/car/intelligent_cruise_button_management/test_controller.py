@@ -172,7 +172,7 @@ def test_section_distance_jump_starts_average_control(tmp_path):
 
   assert controller.section_phase == "cruise"
   assert controller.section_total_distance_m == 5000
-  assert controller.v_target == 105
+  assert controller.v_target == 99
 
 
 def test_section_low_average_can_use_limit_plus_twenty(tmp_path):
@@ -182,17 +182,17 @@ def test_section_low_average_can_use_limit_plus_twenty(tmp_path):
   controller.section_phase = "cruise"
   controller.section_limit_kph = 100
   controller.section_total_distance_m = 5000
-  controller.section_elapsed_s = 100
-  controller.section_distance_travelled_m = 80 * CV.KPH_TO_MS * 100
+  controller.section_elapsed_s = 150
+  controller.section_distance_travelled_m = 50 * CV.KPH_TO_MS * 150
 
   target = controller.update_section_target(
-    make_state(ego_kph=80, restore_kph=130), 130, 100, 2778)
+    make_state(ego_kph=50, restore_kph=130), 130, 100, 2917)
 
-  assert round(controller.section_average_kph) == 80
+  assert round(controller.section_average_kph) == 50
   assert target == 120
 
 
-def test_section_target_settles_at_target_average(tmp_path):
+def test_section_target_settles_below_posted_average(tmp_path):
   controller = make_controller(tmp_path)
   controller.is_metric = True
   controller.v_cruise_min = 25
@@ -200,13 +200,31 @@ def test_section_target_settles_at_target_average(tmp_path):
   controller.section_limit_kph = 100
   controller.section_total_distance_m = 5000
   controller.section_elapsed_s = 100
-  controller.section_distance_travelled_m = 105 * CV.KPH_TO_MS * 100
+  controller.section_distance_travelled_m = 99 * CV.KPH_TO_MS * 100
 
   target = controller.update_section_target(
-    make_state(ego_kph=105, restore_kph=130), 130, 100, 2083)
+    make_state(ego_kph=99, restore_kph=130), 130, 100, 2250)
 
-  assert round(controller.section_average_kph) == 105
-  assert target == 105
+  assert round(controller.section_average_kph) == 99
+  assert target == 99
+
+
+def test_section_average_overshoot_requests_recovery_below_limit(tmp_path):
+  controller = make_controller(tmp_path)
+  controller.is_metric = True
+  controller.v_cruise_min = 25
+  controller.section_phase = "cruise"
+  controller.section_limit_kph = 80
+  controller.section_total_distance_m = 4000
+  controller.section_elapsed_s = 90
+  controller.section_distance_travelled_m = 82 * CV.KPH_TO_MS * 90
+
+  remaining_m = controller.section_total_distance_m - controller.section_distance_travelled_m
+  target = controller.update_section_target(
+    make_state(ego_kph=82, restore_kph=100), 100, 80, remaining_m)
+
+  assert controller.section_average_kph > 80
+  assert target < 80
 
 
 def test_section_exit_starts_at_exactly_three_hundred_meters(tmp_path):

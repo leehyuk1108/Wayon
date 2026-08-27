@@ -35,7 +35,8 @@ NAVDY_CAMERA_SOURCE = "trafficNotification"
 CAMERA_COMPLIANCE_DISTANCE_M = 100.0
 CAMERA_SETTLING_TIME_S = 4.0
 CAMERA_COAST_PROFILE_DECEL_MPS2 = 0.35
-SECTION_TARGET_OFFSET_KPH = 5
+SECTION_TARGET_MARGIN_KPH = 1
+SECTION_MIN_OFFSET_KPH = -20
 SECTION_MAX_OFFSET_KPH = 20
 SECTION_EXIT_DISTANCE_M = 300.0
 SECTION_ENTRY_ARM_DISTANCE_M = 350.0
@@ -204,7 +205,7 @@ class IntelligentCruiseButtonManagement:
       self.section_last_target_kph = min(limit_kph, restore_target)
       return self.section_last_target_kph
 
-    target_average_kph = limit_kph + SECTION_TARGET_OFFSET_KPH
+    target_average_kph = max(self.v_cruise_min, limit_kph - SECTION_TARGET_MARGIN_KPH)
     target_total_time_s = self.section_total_distance_m / (target_average_kph * CV.KPH_TO_MS)
     remaining_time_s = target_total_time_s - self.section_elapsed_s
     if remaining_time_s <= DT_CTRL:
@@ -212,7 +213,8 @@ class IntelligentCruiseButtonManagement:
     else:
       required_speed_kph = remaining_m / remaining_time_s * CV.MS_TO_KPH
 
-    required_speed_kph = max(limit_kph, min(limit_kph + SECTION_MAX_OFFSET_KPH, required_speed_kph))
+    required_speed_kph = max(limit_kph + SECTION_MIN_OFFSET_KPH,
+                             min(limit_kph + SECTION_MAX_OFFSET_KPH, required_speed_kph))
     self.section_last_target_kph = min(restore_target, round(required_speed_kph))
     return self.section_last_target_kph
 

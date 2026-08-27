@@ -20,6 +20,12 @@ WAKE_COOLDOWN_SEC = 10.0
 CAN_BURST_QUIET_SEC = 2.0
 MIN_CAN_BURST_FRAMES = 8
 
+DOOR_SIGNALS = {
+  "Door_Open_Switch_Status_LS": ("DrDoorOpenSwAct", "PsDoorOpenSwAct"),
+  "DriverDoorStatus": ("DriverDoorOpened",),
+  "BCMDoorBeltStatus": ("FrontLeftDoor", "FrontRightDoor", "RearLeftDoor", "RearRightDoor"),
+}
+
 
 def raw_memory_param_path(params: Params, key: str) -> Path:
   return Path(params.get_param_path(key))
@@ -141,6 +147,22 @@ def parser_active(parsers: list[CANParser], parser_input) -> bool:
   return active
 
 
+def updated_door_state(parsers: list[CANParser]) -> bool | None:
+  """Return an updated door state, ignoring cached values from quiet buses."""
+  updated = False
+  door_open = False
+  for cp in parsers:
+    for message, signals in DOOR_SIGNALS.items():
+      samples = cp.vl_all.get(message, {})
+      message_updated = any(samples.get(signal, []) for signal in signals)
+      if not message_updated:
+        continue
+      updated = True
+      door_open |= any(bool(samples.get(signal, [cp.vl[message].get(signal, 0)])[-1])
+                       for signal in signals)
+  return door_open if updated else None
+
+
 def main() -> None:
   params = Params()
   params_memory = Params("/dev/shm/params") if platform.system() != "Darwin" else params
@@ -165,6 +187,8 @@ def main() -> None:
   last_can_activity_time = 0.0
   last_counter = get_memory_int(params_memory, "OffroadWakeCounter")
   put_memory_int(params_memory, "OffroadWakeCounter", last_counter)
+  last_door_open = get_memory_int(params_memory, "OffroadDoorOpen")
+  put_memory_int(params_memory, "OffroadDoorOpen", last_door_open)
 
   while True:
     sm.update(POLL_TIMEOUT_MS)
@@ -184,11 +208,16 @@ def main() -> None:
 
     parser_frames = [(int(msg.address), bytes(msg.dat), int(msg.src)) for msg in can_msgs]
     parser_input = [(time.monotonic_ns(), parser_frames)]
-    active = (
-      parser_active(modern_parsers, parser_input) or
-      parser_active(legacy_parsers, parser_input) or
-      parser_active(bcm_parsers, parser_input)
-    )
+    # Update every parser each cycle. Short-circuiting leaves lower-priority
+    # DBCs stale whenever a higher-priority signal is active.
+    active = any((
+      parser_active(modern_parsers, parser_input),
+      parser_active(legacy_parsers, parser_input),
+      parser_active(bcm_parsers, parser_input),
+    ))
+    door_state = updated_door_state(modern_parsers + legacy_parsers + bcm_parsers)
+    if door_state is not None:
+      put_memory_int(params_memory, "OffroadDoorOpen", int(door_state))
 
     watched_can_frames = sum(1 for msg in can_msgs if int(msg.src) in WATCH_BUSES)
     burst_active = watched_can_frames >= MIN_CAN_BURST_FRAMES and (now - last_can_activity_time) >= CAN_BURST_QUIET_SEC

@@ -43,7 +43,7 @@ WAKEFULNESS_AWAKE_TEXT = "mWakefulness=Awake"
 WAKEFULNESS_ASLEEP_TEXT = "mWakefulness=Asleep"
 INTERACTIVE_ON_TEXT = "mHalInteractiveModeEnabled=true"
 INTERACTIVE_OFF_TEXT = "mHalInteractiveModeEnabled=false"
-KEYEVENT_POWER = "26"
+KEYEVENT_SLEEP = "223"
 KEYEVENT_WAKEUP = "224"
 ONROAD_PROCESS_NAMES = (
   "selfdrive.controls.controlsd",
@@ -56,6 +56,7 @@ NAVDY_CAR_STATE_SERVICE = "carStateSP"
 NAVDY_FAST_SERVICES = (
   "selfdriveState",
   "selfdriveStateSP",
+  "carState",
   NAVDY_CAR_STATE_SERVICE,
   "carOutput",
   "controlsState",
@@ -86,6 +87,7 @@ NAVDY_VEHICLE_DUPLICATE_IOU = 0.25
 NAVDY_LONGITUDINAL_LEAD_HOLD_SEC = 0.45
 NAVDY_ACCELERATOR_COMMAND_THRESHOLD = 0.05
 NAVDY_BRAKE_COMMAND_THRESHOLD = 0.5
+OFFROAD_DOOR_PARAM_PATH = "/dev/shm/params/d/OffroadDoorOpen"
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -98,6 +100,31 @@ def finite_float(value: Any, default: float = 0.0) -> float:
   except (TypeError, ValueError):
     return default
   return value if math.isfinite(value) else default
+
+
+def read_offroad_door_open(path: str = OFFROAD_DOOR_PARAM_PATH) -> bool:
+  try:
+    with open(path, "rb") as param_file:
+      return param_file.read(8).strip() not in (b"", b"0", b"false", b"False")
+  except OSError:
+    return False
+
+
+def write_offroad_door_open(door_open: bool, path: str = OFFROAD_DOOR_PARAM_PATH) -> bool:
+  try:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as param_file:
+      param_file.write(b"1" if door_open else b"0")
+    return True
+  except OSError:
+    return False
+
+
+def apply_live_vehicle_state(car_state: Any, live_car_state: Any) -> Any:
+  """Use live safety-critical state instead of the display-oriented SP mirror."""
+  car_state.gearShifter = getattr(live_car_state, "gearShifter", car_state.gearShifter)
+  car_state.doorOpen = bool(getattr(live_car_state, "doorOpen", car_state.doorOpen))
+  return car_state
 
 
 def navdy_longitudinal_actuator(active: bool, car_output: Any = None) -> tuple[str, float]:
@@ -401,6 +428,7 @@ def default_car_state() -> Any:
     rightBlinker=False,
     leftBlindspot=False,
     rightBlindspot=False,
+    doorOpen=False,
     brakeHoldActive=False,
     standstill=False,
     vCruise=0.0,
@@ -422,6 +450,7 @@ def car_state_from_sp(car_state_sp: Any) -> Any:
     rightBlinker=bool(getattr(car_state_sp, "navdyRightBlinker", False)),
     leftBlindspot=bool(getattr(car_state_sp, "navdyLeftBlindspot", False)),
     rightBlindspot=bool(getattr(car_state_sp, "navdyRightBlindspot", False)),
+    doorOpen=False,
     brakeHoldActive=bool(getattr(car_state_sp, "navdyBrakeHoldActive", False)),
     standstill=bool(getattr(car_state_sp, "navdyStandstill", False)),
     vCruise=finite_float(getattr(car_state_sp, "navdyVCruise", 0.0)),
@@ -1180,7 +1209,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
                           longitudinal_plan: Any = None, model_v2: Any = None,
                           longitudinal_plan_sp: Any = None,
                           selfdrive_state_sp: Any = None,
-                          car_output: Any = None) -> dict[str, Any]:
+                          car_output: Any = None, onroad: bool = True,
+                          door_open: bool | None = None) -> dict[str, Any]:
   left_blinker = bool(getattr(car_state, "leftBlinker", False))
   right_blinker = bool(getattr(car_state, "rightBlinker", False))
   left_blindspot = bool(getattr(car_state, "leftBlindspot", False))
@@ -1247,6 +1277,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "engaged": active,
     "disengaged": not enabled,
     "engageable": engageable,
+    "onroad": bool(onroad),
+    "doorOpen": bool(getattr(car_state, "doorOpen", False) if door_open is None else door_open),
     "opAvailable": engageable,
     "standstill": show_stop_icon,
     "cruiseStandstill": show_stop_icon,
@@ -1310,6 +1342,8 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
     "engaged": True,
     "disengaged": False,
     "engageable": True,
+    "onroad": bool(args.synthetic_started),
+    "doorOpen": False,
     "opAvailable": True,
     "standstill": args.synthetic_standstill,
     "cruiseStandstill": args.synthetic_standstill,
@@ -1719,7 +1753,9 @@ def set_navdy_display(args: argparse.Namespace, should_be_on: bool, reason: str)
     recover_adb(args, f"power-{reason}")
     if not should_be_on:
       return False
-  keyevent = KEYEVENT_WAKEUP if should_be_on else KEYEVENT_POWER
+  # Keep the HUD process and its partial wake lock alive offroad so door events
+  # and ambient BLE transitions still work while only the display is asleep.
+  keyevent = KEYEVENT_WAKEUP if should_be_on else KEYEVENT_SLEEP
   set_stay_on_while_plugged_in(args, should_be_on)
   proc = adb_shell(args, ["input", "keyevent", keyevent])
   if args.stdout:
@@ -1767,6 +1803,8 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("enabled"),
     payload.get("active"),
     payload.get("engaged"),
+    payload.get("onroad"),
+    payload.get("doorOpen"),
     payload.get("opAvailable"),
     payload.get("standstill"),
     payload.get("cruiseStandstill"),
@@ -2003,8 +2041,6 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
     return offroad_since, last_target_on
 
   if started:
-    if getattr(args, "_navdy_runtime_suspended", False) or last_target_on is not True:
-      set_navdy_runtime(args, True)
     if last_target_on is not True or due_for_power_on_ensure(args, now):
       if set_navdy_display(args, True, "onroad"):
         last_target_on = True
@@ -2017,11 +2053,6 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
     if last_target_on is not False or ensure_due:
       if set_navdy_display(args, False, "offroad"):
         last_target_on = False
-    # Reassert the force-stop as well as display sleep. The Navdy notification
-    # listener and Android service manager can otherwise revive the HUD/Here
-    # processes after the first successful offroad transition.
-    if not getattr(args, "_navdy_runtime_suspended", False) or ensure_due:
-      set_navdy_runtime(args, False)
   return offroad_since, last_target_on
 
 
@@ -2088,12 +2119,25 @@ def run_live(args: argparse.Namespace) -> None:
   e2e_alert_reader = NavdyE2EAlertReader(messaging) if "longitudinalPlanSP" in services else None
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
+  last_ambient_state = None
   while True:
     time.sleep(period)
     sm.update(0)
     now = time.monotonic()
     has_update = any(sm.updated[service] for service in services)
     started = power_started(sm, args, now) if args.manage_navdy_power else True
+    live_car_state = sm["carState"] if started and "carState" in services \
+      and service_recent(sm, "carState", now) else None
+    if live_car_state is not None:
+      door_open = bool(getattr(live_car_state, "doorOpen", False))
+      write_offroad_door_open(door_open)
+    elif started:
+      door_open = False
+    else:
+      door_open = read_offroad_door_open()
+    ambient_state = (bool(started), door_open)
+    ambient_changed = ambient_state != last_ambient_state
+    last_ambient_state = ambient_state
     if args.manage_navdy_power:
       publish_navdy_power_state(sm, args, started, now)
       update_navdy_power(args, started, now)
@@ -2102,8 +2146,7 @@ def run_live(args: argparse.Namespace) -> None:
         lane_marking_classifier.set_active(False)
       if radar_reader is not None:
         radar_reader.set_active(False)
-      continue
-    if not has_update and not (args.once and now >= once_deadline):
+    if not has_update and not ambient_changed and not (args.once and now >= once_deadline):
       continue
     if not live_payload_ready(sm, started, now):
       continue
@@ -2111,7 +2154,9 @@ def run_live(args: argparse.Namespace) -> None:
       car_state = car_state_from_sp(sm[NAVDY_CAR_STATE_SERVICE])
     else:
       car_state = default_car_state()
-    active = bool(getattr(sm["selfdriveState"], "active", False))
+    if live_car_state is not None:
+      car_state = apply_live_vehicle_state(car_state, live_car_state)
+    active = bool(started and getattr(sm["selfdriveState"], "active", False))
     if lane_marking_classifier is not None:
       if not lane_marking_classifier.is_alive():
         lane_marking_classifier = None
@@ -2173,7 +2218,9 @@ def run_live(args: argparse.Namespace) -> None:
                                     selfdrive_state_sp=sm_optional(sm, services, "selfdriveStateSP"),
                                     car_output=(sm_optional(sm, services, "carOutput")
                                                 if "carOutput" in services and
-                                                service_recent(sm, "carOutput", now, 0.25) else None))
+                                                service_recent(sm, "carOutput", now, 0.25) else None),
+                                    onroad=started,
+                                    door_open=door_open)
     if e2e_alert_reader is not None:
       captured_green, captured_lead = e2e_alert_reader.pending(
         now, consume=navdy_e2e_alert_allowed(payload))

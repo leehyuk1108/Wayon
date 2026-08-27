@@ -23,6 +23,26 @@ sys.modules.setdefault("openpilot.common.realtime", openpilot_realtime_module)
 import navdy_power_bridge
 
 
+def test_offroad_door_state_round_trip(tmp_path):
+  path = str(tmp_path / "OffroadDoorOpen")
+
+  assert navdy_op_bridge.write_offroad_door_open(True, path)
+  assert navdy_op_bridge.read_offroad_door_open(path) is True
+  assert navdy_op_bridge.write_offroad_door_open(False, path)
+  assert navdy_op_bridge.read_offroad_door_open(path) is False
+
+
+def test_live_vehicle_state_overrides_sp_gear_and_door():
+  mirrored = navdy_op_bridge.default_car_state()
+  mirrored.gearShifter = "park"
+  live = SimpleNamespace(gearShifter="reverse", doorOpen=True)
+
+  result = navdy_op_bridge.apply_live_vehicle_state(mirrored, live)
+
+  assert result.gearShifter == "reverse"
+  assert result.doorOpen is True
+
+
 def test_navdy_lane_marking_state_is_written_atomically(tmp_path):
   state_path = tmp_path / "lane_markings.json"
 
@@ -2025,20 +2045,20 @@ def test_navdy_power_rechecks_display_after_offroad_sleep(monkeypatch):
 
   offroad_since, target_on = navdy_op_bridge.manage_navdy_power(args, False, 131.0, 100.0, False)
   assert display_calls == [(False, "offroad")]
-  assert runtime_calls == [False]
+  assert runtime_calls == []
   assert offroad_since == 100.0
   assert target_on is False
 
   navdy_op_bridge.manage_navdy_power(args, False, 134.0, offroad_since, target_on)
   assert display_calls == [(False, "offroad")]
-  assert runtime_calls == [False]
+  assert runtime_calls == []
 
   navdy_op_bridge.manage_navdy_power(args, False, 136.0, offroad_since, target_on)
   assert display_calls == [(False, "offroad"), (False, "offroad")]
-  assert runtime_calls == [False, False]
+  assert runtime_calls == []
 
   _, target_on = navdy_op_bridge.manage_navdy_power(args, True, 137.0, offroad_since, target_on)
-  assert runtime_calls == [False, False, True]
+  assert runtime_calls == []
   assert display_calls[-1] == (True, "onroad")
   assert target_on is True
 

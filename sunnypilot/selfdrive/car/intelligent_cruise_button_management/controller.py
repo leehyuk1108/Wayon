@@ -12,7 +12,6 @@ import time
 from cereal import car, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
-from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import (
@@ -25,6 +24,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
   empty_response_profile,
   learned_delay_for_speed,
   load_response_profile,
+  RESPONSE_PROFILE_PATH,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import is_enabled
 
@@ -84,9 +84,8 @@ class IntelligentCruiseButtonManagement:
     self.automatic_control_source = "inactive"
     self.wayon_longitudinal_profile = is_enabled(CP)
     self.default_response_delay = float(getattr(self.CP, "longitudinalActuatorDelay", 0.5))
-    self.params = Params() if self.wayon_longitudinal_profile else None
-    self.response_profile = (load_response_profile(self.params, self.default_response_delay)
-                             if self.params is not None else empty_response_profile(self.default_response_delay))
+    self.response_profile = (load_response_profile(RESPONSE_PROFILE_PATH, self.default_response_delay)
+                             if self.wayon_longitudinal_profile else empty_response_profile(self.default_response_delay))
     self.response_profile_checked_at = 0.0
     self.predicted_arrival_speed_kph = 0.0
     self.required_accel = 0.0
@@ -178,7 +177,7 @@ class IntelligentCruiseButtonManagement:
       return 0.0
     now = time.monotonic()
     if now - self.response_profile_checked_at >= 10.0:
-      self.response_profile = load_response_profile(self.params, self.default_response_delay)
+      self.response_profile = load_response_profile(RESPONSE_PROFILE_PATH, self.default_response_delay)
       self.response_profile_checked_at = now
     return learned_delay_for_speed(self.response_profile, v_ego, self.default_response_delay)
 

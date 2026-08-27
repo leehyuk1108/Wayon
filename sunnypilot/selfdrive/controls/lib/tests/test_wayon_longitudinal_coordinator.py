@@ -14,20 +14,6 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
 from openpilot.sunnypilot.selfdrive.controls.lib import wayon_longitudinal_coordinator as coordinator_module
 
 
-class FakeParams:
-  def __init__(self, enabled=True):
-    self.values = {"WayonLongitudinalLearning": b"1" if enabled else b"0"}
-
-  def get(self, key):
-    return self.values.get(key)
-
-  def get_bool(self, key):
-    return self.values.get(key) == b"1"
-
-  def put(self, key, value):
-    self.values[key] = value
-
-
 def lead(d_rel=20.0, v_rel=0.0):
   return SimpleNamespace(status=True, dRel=d_rel, vRel=v_rel)
 
@@ -74,8 +60,8 @@ def test_low_speed_stop_never_relaxes_close_or_unverified_stop():
   assert controller.phase == "unverified"
 
 
-def test_response_learning_stays_shadow_until_confident_then_is_bounded():
-  learner = LongitudinalResponseLearner(0.5, FakeParams())
+def test_response_learning_stays_shadow_until_confident_then_is_bounded(tmp_path):
+  learner = LongitudinalResponseLearner(0.5, str(tmp_path / "profile.json"))
   learned = learner.profile["bins"][2]
   learned["samples"] = 299
   learned["brakeGain"] = 0.5
@@ -97,10 +83,10 @@ def test_learned_delay_requires_multiple_observations():
   assert learned_delay_for_speed(profile, 80.0 * CV.KPH_TO_MS, 0.5) == 0.25
 
 
-def test_response_delay_is_observed_from_command_to_accel_change(monkeypatch):
+def test_response_delay_is_observed_from_command_to_accel_change(monkeypatch, tmp_path):
   clock = SimpleNamespace(now=0.0)
   monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: clock.now)
-  learner = LongitudinalResponseLearner(0.5, FakeParams())
+  learner = LongitudinalResponseLearner(0.5, str(tmp_path / "profile.json"))
   speed = 45.0 * CV.KPH_TO_MS
 
   for _ in range(10):

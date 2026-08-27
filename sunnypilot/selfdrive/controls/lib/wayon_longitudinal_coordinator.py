@@ -6,8 +6,8 @@ from collections import deque
 from dataclasses import dataclass
 import json
 import math
+import os
 import time
-from typing import Any
 
 import numpy as np
 
@@ -16,8 +16,7 @@ from openpilot.common.constants import CV
 DT_CTRL = 0.01
 
 
-RESPONSE_PROFILE_PARAM = "WayonLongitudinalResponse"
-RESPONSE_LEARNING_PARAM = "WayonLongitudinalLearning"
+RESPONSE_PROFILE_PATH = "/data/wayon/longitudinal_response.json"
 PROFILE_VERSION = 1
 SPEED_BIN_EDGES_KPH = (10.0, 30.0, 60.0)
 
@@ -38,11 +37,11 @@ def empty_response_profile(default_delay: float) -> dict:
   }
 
 
-def load_response_profile(params: Any, default_delay: float) -> dict:
+def load_response_profile(profile_path: str, default_delay: float) -> dict:
   profile = empty_response_profile(default_delay)
   try:
-    raw = params.get(RESPONSE_PROFILE_PARAM)
-    parsed = raw if isinstance(raw, dict) else json.loads(raw) if raw else None
+    with open(profile_path, encoding="utf-8") as profile_file:
+      parsed = json.load(profile_file)
     if not isinstance(parsed, dict) or parsed.get("version") != PROFILE_VERSION:
       return profile
     bins = parsed.get("bins")
@@ -184,14 +183,11 @@ class LongitudinalResponseLearner:
   SAVE_INTERVAL_S = 60.0
   SAMPLE_EVERY_FRAMES = round(0.1 / DT_CTRL)
 
-  def __init__(self, default_delay: float, params: Any | None = None, enabled: bool = True):
-    if enabled and params is None:
-      from openpilot.common.params import Params
-      params = Params()
-    self.params = params
+  def __init__(self, default_delay: float, profile_path: str = RESPONSE_PROFILE_PATH, enabled: bool = True):
+    self.profile_path = profile_path
     self.default_delay = float(np.clip(default_delay, 0.08, 0.9))
-    self.profile = load_response_profile(self.params, self.default_delay) if enabled else empty_response_profile(self.default_delay)
-    self.enabled = bool(enabled and self.params.get_bool(RESPONSE_LEARNING_PARAM))
+    self.profile = load_response_profile(self.profile_path, self.default_delay) if enabled else empty_response_profile(self.default_delay)
+    self.enabled = enabled
     self.frame = 0
     self.last_save = time.monotonic()
     self.last_command = 0.0
@@ -264,8 +260,12 @@ class LongitudinalResponseLearner:
       self.save()
 
   def save(self) -> None:
-    if self.params is None:
-      return
     self.profile["updatedAt"] = int(time.time())
-    self.params.put(RESPONSE_PROFILE_PARAM, self.profile)
+    os.makedirs(os.path.dirname(self.profile_path), exist_ok=True)
+    temporary_path = f"{self.profile_path}.tmp"
+    with open(temporary_path, "w", encoding="utf-8") as profile_file:
+      json.dump(self.profile, profile_file, separators=(",", ":"))
+      profile_file.flush()
+      os.fsync(profile_file.fileno())
+    os.replace(temporary_path, self.profile_path)
     self.last_save = time.monotonic()

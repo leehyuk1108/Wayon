@@ -1267,7 +1267,8 @@ Zone 2는 같은 밝기 패킷의 독립 채널을 사용해 평상시와 과속
 
 ## Navdy 화면 전원 관리
 
-Bridge가 관리하는 것은 Android 종료가 아니라 **display sleep/wake**다.
+Bridge는 Onroad에서 Android HUD runtime을 실행하고, Offroad에서는 display와 HUD runtime을
+함께 절전시킨다. Android 자체를 종료하지 않으므로 USB ADB 연결은 유지된다.
 
 ### Onroad 판정
 
@@ -1308,6 +1309,20 @@ adb -P 5038 shell input keyevent 26
 
 `KEYCODE_POWER=26`은 현재 display가 켜져 있는지 먼저 확인한 뒤 사용한다. 무조건 toggle하면 이미
 꺼진 화면을 다시 켤 수 있으므로 `dumpsys power` 검증이 필수다.
+
+화면이 꺼진 뒤에는 다음 작업도 한 번 수행한다.
+
+```bash
+adb -P 5038 shell am force-stop com.navdy.hud.app
+adb -P 5038 shell sh -c 'echo 0 > /sys/class/leds/ir-control/brightness'
+```
+
+이때 socket과 ADB fallback의 pending payload를 비워 Offroad 상태에서 service를 다시 깨우지 않는다.
+HUD 앱, HERE 지도, BLE scan이 종료되어 `FLAG_KEEP_SCREEN_ON`과 Bluetooth wake lock이 해제된다.
+팬은 SoC 온도에 필요한 냉각 장치이므로 강제로 끄지 않는다. CPU가 suspend되고 온도가 내려가면
+Navdy thermal control이 팬을 낮춘다.
+
+Onroad 전환 시 `MainActivity`, `OpenpilotStateService`, IR 밝기 127, display wake 순서로 복구한다.
 
 ### 확인 문자열
 

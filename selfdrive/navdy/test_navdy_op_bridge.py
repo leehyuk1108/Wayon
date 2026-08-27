@@ -2005,27 +2005,78 @@ def test_manager_defaults_keep_fast_state_and_throttle_path():
 
 
 def test_navdy_power_rechecks_display_after_offroad_sleep(monkeypatch):
-  calls = []
+  display_calls = []
+  runtime_calls = []
   args = SimpleNamespace(
       manage_navdy_power=True,
       power_off_delay_sec=30.0,
       power_off_ensure_sec=5.0,
       power_on_ensure_sec=60.0,
       _last_power_off_ensure_at=0.0,
+      _navdy_runtime_suspended=False,
   )
   monkeypatch.setattr(navdy_op_bridge, "set_navdy_display",
-                      lambda _args, should_be_on, reason: calls.append((should_be_on, reason)) or True)
+                      lambda _args, should_be_on, reason: display_calls.append((should_be_on, reason)) or True)
+  monkeypatch.setattr(navdy_op_bridge, "set_navdy_runtime",
+                      lambda _args, should_run: runtime_calls.append(should_run) or
+                      setattr(_args, "_navdy_runtime_suspended", not should_run) or True)
 
   offroad_since, target_on = navdy_op_bridge.manage_navdy_power(args, False, 131.0, 100.0, False)
-  assert calls == [(False, "offroad")]
+  assert display_calls == [(False, "offroad")]
+  assert runtime_calls == [False]
   assert offroad_since == 100.0
   assert target_on is False
 
   navdy_op_bridge.manage_navdy_power(args, False, 134.0, offroad_since, target_on)
-  assert calls == [(False, "offroad")]
+  assert display_calls == [(False, "offroad")]
+  assert runtime_calls == [False]
 
   navdy_op_bridge.manage_navdy_power(args, False, 136.0, offroad_since, target_on)
-  assert calls == [(False, "offroad"), (False, "offroad")]
+  assert display_calls == [(False, "offroad"), (False, "offroad")]
+  assert runtime_calls == [False]
+
+  _, target_on = navdy_op_bridge.manage_navdy_power(args, True, 137.0, offroad_since, target_on)
+  assert runtime_calls == [False, True]
+  assert display_calls[-1] == (True, "onroad")
+  assert target_on is True
+
+
+def test_navdy_runtime_stop_clears_transport_and_ir(monkeypatch):
+  calls = []
+  args = SimpleNamespace(
+      adb_path="adb",
+      package_name=navdy_op_bridge.DEFAULT_PACKAGE_NAME,
+      activity_component=navdy_op_bridge.DEFAULT_ACTIVITY_COMPONENT,
+      service_component=navdy_op_bridge.DEFAULT_SERVICE_COMPONENT,
+      _socket_conn=None,
+      _socket_sender_pending={"stale": True},
+      _adb_sender_pending={"stale": True},
+  )
+
+  monkeypatch.setattr(navdy_op_bridge, "adb_shell",
+                      lambda _args, command, capture=False:
+                      calls.append(command) or SimpleNamespace(returncode=0))
+
+  assert navdy_op_bridge.set_navdy_runtime(args, False)
+  assert args._navdy_runtime_suspended
+  assert args._socket_sender_pending is None
+  assert args._adb_sender_pending is None
+  assert ["am", "force-stop", navdy_op_bridge.DEFAULT_PACKAGE_NAME] in calls
+  assert any(len(command) == 1 and "echo 0 >" in command[0] for command in calls)
+
+
+def test_navdy_transport_does_not_wake_suspended_runtime(monkeypatch):
+  calls = []
+  args = SimpleNamespace(
+      socket_transport=True,
+      _navdy_runtime_suspended=True,
+      _socket_conn=None,
+      adb_path="adb",
+  )
+  monkeypatch.setattr(navdy_op_bridge, "ensure_socket_forward", lambda _args: calls.append("forward"))
+
+  assert not navdy_op_bridge.connect_socket(args, force=True)
+  assert calls == []
 
 
 def test_navdy_path_update_is_independent_from_fast_state_rate():

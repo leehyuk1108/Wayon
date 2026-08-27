@@ -26,6 +26,10 @@ KPH_PER_MS = 3.6
 DEFAULT_ACTION = "com.navdy.OPENPILOT_STATE"
 DEFAULT_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateReceiver"
 DEFAULT_SERVICE_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateService"
+DEFAULT_ACTIVITY_COMPONENT = "com.navdy.hud.app/.ui.activity.MainActivity"
+DEFAULT_PACKAGE_NAME = "com.navdy.hud.app"
+NAVDY_IR_BRIGHTNESS_PATH = "/sys/class/leds/ir-control/brightness"
+NAVDY_IR_ON_BRIGHTNESS = 127
 DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
@@ -1337,6 +1341,8 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
 
 
 def send_adb(payload: dict[str, Any], args: argparse.Namespace) -> bool:
+  if getattr(args, "_navdy_runtime_suspended", False):
+    return False
   json_payload = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
   shell_cmd = "am broadcast"
   if args.component:
@@ -1378,7 +1384,7 @@ def queue_adb(payload: dict[str, Any], args: argparse.Namespace) -> None:
 
 
 def ensure_socket_forward(args: argparse.Namespace) -> None:
-  if not args.adb_path:
+  if not args.adb_path or getattr(args, "_navdy_runtime_suspended", False):
     return
   run_adb(args, ["forward", f"tcp:{args.socket_port}", f"tcp:{args.device_socket_port}"])
   run_adb(args, ["shell", "am", "startservice", "-n", args.service_component])
@@ -1396,6 +1402,8 @@ def close_socket(args: argparse.Namespace) -> None:
 
 
 def connect_socket(args: argparse.Namespace, force: bool = False) -> bool:
+  if getattr(args, "_navdy_runtime_suspended", False):
+    return False
   if getattr(args, "_socket_conn", None) is not None:
     return True
 
@@ -1528,6 +1536,8 @@ def socket_sender_loop(args: argparse.Namespace) -> None:
         cond.wait()
       payload = getattr(args, "_socket_sender_pending")
       setattr(args, "_socket_sender_pending", None)
+    if getattr(args, "_navdy_runtime_suspended", False):
+      continue
     connected = connect_socket(args)
     if connected:
       with cond:
@@ -1630,6 +1640,52 @@ def set_stay_on_while_plugged_in(args: argparse.Namespace, stay_on: bool) -> Non
   if args.adb_path:
     value = "1" if stay_on else "0"
     adb_shell(args, ["settings", "put", "global", "stay_on_while_plugged_in", value])
+
+
+def clear_navdy_transport(args: argparse.Namespace) -> None:
+  close_socket(args)
+  for pending_name, cond_name in (
+      ("_socket_sender_pending", "_socket_sender_cond"),
+      ("_adb_sender_pending", "_adb_sender_cond"),
+  ):
+    cond = getattr(args, cond_name, None)
+    if cond is None:
+      setattr(args, pending_name, None)
+      continue
+    with cond:
+      setattr(args, pending_name, None)
+
+
+def set_navdy_ir(args: argparse.Namespace, enabled: bool) -> bool:
+  if not args.adb_path:
+    return False
+  value = NAVDY_IR_ON_BRIGHTNESS if enabled else 0
+  command = f"echo {value} > {shlex.quote(NAVDY_IR_BRIGHTNESS_PATH)}"
+  return adb_shell(args, [command]).returncode == 0
+
+
+def set_navdy_runtime(args: argparse.Namespace, should_run: bool) -> bool:
+  if not args.adb_path:
+    return False
+  if should_run:
+    activity = adb_shell(args, ["am", "start", "-n", args.activity_component])
+    service = adb_shell(args, ["am", "startservice", "-n", args.service_component])
+    set_navdy_ir(args, True)
+    success = activity.returncode == 0 and service.returncode == 0
+    if success:
+      setattr(args, "_navdy_runtime_suspended", False)
+    return success
+
+  # Block sender threads before clearing their pending work so they cannot race
+  # the force-stop by starting the socket service again.
+  setattr(args, "_navdy_runtime_suspended", True)
+  clear_navdy_transport(args)
+  stopped = adb_shell(args, ["am", "force-stop", args.package_name])
+  set_navdy_ir(args, False)
+  success = stopped.returncode == 0
+  if not success:
+    setattr(args, "_navdy_runtime_suspended", False)
+  return success
 
 
 def navdy_display_on(args: argparse.Namespace) -> bool | None:
@@ -1895,6 +1951,8 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
     return offroad_since, last_target_on
 
   if started:
+    if getattr(args, "_navdy_runtime_suspended", False) or last_target_on is not True:
+      set_navdy_runtime(args, True)
     if last_target_on is not True or due_for_power_on_ensure(args, now):
       if set_navdy_display(args, True, "onroad"):
         last_target_on = True
@@ -1907,6 +1965,8 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
     if last_target_on is not False or ensure_due:
       if set_navdy_display(args, False, "offroad"):
         last_target_on = False
+    if not getattr(args, "_navdy_runtime_suspended", False):
+      set_navdy_runtime(args, False)
   return offroad_since, last_target_on
 
 
@@ -1981,6 +2041,12 @@ def run_live(args: argparse.Namespace) -> None:
     started = power_started(sm, args, now) if args.manage_navdy_power else True
     if args.manage_navdy_power:
       update_navdy_power(args, started, now)
+    if not started:
+      if lane_marking_classifier is not None:
+        lane_marking_classifier.set_active(False)
+      if radar_reader is not None:
+        radar_reader.set_active(False)
+      continue
     if not has_update and not (args.once and now >= once_deadline):
       continue
     if not live_payload_ready(sm, started, now):
@@ -2123,6 +2189,8 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--socket-port", type=int, default=DEFAULT_SOCKET_PORT, help="Host TCP port forwarded to Navdy.")
   parser.add_argument("--device-socket-port", type=int, default=DEFAULT_DEVICE_SOCKET_PORT, help="Navdy TCP port for the socket service.")
   parser.add_argument("--service-component", default=DEFAULT_SERVICE_COMPONENT, help="Android service component for socket transport.")
+  parser.add_argument("--activity-component", default=DEFAULT_ACTIVITY_COMPONENT, help="Android activity launched when Navdy wakes.")
+  parser.add_argument("--package-name", default=DEFAULT_PACKAGE_NAME, help="Android package stopped while Navdy is offroad.")
   parser.add_argument("--socket-timeout-sec", type=float, default=0.25, help="Socket connect/write timeout.")
   parser.add_argument("--socket-reconnect-sec", type=float, default=1.0, help="Minimum interval between socket reconnect attempts.")
   parser.add_argument("--no-adb-fallback", dest="adb_fallback", action="store_false", help="Disable broadcast fallback when socket send fails.")
@@ -2160,6 +2228,7 @@ def main() -> int:
   setattr(args, "_last_set_speed_at", 0.0)
   setattr(args, "_last_socket_connect_at", 0.0)
   setattr(args, "_socket_conn", None)
+  setattr(args, "_navdy_runtime_suspended", False)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
   if args.adb_path:

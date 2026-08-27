@@ -77,8 +77,9 @@ def test_fixed_camera_profile_reserves_settling_distance_before_compliance_point
 
   write_camera_state(camera_path, 50, "fixed", 1000)
   controller.run(state, make_control(), make_plan(), True)
-  assert controller.v_target == 100
-  assert not controller.automatic_control_active
+  assert 95 <= controller.v_target < 100
+  assert controller.automatic_control_active
+  assert controller.required_accel < 0.0
 
   write_camera_state(camera_path, 50, "fixed", 300)
   controller.camera_state_checked_at = 0.0

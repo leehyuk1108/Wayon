@@ -22,6 +22,7 @@ from openpilot.sunnypilot.selfdrive.car.cruise_ext import (
   update_manual_button_timers,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
+  empty_response_profile,
   learned_delay_for_speed,
   load_response_profile,
 )
@@ -83,8 +84,9 @@ class IntelligentCruiseButtonManagement:
     self.automatic_control_source = "inactive"
     self.wayon_longitudinal_profile = is_enabled(CP)
     self.default_response_delay = float(getattr(self.CP, "longitudinalActuatorDelay", 0.5))
-    self.params = Params()
-    self.response_profile = load_response_profile(self.params, self.default_response_delay)
+    self.params = Params() if self.wayon_longitudinal_profile else None
+    self.response_profile = (load_response_profile(self.params, self.default_response_delay)
+                             if self.params is not None else empty_response_profile(self.default_response_delay))
     self.response_profile_checked_at = 0.0
     self.predicted_arrival_speed_kph = 0.0
     self.required_accel = 0.0

@@ -184,14 +184,14 @@ class LongitudinalResponseLearner:
   SAVE_INTERVAL_S = 60.0
   SAMPLE_EVERY_FRAMES = round(0.1 / DT_CTRL)
 
-  def __init__(self, default_delay: float, params: Any | None = None):
-    if params is None:
+  def __init__(self, default_delay: float, params: Any | None = None, enabled: bool = True):
+    if enabled and params is None:
       from openpilot.common.params import Params
       params = Params()
     self.params = params
     self.default_delay = float(np.clip(default_delay, 0.08, 0.9))
-    self.profile = load_response_profile(self.params, self.default_delay)
-    self.enabled = self.params.get_bool(RESPONSE_LEARNING_PARAM)
+    self.profile = load_response_profile(self.params, self.default_delay) if enabled else empty_response_profile(self.default_delay)
+    self.enabled = bool(enabled and self.params.get_bool(RESPONSE_LEARNING_PARAM))
     self.frame = 0
     self.last_save = time.monotonic()
     self.last_command = 0.0
@@ -264,6 +264,8 @@ class LongitudinalResponseLearner:
       self.save()
 
   def save(self) -> None:
+    if self.params is None:
+      return
     self.profile["updatedAt"] = int(time.time())
     self.params.put(RESPONSE_PROFILE_PARAM, self.profile)
     self.last_save = time.monotonic()

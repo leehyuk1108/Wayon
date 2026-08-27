@@ -95,7 +95,8 @@ class LongControl:
     self.accel_smoother = AdaptiveLongitudinalSmoother()
     self.coast_controller = WayonCoastController()
     self.stop_controller = LowSpeedStopController()
-    self.response_learner = LongitudinalResponseLearner(float(CP.longitudinalActuatorDelay))
+    self.response_learner = LongitudinalResponseLearner(
+      float(CP.longitudinalActuatorDelay), enabled=self.wayon_carrot_profile)
     self.last_output_accel = 0.0
     self.sng_stop_frames = 0
     self.sng_lead_frames = 0

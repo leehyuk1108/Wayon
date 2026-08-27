@@ -6,8 +6,8 @@ from openpilot.common.constants import CV
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import apply_icbm_accel_target, apply_icbm_target
 
 
-def icbm_target(speed_kph: float, active: bool = True):
-  return SimpleNamespace(automaticControlActive=active, automaticTargetSpeedKph=speed_kph)
+def icbm_target(speed_kph: float, active: bool = True, source: str = "camera"):
+  return SimpleNamespace(automaticControlActive=active, automaticTargetSpeedKph=speed_kph, controlSource=source)
 
 
 def test_active_icbm_target_caps_openpilot_long_cruise():
@@ -32,12 +32,12 @@ def test_icbm_never_raises_driver_cruise_target():
 
 def test_icbm_releases_propulsion_instead_of_requesting_early_braking():
   accel = apply_icbm_accel_target(icbm_target(65), 67 * CV.KPH_TO_MS, 0.3, 80 * CV.KPH_TO_MS)
-  assert accel == 0.0
+  assert accel == pytest.approx(-0.27)
 
 
-def test_icbm_large_speed_error_still_starts_from_coast_target():
+def test_icbm_large_speed_error_uses_bounded_tracking_decel():
   accel = apply_icbm_accel_target(icbm_target(50), 80 * CV.KPH_TO_MS, 0.3, 100 * CV.KPH_TO_MS)
-  assert accel == 0.0
+  assert accel == -0.45
 
 
 def test_icbm_does_not_brake_below_target():
@@ -45,7 +45,12 @@ def test_icbm_does_not_brake_below_target():
 
 
 def test_icbm_starts_coasting_when_target_is_near_current_speed():
-  accel = apply_icbm_accel_target(icbm_target(60), 58 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS)
+  accel = apply_icbm_accel_target(icbm_target(60), 60.4 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS)
+  assert accel == 0.0
+
+
+def test_curve_target_keeps_coast_only_behavior():
+  accel = apply_icbm_accel_target(icbm_target(50, source="curve"), 80 * CV.KPH_TO_MS, 0.3, 100 * CV.KPH_TO_MS)
   assert accel == 0.0
 
 

@@ -25,6 +25,10 @@ LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 ICBM_MIN_TARGET_KPH = 20.0
 ICBM_COAST_ENTRY_MARGIN_KPH = 3.0
+ICBM_TRACKING_DEADBAND_KPH = 0.5
+ICBM_TRACKING_DECEL_MIN_MPS2 = 0.12
+ICBM_TRACKING_DECEL_GAIN_MPS2_PER_KPH = 0.10
+ICBM_TRACKING_DECEL_MAX_MPS2 = 0.45
 
 
 def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: float) -> float:
@@ -39,7 +43,7 @@ def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: 
 
 def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_ego: float,
                             a_target: float, v_cruise: float) -> float:
-  """Release propulsion near a falling ICBM ceiling and let MPC add braking only if needed."""
+  """Release propulsion early and gently catch up when the vehicle trails a falling ICBM ceiling."""
   target_kph = float(icbm.automaticTargetSpeedKph)
   if not icbm.automaticControlActive or not math.isfinite(target_kph):
     return a_target
@@ -50,8 +54,20 @@ def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_eg
   if target_ms >= v_cruise or target_ms > v_ego + ICBM_COAST_ENTRY_MARGIN_KPH * CV.KPH_TO_MS:
     return a_target
 
-  # On GM SDGM, zero acceleration maps to zero gas and zero friction brake.
-  return min(a_target, 0.0)
+  speed_error_kph = (v_ego - target_ms) * CV.MS_TO_KPH
+  control_source = str(getattr(icbm, "controlSource", ""))
+  if control_source != "camera" or speed_error_kph <= ICBM_TRACKING_DEADBAND_KPH:
+    # On GM SDGM, zero acceleration maps to zero gas and zero friction brake.
+    return min(a_target, 0.0)
+
+  # The camera profile is intentionally shallow.  Add only enough feedback to
+  # prevent MPC/actuator lag from accumulating as the ceiling falls, while
+  # keeping early camera approaches in a coast-first regime.
+  tracking_decel = ICBM_TRACKING_DECEL_MIN_MPS2 + (
+    speed_error_kph - ICBM_TRACKING_DEADBAND_KPH
+  ) * ICBM_TRACKING_DECEL_GAIN_MPS2_PER_KPH
+  tracking_decel = min(ICBM_TRACKING_DECEL_MAX_MPS2, tracking_decel)
+  return min(a_target, -tracking_decel)
 
 
 class LongitudinalPlannerSP:

@@ -28,7 +28,12 @@ INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 2.5
 NAVDY_CAMERA_SOURCE = "trafficNotification"
-CAMERA_TARGET_DISTANCE_M = 100.0
+# Finish lowering the planner ceiling early enough for the real vehicle to
+# settle at the posted speed by 100 m before the camera.  The previous profile
+# reached the posted-speed ceiling at 100 m, leaving no room for MPC, actuator,
+# and vehicle response lag.
+CAMERA_COMPLIANCE_DISTANCE_M = 100.0
+CAMERA_SETTLING_TIME_S = 4.0
 CAMERA_COAST_PROFILE_DECEL_MPS2 = 0.35
 SECTION_TARGET_OFFSET_KPH = 5
 SECTION_MAX_OFFSET_KPH = 20
@@ -154,7 +159,9 @@ class IntelligentCruiseButtonManagement:
 
   @staticmethod
   def fixed_camera_target(restore_target_kph: int, limit_kph: int, remaining_m: float) -> int:
-    decel_distance_m = max(0.0, remaining_m - CAMERA_TARGET_DISTANCE_M)
+    settling_distance_m = restore_target_kph * CV.KPH_TO_MS * CAMERA_SETTLING_TIME_S
+    target_distance_m = CAMERA_COMPLIANCE_DISTANCE_M + settling_distance_m
+    decel_distance_m = max(0.0, remaining_m - target_distance_m)
     limit_ms = limit_kph * CV.KPH_TO_MS
     allowed_ms = math.sqrt(limit_ms ** 2 + 2.0 * CAMERA_COAST_PROFILE_DECEL_MPS2 * decel_distance_m)
     allowed_kph = math.floor(allowed_ms * CV.MS_TO_KPH)

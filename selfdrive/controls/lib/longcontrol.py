@@ -12,6 +12,11 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   is_enabled,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
+  LongitudinalResponseLearner,
+  LowSpeedStopController,
+  WayonCoastController,
+)
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -88,6 +93,9 @@ class LongControl:
                                    ([0.0], [PID_KI]),
                                    rate=1 / DT_CTRL)
     self.accel_smoother = AdaptiveLongitudinalSmoother()
+    self.coast_controller = WayonCoastController()
+    self.stop_controller = LowSpeedStopController()
+    self.response_learner = LongitudinalResponseLearner(float(CP.longitudinalActuatorDelay))
     self.last_output_accel = 0.0
     self.sng_stop_frames = 0
     self.sng_lead_frames = 0
@@ -158,7 +166,7 @@ class LongControl:
     self.sng_resume_attempted |= self.sng_resume_ready
     return self.sng_resume_ready
 
-  def update(self, active, CS, long_plan, accel_limits, radar_state=None):
+  def update(self, active, CS, long_plan, accel_limits, radar_state=None, icbm=None, pitch=0.0):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     a_target = long_plan.aTarget
     should_stop = long_plan.shouldStop
@@ -175,18 +183,27 @@ class LongControl:
                                                        CS.cruiseState.standstill, sng_resume)
     if self.long_control_state == LongCtrlState.off:
       self.reset()
+      self.coast_controller.reset()
+      self.stop_controller.reset()
       output_accel = 0.
       self.accel_smoother.reset(CS.aEgo)
 
     elif self.long_control_state == LongCtrlState.stopping:
+      self.coast_controller.reset()
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
         output_accel -= self.get_stopping_decel_rate(CS.standstill) * DT_CTRL
+      lead = radar_state.leadOne if radar_state is not None else None
+      if self.wayon_carrot_profile:
+        output_accel = self.stop_controller.update(output_accel, CS.vEgo, CS.aEgo, CS.standstill,
+                                                   should_stop or sng_launch_failed, lead)
       self.reset()
       self.accel_smoother.reset(output_accel)
 
     elif self.long_control_state == LongCtrlState.starting:
+      self.coast_controller.reset()
+      self.stop_controller.reset()
       output_accel = self.CP.startAccel
       self.reset()
       self.accel_smoother.reset(output_accel)
@@ -199,6 +216,11 @@ class LongControl:
         self.pid.reset()
         lead = radar_state.leadOne if radar_state is not None else None
         cutin_risk = radar_state.leadCutInRisk if radar_state is not None else None
+        automatic_control = bool(icbm is not None and getattr(icbm, "automaticControlActive", False))
+        if self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,
+                                        automatic_control, lead, cutin_risk):
+          output_accel = 0.0
+        output_accel = self.response_learner.correction(output_accel, CS.vEgo)
         output_accel = self.accel_smoother.update(
           output_accel, CS.aEgo, CS.vEgo, v_target_now,
           planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
@@ -209,4 +231,13 @@ class LongControl:
         self.speed_pid.reset()
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
+    lead = radar_state.leadOne if radar_state is not None else None
+    cutin_risk = radar_state.leadCutInRisk if radar_state is not None else None
+    urgent = bool((lead is not None and getattr(lead, "status", False) and
+                   (getattr(lead, "dRel", 1000.0) < 8.0 or getattr(lead, "vRel", 0.0) < -2.0)) or
+                  (cutin_risk is not None and getattr(cutin_risk, "status", False) and
+                   getattr(cutin_risk, "score", 0.0) > 0.35))
+    self.response_learner.update(self.last_output_accel, CS.aEgo, CS.vEgo,
+                                 self.wayon_carrot_profile and active and self.long_control_state == LongCtrlState.pid,
+                                 pitch, CS.gasPressed, CS.brakePressed, urgent)
     return self.last_output_accel

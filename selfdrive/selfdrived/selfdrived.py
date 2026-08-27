@@ -672,6 +672,10 @@ class SelfdriveD(CruiseHelper):
     icbm.sectionProgress = self.icbm.section_progress
     icbm.sectionRemainingM = self.icbm.section_remaining_m
     icbm.controlSource = self.icbm.automatic_control_source
+    icbm.cameraDistanceM = self.icbm.camera_distance_m
+    icbm.cameraLimitKph = self.icbm.camera_speed
+    icbm.predictedArrivalSpeedKph = self.icbm.predicted_arrival_speed_kph
+    icbm.requiredAccel = self.icbm.required_accel
 
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 

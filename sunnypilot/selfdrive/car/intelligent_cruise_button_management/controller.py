@@ -12,6 +12,7 @@ import time
 from cereal import car, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
+from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import (
@@ -20,6 +21,11 @@ from openpilot.sunnypilot.selfdrive.car.cruise_ext import (
   V_CRUISE_UNSET,
   update_manual_button_timers,
 )
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
+  learned_delay_for_speed,
+  load_response_profile,
+)
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import is_enabled
 
 State = custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState
 SendButtonState = custom.IntelligentCruiseButtonManagement.SendButtonState
@@ -75,6 +81,12 @@ class IntelligentCruiseButtonManagement:
     self.camera_state_checked_at = 0.0
     self.automatic_speed_control_active = False
     self.automatic_control_source = "inactive"
+    self.wayon_longitudinal_profile = is_enabled(CP)
+    self.params = Params()
+    self.response_profile = load_response_profile(self.params, float(self.CP.longitudinalActuatorDelay))
+    self.response_profile_checked_at = 0.0
+    self.predicted_arrival_speed_kph = 0.0
+    self.required_accel = 0.0
 
     self.section_phase = "inactive"
     self.section_limit_kph = 0
@@ -158,15 +170,42 @@ class IntelligentCruiseButtonManagement:
     self.section_distance_travelled_m = 0.0
     self.section_average_kph = 0.0
 
+  def learned_response_delay(self, v_ego: float) -> float:
+    if not self.wayon_longitudinal_profile:
+      return 0.0
+    now = time.monotonic()
+    if now - self.response_profile_checked_at >= 10.0:
+      self.response_profile = load_response_profile(self.params, float(self.CP.longitudinalActuatorDelay))
+      self.response_profile_checked_at = now
+    return learned_delay_for_speed(self.response_profile, v_ego, float(self.CP.longitudinalActuatorDelay))
+
   @staticmethod
-  def fixed_camera_target(restore_target_kph: int, limit_kph: int, remaining_m: float) -> int:
-    settling_distance_m = restore_target_kph * CV.KPH_TO_MS * CAMERA_SETTLING_TIME_S
+  def fixed_camera_target(restore_target_kph: int, limit_kph: int, remaining_m: float,
+                          v_ego: float | None = None, response_delay: float = 0.0) -> int:
+    approach_speed = max(0.0, v_ego) if v_ego is not None else restore_target_kph * CV.KPH_TO_MS
+    settling_time = CAMERA_SETTLING_TIME_S + max(0.0, response_delay)
+    settling_distance_m = approach_speed * settling_time
     target_distance_m = CAMERA_COMPLIANCE_DISTANCE_M + settling_distance_m
     decel_distance_m = max(0.0, remaining_m - target_distance_m)
     limit_ms = limit_kph * CV.KPH_TO_MS
     allowed_ms = math.sqrt(limit_ms ** 2 + 2.0 * CAMERA_COAST_PROFILE_DECEL_MPS2 * decel_distance_m)
     allowed_kph = math.floor(allowed_ms * CV.MS_TO_KPH)
     return max(limit_kph, min(restore_target_kph, allowed_kph))
+
+  def update_arrival_prediction(self, CS: car.CarState, target_kph: float,
+                                endpoint_distance_m: float) -> None:
+    self.predicted_arrival_speed_kph = 0.0
+    self.required_accel = 0.0
+    if target_kph <= 0.0 or endpoint_distance_m <= 0.0:
+      return
+
+    response_delay = self.learned_response_delay(float(CS.vEgo))
+    usable_distance_m = max(1.0, endpoint_distance_m - max(0.0, float(CS.vEgo)) * response_delay)
+    target_ms = target_kph * CV.KPH_TO_MS
+    speed_sq = max(0.0, float(CS.vEgo) ** 2 + 2.0 * float(CS.aEgo) * usable_distance_m)
+    self.predicted_arrival_speed_kph = math.sqrt(speed_sq) * CV.MS_TO_KPH
+    if CS.vEgo > target_ms:
+      self.required_accel = max(-2.0, (target_ms ** 2 - float(CS.vEgo) ** 2) / (2.0 * usable_distance_m))
 
   def update_section_target(self, CS: car.CarState, restore_target: int, limit_kph: int,
                             remaining_m: float) -> int:
@@ -240,11 +279,28 @@ class IntelligentCruiseButtonManagement:
       camera_target_kph = self.update_section_target(CS, restore_target_kph, camera_target_kph, self.camera_distance_m)
     elif self.camera_type == "fixed" and camera_target_kph > 0:
       self.reset_section_control()
-      camera_target_kph = self.fixed_camera_target(restore_target_kph, camera_target_kph, self.camera_distance_m)
+      camera_target_kph = self.fixed_camera_target(
+        restore_target_kph, camera_target_kph, self.camera_distance_m,
+        float(CS.vEgo), self.learned_response_delay(float(CS.vEgo)))
     elif self.section_phase != "inactive" and camera_target_kph == 0:
       camera_target_kph = self.held_section_target(restore_target_kph)
     elif self.camera_type != "section":
       self.reset_section_control()
+
+    if camera_target_kph > 0:
+      if self.camera_type == "fixed":
+        endpoint_distance_m = max(1.0, self.camera_distance_m - CAMERA_COMPLIANCE_DISTANCE_M)
+        prediction_target_kph = self.camera_speed
+      elif self.camera_type == "section" and self.section_phase in ("approach", "exit"):
+        endpoint_distance_m = max(1.0, self.camera_distance_m)
+        prediction_target_kph = self.camera_speed
+      else:
+        endpoint_distance_m = max(60.0, CS.vEgo * (4.0 + self.learned_response_delay(float(CS.vEgo))))
+        prediction_target_kph = camera_target_kph
+      self.update_arrival_prediction(CS, prediction_target_kph, endpoint_distance_m)
+    else:
+      self.predicted_arrival_speed_kph = 0.0
+      self.required_accel = 0.0
 
     camera_target = camera_target_kph
     if camera_target > 0 and not self.is_metric:

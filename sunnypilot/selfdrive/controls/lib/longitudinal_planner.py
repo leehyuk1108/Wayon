@@ -56,9 +56,10 @@ def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_eg
 
   speed_error_kph = (v_ego - target_ms) * CV.MS_TO_KPH
   control_source = str(getattr(icbm, "controlSource", ""))
+  required_accel = float(getattr(icbm, "requiredAccel", 0.0))
   if control_source != "camera" or speed_error_kph <= ICBM_TRACKING_DEADBAND_KPH:
     # On GM SDGM, zero acceleration maps to zero gas and zero friction brake.
-    return min(a_target, 0.0)
+    return min(a_target, required_accel if required_accel < -0.08 else 0.0)
 
   # The camera profile is intentionally shallow.  Add only enough feedback to
   # prevent MPC/actuator lag from accumulating as the ceiling falls, while
@@ -67,7 +68,8 @@ def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_eg
     speed_error_kph - ICBM_TRACKING_DEADBAND_KPH
   ) * ICBM_TRACKING_DECEL_GAIN_MPS2_PER_KPH
   tracking_decel = min(ICBM_TRACKING_DECEL_MAX_MPS2, tracking_decel)
-  return min(a_target, -tracking_decel)
+  predicted_decel = required_accel if math.isfinite(required_accel) and required_accel < -0.08 else 0.0
+  return min(a_target, -tracking_decel, predicted_decel)
 
 
 class LongitudinalPlannerSP:

@@ -37,6 +37,10 @@ struct IntelligentCruiseButtonManagement {
   sectionProgress @8 :Float32;
   sectionRemainingM @9 :Float32;
   controlSource @10 :Text;
+  cameraDistanceM @11 :Float32;
+  cameraLimitKph @12 :Float32;
+  predictedArrivalSpeedKph @13 :Float32;
+  requiredAccel @14 :Float32;
 
   enum IntelligentCruiseButtonManagementState {
     inactive @0;      # No button press or default state

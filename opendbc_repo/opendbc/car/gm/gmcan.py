@@ -100,7 +100,7 @@ def create_friction_brake_command(packer, bus, apply_brake, idx, enabled, near_s
   return packer.make_can_msg("EBCMFrictionBrakeCmd", bus, values)
 
 
-def create_acc_dashboard_command(packer, bus, enabled, target_speed_kph, hud_control, fcw):
+def create_acc_dashboard_command(packer, bus, enabled, target_speed_kph, hud_control, fcw_alert):
   target_speed = min(target_speed_kph, 255)
 
   values = {
@@ -111,7 +111,7 @@ def create_acc_dashboard_command(packer, bus, enabled, target_speed_kph, hud_con
     "ACCCmdActive": enabled,
     "ACCAlwaysOne2": 1,
     "ACCLeadCar": hud_control.leadVisible,
-    "FCWAlert": 0x3 if fcw else 0
+    "FCWAlert": max(0, min(int(fcw_alert), 0x3))
   }
 
   return packer.make_can_msg("ASCMActiveCruiseControlStatus", bus, values)

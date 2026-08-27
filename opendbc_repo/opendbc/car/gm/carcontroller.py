@@ -316,10 +316,13 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
           CS.autoHoldActivated = False
 
         # Send dashboard UI commands (ACC status)
-        send_fcw = hud_alert == VisualAlert.fcw
+        # SASCM blocks the stock 0x370 message while openpilot longitudinal is
+        # active. Preserve its FCW field in the replacement dashboard message
+        # so the stock red collision LEDs remain available.
+        fcw_alert = 0x3 if hud_alert == VisualAlert.fcw else CS.stock_fcw_alert
         dashboard_speed_kph = get_acc_dashboard_speed_kph(self.CP, hud_v_cruise * CV.MS_TO_KPH)
         can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, CC.enabled,
-                                                            dashboard_speed_kph, hud_control, send_fcw))
+                                                            dashboard_speed_kph, hud_control, fcw_alert))
 
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)

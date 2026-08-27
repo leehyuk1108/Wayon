@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from cereal import car, custom
+from opendbc.can import CANPacker, CANParser
 from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
 from opendbc.car import gen_empty_fingerprint
@@ -9,6 +10,7 @@ from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_frict
                                          gm_long_auto_hold_command, gm_uses_auto_hold_sng,
                                          limit_traverse_stopping_brake, update_traverse_coasting)
 from opendbc.car.gm.interface import CarInterface
+from opendbc.car.gm.gmcan import create_acc_dashboard_command
 from opendbc.car.gm.fingerprints import FINGERPRINTS
 from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CruiseButtons
 from opendbc.car.structs import CarControl, CarParams, CarState
@@ -56,6 +58,18 @@ class TestGMAccDashboardSpeed(unittest.TestCase):
   def test_non_sdgm_is_unchanged(self):
     CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertEqual(get_acc_dashboard_speed_kph(CP, 70.0), 70.0)
+
+
+class TestGMAccDashboardFCW(unittest.TestCase):
+  def test_preserves_each_stock_fcw_level(self):
+    packer = CANPacker("gm_global_a_powertrain_generated")
+    parser = CANParser("gm_global_a_powertrain_generated", [("ASCMActiveCruiseControlStatus", 0)], 0)
+    hud_control = SimpleNamespace(leadDistanceBars=2, leadVisible=True)
+
+    for alert in range(4):
+      msg = create_acc_dashboard_command(packer, 0, True, 80.0, hud_control, alert)
+      parser.update([1_000_000_000, [msg]])
+      self.assertEqual(parser.vl["ASCMActiveCruiseControlStatus"]["FCWAlert"], alert)
 
 
 class TestGMTraverseCoasting(unittest.TestCase):

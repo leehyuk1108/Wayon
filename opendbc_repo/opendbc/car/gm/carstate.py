@@ -33,6 +33,7 @@ class CarState(CarStateBase, CarStateExt):
     self.pt_lka_steering_cmd_counter = 0
     self.cam_lka_steering_cmd_counter = 0
     self.buttons_counter = 0
+    self.stock_fcw_alert = 0
 
     self.distance_button = 0
 
@@ -147,7 +148,8 @@ class CarState(CarStateBase, CarStateExt):
       if self.CP.carFingerprint not in ALT_ACCS and not self.CP_SP.flags & GMFlagsSP.NON_ACC:
         ret.cruiseState.speed = cam_cp.vl["ASCMActiveCruiseControlStatus"]["ACCSpeedSetpoint"] * CV.KPH_TO_MS
         # This FCW signal only works for SDGM cars. CAM cars send FCW on GMLAN but this bit is always 0 for them
-        ret.stockFcw = cam_cp.vl["ASCMActiveCruiseControlStatus"]["FCWAlert"] != 0
+        self.stock_fcw_alert = int(cam_cp.vl["ASCMActiveCruiseControlStatus"]["FCWAlert"])
+        ret.stockFcw = self.stock_fcw_alert != 0
         if self.CP.pcmCruise:
           # openpilot controls nonAdaptive when not pcmCruise
           ret.cruiseState.nonAdaptive = cam_cp.vl["ASCMActiveCruiseControlStatus"]["ACCCruiseState"] not in (2, 3)

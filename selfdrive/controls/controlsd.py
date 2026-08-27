@@ -131,7 +131,10 @@ class Controls(ControlsExt):
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, self.sm['radarState']))
+    pitch = float(self.calibrated_pose.orientation.xyz[1]) if self.calibrated_pose is not None else 0.0
+    actuators.accel = float(self.LoC.update(
+      CC.longActive, CS, long_plan, pid_accel_limits, self.sm['radarState'],
+      self.sm['selfdriveStateSP'].intelligentCruiseButtonManagement, pitch))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

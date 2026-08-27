@@ -6,8 +6,9 @@ from openpilot.common.constants import CV
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import apply_icbm_accel_target, apply_icbm_target
 
 
-def icbm_target(speed_kph: float, active: bool = True, source: str = "camera"):
-  return SimpleNamespace(automaticControlActive=active, automaticTargetSpeedKph=speed_kph, controlSource=source)
+def icbm_target(speed_kph: float, active: bool = True, source: str = "camera", required_accel: float = 0.0):
+  return SimpleNamespace(automaticControlActive=active, automaticTargetSpeedKph=speed_kph,
+                         controlSource=source, requiredAccel=required_accel)
 
 
 def test_active_icbm_target_caps_openpilot_long_cruise():
@@ -56,3 +57,15 @@ def test_curve_target_keeps_coast_only_behavior():
 
 def test_inactive_icbm_does_not_change_accel():
   assert apply_icbm_accel_target(icbm_target(50, active=False), 80 * CV.KPH_TO_MS, 0.4, 100 * CV.KPH_TO_MS) == 0.4
+
+
+def test_camera_arrival_predictor_can_request_earlier_deceleration():
+  output = apply_icbm_accel_target(icbm_target(70, required_accel=-0.32),
+                                   80 * CV.KPH_TO_MS, 0.2, 100 * CV.KPH_TO_MS)
+  assert output <= -0.32
+
+
+def test_camera_arrival_predictor_never_adds_acceleration():
+  output = apply_icbm_accel_target(icbm_target(70, required_accel=0.4),
+                                   80 * CV.KPH_TO_MS, -0.1, 100 * CV.KPH_TO_MS)
+  assert output <= 0.0

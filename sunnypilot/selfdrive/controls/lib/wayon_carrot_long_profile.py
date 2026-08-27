@@ -33,9 +33,9 @@ MAP_CURVE_FACTOR = 1.20
 
 def is_enabled(CP) -> bool:
   return bool(
-    CP.brand == "gm" and
-    str(CP.carFingerprint) == TRAVERSE_FINGERPRINT and
-    CP.openpilotLongitudinalControl
+    getattr(CP, "brand", "") == "gm" and
+    str(getattr(CP, "carFingerprint", "")) == TRAVERSE_FINGERPRINT and
+    bool(getattr(CP, "openpilotLongitudinalControl", False))
   )
 
 

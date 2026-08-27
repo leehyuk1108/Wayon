@@ -119,6 +119,10 @@ class ControlsExt(ModelStateBase):
     CC_SP.intelligentCruiseButtonManagement.sectionProgress = icbm_src.sectionProgress
     CC_SP.intelligentCruiseButtonManagement.sectionRemainingM = icbm_src.sectionRemainingM
     CC_SP.intelligentCruiseButtonManagement.controlSource = icbm_src.controlSource
+    CC_SP.intelligentCruiseButtonManagement.cameraDistanceM = icbm_src.cameraDistanceM
+    CC_SP.intelligentCruiseButtonManagement.cameraLimitKph = icbm_src.cameraLimitKph
+    CC_SP.intelligentCruiseButtonManagement.predictedArrivalSpeedKph = icbm_src.predictedArrivalSpeedKph
+    CC_SP.intelligentCruiseButtonManagement.requiredAccel = icbm_src.requiredAccel
 
     return CC_SP
 

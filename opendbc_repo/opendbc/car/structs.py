@@ -114,6 +114,10 @@ class IntelligentCruiseButtonManagement:
   sectionProgress: float = auto_field()
   sectionRemainingM: float = auto_field()
   controlSource: str = auto_field()
+  cameraDistanceM: float = auto_field()
+  cameraLimitKph: float = auto_field()
+  predictedArrivalSpeedKph: float = auto_field()
+  requiredAccel: float = auto_field()
 
   class IntelligentCruiseButtonManagementState(StrEnum):
     inactive = auto()

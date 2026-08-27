@@ -59,6 +59,7 @@ public final class AmbientLightController {
   private static final int MAX_ACK_SETTLE_INTERVAL_MS = 100;
   private static final long BRIGHTNESS_SYNC_INTERVAL_MS = 5000;
   private static final long CONNECT_RETRY_MS = 5000;
+  private static final long CONNECT_ATTEMPT_TIMEOUT_MS = 10000;
   private static final long GATT_ERROR_RETRY_MS = 1500;
   private static final long START_PACKET_PACE_INTERVAL_MS = 120;
   private static final long FADE_STEP_INTERVAL_MS = 350;
@@ -113,6 +114,7 @@ public final class AmbientLightController {
         return;
       }
       mConnecting = false;
+      mHandler.removeCallbacks(mConnectTimeoutRunnable);
       if (newState == BluetoothProfile.STATE_CONNECTED) {
         Log.i(TAG, "ambient gatt connected");
         mSkipRememberedOnce = false;
@@ -225,6 +227,18 @@ public final class AmbientLightController {
     public void run() {
       mReconnectScheduled = false;
       connectIfNeeded();
+    }
+  };
+
+  private final Runnable mConnectTimeoutRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (!mConnecting || mConnected) {
+        return;
+      }
+      Log.w(TAG, "ambient direct connection timed out; falling back to scan");
+      closeGatt();
+      scheduleReconnect(0L);
     }
   };
 
@@ -1011,6 +1025,9 @@ public final class AmbientLightController {
     if (mGatt == null) {
       mConnecting = false;
       scheduleReconnect(CONNECT_RETRY_MS);
+    } else {
+      mHandler.removeCallbacks(mConnectTimeoutRunnable);
+      mHandler.postDelayed(mConnectTimeoutRunnable, CONNECT_ATTEMPT_TIMEOUT_MS);
     }
   }
 
@@ -1026,6 +1043,7 @@ public final class AmbientLightController {
 
   private void closeGatt() {
     mConnecting = false;
+    mHandler.removeCallbacks(mConnectTimeoutRunnable);
     if (mGatt != null) {
       try {
         mGatt.close();

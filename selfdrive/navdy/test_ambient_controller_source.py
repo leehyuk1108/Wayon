@@ -47,3 +47,5 @@ def test_remembered_ble_address_is_tried_before_scan() -> None:
   connect = source[source.index("private void connectIfNeeded()"):source.index("private void scheduleReconnect()")]
   assert connect.index("connectRememberedCandidate()") < connect.index("connectBondedCandidate()")
   assert connect.index("connectBondedCandidate()") < connect.index("startLeScan")
+  assert "CONNECT_ATTEMPT_TIMEOUT_MS = 10000" in source
+  assert 'Log.w(TAG, "ambient direct connection timed out; falling back to scan")' in source

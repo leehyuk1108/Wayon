@@ -7,8 +7,8 @@
 
 
 # annotations
-.annotation system Ldalvik/annotation/EnclosingMethod;
-    value = Lcom/navdy/hud/app/ambient/AmbientLightController;->onOpenpilotPayload(Landroid/content/Context;Ljava/lang/String;)V
+.annotation system Ldalvik/annotation/EnclosingClass;
+    value = Lcom/navdy/hud/app/ambient/AmbientLightController;
 .end annotation
 
 .annotation system Ldalvik/annotation/InnerClass;
@@ -18,40 +18,15 @@
 
 
 # instance fields
-.field final synthetic val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-.field final synthetic val$doorOpen:Z
-
-.field final synthetic val$gear:Ljava/lang/String;
-
-.field final synthetic val$hasDoorOpen:Z
-
-.field final synthetic val$hasOnroad:Z
-
-.field final synthetic val$onroad:Z
+.field final synthetic this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
 
 # direct methods
-.method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;ZZZZ)V
+.method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
-    .annotation system Ldalvik/annotation/Signature;
-        value = {
-            "()V"
-        }
-    .end annotation
 
-    .line 507
-    iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    iput-object p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$gear:Ljava/lang/String;
-
-    iput-boolean p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$hasOnroad:Z
-
-    iput-boolean p4, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$hasDoorOpen:Z
-
-    iput-boolean p5, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$onroad:Z
-
-    iput-boolean p6, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$doorOpen:Z
+    .line 422
+    iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
 
@@ -61,112 +36,153 @@
 
 # virtual methods
 .method public run()V
-    .locals 3
+    .locals 5
 
-    .line 510
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
+    .line 425
+    invoke-static {}, Landroid/os/SystemClock;->elapsedRealtime()J
+
+    move-result-wide v0
+
+    iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6800(Lcom/navdy/hud/app/ambient/AmbientLightController;)J
+
+    move-result-wide v2
+
+    sub-long/2addr v0, v2
+
+    .line 426
+    const-wide/16 v2, 0xbb8
+
+    cmp-long v4, v0, v2
+
+    if-gez v4, :cond_0
+
+    .line 427
+    iget-object v4, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v4}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$300(Lcom/navdy/hud/app/ambient/AmbientLightController;)Landroid/os/Handler;
+
+    move-result-object v4
+
+    sub-long/2addr v2, v0
+
+    invoke-virtual {v4, p0, v2, v3}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+
+    .line 428
+    return-void
+
+    .line 430
+    :cond_0
+    const-string v0, "NavdyAmbient"
+
+    const-string v1, "comma vehicle data timeout; fading ambient off"
+
+    invoke-static {v0, v1}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;)I
+
+    .line 431
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    const/4 v1, 0x1
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6902(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+
+    .line 432
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    const/4 v1, 0x0
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7002(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+
+    .line 433
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6302(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+
+    .line 434
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6402(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+
+    .line 435
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3602(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+
+    .line 436
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$300(Lcom/navdy/hud/app/ambient/AmbientLightController;)Landroid/os/Handler;
+
+    move-result-object v0
+
+    iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7100(Lcom/navdy/hud/app/ambient/AmbientLightController;)Ljava/lang/Runnable;
+
+    move-result-object v2
+
+    invoke-virtual {v0, v2}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
+
+    .line 437
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3702(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+
+    .line 438
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    const-wide/16 v2, 0x0
+
+    invoke-static {v0, v2, v3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7202(Lcom/navdy/hud/app/ambient/AmbientLightController;J)J
+
+    .line 439
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7300(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
+
+    .line 440
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7400(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
+
+    .line 441
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7500(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
+
+    .line 442
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7600(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
 
-    .line 511
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$gear:Ljava/lang/String;
+    .line 443
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    if-eqz v0, :cond_0
-
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$gear:Ljava/lang/String;
-
-    invoke-virtual {v0}, Ljava/lang/String;->length()I
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$4000(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
 
     move-result v0
 
-    if-lez v0, :cond_0
+    if-eqz v0, :cond_1
 
-    .line 512
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
+    .line 444
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$gear:Ljava/lang/String;
+    const-string v1, "comma data timeout in reverse"
 
-    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7700(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6700(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
 
-    .line 514
-    :cond_0
-    iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$hasOnroad:Z
+    goto :goto_0
 
-    if-nez v0, :cond_1
-
-    iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$hasDoorOpen:Z
-
-    if-eqz v0, :cond_6
-
-    .line 515
+    .line 446
     :cond_1
-    iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$hasOnroad:Z
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    if-eqz v0, :cond_2
+    const-wide/16 v2, 0x3e8
 
-    iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$onroad:Z
+    invoke-static {v0, v1, v1, v2, v3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6500(Lcom/navdy/hud/app/ambient/AmbientLightController;IIJ)V
 
-    goto :goto_0
-
-    .line 516
-    :cond_2
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6900(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_3
-
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6200(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
-
-    move-result v0
-
-    goto :goto_0
-
-    :cond_3
-    const/4 v0, 0x1
-
-    .line 517
+    .line 448
     :goto_0
-    iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$hasDoorOpen:Z
-
-    if-eqz v1, :cond_4
-
-    iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$doorOpen:Z
-
-    goto :goto_1
-
-    .line 518
-    :cond_4
-    iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6900(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_5
-
-    iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6300(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
-
-    move-result v1
-
-    goto :goto_1
-
-    :cond_5
-    const/4 v1, 0x0
-
-    .line 519
-    :goto_1
-    iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$16;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    invoke-static {v2, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7800(Lcom/navdy/hud/app/ambient/AmbientLightController;ZZ)V
-
-    .line 521
-    :cond_6
     return-void
 .end method

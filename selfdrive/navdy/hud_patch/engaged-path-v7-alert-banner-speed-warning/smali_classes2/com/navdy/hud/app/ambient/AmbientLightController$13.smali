@@ -34,7 +34,7 @@
         }
     .end annotation
 
-    .line 387
+    .line 413
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$speed:I
@@ -51,15 +51,15 @@
 .method public run()V
     .locals 3
 
-    .line 390
+    .line 416
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$speed:I
 
     iget v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$limit:I
 
-    invoke-static {v0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$4900(Lcom/navdy/hud/app/ambient/AmbientLightController;II)V
+    invoke-static {v0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$5100(Lcom/navdy/hud/app/ambient/AmbientLightController;II)V
 
-    .line 391
+    .line 417
     return-void
 .end method

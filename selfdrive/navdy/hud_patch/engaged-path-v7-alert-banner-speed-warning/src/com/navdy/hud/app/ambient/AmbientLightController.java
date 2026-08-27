@@ -39,15 +39,16 @@ public final class AmbientLightController {
   private static final int OUTDOOR_AMBIENT_BRIGHTNESS = 50;
   private static final int ZONE_2_AMBIENT_BRIGHTNESS = 40;
   private static final int MIN_FADE_AMBIENT_BRIGHTNESS = 8;
-  private static final int FADE_PHASE_WHITE_DOWN = 0;
+  private static final int FADE_PHASE_ENTRY_WHITE_DOWN = 0;
   private static final int FADE_PHASE_RED_UP = 1;
   private static final int FADE_PHASE_RED_DOWN = 2;
-  private static final int FADE_PHASE_WHITE_UP = 3;
-  private static final int FADE_STEPS = 5;
+  private static final int FADE_PHASE_EXIT_RED_DOWN = 3;
+  private static final int FADE_PHASE_EXIT_WHITE_UP = 4;
+  private static final int FADE_STEPS = 2;
   private static final int BRIGHTNESS_UPDATE_DELTA = 2;
   private static final long BRIGHTNESS_SYNC_INTERVAL_MS = 5000;
   private static final long CONNECT_RETRY_MS = 5000;
-  private static final long FADE_STEP_INTERVAL_MS = 450;
+  private static final long FADE_STEP_INTERVAL_MS = 350;
   private static final long LOW_LIGHT_CHECK_INTERVAL_MS = 1000;
   private static final long OVERSPEED_ON_DELAY_MS = 1000;
   private static final long OVERSPEED_OFF_DELAY_MS = 2000;
@@ -208,18 +209,21 @@ public final class AmbientLightController {
   private final Runnable mBlinkRunnable = new Runnable() {
     @Override
     public void run() {
-      if (!mOverspeedActive || mReverseActive) {
+      boolean restoring = mFadePhase == FADE_PHASE_EXIT_RED_DOWN
+          || mFadePhase == FADE_PHASE_EXIT_WHITE_UP;
+      if ((!mOverspeedActive && !restoring) || mReverseActive) {
         return;
       }
       int brightness = readAmbientBrightness();
-      if (brightness < MIN_FADE_AMBIENT_BRIGHTNESS) {
+      if (!restoring && brightness < MIN_FADE_AMBIENT_BRIGHTNESS) {
         if (!mWarningAnimationStarted || !mLowLightWarning) {
           sendPacket(PACKET_RED);
           sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
           mWarningAnimationStarted = true;
           mLowLightWarning = true;
-          mFadePhase = FADE_PHASE_WHITE_DOWN;
-          mFadeStep = 0;
+          mWarningColorRed = true;
+          mFadePhase = FADE_PHASE_RED_DOWN;
+          mFadeStep = FADE_STEPS;
         } else if (mLastAmbientBrightness < 0
             || Math.abs(brightness - mLastAmbientBrightness) >= BRIGHTNESS_UPDATE_DELTA) {
           sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
@@ -229,34 +233,49 @@ public final class AmbientLightController {
         return;
       }
 
-      if (!mWarningAnimationStarted || mLowLightWarning) {
+      if (!mWarningAnimationStarted) {
         sendPacket(PACKET_RESTORE);
         mWarningAnimationStarted = true;
         mLowLightWarning = false;
-        mFadePhase = FADE_PHASE_WHITE_DOWN;
-        mFadeStep = 0;
+        mWarningColorRed = false;
+        mFadePhase = FADE_PHASE_ENTRY_WHITE_DOWN;
+        mFadeStep = FADE_STEPS;
+      } else if (mLowLightWarning) {
+        // Brightness rose out of low-light mode while still overspeeding. Keep red.
+        mLowLightWarning = false;
+        mWarningColorRed = true;
+        mFadePhase = FADE_PHASE_RED_DOWN;
+        mFadeStep = FADE_STEPS;
       }
 
-      int directionStep = (mFadePhase == FADE_PHASE_WHITE_DOWN || mFadePhase == FADE_PHASE_RED_DOWN)
-          ? FADE_STEPS - mFadeStep : mFadeStep;
-      int zone1Level = (brightness * directionStep + (FADE_STEPS / 2)) / FADE_STEPS;
+      if (mFadePhase == FADE_PHASE_ENTRY_WHITE_DOWN
+          || mFadePhase == FADE_PHASE_RED_DOWN
+          || mFadePhase == FADE_PHASE_EXIT_RED_DOWN) {
+        mFadeStep = Math.max(0, mFadeStep - 1);
+      } else {
+        mFadeStep = Math.min(FADE_STEPS, mFadeStep + 1);
+      }
+
+      int zone1Level = (brightness * mFadeStep + (FADE_STEPS / 2)) / FADE_STEPS;
       sendPacket(buildBrightnessPacket(true, zone1Level, ZONE_2_AMBIENT_BRIGHTNESS));
       mLastAmbientBrightness = brightness;
 
-      mFadeStep++;
-      if (mFadeStep > FADE_STEPS) {
-        mFadeStep = 0;
-        if (mFadePhase == FADE_PHASE_WHITE_DOWN) {
-          mFadePhase = FADE_PHASE_RED_UP;
-          sendPacket(PACKET_RED);
-        } else if (mFadePhase == FADE_PHASE_RED_UP) {
-          mFadePhase = FADE_PHASE_RED_DOWN;
-        } else if (mFadePhase == FADE_PHASE_RED_DOWN) {
-          mFadePhase = FADE_PHASE_WHITE_UP;
-          sendPacket(PACKET_RESTORE);
-        } else {
-          mFadePhase = FADE_PHASE_WHITE_DOWN;
-        }
+      if (mFadePhase == FADE_PHASE_ENTRY_WHITE_DOWN && mFadeStep == 0) {
+        mFadePhase = FADE_PHASE_RED_UP;
+        mWarningColorRed = true;
+        sendPacket(PACKET_RED);
+      } else if (mFadePhase == FADE_PHASE_RED_UP && mFadeStep == FADE_STEPS) {
+        mFadePhase = FADE_PHASE_RED_DOWN;
+      } else if (mFadePhase == FADE_PHASE_RED_DOWN && mFadeStep == 0) {
+        // Stay on red for the entire overspeed warning. Only its brightness pulses.
+        mFadePhase = FADE_PHASE_RED_UP;
+      } else if (mFadePhase == FADE_PHASE_EXIT_RED_DOWN && mFadeStep == 0) {
+        mFadePhase = FADE_PHASE_EXIT_WHITE_UP;
+        mWarningColorRed = false;
+        sendPacket(PACKET_RESTORE);
+      } else if (mFadePhase == FADE_PHASE_EXIT_WHITE_UP && mFadeStep == FADE_STEPS) {
+        finishRestoreFade(brightness);
+        return;
       }
       mHandler.postDelayed(this, FADE_STEP_INTERVAL_MS);
     }
@@ -322,6 +341,7 @@ public final class AmbientLightController {
   private boolean mAmbientActive;
   private boolean mWarningAnimationStarted;
   private boolean mLowLightWarning;
+  private boolean mWarningColorRed;
   private int mFadePhase;
   private int mFadeStep;
   private int mLastAmbientBrightness = -1;
@@ -469,10 +489,10 @@ public final class AmbientLightController {
         startBlink();
       }
     } else {
-      stopBlink();
       if (!mReverseActive) {
-        syncAmbientBrightness(true);
-        sendPacket(PACKET_RESTORE);
+        beginRestoreFade();
+      } else {
+        stopBlink();
       }
     }
   }
@@ -488,8 +508,34 @@ public final class AmbientLightController {
     mHandler.removeCallbacks(mBlinkRunnable);
     mWarningAnimationStarted = false;
     mLowLightWarning = false;
-    mFadePhase = FADE_PHASE_WHITE_DOWN;
+    mWarningColorRed = false;
+    mFadePhase = FADE_PHASE_ENTRY_WHITE_DOWN;
     mFadeStep = 0;
+  }
+
+  private void beginRestoreFade() {
+    mHandler.removeCallbacks(mBlinkRunnable);
+    int brightness = readAmbientBrightness();
+    if (!mWarningAnimationStarted || mLowLightWarning
+        || brightness < MIN_FADE_AMBIENT_BRIGHTNESS) {
+      stopBlink();
+      sendPacket(PACKET_RESTORE);
+      syncAmbientBrightness(true);
+      return;
+    }
+
+    mFadePhase = mWarningColorRed ? FADE_PHASE_EXIT_RED_DOWN : FADE_PHASE_EXIT_WHITE_UP;
+    mHandler.post(mBlinkRunnable);
+  }
+
+  private void finishRestoreFade(int brightness) {
+    mHandler.removeCallbacks(mBlinkRunnable);
+    mWarningAnimationStarted = false;
+    mLowLightWarning = false;
+    mWarningColorRed = false;
+    mFadePhase = FADE_PHASE_ENTRY_WHITE_DOWN;
+    mFadeStep = 0;
+    mLastAmbientBrightness = brightness;
   }
 
   private void startBrightnessSync() {
@@ -505,7 +551,7 @@ public final class AmbientLightController {
 
   private void syncAmbientBrightness(boolean force) {
     int brightness = readAmbientBrightness();
-    if (mOverspeedActive && mWarningAnimationStarted) {
+    if (mWarningAnimationStarted) {
       mLastAmbientBrightness = brightness;
       return;
     }

@@ -83,9 +83,13 @@ Behavior:
   continuous seconds, and keep each warning active for at least three seconds.
 - Holds Zone 1 at a steady red when its screen-driven brightness is below 8,
   avoiding low-PWM color steps at night.
-- At Zone 1 brightness 8 or higher, fades white down to off, switches color
-  while dark, fades red up and down, then switches back to white while dark.
-  Five brightness steps at 450 ms each make a complete cycle about 10.8 seconds.
+- At Zone 1 brightness 8 or higher, fades white down once when overspeed starts,
+  then pulses red brightness only. It no longer alternates red and white while
+  the warning remains active. Two 350 ms steps per half-cycle complete each red
+  pulse in about 1.4 seconds without exceeding the BLE write pace.
+- When overspeed ends, fades the current red level down and restores the normal
+  white color while dark, then fades white back up. The full restore completes
+  within about 1.4 seconds.
 - Keeps Zone 2 at 40 percent with a warmer RGB(255, 235, 205) white during both
   normal operation and warnings. Only Zone 1 participates in the warning fade,
   so the footwell remains stable.

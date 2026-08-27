@@ -25,7 +25,7 @@
 .method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
 
-    .line 200
+    .line 231
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$5;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -38,33 +38,33 @@
 .method public run()V
     .locals 2
 
-    .line 203
+    .line 234
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$5;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3100(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3500(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
 
     move-result v0
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$5;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3200(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3600(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
 
     move-result v1
 
     if-eq v0, v1, :cond_0
 
-    .line 204
+    .line 235
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$5;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$5;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3100(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3500(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
 
     move-result v1
 
-    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3300(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)V
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3700(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)V
 
-    .line 206
+    .line 237
     :cond_0
     return-void
 .end method

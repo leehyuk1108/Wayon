@@ -19,6 +19,22 @@ contains the replacement dashboard layout. Replace these files in the
 apktool-decoded base APK, then rebuild, zipalign, and sign with
 `build_keys/navdy-test.jks`.
 
+Current ambient controller behavior:
+
+- Treats the comma `onroad`, `doorOpen`, and gear payload as one vehicle-state
+  stream. If no payload arrives for three seconds, it cancels warnings and
+  courtesy timers, releases the offroad wake lock, and fades both zones off.
+- Preserves the offroad courtesy state machine used by the v67 device build:
+  Zone 1/2 fade to 20/100 percent with a door open, remain on for at most 20
+  minutes, and fade out 20 seconds after the door closes. An onroad-to-offroad
+  transition holds Zone 1 and raises Zone 2 to 100 percent for two minutes.
+- Runs one-second courtesy fades at no more than roughly 30 updates per second
+  (33 ms minimum step), coalescing queued brightness frames when BLE ACKs lag.
+- Reconnects first to the last successfully selected ambient-module MAC, then
+  falls back to bonded-device matching and an active BLE scan.
+- Keeps overspeed warnings red for their full duration: white fades out once,
+  only red brightness pulses, and red fades out before normal white returns.
+
 Behavior:
 
 - Keeps Zone 1 ambient lighting on the existing screen-driven automatic

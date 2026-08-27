@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
@@ -46,13 +47,32 @@ public final class AmbientLightController {
   private static final int FADE_PHASE_EXIT_WHITE_UP = 4;
   private static final int FADE_STEPS = 2;
   private static final int BRIGHTNESS_UPDATE_DELTA = 2;
+  private static final long AMBIENT_NORMAL_FADE_MS = 1000;
+  private static final String AMBIENT_DEVICE_ADDRESS_SETTING = "navdy_ambient_device_address";
+  private static final String AMBIENT_TRANSITION_STEP_SETTING = "navdy_ambient_transition_step_ms";
+  private static final String ACK_SETTLE_INTERVAL_SETTING = "navdy_ambient_ack_settle_ms";
+  private static final int DEFAULT_AMBIENT_TRANSITION_STEP_MS = 33;
+  private static final int MIN_AMBIENT_TRANSITION_STEP_MS = 33;
+  private static final int MAX_AMBIENT_TRANSITION_STEP_MS = 250;
+  private static final int DEFAULT_ACK_SETTLE_INTERVAL_MS = 10;
+  private static final int MIN_ACK_SETTLE_INTERVAL_MS = 5;
+  private static final int MAX_ACK_SETTLE_INTERVAL_MS = 100;
   private static final long BRIGHTNESS_SYNC_INTERVAL_MS = 5000;
   private static final long CONNECT_RETRY_MS = 5000;
+  private static final long GATT_ERROR_RETRY_MS = 1500;
+  private static final long START_PACKET_PACE_INTERVAL_MS = 120;
   private static final long FADE_STEP_INTERVAL_MS = 350;
   private static final long LOW_LIGHT_CHECK_INTERVAL_MS = 1000;
   private static final long OVERSPEED_ON_DELAY_MS = 1000;
   private static final long OVERSPEED_OFF_DELAY_MS = 2000;
   private static final long OVERSPEED_MIN_ACTIVE_MS = 3000;
+  private static final long OFFROAD_DELAYED_OFF_MS = 60000;
+  private static final long OFFROAD_DOOR_CLOSE_DELAY_MS = 20000;
+  private static final long OFFROAD_DOOR_MAX_ON_MS = 1200000;
+  private static final long OFFROAD_TRANSITION_LIGHT_MS = 120000;
+  private static final int OFFROAD_DOOR_ZONE_1_BRIGHTNESS = 20;
+  private static final int OFFROAD_DOOR_ZONE_2_BRIGHTNESS = 100;
+  private static final long VEHICLE_DATA_TIMEOUT_MS = 3000;
 
   private static final byte[] PACKET_START = new byte[] {
       0x2e, (byte) 0x81, 0x01, 0x01, 0x7c
@@ -76,6 +96,7 @@ public final class AmbientLightController {
   private static AmbientLightController sInstance;
 
   private final Context mContext;
+  private final PowerManager.WakeLock mCpuWakeLock;
   private final Handler mHandler = new Handler(Looper.getMainLooper());
   private final ArrayDeque<byte[]> mQueue = new ArrayDeque<byte[]>();
   private final Set<String> mSeenScanDevices = new HashSet<String>();
@@ -83,8 +104,18 @@ public final class AmbientLightController {
   private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+      if (gatt != mGatt) {
+        Log.i(TAG, "ignoring stale ambient gatt callback status=" + status + " state=" + newState);
+        try {
+          gatt.close();
+        } catch (Exception ignored) {
+        }
+        return;
+      }
+      mConnecting = false;
       if (newState == BluetoothProfile.STATE_CONNECTED) {
         Log.i(TAG, "ambient gatt connected");
+        mSkipRememberedOnce = false;
         mConnected = true;
         mReconnectScheduled = false;
         mHandler.removeCallbacks(mReconnectRunnable);
@@ -103,7 +134,7 @@ public final class AmbientLightController {
         mNotifyReady = false;
         mStartQueued = false;
         closeGatt();
-        scheduleReconnect();
+        scheduleReconnect(status == 133 ? GATT_ERROR_RETRY_MS : CONNECT_RETRY_MS);
       }
     }
 
@@ -157,10 +188,10 @@ public final class AmbientLightController {
       if (value[0] == 0x2e) {
         mHandler.removeCallbacks(mWriteTimeoutRunnable);
         mHandler.removeCallbacks(mWritePaceRunnable);
-        mWriting = false;
+        mWriting = true;
         writeAck();
         mHandler.removeCallbacks(mFlushAfterAckRunnable);
-        mHandler.postDelayed(mFlushAfterAckRunnable, 120);
+        mHandler.postDelayed(mFlushAfterAckRunnable, readAckSettleIntervalMs());
       }
     }
   };
@@ -218,7 +249,7 @@ public final class AmbientLightController {
       if (!restoring && brightness < MIN_FADE_AMBIENT_BRIGHTNESS) {
         if (!mWarningAnimationStarted || !mLowLightWarning) {
           sendPacket(PACKET_RED);
-          sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
+          sendPacket(buildBrightnessPacket(true, brightness, warningZone2Brightness()));
           mWarningAnimationStarted = true;
           mLowLightWarning = true;
           mWarningColorRed = true;
@@ -226,7 +257,7 @@ public final class AmbientLightController {
           mFadeStep = FADE_STEPS;
         } else if (mLastAmbientBrightness < 0
             || Math.abs(brightness - mLastAmbientBrightness) >= BRIGHTNESS_UPDATE_DELTA) {
-          sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
+          sendPacket(buildBrightnessPacket(true, brightness, warningZone2Brightness()));
         }
         mLastAmbientBrightness = brightness;
         mHandler.postDelayed(this, LOW_LIGHT_CHECK_INTERVAL_MS);
@@ -257,7 +288,7 @@ public final class AmbientLightController {
       }
 
       int zone1Level = (brightness * mFadeStep + (FADE_STEPS / 2)) / FADE_STEPS;
-      sendPacket(buildBrightnessPacket(true, zone1Level, ZONE_2_AMBIENT_BRIGHTNESS));
+      sendPacket(buildBrightnessPacket(true, zone1Level, warningZone2Brightness()));
       mLastAmbientBrightness = brightness;
 
       if (mFadePhase == FADE_PHASE_ENTRY_WHITE_DOWN && mFadeStep == 0) {
@@ -309,6 +340,7 @@ public final class AmbientLightController {
   private final Runnable mFlushAfterAckRunnable = new Runnable() {
     @Override
     public void run() {
+      mWriting = false;
       flushNext();
     }
   };
@@ -324,11 +356,91 @@ public final class AmbientLightController {
     }
   };
 
+  private final Runnable mAmbientFadeRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (mReverseActive) {
+        return;
+      }
+      long elapsedMs = SystemClock.elapsedRealtime() - mAmbientFadeStartedAtMs;
+      float progress = mAmbientFadeDurationMs > 0L
+          ? Math.min(1.0f, (float) elapsedMs / (float) mAmbientFadeDurationMs) : 1.0f;
+      float eased = progress * progress * (3.0f - (2.0f * progress));
+      int zone1 = Math.round(mAmbientFadeStartZone1
+          + ((mAmbientTargetZone1 - mAmbientFadeStartZone1) * eased));
+      int zone2 = Math.round(mAmbientFadeStartZone2
+          + ((mAmbientTargetZone2 - mAmbientFadeStartZone2) * eased));
+      applyAmbientBrightness(zone1, zone2, progress >= 1.0f);
+      if (progress < 1.0f) {
+        mHandler.postDelayed(this, readAmbientTransitionStepMs());
+      }
+    }
+  };
+
+  private final Runnable mOffroadDelayedOffRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (!mOnroad && !mDoorOpen) {
+        startAmbientFade(0, 0, AMBIENT_NORMAL_FADE_MS);
+      }
+    }
+  };
+
+  private final Runnable mOffroadDoorMaxRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (!mOnroad && mDoorOpen) {
+        mOffroadDoorMaxExpired = true;
+        hardAmbientOff("offroad door max-on timeout");
+      }
+    }
+  };
+
+  private final Runnable mOffroadDoorCloseRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (!mOnroad && !mDoorOpen && !mReverseActive) {
+        startAmbientFade(0, 0, AMBIENT_NORMAL_FADE_MS);
+      }
+    }
+  };
+
+  private final Runnable mVehicleDataWatchdogRunnable = new Runnable() {
+    @Override
+    public void run() {
+      long ageMs = SystemClock.elapsedRealtime() - mLastVehicleDataAtMs;
+      if (ageMs < VEHICLE_DATA_TIMEOUT_MS) {
+        mHandler.postDelayed(this, VEHICLE_DATA_TIMEOUT_MS - ageMs);
+        return;
+      }
+      Log.w(TAG, "comma vehicle data timeout; fading ambient off");
+      mVehicleDataTimedOut = true;
+      mVehicleStateKnown = false;
+      mOnroad = false;
+      mDoorOpen = false;
+      mRequestedOverspeed = false;
+      mHandler.removeCallbacks(mOverspeedStateRunnable);
+      mOverspeedActive = false;
+      mOverspeedActivatedAtMs = 0L;
+      stopBlink();
+      stopBrightnessSync();
+      cancelOffroadTimers();
+      updateCpuWakeLock();
+      if (mReverseActive) {
+        hardAmbientOff("comma data timeout in reverse");
+      } else {
+        startAmbientFade(0, 0, AMBIENT_NORMAL_FADE_MS);
+      }
+    }
+  };
+
   private BluetoothAdapter mAdapter;
   private BluetoothGatt mGatt;
   private BluetoothGattCharacteristic mWriteCharacteristic;
   private BluetoothGattCharacteristic mNotifyCharacteristic;
   private boolean mConnected;
+  private boolean mConnecting;
+  private boolean mSkipRememberedOnce;
   private boolean mScanning;
   private boolean mReconnectScheduled;
   private boolean mWriting;
@@ -342,6 +454,20 @@ public final class AmbientLightController {
   private boolean mWarningAnimationStarted;
   private boolean mLowLightWarning;
   private boolean mWarningColorRed;
+  private boolean mVehicleStateKnown;
+  private boolean mVehicleDataTimedOut;
+  private boolean mOnroad;
+  private boolean mDoorOpen;
+  private boolean mOffroadDoorMaxExpired;
+  private long mLastVehicleDataAtMs;
+  private int mCurrentZone1;
+  private int mCurrentZone2;
+  private int mAmbientFadeStartZone1;
+  private int mAmbientFadeStartZone2;
+  private int mAmbientTargetZone1;
+  private int mAmbientTargetZone2;
+  private long mAmbientFadeStartedAtMs;
+  private long mAmbientFadeDurationMs;
   private int mFadePhase;
   private int mFadeStep;
   private int mLastAmbientBrightness = -1;
@@ -349,6 +475,14 @@ public final class AmbientLightController {
 
   private AmbientLightController(Context context) {
     mContext = context.getApplicationContext();
+    PowerManager powerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
+    mCpuWakeLock = powerManager == null ? null
+        : powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NavdyAmbient:OffroadController");
+    if (mCpuWakeLock != null) {
+      mCpuWakeLock.setReferenceCounted(false);
+    }
+    mLastVehicleDataAtMs = SystemClock.elapsedRealtime();
+    mHandler.postDelayed(mVehicleDataWatchdogRunnable, VEHICLE_DATA_TIMEOUT_MS);
   }
 
   public static synchronized AmbientLightController get(Context context) {
@@ -363,11 +497,29 @@ public final class AmbientLightController {
       return;
     }
     try {
-      JSONObject json = new JSONObject(payload);
-      String gear = json.optString("gear", json.optString("gearShifter", ""));
-      if (gear != null && gear.length() > 0) {
-        onGearText(context, gear);
-      }
+      final JSONObject json = new JSONObject(payload);
+      final String gear = json.optString("gear", json.optString("gearShifter", ""));
+      final boolean hasOnroad = json.has("onroad");
+      final boolean hasDoorOpen = json.has("doorOpen");
+      final boolean onroad = json.optBoolean("onroad", true);
+      final boolean doorOpen = json.optBoolean("doorOpen", false);
+      final AmbientLightController controller = get(context);
+      controller.mHandler.post(new Runnable() {
+        @Override
+        public void run() {
+          controller.noteVehicleDataReceived();
+          if (gear != null && gear.length() > 0) {
+            controller.setGearText(gear);
+          }
+          if (hasOnroad || hasDoorOpen) {
+            boolean nextOnroad = hasOnroad ? onroad
+                : (controller.mVehicleStateKnown ? controller.mOnroad : true);
+            boolean nextDoorOpen = hasDoorOpen ? doorOpen
+                : (controller.mVehicleStateKnown ? controller.mDoorOpen : false);
+            controller.setVehicleState(nextOnroad, nextDoorOpen);
+          }
+        }
+      });
     } catch (Exception e) {
       Log.w(TAG, "bad openpilot payload", e);
     }
@@ -430,6 +582,9 @@ public final class AmbientLightController {
   }
 
   private void requestOverspeed(boolean overspeed) {
+    if (!mVehicleStateKnown || mVehicleDataTimedOut || !mOnroad || mReverseActive) {
+      overspeed = false;
+    }
     if (mRequestedOverspeed == overspeed) {
       return;
     }
@@ -458,23 +613,127 @@ public final class AmbientLightController {
 
     if (isReverse(normalized)) {
       mReverseActive = true;
-      mAmbientActive = false;
       stopBlink();
       stopBrightnessSync();
-      sendPacket(PACKET_OFF);
+      hardAmbientOff("reverse");
       return;
     }
 
     if (isDriveGear(normalized)) {
+      boolean wasReverse = mReverseActive;
       mReverseActive = false;
-      mAmbientActive = true;
-      startBrightnessSync();
-      if (mOverspeedActive) {
-        startBlink();
-      } else {
+      if (wasReverse) {
+        applyVehicleStateTargets();
+      } else if (!mVehicleStateKnown) {
+        mOnroad = true;
+        mAmbientActive = true;
+        startBrightnessSync();
         sendPacket(PACKET_RESTORE);
       }
     }
+  }
+
+  private void noteVehicleDataReceived() {
+    mLastVehicleDataAtMs = SystemClock.elapsedRealtime();
+    mVehicleDataTimedOut = false;
+    mHandler.removeCallbacks(mVehicleDataWatchdogRunnable);
+    mHandler.postDelayed(mVehicleDataWatchdogRunnable, VEHICLE_DATA_TIMEOUT_MS);
+  }
+
+  private void setVehicleState(boolean onroad, boolean doorOpen) {
+    boolean firstState = !mVehicleStateKnown;
+    boolean onroadChanged = firstState || mOnroad != onroad;
+    boolean doorChanged = firstState || mDoorOpen != doorOpen;
+    mVehicleStateKnown = true;
+    mVehicleDataTimedOut = false;
+    mOnroad = onroad;
+    mDoorOpen = doorOpen;
+    updateCpuWakeLock();
+    if (onroadChanged || doorChanged) {
+      Log.i(TAG, "vehicle state onroad=" + onroad + " doorOpen=" + doorOpen);
+    }
+
+    if (onroad) {
+      cancelOffroadTimers();
+      mOffroadDoorMaxExpired = false;
+      startBrightnessSync();
+      if (onroadChanged || doorChanged) {
+        applyVehicleStateTargets();
+      }
+      return;
+    }
+
+    stopBrightnessSync();
+    mRequestedOverspeed = false;
+    mHandler.removeCallbacks(mOverspeedStateRunnable);
+    if (mOverspeedActive) {
+      setOverspeed(false);
+    }
+
+    if (doorOpen) {
+      mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
+      mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
+      if (doorChanged || onroadChanged) {
+        mOffroadDoorMaxExpired = false;
+        mHandler.removeCallbacks(mOffroadDoorMaxRunnable);
+        mHandler.postDelayed(mOffroadDoorMaxRunnable, OFFROAD_DOOR_MAX_ON_MS);
+      }
+      if (!mOffroadDoorMaxExpired && (doorChanged || onroadChanged)) {
+        startAmbientFade(OFFROAD_DOOR_ZONE_1_BRIGHTNESS,
+            OFFROAD_DOOR_ZONE_2_BRIGHTNESS, AMBIENT_NORMAL_FADE_MS);
+      }
+      return;
+    }
+
+    mHandler.removeCallbacks(mOffroadDoorMaxRunnable);
+    mOffroadDoorMaxExpired = false;
+    if (doorChanged && !firstState) {
+      mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
+      mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
+      mHandler.postDelayed(mOffroadDoorCloseRunnable, OFFROAD_DOOR_CLOSE_DELAY_MS);
+    } else if (!firstState && onroadChanged) {
+      mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
+      mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
+      startAmbientFade(mCurrentZone1, OFFROAD_DOOR_ZONE_2_BRIGHTNESS,
+          AMBIENT_NORMAL_FADE_MS);
+      mHandler.postDelayed(mOffroadDelayedOffRunnable, OFFROAD_TRANSITION_LIGHT_MS);
+    } else if (firstState) {
+      mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
+      mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
+      mHandler.postDelayed(mOffroadDelayedOffRunnable, OFFROAD_DELAYED_OFF_MS);
+    }
+  }
+
+  private void updateCpuWakeLock() {
+    if (mCpuWakeLock == null) {
+      return;
+    }
+    boolean shouldHold = mVehicleStateKnown && !mVehicleDataTimedOut && !mOnroad;
+    if (shouldHold && !mCpuWakeLock.isHeld()) {
+      mCpuWakeLock.acquire();
+      Log.i(TAG, "offroad ambient CPU wake lock acquired");
+    } else if (!shouldHold && mCpuWakeLock.isHeld()) {
+      mCpuWakeLock.release();
+      Log.i(TAG, "offroad ambient CPU wake lock released");
+    }
+  }
+
+  private void applyVehicleStateTargets() {
+    if (mReverseActive || mVehicleDataTimedOut) {
+      hardAmbientOff(mReverseActive ? "reverse" : "comma data timeout");
+    } else if (mOnroad) {
+      startAmbientFade(readAmbientBrightness(), mDoorOpen ? 100 : ZONE_2_AMBIENT_BRIGHTNESS,
+          AMBIENT_NORMAL_FADE_MS);
+    } else if (mDoorOpen && !mOffroadDoorMaxExpired) {
+      startAmbientFade(OFFROAD_DOOR_ZONE_1_BRIGHTNESS,
+          OFFROAD_DOOR_ZONE_2_BRIGHTNESS, AMBIENT_NORMAL_FADE_MS);
+    }
+  }
+
+  private void cancelOffroadTimers() {
+    mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
+    mHandler.removeCallbacks(mOffroadDoorMaxRunnable);
+    mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
   }
 
   private void setOverspeed(boolean overspeed) {
@@ -485,7 +744,7 @@ public final class AmbientLightController {
     mOverspeedActivatedAtMs = overspeed ? SystemClock.elapsedRealtime() : 0L;
     Log.i(TAG, "camera overspeed=" + overspeed);
     if (overspeed) {
-      if (!mReverseActive) {
+      if (mOnroad && !mReverseActive && !mVehicleDataTimedOut) {
         startBlink();
       }
     } else {
@@ -498,6 +757,9 @@ public final class AmbientLightController {
   }
 
   private void startBlink() {
+    if (!mOnroad || mReverseActive || mVehicleDataTimedOut) {
+      return;
+    }
     stopBlink();
     mAmbientActive = true;
     startBrightnessSync();
@@ -515,6 +777,10 @@ public final class AmbientLightController {
 
   private void beginRestoreFade() {
     mHandler.removeCallbacks(mBlinkRunnable);
+    if (!mOnroad || mReverseActive || mVehicleDataTimedOut) {
+      stopBlink();
+      return;
+    }
     int brightness = readAmbientBrightness();
     if (!mWarningAnimationStarted || mLowLightWarning
         || brightness < MIN_FADE_AMBIENT_BRIGHTNESS) {
@@ -550,6 +816,9 @@ public final class AmbientLightController {
   }
 
   private void syncAmbientBrightness(boolean force) {
+    if (!mOnroad || mReverseActive || mVehicleDataTimedOut) {
+      return;
+    }
     int brightness = readAmbientBrightness();
     if (mWarningAnimationStarted) {
       mLastAmbientBrightness = brightness;
@@ -561,10 +830,61 @@ public final class AmbientLightController {
     }
     mLastAmbientBrightness = brightness;
     Log.i(TAG, "ambient brightness=" + brightness + " screen=" + readScreenBrightness());
-    sendPacket(buildBrightnessPacket(true, brightness, ZONE_2_AMBIENT_BRIGHTNESS));
+    int zone2Brightness = mDoorOpen ? 100 : ZONE_2_AMBIENT_BRIGHTNESS;
+    if (force || brightness != mAmbientTargetZone1 || zone2Brightness != mAmbientTargetZone2) {
+      startAmbientFade(brightness, zone2Brightness, AMBIENT_NORMAL_FADE_MS);
+    }
+  }
+
+  private void startAmbientFade(int zone1, int zone2, long durationMs) {
+    mHandler.removeCallbacks(mAmbientFadeRunnable);
+    mAmbientFadeStartZone1 = mCurrentZone1;
+    mAmbientFadeStartZone2 = mCurrentZone2;
+    mAmbientTargetZone1 = clamp(zone1, 0, 100);
+    mAmbientTargetZone2 = clamp(zone2, 0, 100);
+    mAmbientFadeStartedAtMs = SystemClock.elapsedRealtime();
+    mAmbientFadeDurationMs = Math.max(0L, durationMs);
+    if (mAmbientTargetZone1 > 0 || mAmbientTargetZone2 > 0) {
+      mAmbientActive = true;
+      if (!mOverspeedActive) {
+        sendPacket(PACKET_RESTORE);
+      }
+    }
+    long firstStepMs = Math.min(readAmbientTransitionStepMs(), mAmbientFadeDurationMs);
+    mHandler.postDelayed(mAmbientFadeRunnable, Math.max(0L, firstStepMs));
+  }
+
+  private void applyAmbientBrightness(int zone1, int zone2, boolean finished) {
+    mCurrentZone1 = clamp(zone1, 0, 100);
+    mCurrentZone2 = clamp(zone2, 0, 100);
+    if (finished && mCurrentZone1 == 0 && mCurrentZone2 == 0) {
+      mAmbientActive = false;
+      sendPacket(PACKET_OFF);
+    } else {
+      mAmbientActive = true;
+      sendPacket(buildBrightnessPacket(true, mCurrentZone1, mCurrentZone2));
+    }
+  }
+
+  private void hardAmbientOff(String reason) {
+    Log.i(TAG, "ambient off reason=" + reason);
+    mHandler.removeCallbacks(mAmbientFadeRunnable);
+    mCurrentZone1 = 0;
+    mCurrentZone2 = 0;
+    mAmbientTargetZone1 = 0;
+    mAmbientTargetZone2 = 0;
+    mAmbientActive = false;
+    sendPacket(PACKET_OFF);
+  }
+
+  private int warningZone2Brightness() {
+    return mDoorOpen ? 100 : ZONE_2_AMBIENT_BRIGHTNESS;
   }
 
   private void sendPacket(byte[] packet) {
+    if (isBrightnessPacket(packet)) {
+      coalescePendingBrightnessPackets();
+    }
     if (mQueue.size() > 20) {
       mQueue.poll();
     }
@@ -584,8 +904,9 @@ public final class AmbientLightController {
     mHandler.removeCallbacks(mWriteTimeoutRunnable);
     mHandler.removeCallbacks(mWritePaceRunnable);
     mHandler.postDelayed(mWriteTimeoutRunnable, 1200);
-    if (mWriteCharacteristic.getWriteType() == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) {
-      mHandler.postDelayed(mWritePaceRunnable, 350);
+    if (mWriteCharacteristic.getWriteType() == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        && usesPacedWrite(packet)) {
+      mHandler.postDelayed(mWritePaceRunnable, START_PACKET_PACE_INTERVAL_MS);
     }
     boolean queued = mGatt.writeCharacteristic(mWriteCharacteristic);
     Log.i(TAG, "ambient write queued ok=" + queued);
@@ -600,12 +921,12 @@ public final class AmbientLightController {
       mWriteCharacteristic = null;
       mNotifyCharacteristic = null;
       closeGatt();
-      scheduleReconnect();
+      scheduleReconnect(CONNECT_RETRY_MS);
     }
   }
 
   private void connectIfNeeded() {
-    if (mConnected || mScanning) {
+    if (mConnected || mConnecting || mScanning || mReconnectScheduled) {
       return;
     }
     if (mAdapter == null) {
@@ -613,9 +934,13 @@ public final class AmbientLightController {
     }
     if (mAdapter == null || !mAdapter.isEnabled()) {
       Log.w(TAG, "bluetooth disabled");
-      scheduleReconnect();
+      scheduleReconnect(CONNECT_RETRY_MS);
       return;
     }
+    if (!mSkipRememberedOnce && connectRememberedCandidate()) {
+      return;
+    }
+    mSkipRememberedOnce = false;
     if (connectBondedCandidate()) {
       return;
     }
@@ -626,17 +951,38 @@ public final class AmbientLightController {
       mHandler.removeCallbacks(mStopScanRunnable);
       mHandler.postDelayed(mStopScanRunnable, 10000);
     } else {
-      scheduleReconnect();
+      scheduleReconnect(CONNECT_RETRY_MS);
     }
   }
 
   private void scheduleReconnect() {
-    if (!needsConnection() || mConnected || mScanning || mReconnectScheduled) {
+    scheduleReconnect(CONNECT_RETRY_MS);
+  }
+
+  private void scheduleReconnect(long delayMs) {
+    if (!needsConnection() || mConnected || mConnecting || mScanning) {
       return;
     }
+    mHandler.removeCallbacks(mReconnectRunnable);
     mReconnectScheduled = true;
-    Log.i(TAG, "ambient reconnect scheduled");
-    mHandler.postDelayed(mReconnectRunnable, CONNECT_RETRY_MS);
+    Log.i(TAG, "ambient reconnect scheduled delayMs=" + delayMs);
+    mHandler.postDelayed(mReconnectRunnable, Math.max(0L, delayMs));
+  }
+
+  private boolean connectRememberedCandidate() {
+    String address = Settings.System.getString(
+        mContext.getContentResolver(), AMBIENT_DEVICE_ADDRESS_SETTING);
+    if (address == null || !BluetoothAdapter.checkBluetoothAddress(address)) {
+      return false;
+    }
+    try {
+      connectDevice(mAdapter.getRemoteDevice(address));
+      mSkipRememberedOnce = true;
+      return true;
+    } catch (IllegalArgumentException e) {
+      Log.w(TAG, "bad remembered ambient address", e);
+      return false;
+    }
   }
 
   private boolean connectBondedCandidate() {
@@ -655,8 +1001,17 @@ public final class AmbientLightController {
 
   private void connectDevice(BluetoothDevice device) {
     closeGatt();
+    mConnecting = true;
+    mReconnectScheduled = false;
+    mHandler.removeCallbacks(mReconnectRunnable);
+    Settings.System.putString(
+        mContext.getContentResolver(), AMBIENT_DEVICE_ADDRESS_SETTING, device.getAddress());
     Log.i(TAG, "ambient connect " + safeName(device) + " " + device.getAddress());
     mGatt = device.connectGatt(mContext, false, mGattCallback);
+    if (mGatt == null) {
+      mConnecting = false;
+      scheduleReconnect(CONNECT_RETRY_MS);
+    }
   }
 
   private void stopScan() {
@@ -670,6 +1025,7 @@ public final class AmbientLightController {
   }
 
   private void closeGatt() {
+    mConnecting = false;
     if (mGatt != null) {
       try {
         mGatt.close();
@@ -703,6 +1059,7 @@ public final class AmbientLightController {
   }
 
   private void restoreActiveStateAfterConnect() {
+    removePendingAmbientStatePackets();
     if (mReverseActive) {
       mQueue.offer(PACKET_OFF.clone());
       return;
@@ -712,8 +1069,29 @@ public final class AmbientLightController {
       return;
     }
     if (mAmbientActive) {
-      startBrightnessSync();
+      mQueue.offer(PACKET_RESTORE.clone());
+      if (mOnroad) {
+        startBrightnessSync();
+      } else {
+        mQueue.offer(buildBrightnessPacket(true, mAmbientTargetZone1, mAmbientTargetZone2));
+      }
+      return;
     }
+    mQueue.offer(PACKET_OFF.clone());
+  }
+
+  private void removePendingAmbientStatePackets() {
+    if (mQueue.isEmpty()) {
+      return;
+    }
+    ArrayDeque<byte[]> retained = new ArrayDeque<byte[]>();
+    while (!mQueue.isEmpty()) {
+      byte[] packet = mQueue.poll();
+      if (packet != null && (packet.length < 2 || packet[1] != (byte) 0x8d)) {
+        retained.offer(packet);
+      }
+    }
+    mQueue.addAll(retained);
   }
 
   private void writeAck() {
@@ -752,6 +1130,47 @@ public final class AmbientLightController {
 
   private int readScreenBrightness() {
     return clamp(Settings.System.getInt(mContext.getContentResolver(), "screen_brightness", 255), 0, 255);
+  }
+
+  private int readAmbientTransitionStepMs() {
+    return clamp(Settings.System.getInt(mContext.getContentResolver(),
+        AMBIENT_TRANSITION_STEP_SETTING, DEFAULT_AMBIENT_TRANSITION_STEP_MS),
+        MIN_AMBIENT_TRANSITION_STEP_MS, MAX_AMBIENT_TRANSITION_STEP_MS);
+  }
+
+  private int readAckSettleIntervalMs() {
+    return clamp(Settings.System.getInt(mContext.getContentResolver(),
+        ACK_SETTLE_INTERVAL_SETTING, DEFAULT_ACK_SETTLE_INTERVAL_MS),
+        MIN_ACK_SETTLE_INTERVAL_MS, MAX_ACK_SETTLE_INTERVAL_MS);
+  }
+
+  private void coalescePendingBrightnessPackets() {
+    if (mQueue.isEmpty()) {
+      return;
+    }
+    ArrayDeque<byte[]> retained = new ArrayDeque<byte[]>();
+    while (!mQueue.isEmpty()) {
+      byte[] packet = mQueue.poll();
+      if (!isBrightnessPacket(packet)) {
+        retained.offer(packet);
+      }
+    }
+    mQueue.addAll(retained);
+  }
+
+  private static boolean isStartPacket(byte[] packet) {
+    return packet != null && packet.length > 1
+        && packet[0] == 0x2e && packet[1] == (byte) 0x81;
+  }
+
+  private static boolean usesPacedWrite(byte[] packet) {
+    return isStartPacket(packet) || (packet != null && packet.length == 12);
+  }
+
+  private static boolean isBrightnessPacket(byte[] packet) {
+    return packet != null && packet.length == 8
+        && packet[0] == 0x2e && packet[1] == (byte) 0x8d
+        && packet[2] == 0x04 && packet[4] == 0x48;
   }
 
   private static byte[] buildBrightnessPacket(boolean powerOn, int brightness) {
@@ -839,7 +1258,8 @@ public final class AmbientLightController {
       return false;
     }
     return name.contains("lamp") || name.contains("frgn") || name.contains("ambient")
-        || name.contains("carled") || name.contains("pocket");
+        || name.contains("carled") || name.contains("pocket")
+        || scanRecordContainsAmbientUuid(scanRecord);
   }
 
   private static boolean scanRecordContainsAmbientUuid(byte[] scanRecord) {

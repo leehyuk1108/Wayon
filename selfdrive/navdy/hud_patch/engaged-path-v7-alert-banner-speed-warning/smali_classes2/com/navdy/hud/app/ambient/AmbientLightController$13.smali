@@ -7,8 +7,8 @@
 
 
 # annotations
-.annotation system Ldalvik/annotation/EnclosingMethod;
-    value = Lcom/navdy/hud/app/ambient/AmbientLightController;->onCameraSpeedChanged(Landroid/content/Context;II)V
+.annotation system Ldalvik/annotation/EnclosingClass;
+    value = Lcom/navdy/hud/app/ambient/AmbientLightController;
 .end annotation
 
 .annotation system Ldalvik/annotation/InnerClass;
@@ -18,28 +18,15 @@
 
 
 # instance fields
-.field final synthetic val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-.field final synthetic val$limit:I
-
-.field final synthetic val$speed:I
+.field final synthetic this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
 
 # direct methods
-.method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;II)V
+.method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
-    .annotation system Ldalvik/annotation/Signature;
-        value = {
-            "()V"
-        }
-    .end annotation
 
-    .line 413
-    iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$speed:I
-
-    iput p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$limit:I
+    .line 389
+    iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
 
@@ -49,17 +36,40 @@
 
 # virtual methods
 .method public run()V
-    .locals 3
+    .locals 2
 
-    .line 416
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
+    .line 392
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$speed:I
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6200(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
 
-    iget v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->val$limit:I
+    move-result v0
 
-    invoke-static {v0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$5100(Lcom/navdy/hud/app/ambient/AmbientLightController;II)V
+    if-nez v0, :cond_0
 
-    .line 417
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6300(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_0
+
+    .line 393
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    const/4 v1, 0x1
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6502(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+
+    .line 394
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$13;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    const-string v1, "offroad door max-on timeout"
+
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$6600(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
+
+    .line 396
+    :cond_0
     return-void
 .end method

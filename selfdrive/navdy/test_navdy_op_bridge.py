@@ -380,7 +380,7 @@ def test_navdy_ambient_overspeed_uses_hysteresis_and_zone_specific_fade():
   assert "LOW_LIGHT_CHECK_INTERVAL_MS = 1000" in source
   assert "(byte) 0xeb, (byte) 0xcd, (byte) 0xab" in source
   assert "(byte) 0xeb, (byte) 0xcd, (byte) 0xad" in source
-  assert "buildBrightnessPacket(true, zone1Level, ZONE_2_AMBIENT_BRIGHTNESS)" in source
+  assert "buildBrightnessPacket(true, zone1Level, warningZone2Brightness())" in source
   assert "onCameraSpeedChanged(Landroid/content/Context;II)V" in speed_view
   assert "speed >= limit + 2" in source
   assert "requestOverspeed(mOverspeedActive)" in source

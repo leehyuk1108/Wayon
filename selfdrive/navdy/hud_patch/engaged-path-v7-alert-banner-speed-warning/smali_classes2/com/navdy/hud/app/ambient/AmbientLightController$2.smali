@@ -25,7 +25,7 @@
 .method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
 
-    .line 168
+    .line 199
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -38,29 +38,29 @@
 .method public onLeScan(Landroid/bluetooth/BluetoothDevice;I[B)V
     .locals 0
 
-    .line 171
+    .line 202
     if-nez p1, :cond_0
 
-    .line 172
+    .line 203
     return-void
 
-    .line 174
+    .line 205
     :cond_0
-    invoke-static {p1, p3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2500(Landroid/bluetooth/BluetoothDevice;[B)Z
+    invoke-static {p1, p3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2800(Landroid/bluetooth/BluetoothDevice;[B)Z
 
     move-result p3
 
     if-nez p3, :cond_1
 
-    .line 175
+    .line 206
     iget-object p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {p3, p1, p2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2600(Lcom/navdy/hud/app/ambient/AmbientLightController;Landroid/bluetooth/BluetoothDevice;I)V
+    invoke-static {p3, p1, p2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2900(Lcom/navdy/hud/app/ambient/AmbientLightController;Landroid/bluetooth/BluetoothDevice;I)V
 
-    .line 176
+    .line 207
     return-void
 
-    .line 178
+    .line 209
     :cond_1
     new-instance p2, Ljava/lang/StringBuilder;
 
@@ -72,7 +72,7 @@
 
     move-result-object p2
 
-    invoke-static {p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2700(Landroid/bluetooth/BluetoothDevice;)Ljava/lang/String;
+    invoke-static {p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3000(Landroid/bluetooth/BluetoothDevice;)Ljava/lang/String;
 
     move-result-object p3
 
@@ -102,16 +102,16 @@
 
     invoke-static {p3, p2}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 179
+    .line 210
     iget-object p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {p2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2800(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
+    invoke-static {p2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3100(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
 
-    .line 180
+    .line 211
     iget-object p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {p2, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2900(Lcom/navdy/hud/app/ambient/AmbientLightController;Landroid/bluetooth/BluetoothDevice;)V
+    invoke-static {p2, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3200(Lcom/navdy/hud/app/ambient/AmbientLightController;Landroid/bluetooth/BluetoothDevice;)V
 
-    .line 181
+    .line 212
     return-void
 .end method

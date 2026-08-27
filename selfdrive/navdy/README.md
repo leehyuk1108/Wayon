@@ -233,6 +233,7 @@ Manager가 child process를 시작하면 [`navdy_power_bridge.py`](navdy_power_b
 | `navdyRightBlinker` | `CS.rightBlinker` | bool |
 | `navdyLeftBlindspot` | `CS.leftBlindspot` | bool |
 | `navdyRightBlindspot` | `CS.rightBlindspot` | bool |
+| `navdyBrakeHoldActive` | `CS.brakeHoldActive` | bool |
 
 `cs_sp_send.valid`는 `CS.canValid`를 따른다. Service 등록 주기는 100 Hz지만 bridge는 5 Hz로만
 읽는다. 별도 mirror를 쓰는 이유는 Navdy가 필요한 차량 필드를 하나의 custom message에서 안정적으로

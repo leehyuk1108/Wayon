@@ -483,6 +483,7 @@ struct CarStateSP @0xb86e6369214c01c8 {
   navdyRightBlinker @11 :Bool;
   navdyLeftBlindspot @12 :Bool;
   navdyRightBlindspot @13 :Bool;
+  navdyBrakeHoldActive @14 :Bool;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

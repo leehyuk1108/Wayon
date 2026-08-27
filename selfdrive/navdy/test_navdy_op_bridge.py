@@ -1237,6 +1237,7 @@ def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
     navdyRightBlinker=False,
     navdyLeftBlindspot=True,
     navdyRightBlindspot=False,
+    navdyBrakeHoldActive=True,
     navdyStandstill=True,
     navdyVCruise=99.0,
     navdyVCruiseCluster=100.0,
@@ -1250,6 +1251,7 @@ def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
   assert car_state.vCruiseCluster == 100.0
   assert car_state.standstill is True
   assert car_state.cruiseState.standstill is True
+  assert car_state.brakeHoldActive is True
   assert car_state.leftBlinker is True
   assert car_state.leftBlindspot is True
 

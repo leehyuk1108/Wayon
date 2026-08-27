@@ -2063,6 +2063,32 @@ def test_navdy_primary_power_state_overrides_stale_onroad_fallbacks(monkeypatch)
   assert not navdy_op_bridge.power_started(sm, SimpleNamespace(), 10.0)
 
 
+def test_navdy_power_state_diagnostic_records_authoritative_source(tmp_path, monkeypatch):
+  class FakeSubMaster:
+    seen = {"deviceState": True, "pandaStates": True}
+    alive = {"deviceState": True, "pandaStates": True}
+    updated = {navdy_op_bridge.NAVDY_CAR_STATE_SERVICE: False,
+               "selfdriveState": False, "controlsState": False}
+    messages = {
+        "deviceState": SimpleNamespace(started=False),
+        "pandaStates": [SimpleNamespace(ignitionLine=False, ignitionCan=False)],
+    }
+
+    def __getitem__(self, key):
+      return self.messages[key]
+
+  output = tmp_path / "navdy_power_state.json"
+  monkeypatch.setattr(navdy_op_bridge, "NAVDY_POWER_STATE_PATH", str(output))
+  args = SimpleNamespace(_power_state_reason="device_or_panda")
+  navdy_op_bridge.publish_navdy_power_state(FakeSubMaster(), args, False, 10.0)
+
+  state = json.loads(output.read_text())
+  assert not state["started"]
+  assert state["reason"] == "device_or_panda"
+  assert not state["deviceState"]["started"]
+  assert not state["pandaStates"]["ignition"]
+
+
 def test_navdy_runtime_stop_clears_transport_and_ir(monkeypatch):
   calls = []
   args = SimpleNamespace(

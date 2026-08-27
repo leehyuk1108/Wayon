@@ -30,6 +30,7 @@ DEFAULT_ACTIVITY_COMPONENT = "com.navdy.hud.app/.ui.activity.MainActivity"
 DEFAULT_PACKAGE_NAME = "com.navdy.hud.app"
 NAVDY_IR_BRIGHTNESS_PATH = "/sys/class/leds/ir-control/brightness"
 NAVDY_IR_ON_BRIGHTNESS = 127
+NAVDY_POWER_STATE_PATH = "/dev/shm/navdy_power_state.json"
 DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
@@ -1905,12 +1906,49 @@ def onroad_process_started(args: argparse.Namespace, now: float) -> bool:
 def power_started(sm: Any, args: argparse.Namespace | None = None, now: float = 0.0) -> bool:
   primary_started = bool(getattr(sm["deviceState"], "started", False)) or panda_ignition_started(sm["pandaStates"])
   if primary_power_state_available(sm):
-    return primary_started
-  if primary_started:
-    return True
-  if openpilot_messages_started(sm):
-    return True
-  return bool(args and onroad_process_started(args, now))
+    started, reason = primary_started, "device_or_panda"
+  elif primary_started:
+    started, reason = True, "primary_startup"
+  elif openpilot_messages_started(sm):
+    started, reason = True, "openpilot_messages"
+  else:
+    started = bool(args and onroad_process_started(args, now))
+    reason = "onroad_process" if started else "offroad_fallback"
+  if args is not None:
+    setattr(args, "_power_state_reason", reason)
+  return started
+
+
+def publish_navdy_power_state(sm: Any, args: argparse.Namespace, started: bool, now: float) -> None:
+  last = float(getattr(args, "_last_power_state_publish_at", 0.0))
+  if now - last < 1.0:
+    return
+  setattr(args, "_last_power_state_publish_at", now)
+  state = {
+    "started": started,
+    "reason": getattr(args, "_power_state_reason", "unknown"),
+    "runtimeSuspended": bool(getattr(args, "_navdy_runtime_suspended", False)),
+    "deviceState": {
+      "seen": bool(sm.seen["deviceState"]),
+      "alive": bool(sm.alive["deviceState"]),
+      "started": bool(getattr(sm["deviceState"], "started", False)),
+    },
+    "pandaStates": {
+      "seen": bool(sm.seen["pandaStates"]),
+      "alive": bool(sm.alive["pandaStates"]),
+      "ignition": panda_ignition_started(sm["pandaStates"]),
+    },
+    "openpilotMessages": openpilot_messages_started(sm),
+    "updatedAtMonotonic": now,
+  }
+  path = NAVDY_POWER_STATE_PATH
+  tmp_path = f"{path}.tmp"
+  try:
+    with open(tmp_path, "w", encoding="utf-8") as file:
+      json.dump(state, file, separators=(",", ":"))
+    os.replace(tmp_path, path)
+  except OSError:
+    pass
 
 
 def service_recent(sm: Any, service: str, now: float, max_age: float = 1.0) -> bool:
@@ -2055,6 +2093,7 @@ def run_live(args: argparse.Namespace) -> None:
     has_update = any(sm.updated[service] for service in services)
     started = power_started(sm, args, now) if args.manage_navdy_power else True
     if args.manage_navdy_power:
+      publish_navdy_power_state(sm, args, started, now)
       update_navdy_power(args, started, now)
     if not started:
       if lane_marking_classifier is not None:

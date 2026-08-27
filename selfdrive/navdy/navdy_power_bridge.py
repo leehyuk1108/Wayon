@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from multiprocessing import current_process
@@ -38,8 +39,18 @@ def should_use_default_args(process_name: str, argv: list[str]) -> bool:
 
 def main() -> int:
   set_core_affinity([0, 1, 2, 3])
-  if should_use_default_args(current_process().name, sys.argv):
+  process_name = current_process().name
+  use_defaults = should_use_default_args(process_name, sys.argv)
+  original_argv = list(sys.argv)
+  if use_defaults:
     sys.argv = [sys.argv[0]] + DEFAULT_ARGS
+  try:
+    with open("/dev/shm/navdy_bridge_startup.json.tmp", "w", encoding="utf-8") as file:
+      json.dump({"processName": process_name, "originalArgv": original_argv,
+                 "effectiveArgv": sys.argv, "usedDefaults": use_defaults}, file)
+    os.replace("/dev/shm/navdy_bridge_startup.json.tmp", "/dev/shm/navdy_bridge_startup.json")
+  except OSError:
+    pass
   return navdy_op_bridge.main()
 
 

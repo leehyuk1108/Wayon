@@ -2033,12 +2033,34 @@ def test_navdy_power_rechecks_display_after_offroad_sleep(monkeypatch):
 
   navdy_op_bridge.manage_navdy_power(args, False, 136.0, offroad_since, target_on)
   assert display_calls == [(False, "offroad"), (False, "offroad")]
-  assert runtime_calls == [False]
+  assert runtime_calls == [False, False]
 
   _, target_on = navdy_op_bridge.manage_navdy_power(args, True, 137.0, offroad_since, target_on)
-  assert runtime_calls == [False, True]
+  assert runtime_calls == [False, False, True]
   assert display_calls[-1] == (True, "onroad")
   assert target_on is True
+
+
+def test_navdy_primary_power_state_overrides_stale_onroad_fallbacks(monkeypatch):
+  class FakeSubMaster:
+    seen = {"deviceState": True, "pandaStates": True}
+    alive = {"deviceState": True, "pandaStates": True,
+             navdy_op_bridge.NAVDY_CAR_STATE_SERVICE: True,
+             "selfdriveState": True, "controlsState": True}
+    updated = {navdy_op_bridge.NAVDY_CAR_STATE_SERVICE: True,
+               "selfdriveState": True, "controlsState": True}
+    messages = {
+        "deviceState": SimpleNamespace(started=False),
+        "pandaStates": [SimpleNamespace(ignitionLine=False, ignitionCan=False)],
+    }
+
+    def __getitem__(self, key):
+      return self.messages[key]
+
+  sm = FakeSubMaster()
+  monkeypatch.setattr(navdy_op_bridge, "onroad_process_started", lambda *_args: True)
+
+  assert not navdy_op_bridge.power_started(sm, SimpleNamespace(), 10.0)
 
 
 def test_navdy_runtime_stop_clears_transport_and_ir(monkeypatch):

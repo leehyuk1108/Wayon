@@ -1868,6 +1868,15 @@ def openpilot_messages_started(sm: Any) -> bool:
              for service in (NAVDY_CAR_STATE_SERVICE, "selfdriveState", "controlsState"))
 
 
+def primary_power_state_available(sm: Any) -> bool:
+  """Return whether device/panda power state is live enough to be authoritative."""
+  try:
+    return bool((sm.seen["deviceState"] and sm.alive["deviceState"]) or
+                (sm.seen["pandaStates"] and sm.alive["pandaStates"]))
+  except (KeyError, TypeError):
+    return False
+
+
 def onroad_process_started(args: argparse.Namespace, now: float) -> bool:
   last = bool(getattr(args, "_last_onroad_process_started", False))
   last_check = float(getattr(args, "_last_onroad_process_check_at", 0.0))
@@ -1894,7 +1903,10 @@ def onroad_process_started(args: argparse.Namespace, now: float) -> bool:
 
 
 def power_started(sm: Any, args: argparse.Namespace | None = None, now: float = 0.0) -> bool:
-  if bool(getattr(sm["deviceState"], "started", False)) or panda_ignition_started(sm["pandaStates"]):
+  primary_started = bool(getattr(sm["deviceState"], "started", False)) or panda_ignition_started(sm["pandaStates"])
+  if primary_power_state_available(sm):
+    return primary_started
+  if primary_started:
     return True
   if openpilot_messages_started(sm):
     return True
@@ -1965,7 +1977,10 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
     if last_target_on is not False or ensure_due:
       if set_navdy_display(args, False, "offroad"):
         last_target_on = False
-    if not getattr(args, "_navdy_runtime_suspended", False):
+    # Reassert the force-stop as well as display sleep. The Navdy notification
+    # listener and Android service manager can otherwise revive the HUD/Here
+    # processes after the first successful offroad transition.
+    if not getattr(args, "_navdy_runtime_suspended", False) or ensure_due:
       set_navdy_runtime(args, False)
   return offroad_since, last_target_on
 

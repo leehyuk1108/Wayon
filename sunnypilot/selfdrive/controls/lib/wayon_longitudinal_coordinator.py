@@ -261,11 +261,14 @@ class LongitudinalResponseLearner:
 
   def save(self) -> None:
     self.profile["updatedAt"] = int(time.time())
-    os.makedirs(os.path.dirname(self.profile_path), exist_ok=True)
-    temporary_path = f"{self.profile_path}.tmp"
-    with open(temporary_path, "w", encoding="utf-8") as profile_file:
-      json.dump(self.profile, profile_file, separators=(",", ":"))
-      profile_file.flush()
-      os.fsync(profile_file.fileno())
-    os.replace(temporary_path, self.profile_path)
+    try:
+      os.makedirs(os.path.dirname(self.profile_path), exist_ok=True)
+      temporary_path = f"{self.profile_path}.tmp"
+      with open(temporary_path, "w", encoding="utf-8") as profile_file:
+        json.dump(self.profile, profile_file, separators=(",", ":"))
+        profile_file.flush()
+        os.fsync(profile_file.fileno())
+      os.replace(temporary_path, self.profile_path)
+    except OSError:
+      pass
     self.last_save = time.monotonic()

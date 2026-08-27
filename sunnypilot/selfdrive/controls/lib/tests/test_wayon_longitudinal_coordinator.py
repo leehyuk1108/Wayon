@@ -101,3 +101,14 @@ def test_response_delay_is_observed_from_command_to_accel_change(monkeypatch, tm
   learner.update(0.25, 0.1, speed, True, 0.0, False, False, False)
 
   assert learner.profile["bins"][2]["delaySamples"] == 1
+
+
+def test_response_profile_save_is_atomic_and_reloadable(tmp_path):
+  profile_path = str(tmp_path / "profile" / "response.json")
+  learner = LongitudinalResponseLearner(0.5, profile_path)
+  learner.profile["bins"][1]["samples"] = 321
+  learner.save()
+
+  reloaded = LongitudinalResponseLearner(0.5, profile_path)
+  assert reloaded.profile["bins"][1]["samples"] == 321
+  assert not (tmp_path / "profile" / "response.json.tmp").exists()

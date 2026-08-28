@@ -33,6 +33,20 @@ def test_ambient_fade_is_capped_at_thirty_hertz() -> None:
   assert "mHandler.postDelayed(this, readAmbientTransitionStepMs());" in source
 
 
+def test_onroad_payloads_do_not_restart_brightness_sync() -> None:
+  source = controller_source()
+  state = source[source.index("private void setVehicleState"):source.index("private void updateCpuWakeLock")]
+  onroad = state[state.index("if (onroad) {"):state.index("stopBrightnessSync();")]
+  assert "if (onroadChanged)" in onroad
+  assert onroad.count("startBrightnessSync();") == 1
+
+
+def test_new_fade_discards_stale_ambient_commands() -> None:
+  source = controller_source()
+  fade = source[source.index("private void startAmbientFade"):source.index("private void applyAmbientBrightness")]
+  assert "removePendingAmbientStatePackets();" in fade
+
+
 def test_overspeed_stays_red_until_restore() -> None:
   source = controller_source()
   red_down = source.index("mFadePhase == FADE_PHASE_RED_DOWN && mFadeStep == 0")

@@ -637,7 +637,11 @@ public final class AmbientLightController {
       boolean wasReverse = mReverseActive;
       mReverseActive = false;
       if (wasReverse) {
-        applyVehicleStateTargets();
+        if (mVehicleStateKnown && mOnroad) {
+          startBrightnessSync();
+        } else {
+          applyVehicleStateTargets();
+        }
       } else if (!mVehicleStateKnown) {
         mOnroad = true;
         mAmbientActive = true;
@@ -670,8 +674,9 @@ public final class AmbientLightController {
     if (onroad) {
       cancelOffroadTimers();
       mOffroadDoorMaxExpired = false;
-      startBrightnessSync();
-      if (onroadChanged || doorChanged) {
+      if (onroadChanged) {
+        startBrightnessSync();
+      } else if (doorChanged) {
         applyVehicleStateTargets();
       }
       return;
@@ -852,6 +857,7 @@ public final class AmbientLightController {
 
   private void startAmbientFade(int zone1, int zone2, long durationMs) {
     mHandler.removeCallbacks(mAmbientFadeRunnable);
+    removePendingAmbientStatePackets();
     mAmbientFadeStartZone1 = mCurrentZone1;
     mAmbientFadeStartZone2 = mCurrentZone2;
     mAmbientTargetZone1 = clamp(zone1, 0, 100);

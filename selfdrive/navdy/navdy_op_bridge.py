@@ -35,6 +35,7 @@ DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_HEARTBEAT_INTERVAL_S = 0.5
+NAVDY_AMBIENT_HEARTBEAT_INTERVAL_S = 1.0
 NAVDY_CAMERA_SOURCE = "trafficNotification"
 NAVDY_LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
 DISPLAY_ON_TEXT = "Display Power: state=ON"
@@ -118,6 +119,26 @@ def write_offroad_door_open(door_open: bool, path: str = OFFROAD_DOOR_PARAM_PATH
     return True
   except OSError:
     return False
+
+
+def resolve_ambient_door_open(live_car_state: Any,
+                              path: str = OFFROAD_DOOR_PARAM_PATH) -> bool:
+  if live_car_state is None:
+    return read_offroad_door_open(path)
+  door_open = bool(getattr(live_car_state, "doorOpen", False))
+  write_offroad_door_open(door_open, path)
+  return door_open
+
+
+def ambient_heartbeat_payload(started: bool, door_open: bool,
+                              live_car_state: Any = None) -> dict[str, Any]:
+  gear = enum_text(getattr(live_car_state, "gearShifter", "unknown")).lower() \
+    if live_car_state is not None else "unknown"
+  return {
+    "onroad": bool(started),
+    "doorOpen": bool(door_open),
+    "gear": gear,
+  }
 
 
 def apply_live_vehicle_state(car_state: Any, live_car_state: Any) -> Any:
@@ -2120,6 +2141,7 @@ def run_live(args: argparse.Namespace) -> None:
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
   last_ambient_state = None
+  last_ambient_emit_at = 0.0
   while True:
     time.sleep(period)
     sm.update(0)
@@ -2128,16 +2150,11 @@ def run_live(args: argparse.Namespace) -> None:
     started = power_started(sm, args, now) if args.manage_navdy_power else True
     live_car_state = sm["carState"] if started and "carState" in services \
       and service_recent(sm, "carState", now) else None
-    if live_car_state is not None:
-      door_open = bool(getattr(live_car_state, "doorOpen", False))
-      write_offroad_door_open(door_open)
-    elif started:
-      door_open = False
-    else:
-      door_open = read_offroad_door_open()
+    door_open = resolve_ambient_door_open(live_car_state)
     ambient_state = (bool(started), door_open)
     ambient_changed = ambient_state != last_ambient_state
     last_ambient_state = ambient_state
+    ambient_heartbeat_due = now - last_ambient_emit_at >= NAVDY_AMBIENT_HEARTBEAT_INTERVAL_S
     if args.manage_navdy_power:
       publish_navdy_power_state(sm, args, started, now)
       update_navdy_power(args, started, now)
@@ -2146,9 +2163,13 @@ def run_live(args: argparse.Namespace) -> None:
         lane_marking_classifier.set_active(False)
       if radar_reader is not None:
         radar_reader.set_active(False)
-    if not has_update and not ambient_changed and not (args.once and now >= once_deadline):
+    if not has_update and not ambient_changed and not ambient_heartbeat_due \
+       and not (args.once and now >= once_deadline):
       continue
     if not live_payload_ready(sm, started, now):
+      if ambient_changed or ambient_heartbeat_due:
+        emit(ambient_heartbeat_payload(started, door_open, live_car_state), args)
+        last_ambient_emit_at = now
       continue
     if service_recent(sm, NAVDY_CAR_STATE_SERVICE, now):
       car_state = car_state_from_sp(sm[NAVDY_CAR_STATE_SERVICE])
@@ -2231,6 +2252,7 @@ def run_live(args: argparse.Namespace) -> None:
     should_emit, signature = should_emit_payload(payload, args, now, last_signature, last_emit_at)
     if should_emit:
       emit(payload, args)
+      last_ambient_emit_at = now
       last_signature = signature
       last_emit_at = now
       seq += 1

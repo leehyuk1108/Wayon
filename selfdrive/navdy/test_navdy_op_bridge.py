@@ -32,6 +32,33 @@ def test_offroad_door_state_round_trip(tmp_path):
   assert navdy_op_bridge.read_offroad_door_open(path) is False
 
 
+def test_ambient_door_state_survives_onroad_startup_gap(tmp_path):
+  path = str(tmp_path / "door_open")
+  assert navdy_op_bridge.write_offroad_door_open(True, path)
+  assert navdy_op_bridge.resolve_ambient_door_open(None, path) is True
+
+  live_car_state = SimpleNamespace(doorOpen=False)
+  assert navdy_op_bridge.resolve_ambient_door_open(live_car_state, path) is False
+  assert navdy_op_bridge.read_offroad_door_open(path) is False
+
+
+def test_ambient_heartbeat_payload_needs_no_onroad_services():
+  payload = navdy_op_bridge.ambient_heartbeat_payload(True, True)
+  assert payload == {"onroad": True, "doorOpen": True, "gear": "unknown"}
+
+  payload = navdy_op_bridge.ambient_heartbeat_payload(
+    True, False, SimpleNamespace(gearShifter="park"))
+  assert payload["gear"] == "park"
+
+
+def test_run_live_keeps_ambient_heartbeat_during_onroad_startup():
+  source = Path(navdy_op_bridge.__file__).read_text()
+  run_live = source[source.index("def run_live("):source.index("def run_synthetic(")]
+  assert "ambient_heartbeat_due" in run_live
+  assert "emit(ambient_heartbeat_payload(started, door_open, live_car_state), args)" in run_live
+  assert "elif started:\n      door_open = False" not in run_live
+
+
 def test_live_vehicle_state_overrides_sp_gear_and_door():
   mirrored = navdy_op_bridge.default_car_state()
   mirrored.gearShifter = "park"

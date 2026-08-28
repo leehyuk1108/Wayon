@@ -365,7 +365,7 @@ def test_navdy_ambient_keeps_zone1_auto_and_fixes_zone2_at_40_percent():
   assert namespace["patch_brightness_packet"](old_70_percent) == fixed
 
 
-def test_navdy_ambient_overspeed_uses_hysteresis_and_zone_specific_fade():
+def test_navdy_ambient_overspeed_uses_hysteresis_and_two_level_day_warning():
   patch = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
   source = (patch / "src/com/navdy/hud/app/ambient/AmbientLightController.java").read_text()
   speed_view = (patch / "smali/com/navdy/hud/app/ui/component/homescreen/SpeedView.smali").read_text()
@@ -375,8 +375,8 @@ def test_navdy_ambient_overspeed_uses_hysteresis_and_zone_specific_fade():
   assert "OVERSPEED_OFF_DELAY_MS = 2000" in source
   assert "OVERSPEED_MIN_ACTIVE_MS = 3000" in source
   assert "MIN_FADE_AMBIENT_BRIGHTNESS = 8" in source
-  assert "FADE_STEPS = 2" in source
-  assert "FADE_STEP_INTERVAL_MS = 350" in source
+  assert "DAY_WARNING_DIM_PERCENT = 45" in source
+  assert "DAY_WARNING_STEP_INTERVAL_MS = 700" in source
   assert "LOW_LIGHT_CHECK_INTERVAL_MS = 1000" in source
   assert "(byte) 0xeb, (byte) 0xcd, (byte) 0xab" in source
   assert "(byte) 0xeb, (byte) 0xcd, (byte) 0xad" in source
@@ -384,16 +384,16 @@ def test_navdy_ambient_overspeed_uses_hysteresis_and_zone_specific_fade():
   assert "onCameraSpeedChanged(Landroid/content/Context;II)V" in speed_view
   assert "speed >= limit + 2" in source
   assert "requestOverspeed(mOverspeedActive)" in source
-  assert "FADE_PHASE_EXIT_RED_DOWN" in source
-  assert "FADE_PHASE_EXIT_WHITE_UP" in source
-  assert "Stay on red for the entire overspeed warning" in source
-  assert "Brightness rose out of low-light mode while still overspeeding. Keep red." in source
+  assert "mDayWarningDimmed ? dimLevel : brightness" in source
+  assert "mDayWarningDimmed = !mDayWarningDimmed" in source
+  assert "FADE_STEPS" not in source
   assert "beginRestoreFade()" in source
   assert "OVERSPEED_ON_DELAY_MS:J = 0x3e8L" in controller
   assert "OVERSPEED_OFF_DELAY_MS:J = 0x7d0L" in controller
   assert "OVERSPEED_MIN_ACTIVE_MS:J = 0xbb8L" in controller
   assert "MIN_FADE_AMBIENT_BRIGHTNESS:I = 0x8" in controller
-  assert "FADE_STEP_INTERVAL_MS:J = 0x15eL" in controller
+  assert "DAY_WARNING_DIM_PERCENT:I = 0x2d" in controller
+  assert "DAY_WARNING_STEP_INTERVAL_MS:J = 0x2bcL" in controller
   assert "ZONE_2_AMBIENT_BRIGHTNESS:I = 0x28" in controller
   assert "onOpenpilotPayload(Landroid/content/Context;Lorg/json/JSONObject;)V" in controller
 

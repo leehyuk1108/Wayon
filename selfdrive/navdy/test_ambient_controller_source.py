@@ -47,13 +47,24 @@ def test_new_fade_discards_stale_ambient_commands() -> None:
   assert "removePendingAmbientStatePackets();" in fade
 
 
-def test_overspeed_stays_red_until_restore() -> None:
+def test_daytime_overspeed_uses_two_red_brightness_levels() -> None:
   source = controller_source()
-  red_down = source.index("mFadePhase == FADE_PHASE_RED_DOWN && mFadeStep == 0")
-  restore = source.index("mFadePhase == FADE_PHASE_EXIT_RED_DOWN && mFadeStep == 0", red_down)
-  red_pulse_branch = source[red_down:restore]
-  assert "mFadePhase = FADE_PHASE_RED_UP;" in red_pulse_branch
-  assert "PACKET_RESTORE" not in red_pulse_branch
+  blink = source[source.index("private final Runnable mBlinkRunnable"):source.index("private final Runnable mWriteTimeoutRunnable")]
+  assert "DAY_WARNING_DIM_PERCENT = 45" in source
+  assert "DAY_WARNING_STEP_INTERVAL_MS = 700" in source
+  assert "mDayWarningDimmed ? dimLevel : brightness" in blink
+  assert "mDayWarningDimmed = !mDayWarningDimmed" in blink
+  assert "FADE_STEPS" not in blink
+  assert "PACKET_RESTORE" not in blink
+
+
+def test_night_overspeed_stays_fixed_red() -> None:
+  source = controller_source()
+  blink = source[source.index("private final Runnable mBlinkRunnable"):source.index("private final Runnable mWriteTimeoutRunnable")]
+  low_light = blink[blink.index("brightness < MIN_FADE_AMBIENT_BRIGHTNESS"):blink.index("if (!mWarningAnimationStarted)")]
+  assert "sendPacket(PACKET_RED);" in low_light
+  assert "LOW_LIGHT_CHECK_INTERVAL_MS" in low_light
+  assert "mDayWarningDimmed = !mDayWarningDimmed" not in low_light
 
 
 def test_remembered_ble_address_is_tried_before_scan() -> None:

@@ -32,7 +32,7 @@
         }
     .end annotation
 
-    .line 553
+    .line 514
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$18;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     iput-object p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$18;->val$gear:Ljava/lang/String;
@@ -47,13 +47,13 @@
 .method public run()V
     .locals 2
 
-    .line 556
+    .line 517
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$18;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$18;->val$gear:Ljava/lang/String;
 
-    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7800(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7400(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
 
-    .line 557
+    .line 518
     return-void
 .end method

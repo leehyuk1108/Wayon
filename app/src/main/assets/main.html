@@ -6218,6 +6218,99 @@
             align-items: center;
         }
 
+        .ambient-card-collapsible {
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .ambient-card-summary {
+            display: grid;
+            grid-template-columns: 38px minmax(0, 1fr) auto 18px;
+            align-items: center;
+            gap: 12px;
+            min-height: 76px;
+            padding: 0 20px;
+            list-style: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .ambient-card-summary::-webkit-details-marker { display: none; }
+
+        .ambient-card-summary-icon {
+            display: grid;
+            width: 38px;
+            height: 38px;
+            place-items: center;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.07);
+            color: #d8d8dc;
+        }
+
+        .ambient-card-summary-icon i {
+            width: 19px;
+            height: 19px;
+        }
+
+        .ambient-card-summary-copy { min-width: 0; }
+
+        .ambient-card-summary-copy strong,
+        .ambient-card-summary-copy span { display: block; }
+
+        .ambient-card-summary-copy strong {
+            color: #f4f4f5;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .ambient-card-summary-copy span {
+            margin-top: 4px;
+            overflow: hidden;
+            color: #89898e;
+            font-size: 11px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ambient-summary-state {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #a8a8ad;
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .ambient-summary-state::before {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #69c98a;
+            content: '';
+        }
+
+        .ambient-summary-state.manual::before { background: #f4ad52; }
+        .ambient-summary-state.disabled::before { background: #77777c; }
+
+        .ambient-card-chevron {
+            width: 18px;
+            height: 18px;
+            color: #77777c;
+            transition: transform .22s ease;
+        }
+
+        .ambient-card-collapsible[open] > .ambient-card-summary .ambient-card-chevron {
+            transform: rotate(180deg);
+        }
+
+        .ambient-card-body {
+            padding: 4px 20px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.075);
+        }
+
+        .ambient-card-body > .ambient-editor-header { padding-top: 16px; }
+
         .ambient-editor-header,
         .ambient-zone-header {
             justify-content: space-between;
@@ -6557,6 +6650,13 @@
         @media (max-width: 420px) {
             .ambient-profile-fields { grid-template-columns: 1fr; }
             .ambient-profile-body { padding-left: 24px; }
+            .ambient-card-summary {
+                grid-template-columns: 36px minmax(0, 1fr) auto 16px;
+                gap: 10px;
+                padding: 0 16px;
+            }
+            .ambient-card-summary-icon { width: 36px; height: 36px; }
+            .ambient-card-body { padding: 4px 16px 18px; }
         }
     </style>
 </head>
@@ -7260,18 +7360,28 @@
                         </div>
                     </div>
 
-                    <div class="control-group-card card-full" id="ambient-control-card">
-                        <div class="ambient-editor-header">
-                            <div>
-                                <h4>앰비언트 조명</h4>
-                                <p class="feature-description">Zone별 색상과 밝기를 설정합니다. 후진과 과속 경고가 우선합니다.</p>
+                    <details class="control-group-card card-full ambient-card-collapsible" id="ambient-control-card">
+                        <summary class="ambient-card-summary">
+                            <span class="ambient-card-summary-icon"><i data-lucide="lightbulb"></i></span>
+                            <span class="ambient-card-summary-copy">
+                                <strong>앰비언트 조명</strong>
+                                <span id="ambient-mode-description">주행 상태에 맞춰 자동으로 조절됩니다.</span>
+                            </span>
+                            <span class="ambient-summary-state" id="ambient-mode-summary">자동 제어</span>
+                            <i class="ambient-card-chevron" data-lucide="chevron-down"></i>
+                        </summary>
+                        <div class="ambient-card-body">
+                            <div class="ambient-editor-header">
+                                <div>
+                                    <h4>수동 조명 설정</h4>
+                                    <p class="feature-description">선택한 시간 동안 두 Zone의 색상과 밝기를 고정합니다.</p>
+                                </div>
+                                <select class="ambient-duration" id="ambient-duration" aria-label="수동 설정 유지 시간">
+                                    <option value="300">5분</option>
+                                    <option value="900" selected>15분</option>
+                                    <option value="1200">20분</option>
+                                </select>
                             </div>
-                            <select class="ambient-duration" id="ambient-duration" aria-label="수동 설정 유지 시간">
-                                <option value="300">5분</option>
-                                <option value="900" selected>15분</option>
-                                <option value="1200">20분</option>
-                            </select>
-                        </div>
 
                         <section class="ambient-zone" data-ambient-zone="1">
                             <div class="ambient-zone-header">
@@ -7319,31 +7429,43 @@
                             <div class="ambient-control-row"><label><i data-lucide="sun"></i></label><input type="range" min="0" max="100" value="40" data-brightness><input class="ambient-number" type="number" min="0" max="100" value="40" data-brightness-number></div>
                         </section>
 
-                        <div class="ambient-editor-actions">
-                            <button class="ambient-action" type="button" id="btnAmbientAuto">자동으로 복귀</button>
-                            <button class="ambient-action primary" type="button" id="btnAmbientApply">적용</button>
-                        </div>
-                        <div class="ambient-command-state" id="ambient-command-state">자동 모드</div>
-                    </div>
-
-                    <div class="control-group-card card-full" id="ambient-profile-card">
-                        <div class="ambient-editor-header">
-                            <div>
-                                <h4>자동 앰비언트 프로필</h4>
-                                <p class="feature-description">주행 상태에 따라 적용할 색상, 밝기와 동작을 설정합니다.</p>
+                            <div class="ambient-editor-actions">
+                                <button class="ambient-action" type="button" id="btnAmbientAuto">자동 제어로 전환</button>
+                                <button class="ambient-action primary" type="button" id="btnAmbientApply">15분 동안 적용</button>
                             </div>
-                            <label class="ambient-switch" aria-label="자동 앰비언트 프로필 사용">
-                                <input type="checkbox" id="ambient-profile-enabled" checked>
-                                <span></span>
-                            </label>
+                            <div class="ambient-command-state" id="ambient-command-state">현재 자동 제어 중입니다.</div>
                         </div>
-                        <div class="ambient-profile-list" id="ambient-profile-list"></div>
-                        <div class="ambient-editor-actions">
-                            <button class="ambient-action" type="button" id="btnAmbientProfileReset">기본값</button>
-                            <button class="ambient-action primary" type="button" id="btnAmbientProfileApply">프로필 저장</button>
+                    </details>
+
+                    <details class="control-group-card card-full ambient-card-collapsible" id="ambient-profile-card">
+                        <summary class="ambient-card-summary">
+                            <span class="ambient-card-summary-icon"><i data-lucide="sliders-horizontal"></i></span>
+                            <span class="ambient-card-summary-copy">
+                                <strong>자동 동작</strong>
+                                <span>문 열림, 후진, 과속 상황별 설정</span>
+                            </span>
+                            <span class="ambient-summary-state" id="ambient-profile-summary">켜짐 · 6개 동작</span>
+                            <i class="ambient-card-chevron" data-lucide="chevron-down"></i>
+                        </summary>
+                        <div class="ambient-card-body">
+                            <div class="ambient-editor-header">
+                                <div>
+                                    <h4>상황별 자동 제어</h4>
+                                    <p class="feature-description">차량 상태에 따라 적용할 색상과 밝기를 정합니다.</p>
+                                </div>
+                                <label class="ambient-switch" aria-label="상황별 자동 제어 사용">
+                                    <input type="checkbox" id="ambient-profile-enabled" checked>
+                                    <span></span>
+                                </label>
+                            </div>
+                            <div class="ambient-profile-list" id="ambient-profile-list"></div>
+                            <div class="ambient-editor-actions">
+                                <button class="ambient-action" type="button" id="btnAmbientProfileReset">초기값으로</button>
+                                <button class="ambient-action primary" type="button" id="btnAmbientProfileApply">자동 동작 저장</button>
+                            </div>
+                            <div class="ambient-command-state" id="ambient-profile-state">저장한 동작은 나브디 재부팅 후에도 유지됩니다.</div>
                         </div>
-                        <div class="ambient-command-state" id="ambient-profile-state">기기에 저장된 설정은 재부팅 후에도 유지됩니다.</div>
-                    </div>
+                    </details>
 
                     <div class="control-group-card card-full" id="gmone-account-card">
                         <div class="gmone-account-header">
@@ -7812,17 +7934,22 @@
         const ambientZones = [...document.querySelectorAll('[data-ambient-zone]')];
         const ambientDuration = document.getElementById('ambient-duration');
         const ambientCommandState = document.getElementById('ambient-command-state');
+        const ambientModeSummary = document.getElementById('ambient-mode-summary');
+        const ambientModeDescription = document.getElementById('ambient-mode-description');
         const btnAmbientApply = document.getElementById('btnAmbientApply');
         const btnAmbientAuto = document.getElementById('btnAmbientAuto');
         const ambientControlCard = document.getElementById('ambient-control-card');
         const ambientProfileCard = document.getElementById('ambient-profile-card');
         const ambientProfileList = document.getElementById('ambient-profile-list');
         const ambientProfileEnabled = document.getElementById('ambient-profile-enabled');
+        const ambientProfileSummary = document.getElementById('ambient-profile-summary');
         const ambientProfileCommandState = document.getElementById('ambient-profile-state');
         const btnAmbientProfileApply = document.getElementById('btnAmbientProfileApply');
         const btnAmbientProfileReset = document.getElementById('btnAmbientProfileReset');
         const ambientExtrasSlot = document.getElementById('ambient-extras-slot');
         let ambientCommandTarget = 'manual';
+        let ambientPendingMode = null;
+        const AMBIENT_MANUAL_MODE_KEY = 'wayonAmbientManualModeV1';
 
         if (ambientExtrasSlot) {
             if (ambientControlCard) ambientExtrasSlot.appendChild(ambientControlCard);
@@ -7842,6 +7969,80 @@
             const match = String(value || '').trim().match(/^#?([0-9a-f]{6})$/i);
             if (!match) return null;
             return [0, 2, 4].map(offset => Number.parseInt(match[1].slice(offset, offset + 2), 16));
+        }
+
+        function ambientDurationText(seconds) {
+            const minutes = Math.max(1, Math.round(Number(seconds || 0) / 60));
+            return `${minutes}분`;
+        }
+
+        function readAmbientManualMode() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(AMBIENT_MANUAL_MODE_KEY) || 'null');
+                if (!saved || Number(saved.expiresAt) <= Date.now()) {
+                    localStorage.removeItem(AMBIENT_MANUAL_MODE_KEY);
+                    return null;
+                }
+                return saved;
+            } catch (_) {
+                localStorage.removeItem(AMBIENT_MANUAL_MODE_KEY);
+                return null;
+            }
+        }
+
+        function renderAmbientModeSummary() {
+            const manual = readAmbientManualMode();
+            const live = wayonLiveStateCurrent;
+            const vehicle = live?.vehicle || {};
+            const onroad = live?.onroad === true;
+            const doorOpen = vehicle.doorOpen === true;
+            const gear = String(vehicle.gear || '').toLowerCase();
+            let summary = '자동 제어';
+            let description = '주행 상태에 맞춰 자동으로 조절됩니다.';
+            let stateClass = '';
+
+            if (manual) {
+                const editor = saveAmbientEditor();
+                summary = `수동 · ${Math.max(1, Math.ceil((manual.expiresAt - Date.now()) / 60000))}분 남음`;
+                description = `Zone 1 ${editor.zone1.brightness}% · Zone 2 ${editor.zone2.brightness}%`;
+                stateClass = 'manual';
+            } else if (ambientProfile?.enabled === false) {
+                summary = '자동 동작 꺼짐';
+                description = '상황별 자동 제어가 비활성화되어 있습니다.';
+                stateClass = 'disabled';
+            } else if (live?.unavailable === true) {
+                summary = '상태 확인 중';
+                description = '차량 연결 후 현재 조명 상태를 표시합니다.';
+                stateClass = 'disabled';
+            } else if (onroad && gear === 'reverse' && ambientProfile?.reverseOff?.enabled !== false) {
+                summary = '후진 · 꺼짐';
+                description = '후진 중에는 두 Zone을 모두 끕니다.';
+            } else if (onroad && doorOpen && ambientProfile?.onroadDoor?.enabled !== false) {
+                summary = '문 열림 조명';
+                description = `Zone 1 주행 밝기 · Zone 2 ${ambientProfile.onroadDoor.zone2.brightness}%`;
+            } else if (!onroad && doorOpen && ambientProfile?.offroadDoor?.enabled !== false) {
+                summary = '탑승 조명';
+                description = `Zone 1 ${ambientProfile.offroadDoor.zone1.brightness}% · Zone 2 ${ambientProfile.offroadDoor.zone2.brightness}%`;
+            } else if (onroad) {
+                summary = '주행 조명';
+                description = `Zone 1 ${ambientProfile.driving.zone1.automaticBrightness !== false ? '자동 밝기' : `${ambientProfile.driving.zone1.brightness}%`} · Zone 2 ${ambientProfile.driving.zone2.brightness}%`;
+            } else if (live && live.onroad === false) {
+                summary = '주차 · 꺼짐';
+                description = '문이 닫힌 주차 상태에서는 조명을 끕니다.';
+            }
+
+            if (ambientModeSummary) {
+                ambientModeSummary.textContent = summary;
+                ambientModeSummary.classList.toggle('manual', stateClass === 'manual');
+                ambientModeSummary.classList.toggle('disabled', stateClass === 'disabled');
+            }
+            if (ambientModeDescription) ambientModeDescription.textContent = description;
+        }
+
+        function updateAmbientApplyLabel() {
+            if (btnAmbientApply) {
+                btnAmbientApply.textContent = `${ambientDurationText(ambientDuration?.value || 900)} 동안 적용`;
+            }
         }
 
         function ambientZoneElements(zone) {
@@ -7918,11 +8119,23 @@
             if (normalized === 'sending') stateElement.textContent = profileCommand ? '프로필을 차량에 전송 중' : '차량에 전송 중';
             else if (normalized === 'pending' || normalized === 'delivered') stateElement.textContent = '콤마 응답 대기 중';
             else if (normalized === 'acknowledged') {
-                stateElement.textContent = profileCommand ? '프로필이 콤마에 전달됨' : '차량에 전달됨';
+                if (!profileCommand && ambientPendingMode?.mode === 'manual') {
+                    localStorage.setItem(AMBIENT_MANUAL_MODE_KEY, JSON.stringify({ expiresAt: ambientPendingMode.expiresAt }));
+                    stateElement.textContent = `${ambientDurationText(ambientPendingMode.durationSeconds)} 동안 수동 설정이 유지됩니다.`;
+                    renderAmbientModeSummary();
+                } else if (!profileCommand && ambientPendingMode?.mode === 'auto') {
+                    localStorage.removeItem(AMBIENT_MANUAL_MODE_KEY);
+                    stateElement.textContent = '자동 제어로 전환했습니다.';
+                    renderAmbientModeSummary();
+                } else {
+                    stateElement.textContent = profileCommand ? '자동 동작을 저장했습니다.' : '차량에 전달됨';
+                }
                 stateElement.classList.add('success');
+                ambientPendingMode = null;
             } else if (normalized === 'failed' || normalized === 'expired') {
                 stateElement.textContent = normalized === 'expired' ? '설정 시간이 만료됨' : '전송 실패';
                 stateElement.classList.add('failed');
+                ambientPendingMode = null;
             }
         }
 
@@ -7975,17 +8188,27 @@
                 saveAmbientEditor();
             });
         });
-        ambientDuration?.addEventListener('change', saveAmbientEditor);
+        ambientDuration?.addEventListener('change', () => {
+            saveAmbientEditor();
+            updateAmbientApplyLabel();
+        });
         btnAmbientApply?.addEventListener('click', () => {
             ambientCommandTarget = 'manual';
             const state = saveAmbientEditor();
+            ambientPendingMode = {
+                mode: 'manual',
+                durationSeconds: state.durationSeconds,
+                expiresAt: Date.now() + state.durationSeconds * 1000,
+            };
             window.Android?.applyAmbientOverride(JSON.stringify({ mode: 'manual', ...state }));
         });
         btnAmbientAuto?.addEventListener('click', () => {
             ambientCommandTarget = 'manual';
+            ambientPendingMode = { mode: 'auto' };
             window.Android?.applyAmbientOverride(JSON.stringify({ mode: 'auto' }));
         });
         loadAmbientEditor();
+        updateAmbientApplyLabel();
 
         const AMBIENT_PROFILE_DEFAULTS = {
             enabled: true,
@@ -8043,6 +8266,16 @@
 
         let ambientProfile = loadAmbientProfileState();
 
+        function renderAmbientProfileSummary() {
+            if (!ambientProfileSummary) return;
+            const enabled = ambientProfile.enabled !== false;
+            const features = ['onroadDoor', 'offroadDoor', 'exitCourtesy', 'overspeed', 'reverseOff', 'dataWatchdog'];
+            const enabledCount = features.filter(key => ambientProfile[key]?.enabled !== false).length;
+            ambientProfileSummary.textContent = enabled ? `켜짐 · ${enabledCount}개 동작` : '자동 동작 꺼짐';
+            ambientProfileSummary.classList.toggle('disabled', !enabled);
+            renderAmbientModeSummary();
+        }
+
         function persistAmbientProfile() {
             localStorage.setItem('wayonAmbientProfileV1', JSON.stringify(ambientProfile));
         }
@@ -8089,6 +8322,7 @@
         function renderAmbientProfile() {
             if (!ambientProfileList) return;
             ambientProfileEnabled.checked = ambientProfile.enabled !== false;
+            renderAmbientProfileSummary();
             ambientProfileList.innerHTML = [
                 profileSectionMarkup({
                     key: 'driving', title: '평상시 주행', description: 'Zone 1은 화면 밝기 연동 또는 고정 밝기를 선택합니다.', toggle: false, open: true,
@@ -8149,6 +8383,7 @@
                     ambientProfile[input.dataset.feature].enabled = input.checked;
                     input.closest('.ambient-profile-section')?.classList.toggle('ambient-profile-disabled', !input.checked);
                     persistAmbientProfile();
+                    renderAmbientProfileSummary();
                 });
             });
             ambientProfileList?.querySelectorAll('[data-profile-number]').forEach(input => {
@@ -8214,6 +8449,7 @@
         ambientProfileEnabled?.addEventListener('change', () => {
             ambientProfile.enabled = ambientProfileEnabled.checked;
             persistAmbientProfile();
+            renderAmbientProfileSummary();
         });
         btnAmbientProfileReset?.addEventListener('click', () => {
             ambientProfile = cloneAmbientProfile(AMBIENT_PROFILE_DEFAULTS);
@@ -8225,9 +8461,12 @@
             ambientCommandTarget = 'profile';
             ambientProfile.overspeed.brightnessCap = Math.max(1, ambientProfile.overspeed.zone1.brightness);
             persistAmbientProfile();
+            renderAmbientProfileSummary();
             window.Android?.applyAmbientOverride(JSON.stringify({ mode: 'profile', profile: ambientProfile }));
         });
         renderAmbientProfile();
+        renderAmbientModeSummary();
+        window.setInterval(renderAmbientModeSummary, 30000);
         const gmoneRemoteCountdown = {
             active: false,
             sourceSeconds: null,
@@ -10697,6 +10936,7 @@
                 try { state = JSON.parse(rawState); } catch (_) { state = null; }
             }
             wayonLiveStateCurrent = state && typeof state === 'object' ? state : null;
+            renderAmbientModeSummary();
             updateGmoneControlPanel(gmoneDetailsCurrent);
             renderVehicleReport(gmoneDetailsCurrent);
         }

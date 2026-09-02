@@ -3,7 +3,7 @@
 This is the separately installable next-generation My Traverse UI project.
 
 - Package: `com.example.carcontroller.next`
-- Version: `2.0-preview.8` (`versionCode 17`)
+- Version: `2.0-preview.9` (`versionCode 18`)
 - Debug package: `com.example.carcontroller.source`
 - Debug label/version: `My Traverse Source` / `1.18-source`
 - Reference APK SHA-256:
@@ -23,6 +23,7 @@ This is the separately installable next-generation My Traverse UI project.
 - Bluetooth-based local driving behavior retained for non-Cloud setups
 - Independent MultiPack account login and direct vehicle-status refresh
 - Independent Zone 1/Zone 2 ambient RGB, brightness, and duration controls through Wayon Cloud
+- Compact ambient cards with clear automatic/manual status and expandable situation controls
 
 The current UI assets are kept unchanged so layout, styling, animation, and
 interaction match the installed app. Native Live session handling that existed

@@ -41,8 +41,8 @@ android {
         applicationId = "com.example.carcontroller.next"
         minSdk = 24
         targetSdk = 36
-        versionCode = 17
-        versionName = "2.0-preview.8"
+        versionCode = 18
+        versionName = "2.0-preview.9"
 
         buildConfigField(
             "String",

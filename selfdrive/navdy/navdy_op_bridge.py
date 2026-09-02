@@ -58,7 +58,6 @@ NAVDY_CAR_STATE_SERVICE = "carStateSP"
 NAVDY_FAST_SERVICES = (
   "selfdriveState",
   "selfdriveStateSP",
-  "carState",
   NAVDY_CAR_STATE_SERVICE,
   "carOutput",
   "controlsState",
@@ -511,7 +510,7 @@ def car_state_from_sp(car_state_sp: Any) -> Any:
     rightBlinker=bool(getattr(car_state_sp, "navdyRightBlinker", False)),
     leftBlindspot=bool(getattr(car_state_sp, "navdyLeftBlindspot", False)),
     rightBlindspot=bool(getattr(car_state_sp, "navdyRightBlindspot", False)),
-    doorOpen=False,
+    doorOpen=bool(getattr(car_state_sp, "navdyDoorOpen", False)),
     brakeHoldActive=bool(getattr(car_state_sp, "navdyBrakeHoldActive", False)),
     standstill=bool(getattr(car_state_sp, "navdyStandstill", False)),
     vCruise=finite_float(getattr(car_state_sp, "navdyVCruise", 0.0)),
@@ -2188,8 +2187,8 @@ def run_live(args: argparse.Namespace) -> None:
     now = time.monotonic()
     has_update = any(sm.updated[service] for service in services)
     started = power_started(sm, args, now) if args.manage_navdy_power else True
-    live_car_state = sm["carState"] if started and "carState" in services \
-      and service_recent(sm, "carState", now) else None
+    live_car_state = car_state_from_sp(sm[NAVDY_CAR_STATE_SERVICE]) \
+      if started and service_recent(sm, NAVDY_CAR_STATE_SERVICE, now) else None
     door_open = resolve_ambient_door_open(live_car_state)
     ambient_override = read_wayon_ambient_override()
     ambient_override_signature = (

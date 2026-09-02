@@ -278,6 +278,7 @@ class Car:
     cs_sp_send.carStateSP.navdyLeftBlindspot = CS.leftBlindspot
     cs_sp_send.carStateSP.navdyRightBlindspot = CS.rightBlindspot
     cs_sp_send.carStateSP.navdyBrakeHoldActive = CS.brakeHoldActive
+    cs_sp_send.carStateSP.navdyDoorOpen = CS.doorOpen
     self.pm.send('carStateSP', cs_sp_send)
 
   def controls_update(self, CS: car.CarState, CC: car.CarControl, CC_SP: custom.CarControlSP):

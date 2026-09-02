@@ -534,6 +534,14 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
   },
 
+  EventName.gmAutoHoldMoving: {
+    ET.WARNING: Alert(
+      "오토홀드 밀림 감지",
+      "브레이크를 밟아 차량을 고정하세요",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.HIGH, VisualAlert.brakePressed, AudibleAlert.prompt, .2),
+  },
+
   EventName.parkBrake: {
     ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
     ET.NO_ENTRY: NoEntryAlert("Parking Brake Engaged"),

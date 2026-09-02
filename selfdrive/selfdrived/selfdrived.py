@@ -725,7 +725,9 @@ class SelfdriveD(CruiseHelper):
 
 
 def main():
-  config_realtime_process(4, Priority.CTRL_HIGH)
+  # Keep selfdrived's 100 Hz event loop off controlsd's saturated realtime core.
+  # Route profiling on C4 shows core 6 has ample headroom while core 4 reaches 90%+.
+  config_realtime_process(6, Priority.CTRL_HIGH)
   s = SelfdriveD()
   s.run()
 

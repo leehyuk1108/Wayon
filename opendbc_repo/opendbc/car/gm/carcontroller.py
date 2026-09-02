@@ -21,10 +21,10 @@ MIN_STEER_MSG_INTERVAL_MS = 15
 TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
-GM_AUTO_HOLD_BRAKE = 80
-GM_STOPPING_BRAKE_TAPER_MIN = 40
+GM_AUTO_HOLD_BRAKE = 400
+GM_STOPPING_BRAKE_TAPER_CRAWL = 14
+GM_STOPPING_BRAKE_TAPER_ONE_KPH = 24
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 3.0 * CV.KPH_TO_MS
-GM_STOPPING_BRAKE_TAPER_END_SPEED = 1.0 * CV.KPH_TO_MS
 GM_STOPPING_BRAKE_TAPER_MAX = 80
 GM_STOPPING_BRAKE_TAPER_BYPASS = 180
 GM_SNG_CREEP_RESUME_MIN_SPEED = 1.45  # m/s; physical RES succeeded at 1.59 m/s in the Traverse route
@@ -57,8 +57,9 @@ def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
       v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED or apply_brake >= GM_STOPPING_BRAKE_TAPER_BYPASS):
     return apply_brake
   brake_limit = round(np.interp(max(v_ego, 0.0),
-                                [GM_STOPPING_BRAKE_TAPER_END_SPEED, GM_STOPPING_BRAKE_TAPER_START_SPEED],
-                                [GM_STOPPING_BRAKE_TAPER_MIN, GM_STOPPING_BRAKE_TAPER_MAX]))
+                                [0.0, 1.0 * CV.KPH_TO_MS, GM_STOPPING_BRAKE_TAPER_START_SPEED],
+                                [GM_STOPPING_BRAKE_TAPER_CRAWL, GM_STOPPING_BRAKE_TAPER_ONE_KPH,
+                                 GM_STOPPING_BRAKE_TAPER_MAX]))
   return min(apply_brake, brake_limit)
 
 
@@ -77,7 +78,7 @@ def gm_long_auto_hold_command(CP, CC, CS, actuators):
     CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.autoResumeSng and
     CC.longActive and actuators.longControlState == LongCtrlState.stopping and
     CS.longAutoHoldActive and not CS.out.gasPressed and not CS.out.regenBraking and
-    CS.out.gearShifter in (GearShifter.drive, GearShifter.low) and CS.out.standstill and
+    CS.out.gearShifter in (GearShifter.drive, GearShifter.low) and CS.out.vEgo < 0.5 and
     not CS.out.parkingBrake
   )
 
@@ -309,6 +310,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         if manual_auto_hold or long_auto_hold:
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, GM_AUTO_HOLD_BRAKE,
                                                                idx, CC.enabled and long_auto_hold, True, False, self.CP))
+          self.apply_brake = GM_AUTO_HOLD_BRAKE
           CS.autoHoldActivated = True
         else:
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, self.apply_brake,

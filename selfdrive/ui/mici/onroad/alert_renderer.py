@@ -359,6 +359,16 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     event_name = alert.alert_type.split('/')[0] if alert is not None and alert.alert_type else ''
     brake_hold_active = ui_state.sm["carState"].brakeHoldActive
     parking_brake_active = ui_state.sm["carState"].parkingBrake
+    car_control = ui_state.sm["carControl"]
+    long_auto_hold_active = bool(
+      car_control.longActive and ui_state.sm["carState"].standstill and
+      car_control.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping
+    )
+    auto_hold_active = brake_hold_active or long_auto_hold_active or event_name in AUTO_HOLD_EVENT_NAMES
+    if auto_hold_active and self._resume_required_start_time is None:
+      self._resume_required_start_time = time.monotonic()
+    elif not auto_hold_active:
+      self._resume_required_start_time = None
     if parking_brake_active and self._parking_brake_start_time is None:
       self._parking_brake_start_time = time.monotonic()
     elif not parking_brake_active:
@@ -387,7 +397,6 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
       if draw_parking_timer:
         self._prev_alert = None
-        self._resume_required_start_time = None
         self._parking_brake_timer_visible = True
         self._draw_parking_brake_timer(True)
         return True
@@ -397,7 +406,6 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
         alert = self._prev_alert
       else:
         self._prev_alert = None
-        self._resume_required_start_time = None
         return False
 
     self._draw_background(alert)
@@ -411,12 +419,10 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
       self._draw_resume_required(active_alert is not None)
       return True
     if event_name in PARKING_BRAKE_EVENT_NAMES and parking_brake_active:
-      self._resume_required_start_time = None
       self._parking_brake_timer_visible = True
       self._draw_parking_brake_timer(active_alert is not None)
       return True
 
-    self._resume_required_start_time = None
     self._draw_text(alert, alert_layout)
     self._draw_icons(alert_layout)
 

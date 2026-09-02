@@ -1285,6 +1285,7 @@ def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
     navdyLeftBlindspot=True,
     navdyRightBlindspot=False,
     navdyBrakeHoldActive=True,
+    navdyDoorOpen=True,
     navdyStandstill=True,
     navdyVCruise=99.0,
     navdyVCruiseCluster=100.0,
@@ -1299,12 +1300,14 @@ def test_car_state_sp_mirror_exports_navdy_vehicle_signals():
   assert car_state.standstill is True
   assert car_state.cruiseState.standstill is True
   assert car_state.brakeHoldActive is True
+  assert car_state.doorOpen is True
   assert car_state.leftBlinker is True
   assert car_state.leftBlindspot is True
 
 
 def test_navdy_bridge_avoids_saturated_car_state_service():
   assert navdy_op_bridge.NAVDY_CAR_STATE_SERVICE == "carStateSP"
+  assert "carState" not in navdy_op_bridge.NAVDY_FAST_SERVICES
   assert "carOutput" in navdy_op_bridge.NAVDY_FAST_SERVICES
   assert navdy_op_bridge.NAVDY_MODEL_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES
   assert navdy_op_bridge.NAVDY_CALIBRATION_SERVICE not in navdy_op_bridge.NAVDY_FAST_SERVICES

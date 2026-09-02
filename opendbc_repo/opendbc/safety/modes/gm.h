@@ -162,7 +162,7 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     // normal longitudinal safety checks.
     bool auto_hold_brake = gm_auto_hold && !controls_allowed && !vehicle_moving &&
                            !gas_pressed_prev && !regen_braking_prev &&
-                           (brake > 0) && (brake <= 80);
+                           (brake > 0) && (brake <= 400);
     if (longitudinal_brake_checks(brake, *gm_long_limits) && !auto_hold_brake) {
       tx = false;
     }

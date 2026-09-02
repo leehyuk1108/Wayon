@@ -46,6 +46,7 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
 
   def update_auto_hold(self, control=None):
     """Maintain manual GM Hold and the engaged stop-and-go hold state."""
+    was_long_auto_hold_active = getattr(self.CS, "longAutoHoldActive", False)
     self.CS.autoHoldActivated = False
     self.CS.longAutoHoldActive = False
     hold_allowed = (
@@ -73,9 +74,12 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
         self.CS.autoHoldActivated = True
 
     if control is not None:
+      stopping_requested = bool(
+        control.longActive and control.actuators.longControlState == structs.CarControl.Actuators.LongControlState.stopping
+      )
       self.CS.longAutoHoldActive = bool(
-        control.longActive and control.actuators.longControlState == structs.CarControl.Actuators.LongControlState.stopping and
-        self.CS.out.standstill and not self.CS.out.gasPressed and not self.CS.out.regenBraking and
+        stopping_requested and (self.CS.out.standstill or (was_long_auto_hold_active and self.CS.out.vEgo < 0.5)) and
+        not self.CS.out.gasPressed and not self.CS.out.regenBraking and
         hold_allowed
       )
       self.CS.autoHoldActivated |= self.CS.longAutoHoldActive

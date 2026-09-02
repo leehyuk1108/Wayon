@@ -20,6 +20,8 @@ class CarSpecificEvents:
     self.low_speed_alert = False
     self.no_steer_warning = False
     self.silent_steer_warning = True
+    self.gm_auto_hold_watch = False
+    self.gm_auto_hold_moving_frames = 0
 
   def update(self, CS: car.CarState, CS_prev: car.CarState, CC: car.CarControl):
     if self.CP.brand in ('body', 'mock'):
@@ -87,6 +89,22 @@ class CarSpecificEvents:
         # rather than the ECU ACC standstill state on the Traverse.
         events.remove(EventName.belowSteerSpeed)
         events.add(EventName.resumeRequired)
+
+      gm_manual_hold = CS.brakeHoldActive and gm_hold_available
+      if gm_hold_stop or gm_manual_hold:
+        self.gm_auto_hold_watch = True
+      hold_release_requested = (not gm_manual_hold and
+                                CC.actuators.longControlState != car.CarControl.Actuators.LongControlState.stopping)
+      if (not gm_hold_available or CS.gasPressed or hold_release_requested or CS.vEgo > 1.0):
+        self.gm_auto_hold_watch = False
+        self.gm_auto_hold_moving_frames = 0
+      elif self.gm_auto_hold_watch and CS.vEgo > 0.08:
+        self.gm_auto_hold_moving_frames += 1
+      else:
+        self.gm_auto_hold_moving_frames = 0
+
+      if self.gm_auto_hold_moving_frames >= round(0.3 / DT_CTRL):
+        events.add(EventName.gmAutoHoldMoving)
 
     elif self.CP.brand == 'volkswagen':
       if self.CP.openpilotLongitudinalControl:

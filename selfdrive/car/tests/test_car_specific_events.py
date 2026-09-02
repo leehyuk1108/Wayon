@@ -80,3 +80,55 @@ def test_gm_hold_timer_is_hidden_outside_drive():
                      auto_resume_sng=True, gear=car.CarState.GearShifter.park)
 
   assert EventName.resumeRequired not in events
+
+
+def test_gm_autohold_warns_after_sustained_uncommanded_movement():
+  CP = car.CarParams.new_message()
+  CP.brand = "gm"
+  CP.carFingerprint = CAR.CHEVROLET_TRAVERSE
+  CP.openpilotLongitudinalControl = True
+  CP.autoResumeSng = True
+
+  CS = car.CarState.new_message()
+  CS.gearShifter = car.CarState.GearShifter.drive
+  CS.cruiseState.available = True
+  CS.standstill = True
+  CS.brakeHoldActive = True
+  CS_prev = car.CarState.new_message()
+  CC = car.CarControl.new_message()
+  detector = CarSpecificEvents(CP)
+
+  detector.update(CS, CS_prev, CC)
+  CS.standstill = False
+  CS.vEgo = 0.12
+  for _ in range(31):
+    events = detector.update(CS, CS_prev, CC).names
+
+  assert EventName.gmAutoHoldMoving in events
+
+
+def test_gm_autohold_does_not_warn_during_requested_release():
+  CP = car.CarParams.new_message()
+  CP.brand = "gm"
+  CP.carFingerprint = CAR.CHEVROLET_TRAVERSE
+  CP.openpilotLongitudinalControl = True
+  CP.autoResumeSng = True
+
+  CS = car.CarState.new_message()
+  CS.gearShifter = car.CarState.GearShifter.drive
+  CS.cruiseState.available = True
+  CS.standstill = True
+  CS_prev = car.CarState.new_message()
+  CC = car.CarControl.new_message()
+  CC.longActive = True
+  CC.actuators.longControlState = car.CarControl.Actuators.LongControlState.stopping
+  detector = CarSpecificEvents(CP)
+
+  detector.update(CS, CS_prev, CC)
+  CS.standstill = False
+  CS.vEgo = 0.12
+  CC.actuators.longControlState = car.CarControl.Actuators.LongControlState.pid
+  for _ in range(31):
+    events = detector.update(CS, CS_prev, CC).names
+
+  assert EventName.gmAutoHoldMoving not in events

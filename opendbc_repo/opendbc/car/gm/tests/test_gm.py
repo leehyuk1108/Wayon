@@ -96,14 +96,15 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
   def setUp(self):
     self.CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
 
-  def test_tapers_to_auto_hold_pressure_near_stop(self):
+  def test_tapers_to_soft_release_near_stop(self):
     self.assertEqual(80, limit_traverse_stopping_brake(self.CP, True, 3.0 / 3.6 - 1e-3, 132))
-    self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 2.0 / 3.6, 132))
-    self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
-    self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
+    self.assertEqual(52, limit_traverse_stopping_brake(self.CP, True, 2.0 / 3.6, 132))
+    self.assertEqual(24, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
+    self.assertEqual(14, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
 
   def test_does_not_increase_requested_brake(self):
-    self.assertEqual(30, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
+    self.assertEqual(21, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
+    self.assertEqual(10, limit_traverse_stopping_brake(self.CP, True, 0.2, 10))
 
   def test_only_changes_traverse_final_stopping_phase(self):
     self.assertEqual(132, limit_traverse_stopping_brake(self.CP, False, 0.2, 132))
@@ -121,6 +122,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
       autoHoldActive=False,
       autoHoldBrakeArmed=False,
       autoHoldActivated=False,
+      longAutoHoldActive=False,
       brake_pedal_position=8,
       out=SimpleNamespace(
         vEgo=0.0, standstill=True, brakePressed=True, gasPressed=False, regenBraking=False,
@@ -216,7 +218,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
       longAutoHoldActive=True,
       out=SimpleNamespace(
         standstill=True, gasPressed=False, regenBraking=False,
-        gearShifter=GearShifter.drive, parkingBrake=False,
+        gearShifter=GearShifter.drive, parkingBrake=False, vEgo=0.0,
       ),
     )
     actuators = SimpleNamespace(longControlState=LongCtrlState.stopping)
@@ -226,9 +228,14 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertFalse(gm_long_auto_hold_command(CP, CC, CS, actuators))
     actuators.longControlState = LongCtrlState.stopping
     CS.out.standstill = False
+    CS.out.vEgo = 0.12
+    self.assertTrue(gm_long_auto_hold_command(CP, CC, CS, actuators))
+
+    CS.out.vEgo = 0.5
     self.assertFalse(gm_long_auto_hold_command(CP, CC, CS, actuators))
 
     CS.out.standstill = True
+    CS.out.vEgo = 0.0
     CS.out.parkingBrake = True
     self.assertFalse(gm_long_auto_hold_command(CP, CC, CS, actuators))
 
@@ -249,6 +256,17 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertTrue(self.CI.CS.longAutoHoldActive)
     self.assertTrue(self.CI.CS.autoHoldActivated)
 
+    self.CI.CS.out.standstill = False
+    self.CI.CS.out.vEgo = 0.12
+    self.CI.update_auto_hold(control)
+    self.assertTrue(self.CI.CS.longAutoHoldActive)
+
+    self.CI.CS.out.vEgo = 0.5
+    self.CI.update_auto_hold(control)
+    self.assertFalse(self.CI.CS.longAutoHoldActive)
+
+    self.CI.CS.out.standstill = True
+    self.CI.CS.out.vEgo = 0.0
     control.actuators.longControlState = LongCtrlState.starting
     self.CI.update_auto_hold(control)
     self.assertFalse(self.CI.CS.longAutoHoldActive)

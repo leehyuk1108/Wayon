@@ -2400,6 +2400,20 @@ def test_manager_child_ignores_inherited_manager_argv():
       "navdy_bridge", ["manager.py", "--socket-transport"])
 
 
+def test_read_wayon_ambient_profile_survives_delivery_expiry(tmp_path, monkeypatch):
+  command = {
+    "id": "profile-1",
+    "mode": "profile",
+    "expiresAt": "2026-08-28T00:00:00Z",
+    "profile": {"enabled": True},
+  }
+  param = tmp_path / "WayonAmbientOverride"
+  param.write_text(json.dumps(command), encoding="utf-8")
+  monkeypatch.setattr(navdy_op_bridge, "WAYON_AMBIENT_OVERRIDE_PATHS", (str(param),))
+
+  assert navdy_op_bridge.read_wayon_ambient_override(1787875500.0) == command
+
+
 if __name__ == "__main__":
   test_payload_exports_standstill_and_op_available()
   test_available_services_skips_missing_starpilot_plan()

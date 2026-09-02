@@ -125,11 +125,14 @@ def read_wayon_ambient_override(now_epoch: float | None = None) -> dict[str, Any
   try:
     command = json.loads(raw)
     expires_at = str(command.get("expiresAt") or "")
-    if expires_at:
+    # Profiles are durable device configuration. Keep forwarding the last saved
+    # profile after its cloud delivery window so Navdy can recover it after a
+    # reboot or a temporary USB/socket disconnect. Manual overrides still expire.
+    if expires_at and str(command.get("mode") or "").lower() != "profile":
       expires_epoch = datetime.fromisoformat(expires_at.replace("Z", "+00:00")).timestamp()
       if now_epoch >= expires_epoch:
         return None
-    if command.get("mode") not in ("manual", "auto"):
+    if command.get("mode") not in ("manual", "auto", "profile"):
       return None
     return command
   except (OSError, ValueError, TypeError, json.JSONDecodeError):

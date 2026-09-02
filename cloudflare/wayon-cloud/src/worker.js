@@ -1977,12 +1977,85 @@ function normalizeAmbientZone(zone, name) {
   };
 }
 
+function ambientNumber(value, minimum, maximum, field) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < minimum || number > maximum) {
+    throw new Error(`invalid_${field}`);
+  }
+  return Math.round(number);
+}
+
+function normalizeAmbientProfileZone(zone, name, options = {}) {
+  const normalized = normalizeAmbientZone(zone, name);
+  if (options.allowAutomaticBrightness) {
+    normalized.automaticBrightness = zone.automaticBrightness !== false;
+  }
+  return normalized;
+}
+
+function normalizeAmbientProfile(profile) {
+  if (!profile || typeof profile !== "object") throw new Error("invalid_profile");
+  const driving = profile.driving || {};
+  const onroadDoor = profile.onroadDoor || {};
+  const offroadDoor = profile.offroadDoor || {};
+  const exitCourtesy = profile.exitCourtesy || {};
+  const overspeed = profile.overspeed || {};
+  const timing = profile.timing || {};
+  const dataWatchdog = profile.dataWatchdog || {};
+  return {
+    enabled: profile.enabled !== false,
+    driving: {
+      zone1: normalizeAmbientProfileZone(driving.zone1, "driving_zone1", { allowAutomaticBrightness: true }),
+      zone2: normalizeAmbientProfileZone(driving.zone2, "driving_zone2"),
+    },
+    onroadDoor: {
+      enabled: onroadDoor.enabled !== false,
+      zone2: normalizeAmbientProfileZone(onroadDoor.zone2, "onroad_door_zone2"),
+    },
+    offroadDoor: {
+      enabled: offroadDoor.enabled !== false,
+      zone1: normalizeAmbientProfileZone(offroadDoor.zone1, "offroad_door_zone1"),
+      zone2: normalizeAmbientProfileZone(offroadDoor.zone2, "offroad_door_zone2"),
+    },
+    exitCourtesy: {
+      enabled: exitCourtesy.enabled !== false,
+      zone2: normalizeAmbientProfileZone(exitCourtesy.zone2, "exit_courtesy_zone2"),
+      durationSeconds: ambientNumber(exitCourtesy.durationSeconds ?? 120, 0, 600, "exit_courtesy_duration_seconds"),
+    },
+    overspeed: {
+      enabled: overspeed.enabled !== false,
+      zone1: normalizeAmbientProfileZone(overspeed.zone1, "overspeed_zone1"),
+      brightnessCap: ambientNumber(overspeed.brightnessCap ?? 50, 1, 100, "overspeed_brightness_cap"),
+    },
+    reverseOff: { enabled: profile.reverseOff?.enabled !== false },
+    dataWatchdog: {
+      enabled: dataWatchdog.enabled !== false,
+      timeoutSeconds: ambientNumber(dataWatchdog.timeoutSeconds ?? 20, 5, 120, "data_watchdog_timeout_seconds"),
+    },
+    timing: {
+      fadeMilliseconds: ambientNumber(timing.fadeMilliseconds ?? 1000, 200, 5000, "fade_milliseconds"),
+      doorCloseDelaySeconds: ambientNumber(timing.doorCloseDelaySeconds ?? 20, 0, 120, "door_close_delay_seconds"),
+      doorMaxOnMinutes: ambientNumber(timing.doorMaxOnMinutes ?? 20, 1, 60, "door_max_on_minutes"),
+      transitionUpdatesPerSecond: ambientNumber(timing.transitionUpdatesPerSecond ?? 30, 5, 40, "transition_updates_per_second"),
+    },
+  };
+}
+
 export function normalizeAmbientCommand(payload, now = new Date()) {
   const mode = String(payload?.mode || "manual").toLowerCase();
   if (mode === "auto") {
     return {
       schema: "wayon.ambient.command.v1",
       mode: "auto",
+      durationSeconds: 0,
+      requestedAt: now.toISOString(),
+    };
+  }
+  if (mode === "profile") {
+    return {
+      schema: "wayon.ambient.command.v1",
+      mode: "profile",
+      profile: normalizeAmbientProfile(payload.profile),
       durationSeconds: 0,
       requestedAt: now.toISOString(),
     };

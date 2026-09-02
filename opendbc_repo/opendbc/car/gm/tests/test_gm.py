@@ -8,7 +8,8 @@ from opendbc.can.parser import get_raw_value
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, gm_auto_hold_command,
                                          gm_long_auto_hold_command, gm_uses_auto_hold_sng,
-                                         limit_traverse_stopping_brake, update_traverse_coasting)
+                                         limit_traverse_stopping_brake, update_gm_long_auto_hold_brake,
+                                         update_traverse_coasting)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.gmcan import create_acc_dashboard_command
 from opendbc.car.gm.fingerprints import FINGERPRINTS
@@ -112,6 +113,59 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
     self.assertEqual(180, limit_traverse_stopping_brake(self.CP, True, 0.2, 180))
     other = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertEqual(132, limit_traverse_stopping_brake(other, True, 0.2, 132))
+
+
+class TestGMLongAutoHoldBrake(unittest.TestCase):
+  def step(self, state, requested=True, regular_brake=14, v_ego_raw=0.0, a_ego=0.0):
+    return update_gm_long_auto_hold_brake(requested, *state, regular_brake, v_ego_raw, a_ego)
+
+  def test_waits_for_physical_settle_then_ramps(self):
+    state = (False, 0, 0, 0)
+    for _ in range(4):
+      brake, confirmed, zero, settled, hold_brake = self.step(state)
+      self.assertEqual(brake, 14)
+      self.assertFalse(confirmed)
+      state = (confirmed, zero, settled, hold_brake)
+
+    brake, confirmed, zero, settled, hold_brake = self.step(state)
+    self.assertEqual(brake, 46)
+    self.assertTrue(confirmed)
+
+    state = (confirmed, zero, settled, hold_brake)
+    brake, confirmed, zero, settled, hold_brake = self.step(state)
+    self.assertEqual(brake, 78)
+
+  def test_deceleration_does_not_count_as_settled(self):
+    state = (False, 0, 0, 0)
+    for _ in range(8):
+      brake, confirmed, zero, settled, hold_brake = self.step(state, a_ego=-1.0)
+      self.assertEqual(brake, 14)
+      self.assertFalse(confirmed)
+      state = (confirmed, zero, settled, hold_brake)
+
+  def test_noisy_acceleration_uses_bounded_timeout(self):
+    state = (False, 0, 0, 0)
+    for _ in range(19):
+      brake, confirmed, zero, settled, hold_brake = self.step(state, a_ego=0.3)
+      self.assertFalse(confirmed)
+      state = (confirmed, zero, settled, hold_brake)
+    brake, confirmed, *_ = self.step(state, a_ego=0.3)
+    self.assertEqual(brake, 46)
+    self.assertTrue(confirmed)
+
+  def test_roll_after_hold_request_applies_full_pressure(self):
+    state = (False, 1, 0, 0)
+    brake, confirmed, *_ = self.step(state, v_ego_raw=0.09, a_ego=0.1)
+    self.assertEqual(brake, 400)
+    self.assertTrue(confirmed)
+
+  def test_initial_low_speed_hold_request_does_not_jump_to_full_pressure(self):
+    brake, confirmed, zero, settled, hold_brake = self.step((False, 0, 0, 0), v_ego_raw=0.085, a_ego=-0.5)
+    self.assertEqual((brake, confirmed, zero, settled, hold_brake), (14, False, 0, 0, 0))
+
+  def test_release_resets_state(self):
+    brake, confirmed, zero, settled, hold_brake = self.step((True, 8, 5, 200), requested=False, regular_brake=7)
+    self.assertEqual((brake, confirmed, zero, settled, hold_brake), (7, False, 0, 0, 0))
 
 
 class TestGMTraverseAutoHold(unittest.TestCase):

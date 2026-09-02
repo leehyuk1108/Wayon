@@ -22,6 +22,12 @@ TRAVERSE_COAST_MIN_SPEED = 5.0
 TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
 TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
 GM_AUTO_HOLD_BRAKE = 400
+GM_AUTO_HOLD_SETTLED_ACCEL = 0.15
+GM_AUTO_HOLD_SETTLED_SPEED = 0.01
+GM_AUTO_HOLD_SETTLED_FRAMES = 5  # 0.20 seconds at the 25 Hz brake command rate
+GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES = 20  # Ensure hold engages even when aEgo remains noisy
+GM_AUTO_HOLD_RAMP_STEP = 32
+GM_AUTO_HOLD_ROLL_SPEED = 0.08
 GM_STOPPING_BRAKE_TAPER_CRAWL = 14
 GM_STOPPING_BRAKE_TAPER_ONE_KPH = 24
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 3.0 * CV.KPH_TO_MS
@@ -83,6 +89,36 @@ def gm_long_auto_hold_command(CP, CC, CS, actuators):
   )
 
 
+def update_gm_long_auto_hold_brake(hold_requested, confirmed, zero_frames, settled_frames, hold_brake,
+                                   regular_brake, v_ego_raw, a_ego):
+  if not hold_requested:
+    return regular_brake, False, 0, 0, 0
+
+  raw_speed = abs(v_ego_raw)
+  if confirmed:
+    hold_brake = min(GM_AUTO_HOLD_BRAKE, max(hold_brake, regular_brake) + GM_AUTO_HOLD_RAMP_STEP)
+    return hold_brake, True, zero_frames, settled_frames, hold_brake
+
+  was_zero = zero_frames > 0
+  if raw_speed <= GM_AUTO_HOLD_SETTLED_SPEED:
+    zero_frames += 1
+    settled_frames = settled_frames + 1 if abs(a_ego) <= GM_AUTO_HOLD_SETTLED_ACCEL else 0
+  else:
+    zero_frames = 0
+    settled_frames = 0
+
+  # A rolling vehicle takes priority over the comfort ramp. This path is only
+  # reachable after CarState has already requested hold at a standstill.
+  if was_zero and raw_speed > GM_AUTO_HOLD_ROLL_SPEED:
+    return GM_AUTO_HOLD_BRAKE, True, zero_frames, settled_frames, GM_AUTO_HOLD_BRAKE
+
+  if settled_frames < GM_AUTO_HOLD_SETTLED_FRAMES and zero_frames < GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES:
+    return regular_brake, False, zero_frames, settled_frames, 0
+
+  hold_brake = min(GM_AUTO_HOLD_BRAKE, max(hold_brake, regular_brake) + GM_AUTO_HOLD_RAMP_STEP)
+  return hold_brake, True, zero_frames, settled_frames, hold_brake
+
+
 def gm_uses_auto_hold_sng(CP):
   return CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.autoResumeSng
 
@@ -104,6 +140,10 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.sng_last_stock_counter = None
     self.sng_last_sent_counter = None
     self.sng_button_frames_remaining = 0
+    self.gm_auto_hold_confirmed = False
+    self.gm_auto_hold_zero_frames = 0
+    self.gm_auto_hold_settled_frames = 0
+    self.gm_auto_hold_brake = 0
 
     self.lka_steering_cmd_counter = 0
     self.lka_icon_status_last = (False, False)
@@ -304,13 +344,20 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         manual_auto_hold = gm_auto_hold_command(self.CP, CC, CS)
         long_auto_hold = gm_long_auto_hold_command(self.CP, CC, CS, actuators)
 
+        long_hold_brake, self.gm_auto_hold_confirmed, self.gm_auto_hold_zero_frames, \
+          self.gm_auto_hold_settled_frames, self.gm_auto_hold_brake = update_gm_long_auto_hold_brake(
+            long_auto_hold, self.gm_auto_hold_confirmed, self.gm_auto_hold_zero_frames,
+            self.gm_auto_hold_settled_frames, self.gm_auto_hold_brake, self.apply_brake,
+            CS.out.vEgoRaw, CS.out.aEgo)
+
         # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
         can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, self.apply_gas,
                                                         idx, CC.enabled, at_full_stop))
         if manual_auto_hold or long_auto_hold:
-          can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, GM_AUTO_HOLD_BRAKE,
+          hold_brake = GM_AUTO_HOLD_BRAKE if manual_auto_hold else long_hold_brake
+          can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, hold_brake,
                                                                idx, CC.enabled and long_auto_hold, True, False, self.CP))
-          self.apply_brake = GM_AUTO_HOLD_BRAKE
+          self.apply_brake = hold_brake
           CS.autoHoldActivated = True
         else:
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, self.apply_brake,

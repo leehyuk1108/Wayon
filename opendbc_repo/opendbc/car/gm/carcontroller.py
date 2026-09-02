@@ -28,8 +28,10 @@ GM_AUTO_HOLD_SETTLED_FRAMES = 5  # 0.20 seconds at the 25 Hz brake command rate
 GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES = 20  # Ensure hold engages even when aEgo remains noisy
 GM_AUTO_HOLD_RAMP_STEP = 32
 GM_AUTO_HOLD_ROLL_SPEED = 0.08
-GM_STOPPING_BRAKE_TAPER_CRAWL = 14
-GM_STOPPING_BRAKE_TAPER_ONE_KPH = 24
+GM_STOPPING_BRAKE_TAPER_ZERO = 4
+GM_STOPPING_BRAKE_TAPER_HALF_KPH = 8
+GM_STOPPING_BRAKE_TAPER_ONE_KPH = 14
+GM_STOPPING_BRAKE_TAPER_TWO_KPH = 42
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 3.0 * CV.KPH_TO_MS
 GM_STOPPING_BRAKE_TAPER_MAX = 80
 GM_STOPPING_BRAKE_TAPER_BYPASS = 180
@@ -63,8 +65,10 @@ def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
       v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED or apply_brake >= GM_STOPPING_BRAKE_TAPER_BYPASS):
     return apply_brake
   brake_limit = round(np.interp(max(v_ego, 0.0),
-                                [0.0, 1.0 * CV.KPH_TO_MS, GM_STOPPING_BRAKE_TAPER_START_SPEED],
-                                [GM_STOPPING_BRAKE_TAPER_CRAWL, GM_STOPPING_BRAKE_TAPER_ONE_KPH,
+                                [0.0, 0.5 * CV.KPH_TO_MS, 1.0 * CV.KPH_TO_MS,
+                                 2.0 * CV.KPH_TO_MS, GM_STOPPING_BRAKE_TAPER_START_SPEED],
+                                [GM_STOPPING_BRAKE_TAPER_ZERO, GM_STOPPING_BRAKE_TAPER_HALF_KPH,
+                                 GM_STOPPING_BRAKE_TAPER_ONE_KPH, GM_STOPPING_BRAKE_TAPER_TWO_KPH,
                                  GM_STOPPING_BRAKE_TAPER_MAX]))
   return min(apply_brake, brake_limit)
 

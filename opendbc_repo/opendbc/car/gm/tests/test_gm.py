@@ -99,12 +99,13 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
 
   def test_tapers_to_soft_release_near_stop(self):
     self.assertEqual(80, limit_traverse_stopping_brake(self.CP, True, 3.0 / 3.6 - 1e-3, 132))
-    self.assertEqual(52, limit_traverse_stopping_brake(self.CP, True, 2.0 / 3.6, 132))
-    self.assertEqual(24, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
-    self.assertEqual(14, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
+    self.assertEqual(42, limit_traverse_stopping_brake(self.CP, True, 2.0 / 3.6, 132))
+    self.assertEqual(14, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
+    self.assertEqual(8, limit_traverse_stopping_brake(self.CP, True, 0.5 / 3.6, 132))
+    self.assertEqual(4, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
 
   def test_does_not_increase_requested_brake(self):
-    self.assertEqual(21, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
+    self.assertEqual(11, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
     self.assertEqual(10, limit_traverse_stopping_brake(self.CP, True, 0.2, 10))
 
   def test_only_changes_traverse_final_stopping_phase(self):

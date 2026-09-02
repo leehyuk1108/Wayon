@@ -1958,6 +1958,140 @@ async function handleState(request, env) {
   return json({ state, snapshots: snapshots.results || [], vehicleStatus, vehicleLock });
 }
 
+function ambientByte(value, maximum, field) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > maximum) {
+    throw new Error(`invalid_${field}`);
+  }
+  return number;
+}
+
+function normalizeAmbientZone(zone, name) {
+  if (!zone || typeof zone !== "object" || !Array.isArray(zone.rgb) || zone.rgb.length !== 3) {
+    throw new Error(`invalid_${name}`);
+  }
+  return {
+    enabled: zone.enabled !== false,
+    rgb: zone.rgb.map((value, index) => ambientByte(value, 255, `${name}_rgb_${index}`)),
+    brightness: ambientByte(zone.brightness, 100, `${name}_brightness`),
+  };
+}
+
+export function normalizeAmbientCommand(payload, now = new Date()) {
+  const mode = String(payload?.mode || "manual").toLowerCase();
+  if (mode === "auto") {
+    return {
+      schema: "wayon.ambient.command.v1",
+      mode: "auto",
+      durationSeconds: 0,
+      requestedAt: now.toISOString(),
+    };
+  }
+  if (mode !== "manual") throw new Error("invalid_mode");
+  const durationSeconds = ambientByte(payload.durationSeconds ?? 900, 1200, "duration_seconds");
+  if (durationSeconds < 30) throw new Error("invalid_duration_seconds");
+  return {
+    schema: "wayon.ambient.command.v1",
+    mode: "manual",
+    zone1: normalizeAmbientZone(payload.zone1, "zone1"),
+    zone2: normalizeAmbientZone(payload.zone2, "zone2"),
+    durationSeconds,
+    requestedAt: now.toISOString(),
+  };
+}
+
+async function handleAmbientCommandCreate(request, env) {
+  if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
+  const deviceId = authenticatedDeviceId(request);
+  if (!deviceId) return json({ error: "device_not_found" }, 404);
+  const input = await request.json().catch(() => ({}));
+  let command;
+  try {
+    command = normalizeAmbientCommand(input);
+  } catch (error) {
+    return json({ error: String(error?.message || "invalid_ambient_command") }, 400);
+  }
+  const id = crypto.randomUUID();
+  const createdAt = command.requestedAt;
+  const ttlSeconds = command.mode === "manual" ? command.durationSeconds : 60;
+  const expiresAt = new Date(Date.parse(createdAt) + ttlSeconds * 1000).toISOString();
+  await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE ambient_commands SET status = 'superseded'
+      WHERE device_id = ? AND status IN ('pending', 'delivered')
+    `).bind(deviceId),
+    env.DB.prepare(`
+      INSERT INTO ambient_commands (
+        id, device_id, created_at, expires_at, status, payload_json
+      ) VALUES (?, ?, ?, ?, 'pending', ?)
+    `).bind(id, deviceId, createdAt, expiresAt, JSON.stringify(command)),
+  ]);
+  return json({ ok: true, id, deviceId, status: "pending", expiresAt, command });
+}
+
+async function handleAmbientCommandPoll(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+  const deviceId = authenticatedDeviceId(request);
+  if (!deviceId) return json({ command: null });
+  const now = nowIso();
+  await env.DB.prepare(`
+    UPDATE ambient_commands SET status = 'expired'
+    WHERE device_id = ? AND status IN ('pending', 'delivered') AND expires_at <= ?
+  `).bind(deviceId, now).run();
+  const row = await env.DB.prepare(`
+    SELECT id, device_id, created_at, expires_at, status, payload_json
+    FROM ambient_commands
+    WHERE device_id = ? AND status IN ('pending', 'delivered') AND expires_at > ?
+    ORDER BY created_at DESC LIMIT 1
+  `).bind(deviceId, now).first();
+  if (!row) return json({ command: null });
+  return json({ command: {
+    id: row.id,
+    deviceId: row.device_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    status: row.status,
+    payload: JSON.parse(row.payload_json),
+  } });
+}
+
+async function handleAmbientCommandAck(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+  const deviceId = authenticatedDeviceId(request);
+  const payload = await request.json().catch(() => ({}));
+  const id = String(payload.id || "").trim().slice(0, 128);
+  if (!id || !deviceId) return json({ error: "invalid_ack" }, 400);
+  const acknowledgedAt = nowIso();
+  const status = payload.applied === false ? "failed" : "acknowledged";
+  const result = await env.DB.prepare(`
+    UPDATE ambient_commands SET status = ?, acknowledged_at = ?, ack_json = ?
+    WHERE id = ? AND device_id = ?
+  `).bind(status, acknowledgedAt, JSON.stringify(payload), id, deviceId).run();
+  return json({ ok: true, id, status, acknowledgedAt, changes: result.meta?.changes || 0 });
+}
+
+async function handleAmbientCommandStatus(request, env) {
+  if (!authorize(request, env, false)) return json({ error: "unauthorized" }, 401);
+  const deviceId = authenticatedDeviceId(request);
+  if (!deviceId) return json({ command: null });
+  const row = await env.DB.prepare(`
+    SELECT id, device_id, created_at, expires_at, status, payload_json,
+           acknowledged_at, ack_json
+    FROM ambient_commands WHERE device_id = ? ORDER BY created_at DESC LIMIT 1
+  `).bind(deviceId).first();
+  if (!row) return json({ command: null });
+  return json({ command: {
+    id: row.id,
+    deviceId: row.device_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    status: row.status,
+    acknowledgedAt: row.acknowledged_at,
+    payload: JSON.parse(row.payload_json),
+    ack: row.ack_json ? JSON.parse(row.ack_json) : null,
+  } });
+}
+
 async function latestVehicleLock(env, deviceId) {
   const event = await env.DB.prepare(`
     SELECT locked, occurred_at, received_at
@@ -2785,6 +2919,18 @@ export default {
 
     if (request.method === "POST" && pathname === "/api/telemetry") {
       return handleTelemetry(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/ambient/command") {
+      return handleAmbientCommandCreate(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/ambient/command") {
+      return handleAmbientCommandPoll(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/ambient/ack") {
+      return handleAmbientCommandAck(request, env);
+    }
+    if (request.method === "GET" && pathname === "/api/ambient/status") {
+      return handleAmbientCommandStatus(request, env);
     }
     if (request.method === "POST" && pathname === "/api/gmone/status") {
       return handleGmoneStatus(request, env);

@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -89,6 +90,10 @@ NAVDY_LONGITUDINAL_LEAD_HOLD_SEC = 0.45
 NAVDY_ACCELERATOR_COMMAND_THRESHOLD = 0.05
 NAVDY_BRAKE_COMMAND_THRESHOLD = 0.5
 OFFROAD_DOOR_PARAM_PATH = "/dev/shm/params/d/OffroadDoorOpen"
+WAYON_AMBIENT_OVERRIDE_PATHS = (
+  "/dev/shm/params/d/WayonAmbientOverride",
+  "/data/params/d/WayonAmbientOverride",
+)
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -101,6 +106,34 @@ def finite_float(value: Any, default: float = 0.0) -> float:
   except (TypeError, ValueError):
     return default
   return value if math.isfinite(value) else default
+
+
+def read_wayon_ambient_override(now_epoch: float | None = None) -> dict[str, Any] | None:
+  now_epoch = time.time() if now_epoch is None else now_epoch
+  raw = ""
+  for path in WAYON_AMBIENT_OVERRIDE_PATHS:
+    try:
+      with open(path, encoding="utf-8") as file:
+        raw = file.read().strip()
+      if raw:
+        break
+    except OSError:
+      continue
+  if not raw:
+    return None
+
+  try:
+    command = json.loads(raw)
+    expires_at = str(command.get("expiresAt") or "")
+    if expires_at:
+      expires_epoch = datetime.fromisoformat(expires_at.replace("Z", "+00:00")).timestamp()
+      if now_epoch >= expires_epoch:
+        return None
+    if command.get("mode") not in ("manual", "auto"):
+      return None
+    return command
+  except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    return None
 
 
 def read_offroad_door_open(path: str = OFFROAD_DOOR_PARAM_PATH) -> bool:
@@ -134,11 +167,15 @@ def ambient_heartbeat_payload(started: bool, door_open: bool,
                               live_car_state: Any = None) -> dict[str, Any]:
   gear = enum_text(getattr(live_car_state, "gearShifter", "unknown")).lower() \
     if live_car_state is not None else "unknown"
-  return {
+  payload = {
     "onroad": bool(started),
     "doorOpen": bool(door_open),
     "gear": gear,
   }
+  ambient_override = read_wayon_ambient_override()
+  if ambient_override is not None:
+    payload["ambientOverride"] = ambient_override
+  return payload
 
 
 def apply_live_vehicle_state(car_state: Any, live_car_state: Any) -> Any:
@@ -2151,7 +2188,11 @@ def run_live(args: argparse.Namespace) -> None:
     live_car_state = sm["carState"] if started and "carState" in services \
       and service_recent(sm, "carState", now) else None
     door_open = resolve_ambient_door_open(live_car_state)
-    ambient_state = (bool(started), door_open)
+    ambient_override = read_wayon_ambient_override()
+    ambient_override_signature = (
+      ambient_override.get("id"), ambient_override.get("mode"), ambient_override.get("expiresAt")
+    ) if ambient_override else None
+    ambient_state = (bool(started), door_open, ambient_override_signature)
     ambient_changed = ambient_state != last_ambient_state
     last_ambient_state = ambient_state
     ambient_heartbeat_due = now - last_ambient_emit_at >= NAVDY_AMBIENT_HEARTBEAT_INTERVAL_S
@@ -2248,6 +2289,8 @@ def run_live(args: argparse.Namespace) -> None:
       payload["greenLightAlert"] = bool(payload["greenLightAlert"] or captured_green)
       payload["leadDepartAlert"] = bool(payload["leadDepartAlert"] or captured_lead)
     payload.update(path_geometry)
+    if ambient_override is not None:
+      payload["ambientOverride"] = ambient_override
     payload = stabilize_display_payload(payload, args, now)
     should_emit, signature = should_emit_payload(payload, args, now, last_signature, last_emit_at)
     if should_emit:

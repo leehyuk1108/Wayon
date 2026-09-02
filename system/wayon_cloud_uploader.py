@@ -63,6 +63,8 @@ DEFAULT_ROUTE_POINT_INTERVAL = 10.0
 DEFAULT_ROUTE_POINT_MIN_DISTANCE_M = 15.0
 DEFAULT_ROUTE_POINT_LIMIT = 720
 DEFAULT_SNAPSHOT_INTERVAL_OFFROAD = 3600.0
+DEFAULT_AMBIENT_COMMAND_POLL_INTERVAL = 2.0
+AMBIENT_OVERRIDE_PATH = Path(os.getenv("WAYON_AMBIENT_OVERRIDE_PATH", "/data/params/d/WayonAmbientOverride"))
 CONFIG_RELOAD_INTERVAL = 60.0
 LOOP_SLEEP_ONROAD = 1.0
 LOOP_SLEEP_OFFROAD = 1.0
@@ -122,6 +124,68 @@ def post_json(config, path, payload):
   )
   response.raise_for_status()
   return response.json() if response.content else {}
+
+
+def get_json(config, path, params=None):
+  response = requests.get(
+    f"{config['endpoint']}{path}",
+    params=params,
+    headers={
+      "Authorization": f"Bearer {config['token']}",
+      "User-Agent": USER_AGENT,
+    },
+    timeout=15,
+  )
+  response.raise_for_status()
+  return response.json() if response.content else {}
+
+
+def write_ambient_override(params, serialized, path=AMBIENT_OVERRIDE_PATH):
+  try:
+    params.put("WayonAmbientOverride", serialized)
+    return
+  except Exception:
+    pass
+
+  path = Path(path)
+  path.parent.mkdir(parents=True, exist_ok=True)
+  temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+  temporary.write_text(serialized, encoding="utf-8")
+  os.replace(temporary, path)
+
+
+def apply_ambient_command(params, command, path=AMBIENT_OVERRIDE_PATH):
+  if not isinstance(command, dict) or not command.get("id"):
+    return False
+  payload = command.get("payload")
+  if not isinstance(payload, dict):
+    return False
+
+  stored = {
+    **payload,
+    "id": str(command["id"]),
+    "deviceId": str(command.get("deviceId") or ""),
+    "createdAt": command.get("createdAt"),
+    "expiresAt": command.get("expiresAt"),
+  }
+  write_ambient_override(params, json.dumps(stored, separators=(",", ":")), path)
+  return True
+
+
+def poll_ambient_command(config, params, device_id):
+  response = get_json(config, "/api/ambient/command", {"deviceId": device_id})
+  command = response.get("command") if isinstance(response, dict) else None
+  if not apply_ambient_command(params, command):
+    return False
+
+  post_json(config, "/api/ambient/ack", {
+    "id": command["id"],
+    "deviceId": device_id,
+    "applied": True,
+    "stage": "comma_params",
+    "acknowledgedAt": utc_now(),
+  })
+  return True
 
 
 def fetch_vehicle_status(config):
@@ -1183,6 +1247,7 @@ def main():
   next_snapshot = 0.0
   next_impact_upload = 0.0
   next_vehicle_event_upload = 0.0
+  next_ambient_command_poll = 0.0
   previous_started = False
 
   while True:
@@ -1196,11 +1261,20 @@ def main():
         time.sleep(5.0)
         continue
 
+    device_id = str(config.get("device_id") or get_param_str(params, "DongleId") or "unknown")
+    if now >= next_ambient_command_poll:
+      try:
+        poll_ambient_command(config, params, device_id)
+        next_ambient_command_poll = now + max(1.0, float(config.get(
+          "ambient_command_poll_interval", DEFAULT_AMBIENT_COMMAND_POLL_INTERVAL)))
+      except Exception as exc:
+        print(f"Wayon cloud: ambient command poll failed: {exc}")
+        next_ambient_command_poll = now + 15.0
+
     if not sm.seen["deviceState"]:
       time.sleep(LOOP_SLEEP_OFFROAD)
       continue
 
-    device_id = str(config.get("device_id") or get_param_str(params, "DongleId") or "unknown")
     started = bool(sm["deviceState"].started)
 
     if now >= next_impact_upload:

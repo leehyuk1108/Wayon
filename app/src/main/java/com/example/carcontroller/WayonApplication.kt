@@ -6,6 +6,7 @@ class WayonApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         WayonImpactNotifications.ensureChannel(this)
+        VehicleRefreshScheduler.initialize(this)
         if (BuildConfig.FIREBASE_CONFIGURED &&
             !BuildConfig.APPLICATION_ID.endsWith(".source")
         ) {

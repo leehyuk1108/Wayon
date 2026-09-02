@@ -38,11 +38,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.carcontroller"
+        applicationId = "com.example.carcontroller.next"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.18"
+        versionCode = 16
+        versionName = "2.0-preview.7"
 
         buildConfigField(
             "String",
@@ -59,12 +59,6 @@ android {
         debug {
             applicationIdSuffix = ".source"
             versionNameSuffix = "-source"
-        }
-        create("device") {
-            isDebuggable = true
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("debug")
         }
         release {
             isMinifyEnabled = false
@@ -94,6 +88,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))

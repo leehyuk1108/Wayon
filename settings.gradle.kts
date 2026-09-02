@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MyTraverse"
+rootProject.name = "MyTraverseNext"
 include(":app")

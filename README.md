@@ -1,9 +1,9 @@
-# My Traverse
+# My Traverse Next
 
-This is the source project for the current My Traverse Android app.
+This is the separately installable next-generation My Traverse UI project.
 
-- Package: `com.example.carcontroller`
-- Version: `1.18` (`versionCode 4`)
+- Package: `com.example.carcontroller.next`
+- Version: `2.0-preview.7` (`versionCode 16`)
 - Debug package: `com.example.carcontroller.source`
 - Debug label/version: `My Traverse Source` / `1.18-source`
 - Reference APK SHA-256:
@@ -21,6 +21,8 @@ This is the source project for the current My Traverse Android app.
 - Impact snapshots and camera history
 - Offroad dual-camera 360 Live view, recording, and saved Live captures
 - Bluetooth-based local driving behavior retained for non-Cloud setups
+- Independent MultiPack account login and direct vehicle-status refresh
+- Independent Zone 1/Zone 2 ambient RGB, brightness, and duration controls through Wayon Cloud
 
 The current UI assets are kept unchanged so layout, styling, animation, and
 interaction match the installed app. Native Live session handling that existed
@@ -46,15 +48,20 @@ The vehicle-control API URL is entered in the app settings at runtime and stored
 in the app's private preferences. It is intentionally absent from source and
 Gradle configuration. The Wayon Cloud view key is handled the same way.
 
+MultiPack credentials are separate from Wayon Cloud. The app verifies them
+directly against the official GMOne login endpoint, encrypts the password with
+an Android Keystore AES-GCM key, and stores no session token in source, Gradle
+configuration, Firebase, or Wayon Cloud.
+
 The following environment variables can be used instead of Gradle properties:
 
 ```text
 WAYON_CLOUD_URL
+WAYON_DEVICE_ID
+WAYON_PUSH_REGISTRATION_TOKEN
+WAYON_LIVE_TOKEN
 FIREBASE_DATABASE_URL
 ```
-
-The Wayon Cloud Key is entered in app settings and is shared by data, push,
-360 Live, and remote access for the selected vehicle.
 
 `local.properties` and `app/google-services.json` are ignored by Git. A build
 without them still compiles, but Firebase push/status integration remains
@@ -66,12 +73,4 @@ Use JDK 17 or the JDK bundled with Android Studio:
 
 ```bash
 ./gradlew :app:assembleDebug
-```
-
-`assembleDebug` creates the side-by-side `com.example.carcontroller.source`
-package. To update the installed `My Traverse` package while preserving its app
-data and debug diagnostics, provide the private values locally and build:
-
-```bash
-./gradlew :app:assembleDevice
 ```

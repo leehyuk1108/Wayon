@@ -42,6 +42,13 @@
         android:theme="@style/Theme.Carcontroller"
         tools:targetApi="31">
 
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification_chevrolet" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_chevrolet_gold" />
+
         <!-- 메인 액티비티 -->
         <activity
             android:name=".MainActivity"
@@ -86,6 +93,15 @@
         </service>
 
         <receiver android:name=".WidgetCommandReceiver" android:exported="true" />
+
+        <receiver
+            android:name=".VehicleRefreshReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- 부팅 후 알람 재등록용 리시버 -->
         <receiver

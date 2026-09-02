@@ -175,7 +175,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     cutin_risk = sm['radarState'].leadCutInRisk
     active_cutin_risk = cutin_risk if self.cutin_predecel_mode == 2 else None
-    response_lead = None if self.wayon_carrot_profile else sm['radarState'].leadOne
+    response_lead = sm['radarState'].leadOne
     response_factor = lead_response_factor(response_lead, active_cutin_risk)
     a_change_cost = dynamic_a_change_cost(A_CHANGE_COST, response_factor)
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,

@@ -14,8 +14,8 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
 from openpilot.sunnypilot.selfdrive.controls.lib import wayon_longitudinal_coordinator as coordinator_module
 
 
-def lead(d_rel=20.0, v_rel=0.0):
-  return SimpleNamespace(status=True, dRel=d_rel, vRel=v_rel)
+def lead(d_rel=20.0, v_rel=0.0, radar=True, a_lead=0.0):
+  return SimpleNamespace(status=True, radar=radar, dRel=d_rel, vRel=v_rel, aLeadK=a_lead)
 
 
 def test_speed_bins_cover_traverse_learning_ranges():
@@ -36,6 +36,18 @@ def test_coasting_requires_stability_and_exits_for_camera_or_closing_lead():
     controller.update(True, 20.0, 20.2, -0.1, 0.0, False)
   assert controller.state.active
   assert not controller.update(True, 20.0, 20.2, -0.1, 0.0, False, lead(10.0, -2.0))
+
+
+def test_low_speed_follow_coasts_only_with_stable_radar_lead():
+  controller = WayonCoastController()
+  stable_lead = lead(d_rel=8.0, v_rel=0.05, a_lead=0.1)
+  for _ in range(controller.LOW_SPEED_ENTER_FRAMES - 1):
+    assert not controller.update(True, 3.0, 3.1, -0.08, 0.0, False, stable_lead)
+  assert controller.update(True, 3.0, 3.1, -0.08, 0.0, False, stable_lead)
+
+  assert not controller.update(True, 3.0, 3.1, -0.25, 0.0, False, lead(8.0, -0.6))
+  assert not controller.update(True, 3.0, 3.1, -0.08, 0.0, False,
+                               lead(8.0, 0.0, radar=False))
 
 
 def test_low_speed_stop_releases_then_recaptures_with_verified_lead():

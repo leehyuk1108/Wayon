@@ -82,6 +82,7 @@ class WayonCoastController:
   """Select a true zero-gas/zero-brake state with hysteresis."""
 
   ENTER_FRAMES = round(0.6 / DT_CTRL)
+  LOW_SPEED_ENTER_FRAMES = round(0.3 / DT_CTRL)
 
   def __init__(self):
     self.state = CoastDecision()
@@ -98,10 +99,24 @@ class WayonCoastController:
     ))
     cutin_urgent = bool(cutin_risk is not None and bool(getattr(cutin_risk, "status", False)) and
                         float(getattr(cutin_risk, "score", 0.0)) > 0.35)
-    base_valid = (active and v_ego >= 5.0 and abs(pitch) <= math.radians(2.0) and
-                  not automatic_control and not lead_urgent and not cutin_urgent)
-    enter_valid = base_valid and -0.35 <= speed_error <= 0.75 and -0.30 <= requested_accel <= 0.05
-    stay_valid = base_valid and -0.55 <= speed_error <= 0.95 and -0.45 <= requested_accel <= 0.12
+    radar_lead = bool(lead is not None and getattr(lead, "status", False) and getattr(lead, "radar", False))
+    stable_low_speed_lead = bool(
+      1.0 <= v_ego < 5.0 and radar_lead and
+      float(getattr(lead, "dRel", 0.0)) > max(6.0, v_ego * 1.6) and
+      abs(float(getattr(lead, "vRel", 0.0))) < 0.35 and
+      abs(float(getattr(lead, "aLeadK", 0.0))) < 0.40
+    )
+    base_valid = (active and (v_ego >= 5.0 or stable_low_speed_lead) and
+                  abs(pitch) <= math.radians(2.0) and not automatic_control and
+                  not lead_urgent and not cutin_urgent)
+    if stable_low_speed_lead:
+      enter_valid = base_valid and -0.30 <= speed_error <= 0.55 and -0.12 <= requested_accel <= 0.08
+      stay_valid = base_valid and -0.40 <= speed_error <= 0.70 and -0.20 <= requested_accel <= 0.15
+      enter_frames = self.LOW_SPEED_ENTER_FRAMES
+    else:
+      enter_valid = base_valid and -0.35 <= speed_error <= 0.75 and -0.30 <= requested_accel <= 0.05
+      stay_valid = base_valid and -0.55 <= speed_error <= 0.95 and -0.45 <= requested_accel <= 0.12
+      enter_frames = self.ENTER_FRAMES
 
     if self.state.active:
       self.state.active = stay_valid
@@ -109,7 +124,7 @@ class WayonCoastController:
         self.state.enter_frames = 0
     elif enter_valid:
       self.state.enter_frames += 1
-      self.state.active = self.state.enter_frames >= self.ENTER_FRAMES
+      self.state.active = self.state.enter_frames >= enter_frames
     else:
       self.state.enter_frames = 0
     return self.state.active

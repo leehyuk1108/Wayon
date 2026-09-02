@@ -43,6 +43,12 @@ def lead_response_factor(lead: Any, cutin_risk: Any | None = None) -> float:
   if getattr(lead, "status", False):
     negative_jerk = max(0.0, -float(getattr(lead, "jLead", 0.0)))
     factor = max(factor, float(np.interp(negative_jerk, [0.2, 2.0], [0.0, 1.0])))
+    v_rel = float(getattr(lead, "vRel", 0.0))
+    a_lead = float(getattr(lead, "aLeadK", 0.0))
+    if getattr(lead, "radar", False) and v_rel > 0.2 and a_lead > 0.1:
+      positive_jerk = max(0.0, float(getattr(lead, "jLead", 0.0)))
+      departure_signal = max(positive_jerk, a_lead, v_rel)
+      factor = max(factor, float(np.interp(departure_signal, [0.25, 1.5], [0.0, 0.75])))
   if cutin_risk is not None and getattr(cutin_risk, "status", False):
     factor = max(factor, float(np.clip(getattr(cutin_risk, "score", 0.0), 0.0, 1.0)))
   return float(np.clip(factor, 0.0, 1.0))
@@ -58,10 +64,13 @@ def dynamic_t_follow_target(base_t_follow: float, lead: Any, a_ego: float,
   radar_lead = getattr(lead, "status", False) and getattr(lead, "radar", False)
   if radar_lead:
     jerk = float(np.clip(getattr(lead, "jLead", 0.0), -3.0, 2.0))
-    if jerk < -0.3:
+    v_rel = float(getattr(lead, "vRel", 0.0))
+    a_lead = float(getattr(lead, "aLeadK", 0.0))
+    if jerk < -0.3 and (a_lead < -0.05 or v_rel < -0.1):
       target += float(np.interp(jerk, [-3.0, -0.3], [0.45, 0.0]))
-    elif jerk > 0.3:
-      target -= float(np.interp(jerk, [0.3, 2.0], [0.0, 0.15]))
+    elif v_rel > 0.2 and a_lead > 0.1:
+      departure_signal = max(jerk, a_lead, v_rel)
+      target -= float(np.interp(departure_signal, [0.25, 1.5], [0.0, 0.25]))
   if radar_lead and a_ego < -0.4:
     target += float(np.interp(a_ego, [-2.0, -0.4], [0.20, 0.0]))
   if cutin_risk is not None and getattr(cutin_risk, "status", False):

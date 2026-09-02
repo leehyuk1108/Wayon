@@ -121,9 +121,12 @@ class LongitudinalPlannerSP:
     # ICBM continues to own the proven Navdy camera and section-control state
     # machine. Under OP long its target caps cruise directly instead of sending
     # synthetic stock ACC button presses.
-    icbm = sm['selfdriveStateSP'].intelligentCruiseButtonManagement
-    icbm_v_cruise = apply_icbm_target(icbm, v_cruise)
-    icbm_a_target = apply_icbm_accel_target(icbm, v_ego, a_ego, v_cruise)
+    try:
+      icbm = sm['selfdriveStateSP'].intelligentCruiseButtonManagement
+    except KeyError:
+      icbm = None
+    icbm_v_cruise = apply_icbm_target(icbm, v_cruise) if icbm is not None else v_cruise
+    icbm_a_target = apply_icbm_accel_target(icbm, v_ego, a_ego, v_cruise) if icbm is not None else a_ego
 
     targets = {
       LongitudinalPlanSource.cruise: (icbm_v_cruise, icbm_a_target),

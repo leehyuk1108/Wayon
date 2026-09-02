@@ -227,6 +227,22 @@ def test_adaptive_smoother_responds_faster_to_closing_lead():
   assert urgent[-1] < calm[-1]
 
 
+def test_adaptive_smoother_releases_brake_faster_for_departing_radar_lead():
+  calm_smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  calm_smoother.reset(-0.6)
+  calm = [calm_smoother.update(0.3, measured_accel=-0.4, v_ego=3.0, v_target=3.5)
+          for _ in range(50)]
+
+  departing_smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  departing_smoother.reset(-0.6)
+  departing_lead = SimpleNamespace(status=True, radar=True, dRel=12.0, vRel=1.0,
+                                   aLeadK=0.7, jLead=0.8)
+  departing = [departing_smoother.update(0.3, measured_accel=-0.4, v_ego=3.0, v_target=3.5,
+                                         lead=departing_lead) for _ in range(50)]
+
+  assert departing[-1] > calm[-1]
+
+
 def test_adaptive_smoother_preserves_emergency_brake_response():
   outputs = run_smoother(-3.0, seconds=0.5)
 

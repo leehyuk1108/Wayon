@@ -39,6 +39,25 @@ class AdaptiveLongitudinalSmoother:
       return 0.0
     return float(np.clip(getattr(cutin_risk, "score", 0.0), 0.0, 1.0))
 
+  @staticmethod
+  def _lead_departure_urgency(lead: Any | None, v_ego: float) -> float:
+    if lead is None or not getattr(lead, "status", False) or not getattr(lead, "radar", False) or v_ego > 12.0:
+      return 0.0
+
+    d_rel = float(getattr(lead, "dRel", 0.0))
+    v_rel = float(getattr(lead, "vRel", 0.0))
+    a_lead = float(getattr(lead, "aLeadK", 0.0))
+    j_lead = float(getattr(lead, "jLead", 0.0))
+    safe_reserve = d_rel - max(6.0, v_ego * 1.2)
+    if safe_reserve <= 0.0 or v_rel <= 0.2 or (a_lead <= 0.1 and j_lead <= 0.2):
+      return 0.0
+
+    opening = float(np.interp(v_rel, [0.2, 1.5], [0.0, 1.0]))
+    lead_motion = max(float(np.interp(a_lead, [0.1, 1.2], [0.0, 1.0])),
+                      float(np.interp(j_lead, [0.2, 1.5], [0.0, 1.0])))
+    reserve = float(np.interp(safe_reserve, [0.0, 4.0], [0.0, 1.0]))
+    return float(np.clip(max(opening, lead_motion) * reserve, 0.0, 1.0))
+
   def _urgency(self, target_accel: float, measured_accel: float, v_ego: float,
                v_target: float, planned_jerk: float, lead: Any | None,
                cutin_risk: Any | None) -> float:
@@ -56,7 +75,8 @@ class AdaptiveLongitudinalSmoother:
     target_accel_demand = float(np.interp(max(0.0, target_accel), [0.1, 1.0], [0.0, 1.0]))
     speed_error = float(np.interp(max(0.0, v_target - v_ego), [0.2, 4.0], [0.0, 1.0]))
     tracking_error = float(np.interp(max(0.0, target_accel - measured_accel - 0.3), [0.0, 1.2], [0.0, 1.0]))
-    return float(np.clip(max(demand, plan, target_accel_demand, speed_error, tracking_error), 0.0, 1.0))
+    return float(np.clip(max(demand, plan, target_accel_demand, speed_error, tracking_error,
+                             self._lead_departure_urgency(lead, v_ego)), 0.0, 1.0))
 
   def update(self, target_accel: float, measured_accel: float, v_ego: float,
              v_target: float, planned_jerk: float = 0.0, lead: Any | None = None,

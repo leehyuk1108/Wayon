@@ -241,7 +241,7 @@ class LongitudinalMpc:
   def __init__(self, dt=DT_MDL, wayon_carrot_profile=False):
     self.dt = dt
     self.wayon_carrot_profile = wayon_carrot_profile
-    self.dynamic_follow_enabled = False
+    self.dynamic_follow_enabled = wayon_carrot_profile
     self.cutin_predecel_mode = 2
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
@@ -330,7 +330,7 @@ class LongitudinalMpc:
       v_lead = lead.vLead
       a_lead = lead.aLeadK
       a_lead_tau = lead.aLeadTau
-      j_lead = 0.0 if self.wayon_carrot_profile else float(np.clip(lead.jLead, -2.0, 2.0))
+      j_lead = float(np.clip(lead.jLead, -2.0, 2.0)) if getattr(lead, "radar", False) else 0.0
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode
       x_lead = 50.0

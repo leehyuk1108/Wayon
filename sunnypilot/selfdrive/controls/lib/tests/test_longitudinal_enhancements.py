@@ -19,6 +19,7 @@ def lead(**kwargs):
     "status": True,
     "radar": True,
     "jLead": 0.0,
+    "aLeadK": 0.0,
     "score": 0.0,
     "dRel": 30.0,
     "vRel": -5.0,
@@ -52,6 +53,31 @@ def test_lead_braking_jerk_increases_response_and_follow_distance():
   assert response > 0.5
   assert dynamic_a_change_cost(200.0, response) < 120.0
   assert dynamic_t_follow_target(1.45, braking_lead, -0.8) > 1.45
+
+
+def test_departing_radar_lead_increases_response_and_temporarily_closes_follow_gap():
+  departing_lead = lead(jLead=1.5, aLeadK=0.4, vRel=0.8)
+  response = lead_response_factor(departing_lead)
+  assert response > 0.4
+  assert dynamic_a_change_cost(200.0, response) < 140.0
+  assert dynamic_t_follow_target(1.45, departing_lead, 0.0) < 1.30
+
+
+def test_positive_jerk_without_opening_gap_does_not_trigger_departure_response():
+  ambiguous_lead = lead(jLead=1.5, vRel=-0.1)
+  assert lead_response_factor(ambiguous_lead) == 0.0
+  assert dynamic_t_follow_target(1.45, ambiguous_lead, 0.0) == 1.45
+
+
+def test_departure_response_persists_after_initial_jerk_fades():
+  moving_away = lead(jLead=0.0, aLeadK=0.5, vRel=0.8)
+  assert lead_response_factor(moving_away) > 0.2
+  assert dynamic_t_follow_target(1.45, moving_away, 0.0) < 1.40
+
+
+def test_opening_accelerating_lead_is_not_treated_as_braking_when_jerk_falls():
+  moving_away = lead(jLead=-0.5, aLeadK=0.3, vRel=0.9)
+  assert dynamic_t_follow_target(1.45, moving_away, 0.0) < 1.45
 
 
 def test_t_follow_ramp_is_bounded():

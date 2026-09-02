@@ -107,8 +107,15 @@ def test_nonclosing_or_vision_cutin_does_not_predecelerate():
 
 
 def test_early_cutin_releases_throttle_before_braking_is_needed():
-  risk = lead(score=0.3, dRel=49.0, vRel=-4.0, vLat=0.6)
+  risk = lead(score=0.3, dRel=24.5, vRel=-2.0, vLat=0.6)
   assert cutin_predecel_accel(risk, 15.0) == 0.0
+
+
+def test_early_fast_closing_cutin_applies_mild_braking():
+  risk = lead(score=0.3, dRel=49.0, vRel=-4.0, vLat=0.6)
+  accel = cutin_predecel_accel(risk, 15.0)
+  assert accel is not None
+  assert -0.35 <= accel < 0.0
 
 
 def test_urgent_cutin_does_not_drop_out_below_old_minimum_ttc():

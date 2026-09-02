@@ -17,6 +17,8 @@ CUTIN_COAST_MAX_TTC_S = 13.0
 CUTIN_MAX_CROSSING_TIME_S = 3.5
 CUTIN_MIN_EGO_SPEED_MPS = 2.0
 CUTIN_LATERAL_WINDOW_M = 0.90
+CUTIN_EARLY_BRAKE_REL_SPEED_MPS = 3.0
+CUTIN_FULL_BRAKE_REL_SPEED_MPS = 8.0
 
 
 def future_curvature(model_msg: Any, fallback_curvature: float,
@@ -112,11 +114,18 @@ def cutin_predecel_accel(cutin_risk: Any, v_ego: float) -> float | None:
     return None
 
   if ttc > CUTIN_MAX_TTC_S:
-    # Stop adding propulsion while the vehicle is still beside the lane. The
-    # normal lead MPC takes over once it actually enters the ego lane.
-    return 0.0
+    closing_speed = -v_rel
+    if closing_speed <= CUTIN_EARLY_BRAKE_REL_SPEED_MPS:
+      return 0.0
+    # A fast-closing adjacent vehicle needs braking before it becomes the
+    # selected lead. Keep this mild while TTC is still above the urgent range.
+    closing_urgency = float(np.interp(
+      closing_speed, [CUTIN_EARLY_BRAKE_REL_SPEED_MPS, CUTIN_FULL_BRAKE_REL_SPEED_MPS], [0.0, 1.0]))
+    return float(np.interp(closing_urgency, [0.0, 1.0], [-0.12, -0.35]))
 
   ttc_urgency = float(np.interp(ttc, [CUTIN_MIN_TTC_S, CUTIN_MAX_TTC_S], [1.0, 0.0]))
   crossing_urgency = float(np.interp(crossing_time, [0.5, CUTIN_MAX_CROSSING_TIME_S], [1.0, 0.0]))
-  urgency = max(score, ttc_urgency, crossing_urgency)
+  closing_urgency = float(np.interp(
+    -v_rel, [1.0, CUTIN_FULL_BRAKE_REL_SPEED_MPS], [0.0, 1.0]))
+  urgency = max(score, ttc_urgency, crossing_urgency, closing_urgency)
   return float(np.interp(urgency, [0.0, 1.0], [-0.25, -0.65]))

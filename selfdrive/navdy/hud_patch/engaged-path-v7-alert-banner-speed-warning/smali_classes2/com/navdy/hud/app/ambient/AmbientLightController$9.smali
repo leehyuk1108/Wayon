@@ -25,7 +25,7 @@
 .method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
 
-    .line 310
+    .line 309
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$9;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -38,7 +38,7 @@
 .method public run()V
     .locals 2
 
-    .line 313
+    .line 312
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$9;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$800(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
@@ -47,11 +47,18 @@
 
     if-nez v0, :cond_0
 
-    .line 314
+    .line 313
     return-void
 
-    .line 316
+    .line 315
     :cond_0
+    const-string v0, "NavdyAmbient"
+
+    const-string v1, "ambient write timeout"
+
+    invoke-static {v0, v1}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;)I
+
+    .line 316
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$9;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$300(Lcom/navdy/hud/app/ambient/AmbientLightController;)Landroid/os/Handler;
@@ -60,7 +67,7 @@
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$9;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$1000(Lcom/navdy/hud/app/ambient/AmbientLightController;)Ljava/lang/Runnable;
+    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$900(Lcom/navdy/hud/app/ambient/AmbientLightController;)Ljava/lang/Runnable;
 
     move-result-object v1
 

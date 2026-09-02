@@ -41,24 +41,52 @@
     .line 300
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$800(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3700(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
 
     move-result v0
 
-    if-nez v0, :cond_0
+    if-eqz v0, :cond_1
 
-    .line 301
-    return-void
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$4900(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_1
+
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3900(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+
+    move-result v0
+
+    if-nez v0, :cond_1
+
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$5000(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_0
+
+    goto :goto_0
 
     .line 303
     :cond_0
-    const-string v0, "NavdyAmbient"
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    const-string v1, "ambient write timeout"
+    const/4 v1, 0x1
 
-    invoke-static {v0, v1}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;)I
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$4102(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
 
     .line 304
+    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$5100(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
+
+    .line 305
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$300(Lcom/navdy/hud/app/ambient/AmbientLightController;)Landroid/os/Handler;
@@ -67,24 +95,17 @@
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$900(Lcom/navdy/hud/app/ambient/AmbientLightController;)Ljava/lang/Runnable;
+    invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$5200(Lcom/navdy/hud/app/ambient/AmbientLightController;)Ljava/lang/Runnable;
 
     move-result-object v1
 
-    invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
-
-    .line 305
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
-
-    const/4 v1, 0x0
-
-    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$802(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)Z
+    invoke-virtual {v0, v1}, Landroid/os/Handler;->post(Ljava/lang/Runnable;)Z
 
     .line 306
-    iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$8;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
+    return-void
 
-    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2500(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
-
-    .line 307
+    .line 301
+    :cond_1
+    :goto_0
     return-void
 .end method

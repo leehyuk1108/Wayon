@@ -294,6 +294,18 @@ public final class AmbientLightController {
     }
   };
 
+  private final Runnable mWarningStepStartRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (!mOverspeedActive || !mOnroad || mReverseActive || mVehicleDataTimedOut) {
+        return;
+      }
+      mWarningAnimationStarted = true;
+      startBrightnessSync();
+      mHandler.post(mBlinkRunnable);
+    }
+  };
+
   private final Runnable mWriteTimeoutRunnable = new Runnable() {
     @Override
     public void run() {
@@ -1074,13 +1086,17 @@ public final class AmbientLightController {
       return;
     }
     stopBlink();
+    stopBrightnessSync();
     mAmbientActive = true;
-    startBrightnessSync();
-    mHandler.post(mBlinkRunnable);
+    int brightness = readAmbientBrightness();
+    long transitionMs = profileFadeMs();
+    startAmbientFade(brightness, warningZone2Brightness(), transitionMs, warningColorPacket());
+    mHandler.postDelayed(mWarningStepStartRunnable, transitionMs);
   }
 
   private void stopBlink() {
     mHandler.removeCallbacks(mBlinkRunnable);
+    mHandler.removeCallbacks(mWarningStepStartRunnable);
     mWarningAnimationStarted = false;
     mLowLightWarning = false;
     mDayWarningDimmed = false;
@@ -1131,6 +1147,10 @@ public final class AmbientLightController {
   }
 
   private void startAmbientFade(int zone1, int zone2, long durationMs) {
+    startAmbientFade(zone1, zone2, durationMs, activeStateColorPacket());
+  }
+
+  private void startAmbientFade(int zone1, int zone2, long durationMs, byte[] targetColor) {
     mHandler.removeCallbacks(mAmbientFadeRunnable);
     removePendingAmbientStatePackets();
     mAmbientFadeStartZone1 = mCurrentZone1;
@@ -1143,7 +1163,6 @@ public final class AmbientLightController {
     mAmbientFadeStartZone2Blue = mCurrentZone2Blue;
     mAmbientTargetZone1 = clamp(zone1, 0, 100);
     mAmbientTargetZone2 = clamp(zone2, 0, 100);
-    byte[] targetColor = activeStateColorPacket();
     mAmbientTargetZone1Red = colorPacketValue(targetColor, 5, 255);
     mAmbientTargetZone1Green = colorPacketValue(targetColor, 6, 255);
     mAmbientTargetZone1Blue = colorPacketValue(targetColor, 7, 255);

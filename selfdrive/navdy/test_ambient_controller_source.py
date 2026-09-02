@@ -101,6 +101,18 @@ def test_night_overspeed_stays_fixed_red() -> None:
   assert "mDayWarningDimmed = !mDayWarningDimmed" not in low_light
 
 
+def test_overspeed_color_fades_before_warning_steps_start() -> None:
+  source = controller_source()
+  start = source[source.index("private void startBlink"):source.index("private void stopBlink")]
+  delayed = source[source.index("private final Runnable mWarningStepStartRunnable"):source.index("private final Runnable mWriteTimeoutRunnable")]
+  assert "stopBrightnessSync();" in start
+  assert "startAmbientFade(brightness, warningZone2Brightness(), transitionMs, warningColorPacket());" in start
+  assert "mHandler.postDelayed(mWarningStepStartRunnable, transitionMs);" in start
+  assert "mWarningAnimationStarted = true;" in delayed
+  assert "startBrightnessSync();" in delayed
+  assert "mHandler.post(mBlinkRunnable);" in delayed
+
+
 def test_remembered_ble_address_is_tried_before_scan() -> None:
   source = controller_source()
   connect = source[source.index("private void connectIfNeeded()"):source.index("private void scheduleReconnect()")]

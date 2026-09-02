@@ -6349,6 +6349,215 @@
 
         .ambient-command-state.success { color: #68cc89; }
         .ambient-command-state.failed { color: #ff766d; }
+
+        .ambient-profile-list {
+            margin-top: 12px;
+            border-top: 1px solid rgba(255,255,255,.08);
+        }
+
+        .ambient-profile-section {
+            border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+
+        .ambient-profile-section summary {
+            display: flex;
+            align-items: center;
+            min-height: 58px;
+            gap: 12px;
+            list-style: none;
+            cursor: pointer;
+        }
+
+        .ambient-profile-section summary::-webkit-details-marker { display: none; }
+
+        .ambient-profile-section summary > i {
+            width: 18px;
+            height: 18px;
+            color: #98989d;
+            transition: transform .22s ease;
+        }
+
+        .ambient-profile-section[open] summary > i { transform: rotate(90deg); }
+
+        .ambient-profile-copy {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .ambient-profile-copy strong {
+            display: block;
+            color: #f4f4f5;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .ambient-profile-copy span {
+            display: block;
+            margin-top: 3px;
+            color: #85858a;
+            font-size: 11px;
+        }
+
+        .ambient-switch {
+            position: relative;
+            width: 42px;
+            height: 24px;
+            flex: 0 0 auto;
+        }
+
+        .ambient-switch input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .ambient-switch span {
+            position: absolute;
+            inset: 0;
+            border-radius: 12px;
+            background: #3a3a3e;
+            transition: background .2s ease;
+        }
+
+        .ambient-switch span::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            transition: transform .2s ease;
+        }
+
+        .ambient-switch input:checked + span { background: #4e9f6f; }
+        .ambient-switch input:checked + span::after { transform: translateX(18px); }
+
+        .ambient-profile-body {
+            padding: 0 0 16px 30px;
+        }
+
+        .ambient-profile-zone {
+            padding: 12px 0 6px;
+        }
+
+        .ambient-profile-zone + .ambient-profile-zone {
+            border-top: 1px solid rgba(255,255,255,.055);
+        }
+
+        .ambient-profile-zone-head,
+        .ambient-profile-brightness,
+        .ambient-profile-field,
+        .ambient-profile-toggle-row {
+            display: flex;
+            align-items: center;
+        }
+
+        .ambient-profile-zone-head {
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .ambient-profile-zone-head strong {
+            color: #b9b9bd;
+            font-size: 12px;
+        }
+
+        .ambient-profile-color {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ambient-profile-color input[type='color'] {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        .ambient-profile-color input[type='text'] {
+            width: 78px;
+            padding: 7px 8px;
+            border: 1px solid rgba(255,255,255,.1);
+            border-radius: 7px;
+            background: rgba(255,255,255,.055);
+            color: #eeeef0;
+            font: inherit;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .ambient-profile-brightness {
+            gap: 10px;
+            min-height: 38px;
+        }
+
+        .ambient-profile-brightness > i { width: 16px; color: #8f8f94; }
+        .ambient-profile-brightness input[type='range'] { flex: 1; min-width: 0; accent-color: #f3f3f4; }
+        .ambient-profile-brightness input[type='number'] { width: 54px; }
+
+        .ambient-profile-auto {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #a2a2a7;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        .ambient-profile-fields {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            padding-top: 12px;
+        }
+
+        .ambient-profile-field {
+            justify-content: space-between;
+            gap: 8px;
+            min-height: 42px;
+        }
+
+        .ambient-profile-field label {
+            color: #a0a0a5;
+            font-size: 11px;
+            line-height: 1.25;
+        }
+
+        .ambient-profile-field input {
+            width: 68px;
+            padding: 8px 6px;
+            border: 1px solid rgba(255,255,255,.1);
+            border-radius: 7px;
+            background: rgba(255,255,255,.055);
+            color: #f3f3f4;
+            font: inherit;
+            text-align: center;
+        }
+
+        .ambient-profile-toggle-row {
+            justify-content: space-between;
+            min-height: 48px;
+            gap: 12px;
+            color: #c6c6ca;
+            font-size: 12px;
+        }
+
+        .ambient-profile-disabled .ambient-profile-body {
+            opacity: .38;
+            pointer-events: none;
+        }
+
+        @media (max-width: 420px) {
+            .ambient-profile-fields { grid-template-columns: 1fr; }
+            .ambient-profile-body { padding-left: 24px; }
+        }
     </style>
 </head>
 
@@ -6871,6 +7080,8 @@
                         </div>
                     </div>
 
+                    <div id="ambient-extras-slot" style="display: contents;"></div>
+
                     <div class="control-group-card card-full">
                         <h4>환기 모드</h4>
                         <p class="feature-description">창문을 열어 5분간 환기한 후, 자동으로 창문을 닫습니다.</p>
@@ -7113,6 +7324,25 @@
                             <button class="ambient-action primary" type="button" id="btnAmbientApply">적용</button>
                         </div>
                         <div class="ambient-command-state" id="ambient-command-state">자동 모드</div>
+                    </div>
+
+                    <div class="control-group-card card-full" id="ambient-profile-card">
+                        <div class="ambient-editor-header">
+                            <div>
+                                <h4>자동 앰비언트 프로필</h4>
+                                <p class="feature-description">주행 상태에 따라 적용할 색상, 밝기와 동작을 설정합니다.</p>
+                            </div>
+                            <label class="ambient-switch" aria-label="자동 앰비언트 프로필 사용">
+                                <input type="checkbox" id="ambient-profile-enabled" checked>
+                                <span></span>
+                            </label>
+                        </div>
+                        <div class="ambient-profile-list" id="ambient-profile-list"></div>
+                        <div class="ambient-editor-actions">
+                            <button class="ambient-action" type="button" id="btnAmbientProfileReset">기본값</button>
+                            <button class="ambient-action primary" type="button" id="btnAmbientProfileApply">프로필 저장</button>
+                        </div>
+                        <div class="ambient-command-state" id="ambient-profile-state">기기에 저장된 설정은 재부팅 후에도 유지됩니다.</div>
                     </div>
 
                     <div class="control-group-card card-full" id="gmone-account-card">
@@ -7584,6 +7814,20 @@
         const ambientCommandState = document.getElementById('ambient-command-state');
         const btnAmbientApply = document.getElementById('btnAmbientApply');
         const btnAmbientAuto = document.getElementById('btnAmbientAuto');
+        const ambientControlCard = document.getElementById('ambient-control-card');
+        const ambientProfileCard = document.getElementById('ambient-profile-card');
+        const ambientProfileList = document.getElementById('ambient-profile-list');
+        const ambientProfileEnabled = document.getElementById('ambient-profile-enabled');
+        const ambientProfileCommandState = document.getElementById('ambient-profile-state');
+        const btnAmbientProfileApply = document.getElementById('btnAmbientProfileApply');
+        const btnAmbientProfileReset = document.getElementById('btnAmbientProfileReset');
+        const ambientExtrasSlot = document.getElementById('ambient-extras-slot');
+        let ambientCommandTarget = 'manual';
+
+        if (ambientExtrasSlot) {
+            if (ambientControlCard) ambientExtrasSlot.appendChild(ambientControlCard);
+            if (ambientProfileCard) ambientExtrasSlot.appendChild(ambientProfileCard);
+        }
 
         function clampAmbient(value, maximum) {
             const number = Number.parseInt(value, 10);
@@ -7664,17 +7908,21 @@
 
         function onAmbientCommandResult(raw, status) {
             const normalized = String(status || '').toLowerCase();
-            setAmbientEditorBusy(normalized === 'sending');
-            ambientCommandState?.classList.remove('success', 'failed');
-            if (!ambientCommandState) return;
-            if (normalized === 'sending') ambientCommandState.textContent = '차량에 전송 중';
-            else if (normalized === 'pending' || normalized === 'delivered') ambientCommandState.textContent = '콤마 응답 대기 중';
+            const profileCommand = ambientCommandTarget === 'profile';
+            setAmbientEditorBusy(!profileCommand && normalized === 'sending');
+            if (btnAmbientProfileApply) btnAmbientProfileApply.disabled = profileCommand && normalized === 'sending';
+            if (btnAmbientProfileReset) btnAmbientProfileReset.disabled = profileCommand && normalized === 'sending';
+            const stateElement = profileCommand ? ambientProfileCommandState : ambientCommandState;
+            stateElement?.classList.remove('success', 'failed');
+            if (!stateElement) return;
+            if (normalized === 'sending') stateElement.textContent = profileCommand ? '프로필을 차량에 전송 중' : '차량에 전송 중';
+            else if (normalized === 'pending' || normalized === 'delivered') stateElement.textContent = '콤마 응답 대기 중';
             else if (normalized === 'acknowledged') {
-                ambientCommandState.textContent = '차량에 전달됨';
-                ambientCommandState.classList.add('success');
+                stateElement.textContent = profileCommand ? '프로필이 콤마에 전달됨' : '차량에 전달됨';
+                stateElement.classList.add('success');
             } else if (normalized === 'failed' || normalized === 'expired') {
-                ambientCommandState.textContent = normalized === 'expired' ? '설정 시간이 만료됨' : '전송 실패';
-                ambientCommandState.classList.add('failed');
+                stateElement.textContent = normalized === 'expired' ? '설정 시간이 만료됨' : '전송 실패';
+                stateElement.classList.add('failed');
             }
         }
 
@@ -7729,13 +7977,257 @@
         });
         ambientDuration?.addEventListener('change', saveAmbientEditor);
         btnAmbientApply?.addEventListener('click', () => {
+            ambientCommandTarget = 'manual';
             const state = saveAmbientEditor();
             window.Android?.applyAmbientOverride(JSON.stringify({ mode: 'manual', ...state }));
         });
         btnAmbientAuto?.addEventListener('click', () => {
+            ambientCommandTarget = 'manual';
             window.Android?.applyAmbientOverride(JSON.stringify({ mode: 'auto' }));
         });
         loadAmbientEditor();
+
+        const AMBIENT_PROFILE_DEFAULTS = {
+            enabled: true,
+            driving: {
+                zone1: { enabled: true, rgb: [255, 255, 255], brightness: 20, automaticBrightness: true },
+                zone2: { enabled: true, rgb: [255, 255, 255], brightness: 40 },
+            },
+            onroadDoor: { enabled: true, zone2: { enabled: true, rgb: [255, 255, 255], brightness: 100 } },
+            offroadDoor: {
+                enabled: true,
+                zone1: { enabled: true, rgb: [255, 255, 255], brightness: 20 },
+                zone2: { enabled: true, rgb: [255, 255, 255], brightness: 100 },
+            },
+            exitCourtesy: {
+                enabled: true,
+                zone2: { enabled: true, rgb: [255, 255, 255], brightness: 100 },
+                durationSeconds: 120,
+            },
+            overspeed: {
+                enabled: true,
+                zone1: { enabled: true, rgb: [255, 0, 0], brightness: 50 },
+                brightnessCap: 50,
+            },
+            reverseOff: { enabled: true },
+            dataWatchdog: { enabled: true, timeoutSeconds: 20 },
+            timing: { fadeMilliseconds: 1000, doorCloseDelaySeconds: 20, doorMaxOnMinutes: 20, transitionUpdatesPerSecond: 30 },
+        };
+
+        function cloneAmbientProfile(value) {
+            return JSON.parse(JSON.stringify(value));
+        }
+
+        function mergeAmbientProfile(base, saved) {
+            if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return cloneAmbientProfile(base);
+            const result = cloneAmbientProfile(base);
+            Object.keys(result).forEach(key => {
+                if (!(key in saved)) return;
+                if (result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])) {
+                    result[key] = mergeAmbientProfile(result[key], saved[key]);
+                } else {
+                    result[key] = saved[key];
+                }
+            });
+            return result;
+        }
+
+        function loadAmbientProfileState() {
+            try {
+                return mergeAmbientProfile(AMBIENT_PROFILE_DEFAULTS,
+                    JSON.parse(localStorage.getItem('wayonAmbientProfileV1') || 'null'));
+            } catch (_) {
+                return cloneAmbientProfile(AMBIENT_PROFILE_DEFAULTS);
+            }
+        }
+
+        let ambientProfile = loadAmbientProfileState();
+
+        function persistAmbientProfile() {
+            localStorage.setItem('wayonAmbientProfileV1', JSON.stringify(ambientProfile));
+        }
+
+        function profileZoneMarkup(section, zoneKey, title, allowAutomaticBrightness = false) {
+            const zone = ambientProfile[section][zoneKey];
+            const hex = ambientHex(zone.rgb || [255, 255, 255]);
+            return `<div class="ambient-profile-zone" data-profile-section="${section}" data-profile-zone="${zoneKey}">
+                <div class="ambient-profile-zone-head">
+                    <strong>${title}</strong>
+                    <div class="ambient-profile-color">
+                        <input type="color" class="profile-color" value="${hex}" aria-label="${title} 색상">
+                        <input type="text" class="profile-hex" value="${hex}" maxlength="7" aria-label="${title} RGB HEX">
+                    </div>
+                </div>
+                <div class="ambient-profile-brightness">
+                    <i data-lucide="sun"></i>
+                    <input type="range" class="profile-brightness" min="0" max="100" value="${clampAmbient(zone.brightness, 100)}" aria-label="${title} 밝기">
+                    <input type="number" class="ambient-number profile-brightness-number" min="0" max="100" value="${clampAmbient(zone.brightness, 100)}">
+                    ${allowAutomaticBrightness ? `<label class="ambient-profile-auto"><input type="checkbox" class="profile-auto" ${zone.automaticBrightness !== false ? 'checked' : ''}>자동</label>` : ''}
+                </div>
+            </div>`;
+        }
+
+        function profileFeatureToggle(feature) {
+            return `<label class="ambient-switch" data-feature-switch="${feature}">
+                <input type="checkbox" class="profile-feature-toggle" data-feature="${feature}" ${ambientProfile[feature].enabled !== false ? 'checked' : ''}>
+                <span></span>
+            </label>`;
+        }
+
+        function profileSectionMarkup({ key, title, description, zones = '', extra = '', open = false, toggle = true }) {
+            const disabled = toggle && ambientProfile[key].enabled === false ? ' ambient-profile-disabled' : '';
+            return `<details class="ambient-profile-section${disabled}" data-profile-feature="${key}" ${open ? 'open' : ''}>
+                <summary>
+                    <i data-lucide="chevron-right"></i>
+                    <div class="ambient-profile-copy"><strong>${title}</strong><span>${description}</span></div>
+                    ${toggle ? profileFeatureToggle(key) : ''}
+                </summary>
+                <div class="ambient-profile-body">${zones}${extra}</div>
+            </details>`;
+        }
+
+        function renderAmbientProfile() {
+            if (!ambientProfileList) return;
+            ambientProfileEnabled.checked = ambientProfile.enabled !== false;
+            ambientProfileList.innerHTML = [
+                profileSectionMarkup({
+                    key: 'driving', title: '평상시 주행', description: 'Zone 1은 화면 밝기 연동 또는 고정 밝기를 선택합니다.', toggle: false, open: true,
+                    zones: profileZoneMarkup('driving', 'zone1', 'Zone 1', true) + profileZoneMarkup('driving', 'zone2', 'Zone 2'),
+                }),
+                profileSectionMarkup({
+                    key: 'onroadDoor', title: '주행 상태에서 문 열림', description: 'Zone 1은 주행 설정을 유지하고 Zone 2만 웰컴 밝기로 전환합니다.',
+                    zones: profileZoneMarkup('onroadDoor', 'zone2', 'Zone 2'),
+                }),
+                profileSectionMarkup({
+                    key: 'offroadDoor', title: '주차 상태에서 문 열림', description: '차량 탑승 시 두 Zone에 적용할 웰컴 조명입니다.',
+                    zones: profileZoneMarkup('offroadDoor', 'zone1', 'Zone 1') + profileZoneMarkup('offroadDoor', 'zone2', 'Zone 2'),
+                }),
+                profileSectionMarkup({
+                    key: 'exitCourtesy', title: '하차 후 조명', description: 'Onroad에서 Offroad로 바뀔 때 Zone 2를 유지합니다.',
+                    zones: profileZoneMarkup('exitCourtesy', 'zone2', 'Zone 2'),
+                    extra: `<div class="ambient-profile-fields"><div class="ambient-profile-field"><label>유지 시간<br>(초)</label><input type="number" min="0" max="600" data-profile-number="exitCourtesy.durationSeconds" value="${ambientProfile.exitCourtesy.durationSeconds}"></div></div>`,
+                }),
+                profileSectionMarkup({
+                    key: 'overspeed', title: '과속 경고', description: 'Zone 1 경고색과 최대 밝기를 설정합니다. Zone 2는 평상시 상태를 유지합니다.',
+                    zones: profileZoneMarkup('overspeed', 'zone1', 'Zone 1'),
+                }),
+                `<details class="ambient-profile-section" data-profile-feature="safety">
+                    <summary><i data-lucide="chevron-right"></i><div class="ambient-profile-copy"><strong>안전 동작</strong><span>후진 및 데이터 연결 상태에 따른 보호 동작입니다.</span></div></summary>
+                    <div class="ambient-profile-body">
+                        <div class="ambient-profile-toggle-row"><span>후진 시 전체 소등</span>${profileFeatureToggle('reverseOff')}</div>
+                        <div class="ambient-profile-toggle-row"><span>콤마 데이터 단절 시 소등</span>${profileFeatureToggle('dataWatchdog')}</div>
+                        <div class="ambient-profile-fields"><div class="ambient-profile-field"><label>단절 판정<br>(초)</label><input type="number" min="5" max="120" data-profile-number="dataWatchdog.timeoutSeconds" value="${ambientProfile.dataWatchdog.timeoutSeconds}"></div></div>
+                    </div>
+                </details>`,
+                `<details class="ambient-profile-section" data-profile-feature="timing">
+                    <summary><i data-lucide="chevron-right"></i><div class="ambient-profile-copy"><strong>전환 및 타이머</strong><span>페이드 속도와 도어 조명 유지 시간을 조절합니다.</span></div></summary>
+                    <div class="ambient-profile-body"><div class="ambient-profile-fields">
+                        <div class="ambient-profile-field"><label>페이드<br>(ms)</label><input type="number" min="200" max="5000" step="100" data-profile-number="timing.fadeMilliseconds" value="${ambientProfile.timing.fadeMilliseconds}"></div>
+                        <div class="ambient-profile-field"><label>문 닫힘 유지<br>(초)</label><input type="number" min="0" max="120" data-profile-number="timing.doorCloseDelaySeconds" value="${ambientProfile.timing.doorCloseDelaySeconds}"></div>
+                        <div class="ambient-profile-field"><label>문 열림 최대<br>(분)</label><input type="number" min="1" max="60" data-profile-number="timing.doorMaxOnMinutes" value="${ambientProfile.timing.doorMaxOnMinutes}"></div>
+                        <div class="ambient-profile-field"><label>전환 빈도<br>(회/초)</label><input type="number" min="5" max="40" data-profile-number="timing.transitionUpdatesPerSecond" value="${ambientProfile.timing.transitionUpdatesPerSecond}"></div>
+                    </div></div>
+                </details>`,
+            ].join('');
+            bindAmbientProfileInputs();
+            window.lucide?.createIcons?.();
+        }
+
+        function profilePathValue(path, value) {
+            const parts = path.split('.');
+            let target = ambientProfile;
+            parts.slice(0, -1).forEach(part => { target = target[part]; });
+            target[parts[parts.length - 1]] = value;
+        }
+
+        function bindAmbientProfileInputs() {
+            ambientProfileList?.querySelectorAll('[data-feature-switch]').forEach(label => {
+                label.addEventListener('click', event => event.stopPropagation());
+            });
+            ambientProfileList?.querySelectorAll('.profile-feature-toggle').forEach(input => {
+                input.addEventListener('change', () => {
+                    ambientProfile[input.dataset.feature].enabled = input.checked;
+                    input.closest('.ambient-profile-section')?.classList.toggle('ambient-profile-disabled', !input.checked);
+                    persistAmbientProfile();
+                });
+            });
+            ambientProfileList?.querySelectorAll('[data-profile-number]').forEach(input => {
+                input.addEventListener('change', () => {
+                    const minimum = Number(input.min || 0);
+                    const maximum = Number(input.max || 100);
+                    const value = Math.max(minimum, Math.min(maximum, Number.parseInt(input.value, 10) || 0));
+                    input.value = value;
+                    profilePathValue(input.dataset.profileNumber, value);
+                    persistAmbientProfile();
+                });
+            });
+            ambientProfileList?.querySelectorAll('[data-profile-zone]').forEach(container => {
+                const section = container.dataset.profileSection;
+                const zoneKey = container.dataset.profileZone;
+                const zone = ambientProfile[section][zoneKey];
+                const color = container.querySelector('.profile-color');
+                const hex = container.querySelector('.profile-hex');
+                const brightness = container.querySelector('.profile-brightness');
+                const brightnessNumber = container.querySelector('.profile-brightness-number');
+                const automatic = container.querySelector('.profile-auto');
+                const updateRgb = value => {
+                    const rgb = parseAmbientHex(value);
+                    if (!rgb) return false;
+                    zone.rgb = rgb;
+                    color.value = ambientHex(rgb);
+                    hex.value = ambientHex(rgb);
+                    persistAmbientProfile();
+                    return true;
+                };
+                color?.addEventListener('input', () => updateRgb(color.value));
+                hex?.addEventListener('change', () => {
+                    if (!updateRgb(hex.value)) hex.value = ambientHex(zone.rgb);
+                });
+                brightness?.addEventListener('input', () => {
+                    const value = clampAmbient(brightness.value, 100);
+                    zone.brightness = value;
+                    brightnessNumber.value = value;
+                    if (section === 'overspeed') ambientProfile.overspeed.brightnessCap = value;
+                    persistAmbientProfile();
+                });
+                brightnessNumber?.addEventListener('change', () => {
+                    const value = clampAmbient(brightnessNumber.value, 100);
+                    zone.brightness = value;
+                    brightness.value = value;
+                    brightnessNumber.value = value;
+                    if (section === 'overspeed') ambientProfile.overspeed.brightnessCap = Math.max(1, value);
+                    persistAmbientProfile();
+                });
+                automatic?.addEventListener('change', () => {
+                    zone.automaticBrightness = automatic.checked;
+                    brightness.disabled = automatic.checked;
+                    brightnessNumber.disabled = automatic.checked;
+                    persistAmbientProfile();
+                });
+                if (automatic?.checked) {
+                    brightness.disabled = true;
+                    brightnessNumber.disabled = true;
+                }
+            });
+        }
+
+        ambientProfileEnabled?.addEventListener('change', () => {
+            ambientProfile.enabled = ambientProfileEnabled.checked;
+            persistAmbientProfile();
+        });
+        btnAmbientProfileReset?.addEventListener('click', () => {
+            ambientProfile = cloneAmbientProfile(AMBIENT_PROFILE_DEFAULTS);
+            persistAmbientProfile();
+            renderAmbientProfile();
+            ambientProfileCommandState.textContent = '기본값을 불러왔습니다. 저장하면 차량에 적용됩니다.';
+        });
+        btnAmbientProfileApply?.addEventListener('click', () => {
+            ambientCommandTarget = 'profile';
+            ambientProfile.overspeed.brightnessCap = Math.max(1, ambientProfile.overspeed.zone1.brightness);
+            persistAmbientProfile();
+            window.Android?.applyAmbientOverride(JSON.stringify({ mode: 'profile', profile: ambientProfile }));
+        });
+        renderAmbientProfile();
         const gmoneRemoteCountdown = {
             active: false,
             sourceSeconds: null,

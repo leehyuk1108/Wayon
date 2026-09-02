@@ -3,7 +3,7 @@
 This is the separately installable next-generation My Traverse UI project.
 
 - Package: `com.example.carcontroller.next`
-- Version: `2.0-preview.7` (`versionCode 16`)
+- Version: `2.0-preview.8` (`versionCode 17`)
 - Debug package: `com.example.carcontroller.source`
 - Debug label/version: `My Traverse Source` / `1.18-source`
 - Reference APK SHA-256:

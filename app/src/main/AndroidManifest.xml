@@ -52,6 +52,7 @@
         <!-- 메인 액티비티 -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:exported="true"
             android:launchMode="singleTask">
             <intent-filter>

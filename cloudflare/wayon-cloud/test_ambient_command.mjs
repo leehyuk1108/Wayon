@@ -25,7 +25,11 @@ const profile = normalizeAmbientCommand({
       zone1: { rgb: [255, 245, 230], brightness: 20, automaticBrightness: true },
       zone2: { rgb: [255, 255, 255], brightness: 40 },
     },
-    onroadDoor: { enabled: true, zone2: { rgb: [255, 255, 255], brightness: 100 } },
+    onroadDoor: {
+      enabled: true,
+      zone1: { rgb: [128, 32, 255], brightness: 35 },
+      zone2: { rgb: [255, 255, 255], brightness: 100 },
+    },
     offroadDoor: {
       enabled: true,
       zone1: { rgb: [255, 255, 255], brightness: 20 },
@@ -40,7 +44,19 @@ const profile = normalizeAmbientCommand({
 }, now);
 assert.equal(profile.mode, "profile");
 assert.equal(profile.profile.driving.zone1.automaticBrightness, true);
+assert.deepEqual(profile.profile.onroadDoor.zone1.rgb, [128, 32, 255]);
+assert.equal(profile.profile.onroadDoor.zone1.brightness, 35);
 assert.equal(profile.profile.timing.transitionUpdatesPerSecond, 30);
+
+const legacyProfile = normalizeAmbientCommand({
+  mode: "profile",
+  profile: {
+    ...profile.profile,
+    onroadDoor: { enabled: true, zone2: profile.profile.onroadDoor.zone2 },
+  },
+}, now);
+assert.deepEqual(legacyProfile.profile.onroadDoor.zone1.rgb, profile.profile.driving.zone1.rgb);
+assert.equal(legacyProfile.profile.onroadDoor.zone1.brightness, profile.profile.driving.zone1.brightness);
 assert.throws(() => normalizeAmbientCommand({
   mode: "profile",
   profile: { ...profile.profile, timing: { ...profile.profile.timing, transitionUpdatesPerSecond: 41 } },

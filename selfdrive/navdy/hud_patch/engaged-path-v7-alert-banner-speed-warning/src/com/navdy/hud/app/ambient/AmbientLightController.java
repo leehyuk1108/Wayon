@@ -756,7 +756,7 @@ public final class AmbientLightController {
   }
 
   private byte[] onroadDoorColorPacket() {
-    return profileColorPacket("driving", "zone1", "onroadDoor", "zone2");
+    return profileColorPacket("onroadDoor", "zone1", "onroadDoor", "zone2");
   }
 
   private byte[] offroadDoorColorPacket() {
@@ -1028,9 +1028,8 @@ public final class AmbientLightController {
       hardAmbientOff(mReverseActive ? "reverse" : "comma data timeout");
     } else if (mOnroad) {
       mExitCourtesyActive = false;
-      startAmbientFade(normalZone1Brightness(),
-          mDoorOpen && profileFeatureEnabled("onroadDoor", true)
-              ? onroadDoorZone2Brightness() : normalZone2Brightness(),
+      startAmbientFade(activeOnroadZone1Brightness(),
+          activeOnroadZone2Brightness(),
           profileFadeMs());
     } else if (mDoorOpen && !mOffroadDoorMaxExpired) {
       if (profileFeatureEnabled("offroadDoor", true) || mManualOverrideActive) {
@@ -1094,9 +1093,8 @@ public final class AmbientLightController {
       return;
     }
     stopBlink();
-    startAmbientFade(normalZone1Brightness(),
-        mDoorOpen && profileFeatureEnabled("onroadDoor", true)
-            ? onroadDoorZone2Brightness() : normalZone2Brightness(),
+    startAmbientFade(activeOnroadZone1Brightness(),
+        activeOnroadZone2Brightness(),
         profileFadeMs());
   }
 
@@ -1115,7 +1113,7 @@ public final class AmbientLightController {
     if (!mOnroad || mReverseActive || mVehicleDataTimedOut) {
       return;
     }
-    int brightness = normalZone1Brightness();
+    int brightness = activeOnroadZone1Brightness();
     if (mWarningAnimationStarted) {
       mLastAmbientBrightness = brightness;
       return;
@@ -1126,8 +1124,7 @@ public final class AmbientLightController {
     }
     mLastAmbientBrightness = brightness;
     Log.i(TAG, "ambient brightness=" + brightness + " screen=" + readScreenBrightness());
-    int zone2Brightness = mDoorOpen && profileFeatureEnabled("onroadDoor", true)
-        ? onroadDoorZone2Brightness() : normalZone2Brightness();
+    int zone2Brightness = activeOnroadZone2Brightness();
     if (force || brightness != mAmbientTargetZone1 || zone2Brightness != mAmbientTargetZone2) {
       startAmbientFade(brightness, zone2Brightness, AMBIENT_NORMAL_FADE_MS);
     }
@@ -1232,9 +1229,24 @@ public final class AmbientLightController {
     return profileBrightness("driving", "zone2", ZONE_2_AMBIENT_BRIGHTNESS);
   }
 
+  private int onroadDoorZone1Brightness() {
+    return mManualOverrideActive
+        ? normalZone1Brightness() : profileBrightness("onroadDoor", "zone1", normalZone1Brightness());
+  }
+
   private int onroadDoorZone2Brightness() {
     return mManualOverrideActive
         ? normalZone2Brightness() : profileBrightness("onroadDoor", "zone2", 100);
+  }
+
+  private int activeOnroadZone1Brightness() {
+    return mDoorOpen && profileFeatureEnabled("onroadDoor", true)
+        ? onroadDoorZone1Brightness() : normalZone1Brightness();
+  }
+
+  private int activeOnroadZone2Brightness() {
+    return mDoorOpen && profileFeatureEnabled("onroadDoor", true)
+        ? onroadDoorZone2Brightness() : normalZone2Brightness();
   }
 
   private int offroadDoorZone1Brightness() {

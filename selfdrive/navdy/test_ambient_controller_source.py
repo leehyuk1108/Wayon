@@ -67,7 +67,18 @@ def test_profile_payload_is_applied_once_and_drives_state_colors() -> None:
   assert 'json.optJSONObject("ambientOverride")' in payload
   assert "controller.setAmbientOverride(ambientOverride);" in payload
   assert "profile.toString().equals(mProfile.toString())" in profile
-  assert 'return profileColorPacket("driving", "zone1", "onroadDoor", "zone2")' in source
+  assert 'return profileColorPacket("onroadDoor", "zone1", "onroadDoor", "zone2")' in source
+
+
+def test_onroad_door_profile_controls_both_zones() -> None:
+  source = controller_source()
+  targets = source[source.index("private void applyVehicleStateTargets"):source.index("private void cancelOffroadTimers")]
+  sync = source[source.index("private void syncAmbientBrightness"):source.index("private void startAmbientFade")]
+  assert 'profileBrightness("onroadDoor", "zone1", normalZone1Brightness())' in source
+  assert "startAmbientFade(activeOnroadZone1Brightness()," in targets
+  assert "activeOnroadZone2Brightness()," in targets
+  assert "int brightness = activeOnroadZone1Brightness();" in sync
+  assert "int zone2Brightness = activeOnroadZone2Brightness();" in sync
 
 
 def test_daytime_overspeed_uses_two_red_brightness_levels() -> None:

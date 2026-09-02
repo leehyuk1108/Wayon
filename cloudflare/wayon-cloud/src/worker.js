@@ -2010,6 +2010,7 @@ function normalizeAmbientProfile(profile) {
     },
     onroadDoor: {
       enabled: onroadDoor.enabled !== false,
+      zone1: normalizeAmbientProfileZone(onroadDoor.zone1 || driving.zone1, "onroad_door_zone1"),
       zone2: normalizeAmbientProfileZone(onroadDoor.zone2, "onroad_door_zone2"),
     },
     offroadDoor: {

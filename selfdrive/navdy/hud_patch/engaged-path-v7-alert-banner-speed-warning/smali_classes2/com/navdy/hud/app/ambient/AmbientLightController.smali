@@ -1820,6 +1820,76 @@
     return-void
 .end method
 
+.method private activeOnroadZone1Brightness()I
+    .locals 2
+
+    .line 1243
+    iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
+
+    if-eqz v0, :cond_0
+
+    const-string v0, "onroadDoor"
+
+    const/4 v1, 0x1
+
+    invoke-direct {p0, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFeatureEnabled(Ljava/lang/String;Z)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_0
+
+    .line 1244
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onroadDoorZone1Brightness()I
+
+    move-result v0
+
+    goto :goto_0
+
+    :cond_0
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
+
+    move-result v0
+
+    .line 1243
+    :goto_0
+    return v0
+.end method
+
+.method private activeOnroadZone2Brightness()I
+    .locals 2
+
+    .line 1248
+    iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
+
+    if-eqz v0, :cond_0
+
+    const-string v0, "onroadDoor"
+
+    const/4 v1, 0x1
+
+    invoke-direct {p0, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFeatureEnabled(Ljava/lang/String;Z)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_0
+
+    .line 1249
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onroadDoorZone2Brightness()I
+
+    move-result v0
+
+    goto :goto_0
+
+    :cond_0
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone2Brightness()I
+
+    move-result v0
+
+    .line 1248
+    :goto_0
+    return v0
+.end method
+
 .method private activeStateColorPacket()[B
     .locals 2
 
@@ -1912,7 +1982,7 @@
 .method private applyAmbientFrame(IIIIIIIIZ)V
     .locals 2
 
-    .line 1169
+    .line 1166
     const/4 v0, 0x0
 
     const/16 v1, 0x64
@@ -1923,14 +1993,14 @@
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1:I
 
-    .line 1170
+    .line 1167
     invoke-static {p2, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result p1
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2:I
 
-    .line 1171
+    .line 1168
     const/16 p1, 0xff
 
     invoke-static {p3, v0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
@@ -1939,42 +2009,42 @@
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Red:I
 
-    .line 1172
+    .line 1169
     invoke-static {p4, v0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result p2
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Green:I
 
-    .line 1173
+    .line 1170
     invoke-static {p5, v0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result p2
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Blue:I
 
-    .line 1174
+    .line 1171
     invoke-static {p6, v0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result p2
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Red:I
 
-    .line 1175
+    .line 1172
     invoke-static {p7, v0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result p2
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Green:I
 
-    .line 1176
+    .line 1173
     invoke-static {p8, v0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result p1
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Blue:I
 
-    .line 1177
+    .line 1174
     if-eqz p9, :cond_0
 
     iget p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1:I
@@ -1985,23 +2055,23 @@
 
     if-nez p1, :cond_0
 
-    .line 1178
+    .line 1175
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientActive:Z
 
-    .line 1179
+    .line 1176
     sget-object p1, Lcom/navdy/hud/app/ambient/AmbientLightController;->PACKET_OFF:[B
 
     invoke-direct {p0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->sendPacket([B)V
 
     goto :goto_0
 
-    .line 1181
+    .line 1178
     :cond_0
     const/4 p1, 0x1
 
     iput-boolean p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientActive:Z
 
-    .line 1182
+    .line 1179
     iget p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Red:I
 
     iget p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Green:I
@@ -2014,7 +2084,7 @@
 
     iget p7, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Blue:I
 
-    .line 1183
+    .line 1180
     invoke-static/range {p2 .. p7}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildColorPacket(IIIIII)[B
 
     move-result-object p2
@@ -2023,15 +2093,15 @@
 
     iget p4, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2:I
 
-    .line 1186
+    .line 1183
     invoke-static {p1, p3, p4}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildBrightnessPacket(ZII)[B
 
     move-result-object p1
 
-    .line 1182
+    .line 1179
     invoke-direct {p0, p2, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->sendAmbientFrame([B[B)V
 
-    .line 1188
+    .line 1185
     :goto_0
     return-void
 .end method
@@ -2055,27 +2125,25 @@
 
     invoke-direct {p0, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->hardAmbientOff(Ljava/lang/String;)V
 
-    goto/16 :goto_4
+    goto/16 :goto_3
 
     .line 1027
     :cond_0
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReverseActive:Z
 
-    if-nez v0, :cond_7
+    if-nez v0, :cond_6
 
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mVehicleDataTimedOut:Z
 
     if-eqz v0, :cond_1
 
-    goto :goto_2
+    goto :goto_1
 
     .line 1029
     :cond_1
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOnroad:Z
 
-    const/4 v1, 0x1
-
-    if-eqz v0, :cond_3
+    if-eqz v0, :cond_2
 
     .line 1030
     const/4 v0, 0x0
@@ -2083,37 +2151,16 @@
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mExitCourtesyActive:Z
 
     .line 1031
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeOnroadZone1Brightness()I
 
     move-result v0
 
     .line 1032
-    iget-boolean v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
-
-    if-eqz v2, :cond_2
-
-    const-string v2, "onroadDoor"
-
-    invoke-direct {p0, v2, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFeatureEnabled(Ljava/lang/String;Z)Z
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeOnroadZone2Brightness()I
 
     move-result v1
-
-    if-eqz v1, :cond_2
 
     .line 1033
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onroadDoorZone2Brightness()I
-
-    move-result v1
-
-    goto :goto_0
-
-    :cond_2
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone2Brightness()I
-
-    move-result v1
-
-    .line 1034
-    :goto_0
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFadeMs()J
 
     move-result-wide v2
@@ -2121,49 +2168,51 @@
     .line 1031
     invoke-direct {p0, v0, v1, v2, v3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startAmbientFade(IIJ)V
 
-    goto :goto_4
+    goto :goto_3
 
-    .line 1035
-    :cond_3
+    .line 1034
+    :cond_2
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
 
-    if-eqz v0, :cond_6
+    if-eqz v0, :cond_5
 
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOffroadDoorMaxExpired:Z
 
-    if-nez v0, :cond_6
+    if-nez v0, :cond_5
 
-    .line 1036
+    .line 1035
     const-string v0, "offroadDoor"
+
+    const/4 v1, 0x1
 
     invoke-direct {p0, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFeatureEnabled(Ljava/lang/String;Z)Z
 
     move-result v0
 
-    if-nez v0, :cond_5
+    if-nez v0, :cond_4
 
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
-    if-eqz v0, :cond_4
+    if-eqz v0, :cond_3
 
-    goto :goto_1
+    goto :goto_0
 
-    .line 1040
-    :cond_4
+    .line 1039
+    :cond_3
     const-string v0, "offroad door profile disabled"
 
     invoke-direct {p0, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->hardAmbientOff(Ljava/lang/String;)V
 
-    goto :goto_4
+    goto :goto_3
 
-    .line 1037
-    :cond_5
-    :goto_1
+    .line 1036
+    :cond_4
+    :goto_0
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->offroadDoorZone1Brightness()I
 
     move-result v0
 
-    .line 1038
+    .line 1037
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->offroadDoorZone2Brightness()I
 
     move-result v1
@@ -2172,18 +2221,18 @@
 
     move-result-wide v2
 
-    .line 1037
+    .line 1036
     invoke-direct {p0, v0, v1, v2, v3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startAmbientFade(IIJ)V
 
-    goto :goto_4
+    goto :goto_3
 
-    .line 1042
-    :cond_6
+    .line 1041
+    :cond_5
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
-    if-eqz v0, :cond_9
+    if-eqz v0, :cond_8
 
-    .line 1043
+    .line 1042
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
 
     move-result v0
@@ -2198,117 +2247,94 @@
 
     invoke-direct {p0, v0, v1, v2, v3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startAmbientFade(IIJ)V
 
-    goto :goto_4
+    goto :goto_3
 
     .line 1028
-    :cond_7
-    :goto_2
+    :cond_6
+    :goto_1
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReverseActive:Z
 
-    if-eqz v0, :cond_8
+    if-eqz v0, :cond_7
 
     const-string v0, "reverse"
 
-    goto :goto_3
+    goto :goto_2
 
-    :cond_8
+    :cond_7
     const-string v0, "comma data timeout"
 
-    :goto_3
+    :goto_2
     invoke-direct {p0, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->hardAmbientOff(Ljava/lang/String;)V
 
-    .line 1045
-    :cond_9
-    :goto_4
+    .line 1044
+    :cond_8
+    :goto_3
     return-void
 .end method
 
 .method private beginRestoreFade()V
     .locals 4
 
-    .line 1091
+    .line 1090
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mBlinkRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1092
+    .line 1091
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOnroad:Z
 
-    if-eqz v0, :cond_2
+    if-eqz v0, :cond_1
 
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReverseActive:Z
 
-    if-nez v0, :cond_2
+    if-nez v0, :cond_1
 
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mVehicleDataTimedOut:Z
 
     if-eqz v0, :cond_0
 
-    goto :goto_1
+    goto :goto_0
 
-    .line 1096
+    .line 1095
     :cond_0
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->stopBlink()V
 
-    .line 1097
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
+    .line 1096
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeOnroadZone1Brightness()I
 
     move-result v0
 
+    .line 1097
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeOnroadZone2Brightness()I
+
+    move-result v1
+
     .line 1098
-    iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
-
-    if-eqz v1, :cond_1
-
-    const-string v1, "onroadDoor"
-
-    const/4 v2, 0x1
-
-    invoke-direct {p0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFeatureEnabled(Ljava/lang/String;Z)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_1
-
-    .line 1099
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onroadDoorZone2Brightness()I
-
-    move-result v1
-
-    goto :goto_0
-
-    :cond_1
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone2Brightness()I
-
-    move-result v1
-
-    .line 1100
-    :goto_0
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFadeMs()J
 
     move-result-wide v2
 
-    .line 1097
+    .line 1096
     invoke-direct {p0, v0, v1, v2, v3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startAmbientFade(IIJ)V
 
-    .line 1101
+    .line 1099
     return-void
 
-    .line 1093
-    :cond_2
-    :goto_1
+    .line 1092
+    :cond_1
+    :goto_0
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->stopBlink()V
 
-    .line 1094
+    .line 1093
     return-void
 .end method
 
 .method private static buildBrightnessPacket(ZI)[B
     .locals 1
 
-    .line 1609
+    .line 1621
     const/16 v0, 0x28
 
     invoke-static {p0, p1, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildBrightnessPacket(ZII)[B
@@ -2321,7 +2347,7 @@
 .method private static buildBrightnessPacket(ZII)[B
     .locals 2
 
-    .line 1613
+    .line 1625
     const/16 v0, 0x64
 
     const/4 v1, 0x0
@@ -2337,7 +2363,7 @@
     :cond_0
     const/4 p1, 0x0
 
-    .line 1614
+    .line 1626
     :goto_0
     if-eqz p0, :cond_1
 
@@ -2350,7 +2376,7 @@
     :cond_1
     const/4 p2, 0x0
 
-    .line 1615
+    .line 1627
     :goto_1
     if-eqz p0, :cond_2
 
@@ -2361,7 +2387,7 @@
     :cond_2
     const/4 p0, 0x0
 
-    .line 1616
+    .line 1628
     :goto_2
     const/16 v0, 0x8d
 
@@ -2379,10 +2405,10 @@
 .method private static buildColorPacket(IIIIII)[B
     .locals 10
 
-    .line 1621
+    .line 1633
     nop
 
-    .line 1623
+    .line 1635
     const/4 v0, 0x0
 
     const/16 v1, 0xff
@@ -2399,7 +2425,7 @@
 
     move-result v6
 
-    .line 1624
+    .line 1636
     invoke-static {p3, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result v7
@@ -2420,7 +2446,7 @@
 
     move-result-object p0
 
-    .line 1621
+    .line 1633
     const/16 p1, 0x8d
 
     invoke-static {p1, p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildPacket(I[I)[B
@@ -2433,65 +2459,65 @@
 .method private static buildPacket(I[I)[B
     .locals 8
 
-    .line 1638
+    .line 1650
     array-length v0, p1
 
-    .line 1639
+    .line 1651
     add-int/lit8 v1, v0, 0x4
 
     new-array v2, v1, [B
 
-    .line 1640
+    .line 1652
     const/16 v3, 0x2e
 
     const/4 v4, 0x0
 
     aput-byte v3, v2, v4
 
-    .line 1641
+    .line 1653
     int-to-byte v3, p0
 
     const/4 v5, 0x1
 
     aput-byte v3, v2, v5
 
-    .line 1642
+    .line 1654
     const/4 v3, 0x2
 
     int-to-byte v6, v0
 
     aput-byte v6, v2, v3
 
-    .line 1643
+    .line 1655
     add-int/2addr p0, v0
 
-    .line 1644
+    .line 1656
     nop
 
     :goto_0
     if-ge v4, v0, :cond_0
 
-    .line 1645
+    .line 1657
     aget v3, p1, v4
 
     and-int/lit16 v3, v3, 0xff
 
-    .line 1646
+    .line 1658
     add-int/lit8 v6, v4, 0x3
 
     int-to-byte v7, v3
 
     aput-byte v7, v2, v6
 
-    .line 1647
+    .line 1659
     add-int/2addr p0, v3
 
-    .line 1644
+    .line 1656
     add-int/lit8 v4, v4, 0x1
 
     goto :goto_0
 
-    .line 1649
+    .line 1661
     :cond_0
     sub-int/2addr v1, v5
 
@@ -2503,14 +2529,14 @@
 
     aput-byte p0, v2, v1
 
-    .line 1650
+    .line 1662
     return-object v2
 .end method
 
 .method private static bytesToHex([B)Ljava/lang/String;
     .locals 7
 
-    .line 1730
+    .line 1742
     new-instance v0, Ljava/lang/StringBuilder;
 
     array-length v1, p0
@@ -2519,7 +2545,7 @@
 
     invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(I)V
 
-    .line 1731
+    .line 1743
     array-length v1, p0
 
     const/4 v2, 0x0
@@ -2531,7 +2557,7 @@
 
     aget-byte v4, p0, v3
 
-    .line 1732
+    .line 1744
     sget-object v5, Ljava/util/Locale;->US:Ljava/util/Locale;
 
     and-int/lit16 v4, v4, 0xff
@@ -2554,12 +2580,12 @@
 
     invoke-virtual {v0, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    .line 1731
+    .line 1743
     add-int/lit8 v3, v3, 0x1
 
     goto :goto_0
 
-    .line 1734
+    .line 1746
     :cond_0
     invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
 
@@ -2571,35 +2597,35 @@
 .method private cancelOffroadTimers()V
     .locals 2
 
-    .line 1048
+    .line 1047
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOffroadDelayedOffRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1049
+    .line 1048
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOffroadDoorMaxRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1050
+    .line 1049
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOffroadDoorCloseRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1051
+    .line 1050
     return-void
 .end method
 
 .method private static clamp(III)I
     .locals 0
 
-    .line 1654
+    .line 1666
     invoke-static {p2, p0}, Ljava/lang/Math;->min(II)I
 
     move-result p0
@@ -2719,24 +2745,24 @@
 .method private closeGatt()V
     .locals 2
 
-    .line 1430
+    .line 1442
     const/4 v0, 0x0
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mConnecting:Z
 
-    .line 1431
+    .line 1443
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mConnectTimeoutRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1432
+    .line 1444
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
     if-eqz v0, :cond_0
 
-    .line 1434
+    .line 1446
     :try_start_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
@@ -2744,20 +2770,20 @@
     :try_end_0
     .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
 
-    .line 1436
+    .line 1448
     goto :goto_0
 
-    .line 1435
+    .line 1447
     :catch_0
     move-exception v0
 
-    .line 1437
+    .line 1449
     :goto_0
     const/4 v0, 0x0
 
     iput-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
-    .line 1439
+    .line 1451
     :cond_0
     return-void
 .end method
@@ -2765,7 +2791,7 @@
 .method private coalescePendingBrightnessPackets()V
     .locals 3
 
-    .line 1565
+    .line 1577
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v0}, Ljava/util/ArrayDeque;->isEmpty()Z
@@ -2774,16 +2800,16 @@
 
     if-eqz v0, :cond_0
 
-    .line 1566
+    .line 1578
     return-void
 
-    .line 1568
+    .line 1580
     :cond_0
     new-instance v0, Ljava/util/ArrayDeque;
 
     invoke-direct {v0}, Ljava/util/ArrayDeque;-><init>()V
 
-    .line 1569
+    .line 1581
     :goto_0
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -2793,7 +2819,7 @@
 
     if-nez v1, :cond_2
 
-    .line 1570
+    .line 1582
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v1}, Ljava/util/ArrayDeque;->poll()Ljava/lang/Object;
@@ -2802,34 +2828,34 @@
 
     check-cast v1, [B
 
-    .line 1571
+    .line 1583
     invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->isBrightnessPacket([B)Z
 
     move-result v2
 
     if-nez v2, :cond_1
 
-    .line 1572
+    .line 1584
     invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1574
+    .line 1586
     :cond_1
     goto :goto_0
 
-    .line 1575
+    .line 1587
     :cond_2
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v1, v0}, Ljava/util/ArrayDeque;->addAll(Ljava/util/Collection;)Z
 
-    .line 1576
+    .line 1588
     return-void
 .end method
 
 .method private static colorPacketValue([BII)I
     .locals 1
 
-    .line 1629
+    .line 1641
     if-eqz p0, :cond_0
 
     if-ltz p1, :cond_0
@@ -2840,7 +2866,7 @@
 
     if-ge p1, v0, :cond_0
 
-    .line 1630
+    .line 1642
     aget-byte p0, p0, p1
 
     and-int/lit16 p2, p0, 0xff
@@ -2850,7 +2876,7 @@
     :cond_0
     nop
 
-    .line 1629
+    .line 1641
     :goto_0
     return p2
 .end method
@@ -2900,30 +2926,30 @@
 .method private static configureWriteCharacteristic(Landroid/bluetooth/BluetoothGattCharacteristic;)V
     .locals 1
 
-    .line 1658
+    .line 1670
     invoke-virtual {p0}, Landroid/bluetooth/BluetoothGattCharacteristic;->getProperties()I
 
     move-result v0
 
-    .line 1659
+    .line 1671
     and-int/lit8 v0, v0, 0x4
 
     if-eqz v0, :cond_0
 
-    .line 1660
+    .line 1672
     const/4 v0, 0x1
 
     invoke-virtual {p0, v0}, Landroid/bluetooth/BluetoothGattCharacteristic;->setWriteType(I)V
 
     goto :goto_0
 
-    .line 1662
+    .line 1674
     :cond_0
     const/4 v0, 0x2
 
     invoke-virtual {p0, v0}, Landroid/bluetooth/BluetoothGattCharacteristic;->setWriteType(I)V
 
-    .line 1664
+    .line 1676
     :goto_0
     return-void
 .end method
@@ -2931,22 +2957,22 @@
 .method private connectBondedCandidate()Z
     .locals 4
 
-    .line 1388
+    .line 1400
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAdapter:Landroid/bluetooth/BluetoothAdapter;
 
     invoke-virtual {v0}, Landroid/bluetooth/BluetoothAdapter;->getBondedDevices()Ljava/util/Set;
 
     move-result-object v0
 
-    .line 1389
+    .line 1401
     const/4 v1, 0x0
 
     if-nez v0, :cond_0
 
-    .line 1390
+    .line 1402
     return v1
 
-    .line 1392
+    .line 1404
     :cond_0
     invoke-interface {v0}, Ljava/util/Set;->iterator()Ljava/util/Iterator;
 
@@ -2965,7 +2991,7 @@
 
     check-cast v2, Landroid/bluetooth/BluetoothDevice;
 
-    .line 1393
+    .line 1405
     if-eqz v2, :cond_1
 
     const/4 v3, 0x0
@@ -2976,19 +3002,19 @@
 
     if-eqz v3, :cond_1
 
-    .line 1394
+    .line 1406
     invoke-direct {p0, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->connectDevice(Landroid/bluetooth/BluetoothDevice;)V
 
-    .line 1395
+    .line 1407
     const/4 v0, 0x1
 
     return v0
 
-    .line 1397
+    .line 1409
     :cond_1
     goto :goto_0
 
-    .line 1398
+    .line 1410
     :cond_2
     return v1
 .end method
@@ -2996,30 +3022,30 @@
 .method private connectDevice(Landroid/bluetooth/BluetoothDevice;)V
     .locals 4
 
-    .line 1402
+    .line 1414
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->closeGatt()V
 
-    .line 1403
+    .line 1415
     const/4 v0, 0x1
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mConnecting:Z
 
-    .line 1404
+    .line 1416
     const/4 v0, 0x0
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReconnectScheduled:Z
 
-    .line 1405
+    .line 1417
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReconnectRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v1, v2}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1406
+    .line 1418
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mContext:Landroid/content/Context;
 
-    .line 1407
+    .line 1419
     invoke-virtual {v1}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;
 
     move-result-object v1
@@ -3028,12 +3054,12 @@
 
     move-result-object v2
 
-    .line 1406
+    .line 1418
     const-string v3, "navdy_ambient_device_address"
 
     invoke-static {v1, v3, v2}, Landroid/provider/Settings$System;->putString(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;)Z
 
-    .line 1408
+    .line 1420
     new-instance v1, Ljava/lang/StringBuilder;
 
     invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
@@ -3074,7 +3100,7 @@
 
     invoke-static {v2, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1409
+    .line 1421
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mContext:Landroid/content/Context;
 
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGattCallback:Landroid/bluetooth/BluetoothGattCallback;
@@ -3085,22 +3111,22 @@
 
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
-    .line 1410
+    .line 1422
     iget-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
     if-nez p1, :cond_0
 
-    .line 1411
+    .line 1423
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mConnecting:Z
 
-    .line 1412
+    .line 1424
     const-wide/16 v0, 0x1388
 
     invoke-direct {p0, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->scheduleReconnect(J)V
 
     goto :goto_0
 
-    .line 1414
+    .line 1426
     :cond_0
     iget-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
@@ -3108,7 +3134,7 @@
 
     invoke-virtual {p1, v0}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1415
+    .line 1427
     iget-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mConnectTimeoutRunnable:Ljava/lang/Runnable;
@@ -3117,7 +3143,7 @@
 
     invoke-virtual {p1, v0, v1, v2}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
-    .line 1417
+    .line 1429
     :goto_0
     return-void
 .end method
@@ -3125,7 +3151,7 @@
 .method private connectIfNeeded()V
     .locals 5
 
-    .line 1328
+    .line 1340
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mConnected:Z
 
     if-nez v0, :cond_7
@@ -3144,20 +3170,20 @@
 
     goto/16 :goto_2
 
-    .line 1331
+    .line 1343
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAdapter:Landroid/bluetooth/BluetoothAdapter;
 
     if-nez v0, :cond_1
 
-    .line 1332
+    .line 1344
     invoke-static {}, Landroid/bluetooth/BluetoothAdapter;->getDefaultAdapter()Landroid/bluetooth/BluetoothAdapter;
 
     move-result-object v0
 
     iput-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAdapter:Landroid/bluetooth/BluetoothAdapter;
 
-    .line 1334
+    .line 1346
     :cond_1
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAdapter:Landroid/bluetooth/BluetoothAdapter;
 
@@ -3177,7 +3203,7 @@
 
     goto :goto_1
 
-    .line 1339
+    .line 1351
     :cond_2
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mSkipRememberedOnce:Z
 
@@ -3189,32 +3215,32 @@
 
     if-eqz v0, :cond_3
 
-    .line 1340
+    .line 1352
     return-void
 
-    .line 1342
+    .line 1354
     :cond_3
     const/4 v0, 0x0
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mSkipRememberedOnce:Z
 
-    .line 1343
+    .line 1355
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->connectBondedCandidate()Z
 
     move-result v0
 
     if-eqz v0, :cond_4
 
-    .line 1344
+    .line 1356
     return-void
 
-    .line 1346
+    .line 1358
     :cond_4
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mSeenScanDevices:Ljava/util/Set;
 
     invoke-interface {v0}, Ljava/util/Set;->clear()V
 
-    .line 1347
+    .line 1359
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAdapter:Landroid/bluetooth/BluetoothAdapter;
 
     iget-object v4, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mScanCallback:Landroid/bluetooth/BluetoothAdapter$LeScanCallback;
@@ -3225,7 +3251,7 @@
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mScanning:Z
 
-    .line 1348
+    .line 1360
     new-instance v0, Ljava/lang/StringBuilder;
 
     invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
@@ -3248,19 +3274,19 @@
 
     invoke-static {v3, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1349
+    .line 1361
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mScanning:Z
 
     if-eqz v0, :cond_5
 
-    .line 1350
+    .line 1362
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mStopScanRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1351
+    .line 1363
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mStopScanRunnable:Ljava/lang/Runnable;
@@ -3271,28 +3297,28 @@
 
     goto :goto_0
 
-    .line 1353
+    .line 1365
     :cond_5
     invoke-direct {p0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->scheduleReconnect(J)V
 
-    .line 1355
+    .line 1367
     :goto_0
     return-void
 
-    .line 1335
+    .line 1347
     :cond_6
     :goto_1
     const-string v0, "bluetooth disabled"
 
     invoke-static {v3, v0}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1336
+    .line 1348
     invoke-direct {p0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->scheduleReconnect(J)V
 
-    .line 1337
+    .line 1349
     return-void
 
-    .line 1329
+    .line 1341
     :cond_7
     :goto_2
     return-void
@@ -3301,22 +3327,22 @@
 .method private connectRememberedCandidate()Z
     .locals 4
 
-    .line 1372
+    .line 1384
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mContext:Landroid/content/Context;
 
-    .line 1373
+    .line 1385
     invoke-virtual {v0}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;
 
     move-result-object v0
 
-    .line 1372
+    .line 1384
     const-string v1, "navdy_ambient_device_address"
 
     invoke-static {v0, v1}, Landroid/provider/Settings$System;->getString(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;
 
     move-result-object v0
 
-    .line 1374
+    .line 1386
     const/4 v1, 0x0
 
     if-eqz v0, :cond_1
@@ -3329,7 +3355,7 @@
 
     goto :goto_0
 
-    .line 1378
+    .line 1390
     :cond_0
     :try_start_0
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAdapter:Landroid/bluetooth/BluetoothAdapter;
@@ -3340,31 +3366,31 @@
 
     invoke-direct {p0, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->connectDevice(Landroid/bluetooth/BluetoothDevice;)V
 
-    .line 1379
+    .line 1391
     const/4 v0, 0x1
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mSkipRememberedOnce:Z
     :try_end_0
     .catch Ljava/lang/IllegalArgumentException; {:try_start_0 .. :try_end_0} :catch_0
 
-    .line 1380
+    .line 1392
     return v0
 
-    .line 1381
+    .line 1393
     :catch_0
     move-exception v0
 
-    .line 1382
+    .line 1394
     const-string v2, "NavdyAmbient"
 
     const-string v3, "bad remembered ambient address"
 
     invoke-static {v2, v3, v0}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
 
-    .line 1383
+    .line 1395
     return v1
 
-    .line 1375
+    .line 1387
     :cond_1
     :goto_0
     return v1
@@ -3390,7 +3416,7 @@
 .method private static enableNotifications(Landroid/bluetooth/BluetoothGatt;Landroid/bluetooth/BluetoothGattCharacteristic;)Z
     .locals 5
 
-    .line 1667
+    .line 1679
     const/4 v0, 0x0
 
     if-eqz p0, :cond_4
@@ -3399,7 +3425,7 @@
 
     goto :goto_2
 
-    .line 1670
+    .line 1682
     :cond_0
     const/4 v1, 0x1
 
@@ -3407,14 +3433,14 @@
 
     move-result v2
 
-    .line 1671
+    .line 1683
     sget-object v3, Lcom/navdy/hud/app/ambient/AmbientLightController;->CLIENT_CONFIG_UUID:Ljava/util/UUID;
 
     invoke-virtual {p1, v3}, Landroid/bluetooth/BluetoothGattCharacteristic;->getDescriptor(Ljava/util/UUID;)Landroid/bluetooth/BluetoothGattDescriptor;
 
     move-result-object p1
 
-    .line 1672
+    .line 1684
     const-string v3, "NavdyAmbient"
 
     if-eqz v2, :cond_2
@@ -3423,18 +3449,18 @@
 
     goto :goto_0
 
-    .line 1676
+    .line 1688
     :cond_1
     sget-object v0, Landroid/bluetooth/BluetoothGattDescriptor;->ENABLE_NOTIFICATION_VALUE:[B
 
     invoke-virtual {p1, v0}, Landroid/bluetooth/BluetoothGattDescriptor;->setValue([B)Z
 
-    .line 1677
+    .line 1689
     invoke-virtual {p0, p1}, Landroid/bluetooth/BluetoothGatt;->writeDescriptor(Landroid/bluetooth/BluetoothGattDescriptor;)Z
 
     move-result p0
 
-    .line 1678
+    .line 1690
     new-instance p1, Ljava/lang/StringBuilder;
 
     invoke-direct {p1}, Ljava/lang/StringBuilder;-><init>()V
@@ -3455,10 +3481,10 @@
 
     invoke-static {v3, p1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1679
+    .line 1691
     return p0
 
-    .line 1673
+    .line 1685
     :cond_2
     :goto_0
     new-instance p0, Ljava/lang/StringBuilder;
@@ -3499,10 +3525,10 @@
 
     invoke-static {v3, p0}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1674
+    .line 1686
     return v0
 
-    .line 1668
+    .line 1680
     :cond_4
     :goto_2
     return v0
@@ -3530,19 +3556,19 @@
 .method private exitCourtesyZone2Brightness()I
     .locals 3
 
-    .line 1253
+    .line 1265
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-eqz v0, :cond_0
 
-    .line 1254
+    .line 1266
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone2Brightness()I
 
     move-result v0
 
     goto :goto_0
 
-    .line 1255
+    .line 1267
     :cond_0
     const-string v0, "zone2"
 
@@ -3554,7 +3580,7 @@
 
     move-result v0
 
-    .line 1253
+    .line 1265
     :goto_0
     return v0
 .end method
@@ -3562,33 +3588,33 @@
 .method private static findNotifyCharacteristic(Landroid/bluetooth/BluetoothGatt;)Landroid/bluetooth/BluetoothGattCharacteristic;
     .locals 1
 
-    .line 1694
+    .line 1706
     sget-object v0, Lcom/navdy/hud/app/ambient/AmbientLightController;->SERVICE_UUID:Ljava/util/UUID;
 
     invoke-virtual {p0, v0}, Landroid/bluetooth/BluetoothGatt;->getService(Ljava/util/UUID;)Landroid/bluetooth/BluetoothGattService;
 
     move-result-object v0
 
-    .line 1695
+    .line 1707
     if-nez v0, :cond_0
 
-    .line 1696
+    .line 1708
     sget-object v0, Lcom/navdy/hud/app/ambient/AmbientLightController;->LEGACY_SERVICE_UUID:Ljava/util/UUID;
 
     invoke-virtual {p0, v0}, Landroid/bluetooth/BluetoothGatt;->getService(Ljava/util/UUID;)Landroid/bluetooth/BluetoothGattService;
 
     move-result-object v0
 
-    .line 1698
+    .line 1710
     :cond_0
     if-nez v0, :cond_1
 
-    .line 1699
+    .line 1711
     const/4 p0, 0x0
 
     return-object p0
 
-    .line 1701
+    .line 1713
     :cond_1
     sget-object p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->NOTIFY_UUID:Ljava/util/UUID;
 
@@ -3602,33 +3628,33 @@
 .method private static findWriteCharacteristic(Landroid/bluetooth/BluetoothGatt;)Landroid/bluetooth/BluetoothGattCharacteristic;
     .locals 1
 
-    .line 1683
+    .line 1695
     sget-object v0, Lcom/navdy/hud/app/ambient/AmbientLightController;->SERVICE_UUID:Ljava/util/UUID;
 
     invoke-virtual {p0, v0}, Landroid/bluetooth/BluetoothGatt;->getService(Ljava/util/UUID;)Landroid/bluetooth/BluetoothGattService;
 
     move-result-object v0
 
-    .line 1684
+    .line 1696
     if-nez v0, :cond_0
 
-    .line 1685
+    .line 1697
     sget-object v0, Lcom/navdy/hud/app/ambient/AmbientLightController;->LEGACY_SERVICE_UUID:Ljava/util/UUID;
 
     invoke-virtual {p0, v0}, Landroid/bluetooth/BluetoothGatt;->getService(Ljava/util/UUID;)Landroid/bluetooth/BluetoothGattService;
 
     move-result-object v0
 
-    .line 1687
+    .line 1699
     :cond_0
     if-nez v0, :cond_1
 
-    .line 1688
+    .line 1700
     const/4 p0, 0x0
 
     return-object p0
 
-    .line 1690
+    .line 1702
     :cond_1
     sget-object p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->WRITE_UUID:Ljava/util/UUID;
 
@@ -3642,7 +3668,7 @@
 .method private flushNext()V
     .locals 6
 
-    .line 1296
+    .line 1308
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriting:Z
 
     if-nez v0, :cond_3
@@ -3669,7 +3695,7 @@
 
     goto/16 :goto_0
 
-    .line 1299
+    .line 1311
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -3679,36 +3705,36 @@
 
     check-cast v0, [B
 
-    .line 1300
+    .line 1312
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
 
     invoke-virtual {v1, v0}, Landroid/bluetooth/BluetoothGattCharacteristic;->setValue([B)Z
 
-    .line 1301
+    .line 1313
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
 
     invoke-static {v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->configureWriteCharacteristic(Landroid/bluetooth/BluetoothGattCharacteristic;)V
 
-    .line 1302
+    .line 1314
     const/4 v1, 0x1
 
     iput-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriting:Z
 
-    .line 1303
+    .line 1315
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteTimeoutRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v2, v3}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1304
+    .line 1316
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWritePaceRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v2, v3}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1305
+    .line 1317
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteTimeoutRunnable:Ljava/lang/Runnable;
@@ -3717,7 +3743,7 @@
 
     invoke-virtual {v2, v3, v4, v5}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
-    .line 1306
+    .line 1318
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
 
     invoke-virtual {v2}, Landroid/bluetooth/BluetoothGattCharacteristic;->getWriteType()I
@@ -3726,14 +3752,14 @@
 
     if-ne v2, v1, :cond_1
 
-    .line 1307
+    .line 1319
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->usesPacedWrite([B)Z
 
     move-result v1
 
     if-eqz v1, :cond_1
 
-    .line 1308
+    .line 1320
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWritePaceRunnable:Ljava/lang/Runnable;
@@ -3742,7 +3768,7 @@
 
     invoke-virtual {v1, v2, v3, v4}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
-    .line 1310
+    .line 1322
     :cond_1
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
@@ -3752,7 +3778,7 @@
 
     move-result v1
 
-    .line 1311
+    .line 1323
     new-instance v2, Ljava/lang/StringBuilder;
 
     invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
@@ -3775,63 +3801,63 @@
 
     invoke-static {v3, v2}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1312
+    .line 1324
     if-nez v1, :cond_2
 
-    .line 1313
+    .line 1325
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteTimeoutRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v1, v2}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1314
+    .line 1326
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWritePaceRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v1, v2}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1315
+    .line 1327
     const/4 v1, 0x0
 
     iput-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriting:Z
 
-    .line 1316
+    .line 1328
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v2, v0}, Ljava/util/ArrayDeque;->offerFirst(Ljava/lang/Object;)Z
 
-    .line 1317
+    .line 1329
     iput-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mConnected:Z
 
-    .line 1318
+    .line 1330
     iput-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mNotifyReady:Z
 
-    .line 1319
+    .line 1331
     iput-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mStartQueued:Z
 
-    .line 1320
+    .line 1332
     const/4 v0, 0x0
 
     iput-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
 
-    .line 1321
+    .line 1333
     iput-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mNotifyCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
 
-    .line 1322
+    .line 1334
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->closeGatt()V
 
-    .line 1323
+    .line 1335
     const-wide/16 v0, 0x1388
 
     invoke-direct {p0, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->scheduleReconnect(J)V
 
-    .line 1325
+    .line 1337
     :cond_2
     return-void
 
-    .line 1297
+    .line 1309
     :cond_3
     :goto_0
     return-void
@@ -3882,7 +3908,7 @@
 .method private hardAmbientOff(Ljava/lang/String;)V
     .locals 2
 
-    .line 1202
+    .line 1199
     new-instance v0, Ljava/lang/StringBuilder;
 
     invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
@@ -3905,43 +3931,43 @@
 
     invoke-static {v0, p1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1203
+    .line 1200
     iget-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {p1, v0}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1204
+    .line 1201
     const/4 p1, 0x0
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1:I
 
-    .line 1205
+    .line 1202
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2:I
 
-    .line 1206
+    .line 1203
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone1:I
 
-    .line 1207
+    .line 1204
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone2:I
 
-    .line 1208
+    .line 1205
     iput-boolean p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientActive:Z
 
-    .line 1209
+    .line 1206
     sget-object p1, Lcom/navdy/hud/app/ambient/AmbientLightController;->PACKET_OFF:[B
 
     invoke-direct {p0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->sendPacket([B)V
 
-    .line 1210
+    .line 1207
     return-void
 .end method
 
 .method private static interpolate(IIF)I
     .locals 1
 
-    .line 1634
+    .line 1646
     int-to-float v0, p0
 
     sub-int/2addr p1, p0
@@ -3962,7 +3988,7 @@
 .method private static isBrightnessPacket([B)Z
     .locals 4
 
-    .line 1588
+    .line 1600
     const/4 v0, 0x0
 
     if-eqz p0, :cond_0
@@ -4010,7 +4036,7 @@
 .method private static isColorPacket([B)Z
     .locals 4
 
-    .line 1594
+    .line 1606
     const/4 v0, 0x0
 
     if-eqz p0, :cond_0
@@ -4058,7 +4084,7 @@
 .method private static isDriveGear(Ljava/lang/String;)Z
     .locals 1
 
-    .line 1768
+    .line 1780
     const-string v0, "p"
 
     invoke-virtual {v0, p0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
@@ -4075,7 +4101,7 @@
 
     if-nez v0, :cond_1
 
-    .line 1769
+    .line 1781
     const-string v0, "n"
 
     invoke-virtual {v0, p0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
@@ -4092,7 +4118,7 @@
 
     if-nez v0, :cond_1
 
-    .line 1770
+    .line 1782
     const-string v0, "d"
 
     invoke-virtual {v0, p0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
@@ -4120,7 +4146,7 @@
     :goto_0
     const/4 p0, 0x1
 
-    .line 1768
+    .line 1780
     :goto_1
     return p0
 .end method
@@ -4128,7 +4154,7 @@
 .method private static isReverse(Ljava/lang/String;)Z
     .locals 1
 
-    .line 1764
+    .line 1776
     const-string v0, "r"
 
     invoke-virtual {v0, p0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
@@ -4163,7 +4189,7 @@
 .method private static isStartPacket([B)Z
     .locals 4
 
-    .line 1579
+    .line 1591
     const/4 v0, 0x0
 
     if-eqz p0, :cond_0
@@ -4273,22 +4299,22 @@
 .method private logSeenScanDevice(Landroid/bluetooth/BluetoothDevice;I)V
     .locals 3
 
-    .line 1442
+    .line 1454
     invoke-static {p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->safeName(Landroid/bluetooth/BluetoothDevice;)Ljava/lang/String;
 
     move-result-object v0
 
-    .line 1443
+    .line 1455
     invoke-virtual {v0}, Ljava/lang/String;->length()I
 
     move-result v1
 
     if-nez v1, :cond_0
 
-    .line 1444
+    .line 1456
     return-void
 
-    .line 1446
+    .line 1458
     :cond_0
     new-instance v1, Ljava/lang/StringBuilder;
 
@@ -4316,7 +4342,7 @@
 
     move-result-object v1
 
-    .line 1447
+    .line 1459
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mSeenScanDevices:Ljava/util/Set;
 
     invoke-interface {v2, v1}, Ljava/util/Set;->add(Ljava/lang/Object;)Z
@@ -4325,7 +4351,7 @@
 
     if-eqz v1, :cond_1
 
-    .line 1448
+    .line 1460
     new-instance v1, Ljava/lang/StringBuilder;
 
     invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
@@ -4372,7 +4398,7 @@
 
     invoke-static {p2, p1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1450
+    .line 1462
     :cond_1
     return-void
 .end method
@@ -4380,7 +4406,7 @@
 .method private static matchesAmbientDevice(Landroid/bluetooth/BluetoothDevice;[B)Z
     .locals 2
 
-    .line 1705
+    .line 1717
     invoke-static {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->safeName(Landroid/bluetooth/BluetoothDevice;)Ljava/lang/String;
 
     move-result-object p0
@@ -4391,7 +4417,7 @@
 
     move-result-object p0
 
-    .line 1706
+    .line 1718
     const-string v0, "rz-slave"
 
     invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
@@ -4418,7 +4444,7 @@
 
     if-nez v0, :cond_3
 
-    .line 1707
+    .line 1719
     const-string v0, "slave"
 
     invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
@@ -4429,7 +4455,7 @@
 
     goto :goto_0
 
-    .line 1710
+    .line 1722
     :cond_0
     const-string v0, "lamp"
 
@@ -4455,7 +4481,7 @@
 
     if-nez v0, :cond_1
 
-    .line 1711
+    .line 1723
     const-string v0, "carled"
 
     invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
@@ -4472,7 +4498,7 @@
 
     if-nez p0, :cond_1
 
-    .line 1712
+    .line 1724
     invoke-static {p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->scanRecordContainsAmbientUuid([B)Z
 
     move-result p0
@@ -4482,11 +4508,11 @@
     :cond_1
     const/4 v1, 0x1
 
-    .line 1710
+    .line 1722
     :cond_2
     return v1
 
-    .line 1708
+    .line 1720
     :cond_3
     :goto_0
     return v1
@@ -4495,7 +4521,7 @@
 .method private needsConnection()Z
     .locals 1
 
-    .line 1453
+    .line 1465
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientActive:Z
 
     if-nez v0, :cond_1
@@ -4534,19 +4560,19 @@
 .method private normalColorPacket()[B
     .locals 7
 
-    .line 1259
+    .line 1271
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-nez v0, :cond_0
 
-    .line 1260
+    .line 1272
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->drivingColorPacket()[B
 
     move-result-object v0
 
     return-object v0
 
-    .line 1262
+    .line 1274
     :cond_0
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualZone1Red:I
 
@@ -4570,12 +4596,12 @@
 .method private normalZone1Brightness()I
     .locals 5
 
-    .line 1218
+    .line 1215
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-eqz v0, :cond_1
 
-    .line 1219
+    .line 1216
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualZone1Enabled:Z
 
     if-eqz v0, :cond_0
@@ -4590,7 +4616,7 @@
     :goto_0
     return v0
 
-    .line 1221
+    .line 1218
     :cond_1
     const-string v0, "driving"
 
@@ -4600,7 +4626,7 @@
 
     move-result-object v2
 
-    .line 1222
+    .line 1219
     const-string v3, "automaticBrightness"
 
     const/4 v4, 0x1
@@ -4611,7 +4637,7 @@
 
     if-nez v2, :cond_2
 
-    .line 1223
+    .line 1220
     const/16 v2, 0x14
 
     invoke-direct {p0, v0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileBrightness(Ljava/lang/String;Ljava/lang/String;I)I
@@ -4620,7 +4646,7 @@
 
     return v0
 
-    .line 1225
+    .line 1222
     :cond_2
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->readAmbientBrightness()I
 
@@ -4632,12 +4658,12 @@
 .method private normalZone2Brightness()I
     .locals 3
 
-    .line 1229
+    .line 1226
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-eqz v0, :cond_1
 
-    .line 1230
+    .line 1227
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualZone2Enabled:Z
 
     if-eqz v0, :cond_0
@@ -4652,7 +4678,7 @@
     :goto_0
     return v0
 
-    .line 1232
+    .line 1229
     :cond_1
     const-string v0, "zone2"
 
@@ -4670,7 +4696,7 @@
 .method private static normalizeGear(Ljava/lang/String;)Ljava/lang/String;
     .locals 1
 
-    .line 1747
+    .line 1759
     invoke-virtual {p0}, Ljava/lang/String;->trim()Ljava/lang/String;
 
     move-result-object p0
@@ -4681,7 +4707,7 @@
 
     move-result-object p0
 
-    .line 1748
+    .line 1760
     const-string v0, ".reverse"
 
     invoke-virtual {p0, v0}, Ljava/lang/String;->endsWith(Ljava/lang/String;)Z
@@ -4690,12 +4716,12 @@
 
     if-eqz v0, :cond_0
 
-    .line 1749
+    .line 1761
     const-string p0, "reverse"
 
     return-object p0
 
-    .line 1751
+    .line 1763
     :cond_0
     const-string v0, ".park"
 
@@ -4705,12 +4731,12 @@
 
     if-eqz v0, :cond_1
 
-    .line 1752
+    .line 1764
     const-string p0, "park"
 
     return-object p0
 
-    .line 1754
+    .line 1766
     :cond_1
     const-string v0, ".neutral"
 
@@ -4720,12 +4746,12 @@
 
     if-eqz v0, :cond_2
 
-    .line 1755
+    .line 1767
     const-string p0, "neutral"
 
     return-object p0
 
-    .line 1757
+    .line 1769
     :cond_2
     const-string v0, ".drive"
 
@@ -4735,12 +4761,12 @@
 
     if-eqz v0, :cond_3
 
-    .line 1758
+    .line 1770
     const-string p0, "drive"
 
     return-object p0
 
-    .line 1760
+    .line 1772
     :cond_3
     return-object p0
 .end method
@@ -4800,19 +4826,19 @@
 .method private offroadDoorZone1Brightness()I
     .locals 3
 
-    .line 1241
+    .line 1253
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-eqz v0, :cond_0
 
-    .line 1242
+    .line 1254
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
 
     move-result v0
 
     goto :goto_0
 
-    .line 1243
+    .line 1255
     :cond_0
     const-string v0, "zone1"
 
@@ -4824,7 +4850,7 @@
 
     move-result v0
 
-    .line 1241
+    .line 1253
     :goto_0
     return v0
 .end method
@@ -4832,19 +4858,19 @@
 .method private offroadDoorZone2Brightness()I
     .locals 3
 
-    .line 1247
+    .line 1259
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-eqz v0, :cond_0
 
-    .line 1248
+    .line 1260
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone2Brightness()I
 
     move-result v0
 
     goto :goto_0
 
-    .line 1249
+    .line 1261
     :cond_0
     const-string v0, "zone2"
 
@@ -4856,7 +4882,7 @@
 
     move-result v0
 
-    .line 1247
+    .line 1259
     :goto_0
     return v0
 .end method
@@ -5079,33 +5105,64 @@
 .end method
 
 .method private onroadDoorColorPacket()[B
-    .locals 4
+    .locals 3
 
     .line 759
-    const-string v0, "onroadDoor"
+    const-string v0, "zone1"
 
     const-string v1, "zone2"
 
-    const-string v2, "driving"
+    const-string v2, "onroadDoor"
 
-    const-string v3, "zone1"
-
-    invoke-direct {p0, v2, v3, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileColorPacket(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)[B
+    invoke-direct {p0, v2, v0, v2, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileColorPacket(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)[B
 
     move-result-object v0
 
     return-object v0
 .end method
 
-.method private onroadDoorZone2Brightness()I
+.method private onroadDoorZone1Brightness()I
     .locals 3
 
-    .line 1236
+    .line 1233
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-eqz v0, :cond_0
 
-    .line 1237
+    .line 1234
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
+
+    move-result v0
+
+    goto :goto_0
+
+    :cond_0
+    const-string v0, "zone1"
+
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
+
+    move-result v1
+
+    const-string v2, "onroadDoor"
+
+    invoke-direct {p0, v2, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileBrightness(Ljava/lang/String;Ljava/lang/String;I)I
+
+    move-result v0
+
+    .line 1233
+    :goto_0
+    return v0
+.end method
+
+.method private onroadDoorZone2Brightness()I
+    .locals 3
+
+    .line 1238
+    iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
+
+    if-eqz v0, :cond_0
+
+    .line 1239
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone2Brightness()I
 
     move-result v0
@@ -5123,7 +5180,7 @@
 
     move-result v0
 
-    .line 1236
+    .line 1238
     :goto_0
     return v0
 .end method
@@ -5527,15 +5584,15 @@
 .method private queueStartPacket()V
     .locals 2
 
-    .line 1457
+    .line 1469
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mStartQueued:Z
 
     if-eqz v0, :cond_0
 
-    .line 1458
+    .line 1470
     return-void
 
-    .line 1460
+    .line 1472
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -5547,19 +5604,19 @@
 
     invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->offerFirst(Ljava/lang/Object;)Z
 
-    .line 1461
+    .line 1473
     const/4 v0, 0x1
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mStartQueued:Z
 
-    .line 1462
+    .line 1474
     return-void
 .end method
 
 .method private readAckSettleIntervalMs()I
     .locals 3
 
-    .line 1559
+    .line 1571
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mContext:Landroid/content/Context;
 
     invoke-virtual {v0}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;
@@ -5588,22 +5645,22 @@
 .method private readAmbientBrightness()I
     .locals 5
 
-    .line 1513
+    .line 1525
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->readScreenBrightness()I
 
     move-result v0
 
-    .line 1514
+    .line 1526
     const/4 v1, 0x1
 
     const/16 v2, 0x10
 
     if-gt v0, v2, :cond_0
 
-    .line 1515
+    .line 1527
     return v1
 
-    .line 1517
+    .line 1529
     :cond_0
     const/16 v3, 0x29
 
@@ -5611,13 +5668,13 @@
 
     if-gt v0, v3, :cond_1
 
-    .line 1518
+    .line 1530
     nop
 
-    .line 1519
+    .line 1531
     nop
 
-    .line 1520
+    .line 1532
     sub-int/2addr v0, v2
 
     mul-int/lit8 v0, v0, 0x7
@@ -5628,14 +5685,14 @@
 
     add-int/2addr v0, v1
 
-    .line 1523
+    .line 1535
     invoke-static {v0, v1, v4}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result v0
 
     return v0
 
-    .line 1525
+    .line 1537
     :cond_1
     const/16 v1, 0x64
 
@@ -5643,13 +5700,13 @@
 
     if-gt v0, v1, :cond_2
 
-    .line 1526
+    .line 1538
     nop
 
-    .line 1527
+    .line 1539
     nop
 
-    .line 1528
+    .line 1540
     sub-int/2addr v0, v3
 
     mul-int/lit8 v0, v0, 0x2a
@@ -5660,14 +5717,14 @@
 
     add-int/2addr v0, v4
 
-    .line 1531
+    .line 1543
     invoke-static {v0, v4, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result v0
 
     return v0
 
-    .line 1533
+    .line 1545
     :cond_2
     return v2
 .end method
@@ -5675,7 +5732,7 @@
 .method private readAmbientFrameStepMs()I
     .locals 2
 
-    .line 1555
+    .line 1567
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->readAmbientTransitionStepMs()I
 
     move-result v0
@@ -5694,14 +5751,14 @@
 .method private readAmbientTransitionStepMs()I
     .locals 5
 
-    .line 1541
+    .line 1553
     const-string v0, "timing"
 
     invoke-direct {p0, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileSection(Ljava/lang/String;)Lorg/json/JSONObject;
 
     move-result-object v0
 
-    .line 1542
+    .line 1554
     const-string v1, "transitionUpdatesPerSecond"
 
     invoke-virtual {v0, v1}, Lorg/json/JSONObject;->has(Ljava/lang/String;)Z
@@ -5714,7 +5771,7 @@
 
     if-eqz v2, :cond_0
 
-    .line 1543
+    .line 1555
     const/16 v2, 0x1e
 
     invoke-virtual {v0, v1, v2}, Lorg/json/JSONObject;->optInt(Ljava/lang/String;I)I
@@ -5727,24 +5784,24 @@
 
     move-result v0
 
-    .line 1544
+    .line 1556
     const/16 v1, 0x3e8
 
     div-int/2addr v1, v0
 
-    .line 1545
+    .line 1557
     invoke-static {v3, v1}, Ljava/lang/Math;->min(II)I
 
     move-result v0
 
-    .line 1544
+    .line 1556
     invoke-static {v4, v0}, Ljava/lang/Math;->max(II)I
 
     move-result v0
 
     return v0
 
-    .line 1547
+    .line 1559
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mContext:Landroid/content/Context;
 
@@ -5768,7 +5825,7 @@
 .method private readScreenBrightness()I
     .locals 3
 
-    .line 1537
+    .line 1549
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mContext:Landroid/content/Context;
 
     invoke-virtual {v0}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;
@@ -5795,7 +5852,7 @@
 .method private rememberColorPacket([B)V
     .locals 2
 
-    .line 1600
+    .line 1612
     const/4 v0, 0x5
 
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Red:I
@@ -5806,7 +5863,7 @@
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Red:I
 
-    .line 1601
+    .line 1613
     const/4 v0, 0x6
 
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Green:I
@@ -5817,7 +5874,7 @@
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Green:I
 
-    .line 1602
+    .line 1614
     const/4 v0, 0x7
 
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Blue:I
@@ -5828,7 +5885,7 @@
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Blue:I
 
-    .line 1603
+    .line 1615
     const/16 v0, 0x8
 
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Red:I
@@ -5839,7 +5896,7 @@
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Red:I
 
-    .line 1604
+    .line 1616
     const/16 v0, 0x9
 
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Green:I
@@ -5850,7 +5907,7 @@
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Green:I
 
-    .line 1605
+    .line 1617
     const/16 v0, 0xa
 
     iget v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Blue:I
@@ -5861,14 +5918,14 @@
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Blue:I
 
-    .line 1606
+    .line 1618
     return-void
 .end method
 
 .method private removePendingAmbientStatePackets()V
     .locals 4
 
-    .line 1489
+    .line 1501
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v0}, Ljava/util/ArrayDeque;->isEmpty()Z
@@ -5877,16 +5934,16 @@
 
     if-eqz v0, :cond_0
 
-    .line 1490
+    .line 1502
     return-void
 
-    .line 1492
+    .line 1504
     :cond_0
     new-instance v0, Ljava/util/ArrayDeque;
 
     invoke-direct {v0}, Ljava/util/ArrayDeque;-><init>()V
 
-    .line 1493
+    .line 1505
     :goto_0
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -5896,7 +5953,7 @@
 
     if-nez v1, :cond_3
 
-    .line 1494
+    .line 1506
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v1}, Ljava/util/ArrayDeque;->poll()Ljava/lang/Object;
@@ -5905,7 +5962,7 @@
 
     check-cast v1, [B
 
-    .line 1495
+    .line 1507
     if-eqz v1, :cond_2
 
     array-length v2, v1
@@ -5922,21 +5979,21 @@
 
     if-eq v2, v3, :cond_2
 
-    .line 1496
+    .line 1508
     :cond_1
     invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1498
+    .line 1510
     :cond_2
     goto :goto_0
 
-    .line 1499
+    .line 1511
     :cond_3
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v1, v0}, Ljava/util/ArrayDeque;->addAll(Ljava/util/Collection;)Z
 
-    .line 1500
+    .line 1512
     return-void
 .end method
 
@@ -6148,15 +6205,15 @@
 .method private restoreActiveStateAfterConnect()V
     .locals 4
 
-    .line 1465
+    .line 1477
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->removePendingAmbientStatePackets()V
 
-    .line 1466
+    .line 1478
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReverseActive:Z
 
     if-eqz v0, :cond_0
 
-    .line 1467
+    .line 1479
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     sget-object v1, Lcom/navdy/hud/app/ambient/AmbientLightController;->PACKET_OFF:[B
@@ -6167,36 +6224,36 @@
 
     invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1468
+    .line 1480
     return-void
 
-    .line 1470
+    .line 1482
     :cond_0
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOverspeedActive:Z
 
     if-eqz v0, :cond_1
 
-    .line 1471
+    .line 1483
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startBlink()V
 
-    .line 1472
+    .line 1484
     return-void
 
-    .line 1474
+    .line 1486
     :cond_1
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientActive:Z
 
     if-eqz v0, :cond_3
 
-    .line 1475
+    .line 1487
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeStateColorPacket()[B
 
     move-result-object v0
 
-    .line 1476
+    .line 1488
     invoke-direct {p0, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->rememberColorPacket([B)V
 
-    .line 1477
+    .line 1489
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v0}, [B->clone()Ljava/lang/Object;
@@ -6205,17 +6262,17 @@
 
     invoke-virtual {v1, v0}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1478
+    .line 1490
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOnroad:Z
 
     if-eqz v0, :cond_2
 
-    .line 1479
+    .line 1491
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startBrightnessSync()V
 
     goto :goto_0
 
-    .line 1481
+    .line 1493
     :cond_2
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -6231,11 +6288,11 @@
 
     invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1483
+    .line 1495
     :goto_0
     return-void
 
-    .line 1485
+    .line 1497
     :cond_3
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -6247,14 +6304,14 @@
 
     invoke-virtual {v0, v1}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1486
+    .line 1498
     return-void
 .end method
 
 .method private static safeName(Landroid/bluetooth/BluetoothDevice;)Ljava/lang/String;
     .locals 1
 
-    .line 1739
+    .line 1751
     const-string v0, ""
 
     :try_start_0
@@ -6264,7 +6321,7 @@
     :try_end_0
     .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
 
-    .line 1740
+    .line 1752
     if-nez p0, :cond_0
 
     goto :goto_0
@@ -6275,26 +6332,26 @@
     :goto_0
     return-object v0
 
-    .line 1741
+    .line 1753
     :catch_0
     move-exception p0
 
-    .line 1742
+    .line 1754
     return-object v0
 .end method
 
 .method private static scanRecordContainsAmbientUuid([B)Z
     .locals 5
 
-    .line 1716
+    .line 1728
     const/4 v0, 0x0
 
     if-nez p0, :cond_0
 
-    .line 1717
+    .line 1729
     return v0
 
-    .line 1719
+    .line 1731
     :cond_0
     const/4 v1, 0x0
 
@@ -6305,17 +6362,17 @@
 
     if-ge v2, v3, :cond_4
 
-    .line 1720
+    .line 1732
     aget-byte v1, p0, v1
 
     and-int/lit16 v1, v1, 0xff
 
-    .line 1721
+    .line 1733
     aget-byte v3, p0, v2
 
     and-int/lit16 v3, v3, 0xff
 
-    .line 1722
+    .line 1734
     if-eqz v1, :cond_1
 
     const/16 v4, 0x30
@@ -6333,20 +6390,20 @@
 
     goto :goto_1
 
-    .line 1719
+    .line 1731
     :cond_2
     move v1, v2
 
     goto :goto_0
 
-    .line 1723
+    .line 1735
     :cond_3
     :goto_1
     const/4 p0, 0x1
 
     return p0
 
-    .line 1726
+    .line 1738
     :cond_4
     return v0
 .end method
@@ -6354,19 +6411,19 @@
 .method private scheduleReconnect()V
     .locals 2
 
-    .line 1358
+    .line 1370
     const-wide/16 v0, 0x1388
 
     invoke-direct {p0, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->scheduleReconnect(J)V
 
-    .line 1359
+    .line 1371
     return-void
 .end method
 
 .method private scheduleReconnect(J)V
     .locals 4
 
-    .line 1362
+    .line 1374
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->needsConnection()Z
 
     move-result v0
@@ -6387,7 +6444,7 @@
 
     goto :goto_0
 
-    .line 1365
+    .line 1377
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
@@ -6395,12 +6452,12 @@
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1366
+    .line 1378
     const/4 v0, 0x1
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReconnectScheduled:Z
 
-    .line 1367
+    .line 1379
     new-instance v0, Ljava/lang/StringBuilder;
 
     invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
@@ -6423,7 +6480,7 @@
 
     invoke-static {v1, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1368
+    .line 1380
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReconnectRunnable:Ljava/lang/Runnable;
@@ -6436,10 +6493,10 @@
 
     invoke-virtual {v0, v1, p1, p2}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
-    .line 1369
+    .line 1381
     return-void
 
-    .line 1363
+    .line 1375
     :cond_1
     :goto_0
     return-void
@@ -6448,10 +6505,10 @@
 .method private sendAmbientFrame([B[B)V
     .locals 2
 
-    .line 1191
+    .line 1188
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->removePendingAmbientStatePackets()V
 
-    .line 1192
+    .line 1189
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v0}, Ljava/util/ArrayDeque;->size()I
@@ -6462,12 +6519,12 @@
 
     if-le v0, v1, :cond_0
 
-    .line 1193
+    .line 1190
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v0}, Ljava/util/ArrayDeque;->poll()Ljava/lang/Object;
 
-    .line 1195
+    .line 1192
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -6477,7 +6534,7 @@
 
     invoke-virtual {v0, p1}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1196
+    .line 1193
     iget-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {p2}, [B->clone()Ljava/lang/Object;
@@ -6486,30 +6543,30 @@
 
     invoke-virtual {p1, p2}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1197
+    .line 1194
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->connectIfNeeded()V
 
-    .line 1198
+    .line 1195
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->flushNext()V
 
-    .line 1199
+    .line 1196
     return-void
 .end method
 
 .method private sendPacket([B)V
     .locals 2
 
-    .line 1281
+    .line 1293
     invoke-static {p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->isColorPacket([B)Z
 
     move-result v0
 
     if-eqz v0, :cond_0
 
-    .line 1282
+    .line 1294
     invoke-direct {p0, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->rememberColorPacket([B)V
 
-    .line 1284
+    .line 1296
     :cond_0
     invoke-static {p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->isBrightnessPacket([B)Z
 
@@ -6517,10 +6574,10 @@
 
     if-eqz v0, :cond_1
 
-    .line 1285
+    .line 1297
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->coalescePendingBrightnessPackets()V
 
-    .line 1287
+    .line 1299
     :cond_1
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -6532,12 +6589,12 @@
 
     if-le v0, v1, :cond_2
 
-    .line 1288
+    .line 1300
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
     invoke-virtual {v0}, Ljava/util/ArrayDeque;->poll()Ljava/lang/Object;
 
-    .line 1290
+    .line 1302
     :cond_2
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mQueue:Ljava/util/ArrayDeque;
 
@@ -6547,13 +6604,13 @@
 
     invoke-virtual {v0, p1}, Ljava/util/ArrayDeque;->offer(Ljava/lang/Object;)Z
 
-    .line 1291
+    .line 1303
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->connectIfNeeded()V
 
-    .line 1292
+    .line 1304
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->flushNext()V
 
-    .line 1293
+    .line 1305
     return-void
 .end method
 
@@ -7156,19 +7213,19 @@
 .method private setOverspeed(Z)V
     .locals 2
 
-    .line 1054
+    .line 1053
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOverspeedActive:Z
 
     if-ne v0, p1, :cond_0
 
-    .line 1055
+    .line 1054
     return-void
 
-    .line 1057
+    .line 1056
     :cond_0
     iput-boolean p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOverspeedActive:Z
 
-    .line 1058
+    .line 1057
     if-eqz p1, :cond_1
 
     invoke-static {}, Landroid/os/SystemClock;->elapsedRealtime()J
@@ -7183,7 +7240,7 @@
     :goto_0
     iput-wide v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOverspeedActivatedAtMs:J
 
-    .line 1059
+    .line 1058
     new-instance v0, Ljava/lang/StringBuilder;
 
     invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
@@ -7206,10 +7263,10 @@
 
     invoke-static {v1, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1060
+    .line 1059
     if-eqz p1, :cond_2
 
-    .line 1061
+    .line 1060
     iget-boolean p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOnroad:Z
 
     if-eqz p1, :cond_4
@@ -7222,27 +7279,27 @@
 
     if-nez p1, :cond_4
 
-    .line 1062
+    .line 1061
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startBlink()V
 
     goto :goto_1
 
-    .line 1065
+    .line 1064
     :cond_2
     iget-boolean p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReverseActive:Z
 
     if-nez p1, :cond_3
 
-    .line 1066
+    .line 1065
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->beginRestoreFade()V
 
     goto :goto_1
 
-    .line 1068
+    .line 1067
     :cond_3
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->stopBlink()V
 
-    .line 1071
+    .line 1070
     :cond_4
     :goto_1
     return-void
@@ -7717,57 +7774,57 @@
 .method private startAmbientFade(IIJ)V
     .locals 2
 
-    .line 1137
+    .line 1134
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1138
+    .line 1135
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->removePendingAmbientStatePackets()V
 
-    .line 1139
+    .line 1136
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone1:I
 
-    .line 1140
+    .line 1137
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone2:I
 
-    .line 1141
+    .line 1138
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Red:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone1Red:I
 
-    .line 1142
+    .line 1139
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Green:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone1Green:I
 
-    .line 1143
+    .line 1140
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone1Blue:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone1Blue:I
 
-    .line 1144
+    .line 1141
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Red:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone2Red:I
 
-    .line 1145
+    .line 1142
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Green:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone2Green:I
 
-    .line 1146
+    .line 1143
     iget v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mCurrentZone2Blue:I
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartZone2Blue:I
 
-    .line 1147
+    .line 1144
     const/4 v0, 0x0
 
     const/16 v1, 0x64
@@ -7778,19 +7835,19 @@
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone1:I
 
-    .line 1148
+    .line 1145
     invoke-static {p2, v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->clamp(III)I
 
     move-result p1
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone2:I
 
-    .line 1149
+    .line 1146
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeStateColorPacket()[B
 
     move-result-object p1
 
-    .line 1150
+    .line 1147
     const/4 p2, 0x5
 
     const/16 v0, 0xff
@@ -7801,7 +7858,7 @@
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone1Red:I
 
-    .line 1151
+    .line 1148
     const/4 p2, 0x6
 
     invoke-static {p1, p2, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->colorPacketValue([BII)I
@@ -7810,7 +7867,7 @@
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone1Green:I
 
-    .line 1152
+    .line 1149
     const/4 p2, 0x7
 
     invoke-static {p1, p2, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->colorPacketValue([BII)I
@@ -7819,7 +7876,7 @@
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone1Blue:I
 
-    .line 1153
+    .line 1150
     const/16 p2, 0x8
 
     invoke-static {p1, p2, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->colorPacketValue([BII)I
@@ -7828,7 +7885,7 @@
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone2Red:I
 
-    .line 1154
+    .line 1151
     const/16 p2, 0x9
 
     invoke-static {p1, p2, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->colorPacketValue([BII)I
@@ -7837,7 +7894,7 @@
 
     iput p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone2Green:I
 
-    .line 1155
+    .line 1152
     const/16 p2, 0xa
 
     invoke-static {p1, p2, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->colorPacketValue([BII)I
@@ -7846,14 +7903,14 @@
 
     iput p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone2Blue:I
 
-    .line 1156
+    .line 1153
     invoke-static {}, Landroid/os/SystemClock;->elapsedRealtime()J
 
     move-result-wide p1
 
     iput-wide p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeStartedAtMs:J
 
-    .line 1157
+    .line 1154
     const-wide/16 p1, 0x0
 
     invoke-static {p1, p2, p3, p4}, Ljava/lang/Math;->max(JJ)J
@@ -7862,7 +7919,7 @@
 
     iput-wide p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeDurationMs:J
 
-    .line 1158
+    .line 1155
     iget p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone1:I
 
     if-gtz p3, :cond_0
@@ -7871,13 +7928,13 @@
 
     if-lez p3, :cond_1
 
-    .line 1159
+    .line 1156
     :cond_0
     const/4 p3, 0x1
 
     iput-boolean p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientActive:Z
 
-    .line 1161
+    .line 1158
     :cond_1
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->readAmbientFrameStepMs()I
 
@@ -7891,7 +7948,7 @@
 
     move-result-wide p3
 
-    .line 1162
+    .line 1159
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientFadeRunnable:Ljava/lang/Runnable;
@@ -7902,14 +7959,14 @@
 
     invoke-virtual {v0, v1, p1, p2}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
-    .line 1163
+    .line 1160
     return-void
 .end method
 
 .method private startBlink()V
     .locals 2
 
-    .line 1074
+    .line 1073
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOnroad:Z
 
     if-eqz v0, :cond_1
@@ -7924,29 +7981,29 @@
 
     goto :goto_0
 
-    .line 1077
+    .line 1076
     :cond_0
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->stopBlink()V
 
-    .line 1078
+    .line 1077
     const/4 v0, 0x1
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientActive:Z
 
-    .line 1079
+    .line 1078
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startBrightnessSync()V
 
-    .line 1080
+    .line 1079
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mBlinkRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->post(Ljava/lang/Runnable;)Z
 
-    .line 1081
+    .line 1080
     return-void
 
-    .line 1075
+    .line 1074
     :cond_1
     :goto_0
     return-void
@@ -7955,19 +8012,19 @@
 .method private startBrightnessSync()V
     .locals 4
 
-    .line 1104
+    .line 1102
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mBrightnessSyncRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1105
+    .line 1103
     const/4 v0, 0x1
 
     invoke-direct {p0, v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->syncAmbientBrightness(Z)V
 
-    .line 1106
+    .line 1104
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mBrightnessSyncRunnable:Ljava/lang/Runnable;
@@ -7976,58 +8033,58 @@
 
     invoke-virtual {v0, v1, v2, v3}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
-    .line 1107
+    .line 1105
     return-void
 .end method
 
 .method private stopBlink()V
     .locals 2
 
-    .line 1084
+    .line 1083
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mBlinkRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1085
+    .line 1084
     const/4 v0, 0x0
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWarningAnimationStarted:Z
 
-    .line 1086
+    .line 1085
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mLowLightWarning:Z
 
-    .line 1087
+    .line 1086
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDayWarningDimmed:Z
 
-    .line 1088
+    .line 1087
     return-void
 .end method
 
 .method private stopBrightnessSync()V
     .locals 2
 
-    .line 1110
+    .line 1108
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mBrightnessSyncRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1111
+    .line 1109
     const/4 v0, -0x1
 
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mLastAmbientBrightness:I
 
-    .line 1112
+    .line 1110
     return-void
 .end method
 
 .method private stopScan()V
     .locals 2
 
-    .line 1420
+    .line 1432
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mScanning:Z
 
     if-eqz v0, :cond_1
@@ -8038,7 +8095,7 @@
 
     goto :goto_0
 
-    .line 1423
+    .line 1435
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAdapter:Landroid/bluetooth/BluetoothAdapter;
 
@@ -8046,29 +8103,29 @@
 
     invoke-virtual {v0, v1}, Landroid/bluetooth/BluetoothAdapter;->stopLeScan(Landroid/bluetooth/BluetoothAdapter$LeScanCallback;)V
 
-    .line 1424
+    .line 1436
     const/4 v0, 0x0
 
     iput-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mScanning:Z
 
-    .line 1425
+    .line 1437
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mHandler:Landroid/os/Handler;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mStopScanRunnable:Ljava/lang/Runnable;
 
     invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacks(Ljava/lang/Runnable;)V
 
-    .line 1426
+    .line 1438
     const-string v0, "NavdyAmbient"
 
     const-string v1, "ambient scan stop"
 
     invoke-static {v0, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1427
+    .line 1439
     return-void
 
-    .line 1421
+    .line 1433
     :cond_1
     :goto_0
     return-void
@@ -8077,39 +8134,39 @@
 .method private syncAmbientBrightness(Z)V
     .locals 4
 
-    .line 1115
+    .line 1113
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mOnroad:Z
 
-    if-eqz v0, :cond_6
+    if-eqz v0, :cond_5
 
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mReverseActive:Z
 
-    if-nez v0, :cond_6
+    if-nez v0, :cond_5
 
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mVehicleDataTimedOut:Z
 
     if-eqz v0, :cond_0
 
-    goto :goto_1
+    goto :goto_0
 
-    .line 1118
+    .line 1116
     :cond_0
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone1Brightness()I
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeOnroadZone1Brightness()I
 
     move-result v0
 
-    .line 1119
+    .line 1117
     iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWarningAnimationStarted:Z
 
     if-eqz v1, :cond_1
 
-    .line 1120
+    .line 1118
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mLastAmbientBrightness:I
 
-    .line 1121
+    .line 1119
     return-void
 
-    .line 1123
+    .line 1121
     :cond_1
     if-nez p1, :cond_2
 
@@ -8121,7 +8178,7 @@
 
     sub-int v1, v0, v1
 
-    .line 1124
+    .line 1122
     invoke-static {v1}, Ljava/lang/Math;->abs(I)I
 
     move-result v1
@@ -8130,14 +8187,14 @@
 
     if-ge v1, v2, :cond_2
 
-    .line 1125
+    .line 1123
     return-void
 
-    .line 1127
+    .line 1125
     :cond_2
     iput v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mLastAmbientBrightness:I
 
-    .line 1128
+    .line 1126
     new-instance v1, Ljava/lang/StringBuilder;
 
     invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
@@ -8174,58 +8231,35 @@
 
     invoke-static {v2, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1129
-    iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
-
-    if-eqz v1, :cond_3
-
-    const-string v1, "onroadDoor"
-
-    const/4 v2, 0x1
-
-    invoke-direct {p0, v1, v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->profileFeatureEnabled(Ljava/lang/String;Z)Z
+    .line 1127
+    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->activeOnroadZone2Brightness()I
 
     move-result v1
 
-    if-eqz v1, :cond_3
-
-    .line 1130
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onroadDoorZone2Brightness()I
-
-    move-result v1
-
-    goto :goto_0
-
-    :cond_3
-    invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->normalZone2Brightness()I
-
-    move-result v1
-
-    .line 1131
-    :goto_0
-    if-nez p1, :cond_4
+    .line 1128
+    if-nez p1, :cond_3
 
     iget p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone1:I
 
-    if-ne v0, p1, :cond_4
+    if-ne v0, p1, :cond_3
 
     iget p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mAmbientTargetZone2:I
 
-    if-eq v1, p1, :cond_5
+    if-eq v1, p1, :cond_4
 
-    .line 1132
-    :cond_4
+    .line 1129
+    :cond_3
     const-wide/16 v2, 0x3e8
 
     invoke-direct {p0, v0, v1, v2, v3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->startAmbientFade(IIJ)V
 
-    .line 1134
-    :cond_5
+    .line 1131
+    :cond_4
     return-void
 
-    .line 1116
-    :cond_6
-    :goto_1
+    .line 1114
+    :cond_5
+    :goto_0
     return-void
 .end method
 
@@ -8318,7 +8352,7 @@
 .method private static usesPacedWrite([B)Z
     .locals 1
 
-    .line 1584
+    .line 1596
     invoke-static {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->isStartPacket([B)Z
 
     move-result v0
@@ -8351,12 +8385,12 @@
 .method private warningColorPacket()[B
     .locals 11
 
-    .line 1268
+    .line 1280
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualOverrideActive:Z
 
     if-eqz v0, :cond_0
 
-    .line 1269
+    .line 1281
     iget v4, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualZone2Red:I
 
     iget v5, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mManualZone2Green:I
@@ -8375,7 +8409,7 @@
 
     return-object v0
 
-    .line 1272
+    .line 1284
     :cond_0
     const-string v0, "overspeed"
 
@@ -8385,7 +8419,7 @@
 
     move-result-object v0
 
-    .line 1273
+    .line 1285
     iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
 
     const-string v2, "zone2"
@@ -8402,7 +8436,7 @@
 
     if-eqz v4, :cond_1
 
-    .line 1274
+    .line 1286
     goto :goto_0
 
     :cond_1
@@ -8413,10 +8447,10 @@
 
     move-result-object v1
 
-    .line 1275
+    .line 1287
     nop
 
-    .line 1276
+    .line 1288
     const/4 v2, 0x0
 
     const/16 v4, 0xff
@@ -8435,7 +8469,7 @@
 
     move-result v0
 
-    .line 1277
+    .line 1289
     invoke-static {v1, v2, v4}, Lcom/navdy/hud/app/ambient/AmbientLightController;->colorValue(Lorg/json/JSONObject;II)I
 
     move-result v8
@@ -8448,7 +8482,7 @@
 
     move-result v10
 
-    .line 1275
+    .line 1287
     move v7, v0
 
     invoke-static/range {v5 .. v10}, Lcom/navdy/hud/app/ambient/AmbientLightController;->buildColorPacket(IIIIII)[B
@@ -8461,7 +8495,7 @@
 .method private warningZone2Brightness()I
     .locals 2
 
-    .line 1213
+    .line 1210
     iget-boolean v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mDoorOpen:Z
 
     if-eqz v0, :cond_0
@@ -8476,7 +8510,7 @@
 
     if-eqz v0, :cond_0
 
-    .line 1214
+    .line 1211
     invoke-direct {p0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->onroadDoorZone2Brightness()I
 
     move-result v0
@@ -8488,7 +8522,7 @@
 
     move-result v0
 
-    .line 1213
+    .line 1210
     :goto_0
     return v0
 .end method
@@ -8496,7 +8530,7 @@
 .method private writeAck()V
     .locals 3
 
-    .line 1503
+    .line 1515
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
     if-eqz v0, :cond_1
@@ -8507,7 +8541,7 @@
 
     goto :goto_0
 
-    .line 1506
+    .line 1518
     :cond_0
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
 
@@ -8515,12 +8549,12 @@
 
     invoke-virtual {v0, v1}, Landroid/bluetooth/BluetoothGattCharacteristic;->setValue([B)Z
 
-    .line 1507
+    .line 1519
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
 
     invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->configureWriteCharacteristic(Landroid/bluetooth/BluetoothGattCharacteristic;)V
 
-    .line 1508
+    .line 1520
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mGatt:Landroid/bluetooth/BluetoothGatt;
 
     iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController;->mWriteCharacteristic:Landroid/bluetooth/BluetoothGattCharacteristic;
@@ -8529,7 +8563,7 @@
 
     move-result v0
 
-    .line 1509
+    .line 1521
     new-instance v1, Ljava/lang/StringBuilder;
 
     invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
@@ -8552,10 +8586,10 @@
 
     invoke-static {v1, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 1510
+    .line 1522
     return-void
 
-    .line 1504
+    .line 1516
     :cond_1
     :goto_0
     return-void

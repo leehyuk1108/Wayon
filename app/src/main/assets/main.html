@@ -8019,7 +8019,7 @@
                 description = '후진 중에는 두 Zone을 모두 끕니다.';
             } else if (onroad && doorOpen && ambientProfile?.onroadDoor?.enabled !== false) {
                 summary = '문 열림 조명';
-                description = `Zone 1 주행 밝기 · Zone 2 ${ambientProfile.onroadDoor.zone2.brightness}%`;
+                description = `Zone 1 ${ambientProfile.onroadDoor.zone1.brightness}% · Zone 2 ${ambientProfile.onroadDoor.zone2.brightness}%`;
             } else if (!onroad && doorOpen && ambientProfile?.offroadDoor?.enabled !== false) {
                 summary = '탑승 조명';
                 description = `Zone 1 ${ambientProfile.offroadDoor.zone1.brightness}% · Zone 2 ${ambientProfile.offroadDoor.zone2.brightness}%`;
@@ -8216,7 +8216,11 @@
                 zone1: { enabled: true, rgb: [255, 255, 255], brightness: 20, automaticBrightness: true },
                 zone2: { enabled: true, rgb: [255, 255, 255], brightness: 40 },
             },
-            onroadDoor: { enabled: true, zone2: { enabled: true, rgb: [255, 255, 255], brightness: 100 } },
+            onroadDoor: {
+                enabled: true,
+                zone1: { enabled: true, rgb: [255, 255, 255], brightness: 20 },
+                zone2: { enabled: true, rgb: [255, 255, 255], brightness: 100 },
+            },
             offroadDoor: {
                 enabled: true,
                 zone1: { enabled: true, rgb: [255, 255, 255], brightness: 20 },
@@ -8329,8 +8333,8 @@
                     zones: profileZoneMarkup('driving', 'zone1', 'Zone 1', true) + profileZoneMarkup('driving', 'zone2', 'Zone 2'),
                 }),
                 profileSectionMarkup({
-                    key: 'onroadDoor', title: '주행 상태에서 문 열림', description: 'Zone 1은 주행 설정을 유지하고 Zone 2만 웰컴 밝기로 전환합니다.',
-                    zones: profileZoneMarkup('onroadDoor', 'zone2', 'Zone 2'),
+                    key: 'onroadDoor', title: '주행 상태에서 문 열림', description: '문이 열렸을 때 두 Zone에 적용할 색상과 밝기입니다.',
+                    zones: profileZoneMarkup('onroadDoor', 'zone1', 'Zone 1') + profileZoneMarkup('onroadDoor', 'zone2', 'Zone 2'),
                 }),
                 profileSectionMarkup({
                     key: 'offroadDoor', title: '주차 상태에서 문 열림', description: '차량 탑승 시 두 Zone에 적용할 웰컴 조명입니다.',

@@ -30,7 +30,8 @@ def test_ambient_fade_is_capped_at_thirty_hertz() -> None:
   source = controller_source()
   assert "DEFAULT_AMBIENT_TRANSITION_STEP_MS = 33" in source
   assert "MIN_AMBIENT_TRANSITION_STEP_MS = 33" in source
-  assert "mHandler.postDelayed(this, readAmbientTransitionStepMs());" in source
+  assert "mHandler.postDelayed(this, readAmbientFrameStepMs());" in source
+  assert "readAmbientTransitionStepMs() * 2" in source
 
 
 def test_onroad_payloads_do_not_restart_brightness_sync() -> None:
@@ -43,8 +44,30 @@ def test_onroad_payloads_do_not_restart_brightness_sync() -> None:
 
 def test_new_fade_discards_stale_ambient_commands() -> None:
   source = controller_source()
-  fade = source[source.index("private void startAmbientFade"):source.index("private void applyAmbientBrightness")]
+  fade = source[source.index("private void startAmbientFade"):source.index("private void applyAmbientFrame")]
   assert "removePendingAmbientStatePackets();" in fade
+
+
+def test_fade_interpolates_color_and_brightness_together() -> None:
+  source = controller_source()
+  runnable = source[source.index("private final Runnable mAmbientFadeRunnable"):source.index("private final Runnable mOffroadDelayedOffRunnable")]
+  fade = source[source.index("private void startAmbientFade"):source.index("private void hardAmbientOff")]
+  assert "mAmbientFadeStartZone1Red = mCurrentZone1Red" in fade
+  assert "mAmbientTargetZone2Blue = colorPacketValue(targetColor, 10, 255)" in fade
+  assert "interpolate(mAmbientFadeStartZone1Red, mAmbientTargetZone1Red, eased)" in runnable
+  assert "applyAmbientFrame(zone1, zone2" in runnable
+  assert "sendAmbientFrame(" in fade
+  assert "sendPacket(PACKET_RESTORE);" not in fade
+
+
+def test_profile_payload_is_applied_once_and_drives_state_colors() -> None:
+  source = controller_source()
+  profile = source[source.index("private void setAmbientProfile"):source.index("private JSONObject profileSection")]
+  payload = source[source.index("public static void onOpenpilotPayload(Context context, String payload)"):source.index("public static void onOpenpilotPayload(Context context, JSONObject payload)")]
+  assert 'json.optJSONObject("ambientOverride")' in payload
+  assert "controller.setAmbientOverride(ambientOverride);" in payload
+  assert "profile.toString().equals(mProfile.toString())" in profile
+  assert 'return profileColorPacket("driving", "zone1", "onroadDoor", "zone2")' in source
 
 
 def test_daytime_overspeed_uses_two_red_brightness_levels() -> None:
@@ -62,7 +85,7 @@ def test_night_overspeed_stays_fixed_red() -> None:
   source = controller_source()
   blink = source[source.index("private final Runnable mBlinkRunnable"):source.index("private final Runnable mWriteTimeoutRunnable")]
   low_light = blink[blink.index("brightness < MIN_FADE_AMBIENT_BRIGHTNESS"):blink.index("if (!mWarningAnimationStarted)")]
-  assert "sendPacket(PACKET_RED);" in low_light
+  assert "sendPacket(warningColorPacket());" in low_light
   assert "LOW_LIGHT_CHECK_INTERVAL_MS" in low_light
   assert "mDayWarningDimmed = !mDayWarningDimmed" not in low_light
 

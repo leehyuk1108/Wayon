@@ -18,10 +18,13 @@ import android.util.Log;
 
 import org.json.JSONObject;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.UUID;
 
 public final class AmbientLightController {
@@ -44,6 +47,7 @@ public final class AmbientLightController {
   private static final int BRIGHTNESS_UPDATE_DELTA = 2;
   private static final long AMBIENT_NORMAL_FADE_MS = 1000;
   private static final String AMBIENT_DEVICE_ADDRESS_SETTING = "navdy_ambient_device_address";
+  private static final String AMBIENT_PROFILE_SETTING = "navdy_ambient_profile_json";
   private static final String AMBIENT_TRANSITION_STEP_SETTING = "navdy_ambient_transition_step_ms";
   private static final String ACK_SETTLE_INTERVAL_SETTING = "navdy_ambient_ack_settle_ms";
   private static final int DEFAULT_AMBIENT_TRANSITION_STEP_MS = 33;
@@ -66,6 +70,7 @@ public final class AmbientLightController {
   private static final long OFFROAD_DOOR_CLOSE_DELAY_MS = 20000;
   private static final long OFFROAD_DOOR_MAX_ON_MS = 1200000;
   private static final long OFFROAD_TRANSITION_LIGHT_MS = 120000;
+  private static final long MANUAL_OVERRIDE_MAX_MS = 1200000;
   private static final int OFFROAD_DOOR_ZONE_1_BRIGHTNESS = 20;
   private static final int OFFROAD_DOOR_ZONE_2_BRIGHTNESS = 100;
   private static final long VEHICLE_DATA_TIMEOUT_MS = 3000;
@@ -255,7 +260,7 @@ public final class AmbientLightController {
       int brightness = readAmbientBrightness();
       if (brightness < MIN_FADE_AMBIENT_BRIGHTNESS) {
         if (!mWarningAnimationStarted || !mLowLightWarning) {
-          sendPacket(PACKET_RED);
+          sendPacket(warningColorPacket());
           sendPacket(buildBrightnessPacket(true, brightness, warningZone2Brightness()));
           mWarningAnimationStarted = true;
           mLowLightWarning = true;
@@ -270,7 +275,7 @@ public final class AmbientLightController {
       }
 
       if (!mWarningAnimationStarted) {
-        sendPacket(PACKET_RED);
+        sendPacket(warningColorPacket());
         mWarningAnimationStarted = true;
         mLowLightWarning = false;
         mDayWarningDimmed = false;
@@ -347,9 +352,18 @@ public final class AmbientLightController {
           + ((mAmbientTargetZone1 - mAmbientFadeStartZone1) * eased));
       int zone2 = Math.round(mAmbientFadeStartZone2
           + ((mAmbientTargetZone2 - mAmbientFadeStartZone2) * eased));
-      applyAmbientBrightness(zone1, zone2, progress >= 1.0f);
+      int zone1Red = interpolate(mAmbientFadeStartZone1Red, mAmbientTargetZone1Red, eased);
+      int zone1Green = interpolate(mAmbientFadeStartZone1Green, mAmbientTargetZone1Green, eased);
+      int zone1Blue = interpolate(mAmbientFadeStartZone1Blue, mAmbientTargetZone1Blue, eased);
+      int zone2Red = interpolate(mAmbientFadeStartZone2Red, mAmbientTargetZone2Red, eased);
+      int zone2Green = interpolate(mAmbientFadeStartZone2Green, mAmbientTargetZone2Green, eased);
+      int zone2Blue = interpolate(mAmbientFadeStartZone2Blue, mAmbientTargetZone2Blue, eased);
+      applyAmbientFrame(zone1, zone2,
+          zone1Red, zone1Green, zone1Blue,
+          zone2Red, zone2Green, zone2Blue,
+          progress >= 1.0f);
       if (progress < 1.0f) {
-        mHandler.postDelayed(this, readAmbientTransitionStepMs());
+        mHandler.postDelayed(this, readAmbientFrameStepMs());
       }
     }
   };
@@ -358,7 +372,12 @@ public final class AmbientLightController {
     @Override
     public void run() {
       if (!mOnroad && !mDoorOpen) {
-        startAmbientFade(0, 0, AMBIENT_NORMAL_FADE_MS);
+        mExitCourtesyActive = false;
+        if (mManualOverrideActive) {
+          startAmbientFade(normalZone1Brightness(), normalZone2Brightness(), profileFadeMs());
+        } else {
+          startAmbientFade(0, 0, profileFadeMs());
+        }
       }
     }
   };
@@ -368,6 +387,7 @@ public final class AmbientLightController {
     public void run() {
       if (!mOnroad && mDoorOpen) {
         mOffroadDoorMaxExpired = true;
+        mExitCourtesyActive = false;
         hardAmbientOff("offroad door max-on timeout");
       }
     }
@@ -377,7 +397,21 @@ public final class AmbientLightController {
     @Override
     public void run() {
       if (!mOnroad && !mDoorOpen && !mReverseActive) {
-        startAmbientFade(0, 0, AMBIENT_NORMAL_FADE_MS);
+        mExitCourtesyActive = false;
+        if (mManualOverrideActive) {
+          startAmbientFade(normalZone1Brightness(), normalZone2Brightness(), profileFadeMs());
+        } else {
+          startAmbientFade(0, 0, profileFadeMs());
+        }
+      }
+    }
+  };
+
+  private final Runnable mManualOverrideExpiryRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (mManualOverrideActive && System.currentTimeMillis() >= mManualOverrideExpiresAtMs) {
+        clearManualOverride("expired");
       }
     }
   };
@@ -443,13 +477,47 @@ public final class AmbientLightController {
   private int mAmbientFadeStartZone2;
   private int mAmbientTargetZone1;
   private int mAmbientTargetZone2;
+  private int mCurrentZone1Red = 255;
+  private int mCurrentZone1Green = 255;
+  private int mCurrentZone1Blue = 255;
+  private int mCurrentZone2Red = 255;
+  private int mCurrentZone2Green = 255;
+  private int mCurrentZone2Blue = 255;
+  private int mAmbientFadeStartZone1Red;
+  private int mAmbientFadeStartZone1Green;
+  private int mAmbientFadeStartZone1Blue;
+  private int mAmbientFadeStartZone2Red;
+  private int mAmbientFadeStartZone2Green;
+  private int mAmbientFadeStartZone2Blue;
+  private int mAmbientTargetZone1Red;
+  private int mAmbientTargetZone1Green;
+  private int mAmbientTargetZone1Blue;
+  private int mAmbientTargetZone2Red;
+  private int mAmbientTargetZone2Green;
+  private int mAmbientTargetZone2Blue;
   private long mAmbientFadeStartedAtMs;
   private long mAmbientFadeDurationMs;
   private int mLastAmbientBrightness = -1;
   private String mLastGear = "";
+  private boolean mExitCourtesyActive;
+  private boolean mManualOverrideActive;
+  private long mManualOverrideExpiresAtMs;
+  private String mManualOverrideId = "";
+  private boolean mManualZone1Enabled = true;
+  private boolean mManualZone2Enabled = true;
+  private int mManualZone1Red = 255;
+  private int mManualZone1Green = 255;
+  private int mManualZone1Blue = 255;
+  private int mManualZone2Red = 255;
+  private int mManualZone2Green = 255;
+  private int mManualZone2Blue = 255;
+  private int mManualZone1Brightness = 20;
+  private int mManualZone2Brightness = 40;
+  private JSONObject mProfile = new JSONObject();
 
   private AmbientLightController(Context context) {
     mContext = context.getApplicationContext();
+    loadAmbientProfile();
     PowerManager powerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
     mCpuWakeLock = powerManager == null ? null
         : powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NavdyAmbient:OffroadController");
@@ -478,6 +546,7 @@ public final class AmbientLightController {
       final boolean hasDoorOpen = json.has("doorOpen");
       final boolean onroad = json.optBoolean("onroad", true);
       final boolean doorOpen = json.optBoolean("doorOpen", false);
+      final JSONObject ambientOverride = json.optJSONObject("ambientOverride");
       final AmbientLightController controller = get(context);
       controller.mHandler.post(new Runnable() {
         @Override
@@ -492,6 +561,9 @@ public final class AmbientLightController {
             boolean nextDoorOpen = hasDoorOpen ? doorOpen
                 : (controller.mVehicleStateKnown ? controller.mDoorOpen : false);
             controller.setVehicleState(nextOnroad, nextDoorOpen);
+          }
+          if (ambientOverride != null) {
+            controller.setAmbientOverride(ambientOverride);
           }
         }
       });
@@ -556,8 +628,233 @@ public final class AmbientLightController {
     }
   }
 
+  private static long parseIsoTimeMs(String value) {
+    if (value == null || value.length() == 0) {
+      return 0L;
+    }
+    String[] formats = new String[] {
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    };
+    for (String format : formats) {
+      try {
+        SimpleDateFormat parser = new SimpleDateFormat(format, Locale.US);
+        parser.setTimeZone(TimeZone.getTimeZone("UTC"));
+        Date parsed = parser.parse(value);
+        if (parsed != null) {
+          return parsed.getTime();
+        }
+      } catch (Exception ignored) {
+      }
+    }
+    return 0L;
+  }
+
+  private static int zoneValue(JSONObject zone, String name, int fallback, int maximum) {
+    return zone == null ? fallback : clamp(zone.optInt(name, fallback), 0, maximum);
+  }
+
+  private static int colorValue(JSONObject zone, int index, int fallback) {
+    if (zone == null || zone.optJSONArray("rgb") == null) {
+      return fallback;
+    }
+    return clamp(zone.optJSONArray("rgb").optInt(index, fallback), 0, 255);
+  }
+
+  private void loadAmbientProfile() {
+    String stored = Settings.System.getString(
+        mContext.getContentResolver(), AMBIENT_PROFILE_SETTING);
+    if (stored == null || stored.length() == 0) {
+      mProfile = new JSONObject();
+      return;
+    }
+    try {
+      mProfile = new JSONObject(stored);
+    } catch (Exception e) {
+      Log.w(TAG, "bad stored ambient profile", e);
+      mProfile = new JSONObject();
+    }
+  }
+
+  private void setAmbientProfile(JSONObject profile) {
+    if (profile == null) {
+      return;
+    }
+    if (profile.toString().equals(mProfile.toString()) && !mManualOverrideActive) {
+      return;
+    }
+    mProfile = profile;
+    Settings.System.putString(
+        mContext.getContentResolver(), AMBIENT_PROFILE_SETTING, profile.toString());
+    mManualOverrideActive = false;
+    mManualOverrideExpiresAtMs = 0L;
+    mManualOverrideId = "";
+    mHandler.removeCallbacks(mManualOverrideExpiryRunnable);
+    Log.i(TAG, "ambient profile saved");
+    if (!profileMasterEnabled()) {
+      hardAmbientOff("profile disabled");
+    } else if (!mReverseActive) {
+      applyVehicleStateTargets();
+    }
+  }
+
+  private JSONObject profileSection(String name) {
+    JSONObject section = mProfile.optJSONObject(name);
+    return section == null ? new JSONObject() : section;
+  }
+
+  private JSONObject profileZone(String section, String zone) {
+    JSONObject value = profileSection(section).optJSONObject(zone);
+    return value == null ? new JSONObject() : value;
+  }
+
+  private boolean profileMasterEnabled() {
+    return mProfile.optBoolean("enabled", true);
+  }
+
+  private boolean profileFeatureEnabled(String name, boolean fallback) {
+    return profileSection(name).optBoolean("enabled", fallback);
+  }
+
+  private int profileBrightness(String section, String zone, int fallback) {
+    return zoneValue(profileZone(section, zone), "brightness", fallback, 100);
+  }
+
+  private long profileTimingMs(String name, long fallback, long minimum, long maximum) {
+    return Math.max(minimum,
+        Math.min(maximum, profileSection("timing").optLong(name, fallback)));
+  }
+
+  private long profileFadeMs() {
+    return profileTimingMs("fadeMilliseconds", AMBIENT_NORMAL_FADE_MS, 200L, 5000L);
+  }
+
+  private long profileDoorCloseDelayMs() {
+    return profileTimingMs("doorCloseDelaySeconds", 20L, 0L, 120L) * 1000L;
+  }
+
+  private long profileDoorMaxOnMs() {
+    return profileTimingMs("doorMaxOnMinutes", 20L, 1L, 60L) * 60000L;
+  }
+
+  private long profileExitCourtesyMs() {
+    return Math.max(0L,
+        Math.min(600L, profileSection("exitCourtesy").optLong("durationSeconds", 120L))) * 1000L;
+  }
+
+  private byte[] profileColorPacket(String zone1Section, String zone1Name,
+                                    String zone2Section, String zone2Name) {
+    JSONObject zone1 = profileZone(zone1Section, zone1Name);
+    JSONObject zone2 = profileZone(zone2Section, zone2Name);
+    return buildColorPacket(
+        colorValue(zone1, 0, 255), colorValue(zone1, 1, 255), colorValue(zone1, 2, 255),
+        colorValue(zone2, 0, 255), colorValue(zone2, 1, 255), colorValue(zone2, 2, 255));
+  }
+
+  private byte[] drivingColorPacket() {
+    return profileColorPacket("driving", "zone1", "driving", "zone2");
+  }
+
+  private byte[] onroadDoorColorPacket() {
+    return profileColorPacket("driving", "zone1", "onroadDoor", "zone2");
+  }
+
+  private byte[] offroadDoorColorPacket() {
+    return profileColorPacket("offroadDoor", "zone1", "offroadDoor", "zone2");
+  }
+
+  private byte[] exitCourtesyColorPacket() {
+    return profileColorPacket("driving", "zone1", "exitCourtesy", "zone2");
+  }
+
+  private byte[] activeStateColorPacket() {
+    if (mManualOverrideActive) {
+      return normalColorPacket();
+    }
+    if (mExitCourtesyActive) {
+      return exitCourtesyColorPacket();
+    }
+    if (!mOnroad && mDoorOpen && profileFeatureEnabled("offroadDoor", true)) {
+      return offroadDoorColorPacket();
+    }
+    if (mOnroad && mDoorOpen && profileFeatureEnabled("onroadDoor", true)) {
+      return onroadDoorColorPacket();
+    }
+    return drivingColorPacket();
+  }
+
+  private void setAmbientOverride(JSONObject command) {
+    String mode = command.optString("mode", "manual");
+    if ("profile".equalsIgnoreCase(mode)) {
+      setAmbientProfile(command.optJSONObject("profile"));
+      return;
+    }
+    if ("auto".equalsIgnoreCase(mode)) {
+      clearManualOverride("auto command");
+      return;
+    }
+    if (!"manual".equalsIgnoreCase(mode)) {
+      return;
+    }
+    String id = command.optString("id", "");
+    if (mManualOverrideActive && id.length() > 0 && id.equals(mManualOverrideId)) {
+      return;
+    }
+    long now = System.currentTimeMillis();
+    long expiresAt = parseIsoTimeMs(command.optString("expiresAt", ""));
+    if (expiresAt <= now) {
+      clearManualOverride("stale command");
+      return;
+    }
+    JSONObject zone1 = command.optJSONObject("zone1");
+    JSONObject zone2 = command.optJSONObject("zone2");
+    if (zone1 == null || zone2 == null) {
+      return;
+    }
+    mManualOverrideId = id;
+    mManualZone1Enabled = zone1.optBoolean("enabled", true);
+    mManualZone2Enabled = zone2.optBoolean("enabled", true);
+    mManualZone1Red = colorValue(zone1, 0, 255);
+    mManualZone1Green = colorValue(zone1, 1, 255);
+    mManualZone1Blue = colorValue(zone1, 2, 255);
+    mManualZone2Red = colorValue(zone2, 0, 255);
+    mManualZone2Green = colorValue(zone2, 1, 255);
+    mManualZone2Blue = colorValue(zone2, 2, 255);
+    mManualZone1Brightness = zoneValue(zone1, "brightness", 20, 100);
+    mManualZone2Brightness = zoneValue(zone2, "brightness", 40, 100);
+    mManualOverrideExpiresAtMs = Math.min(expiresAt, now + MANUAL_OVERRIDE_MAX_MS);
+    mManualOverrideActive = true;
+    cancelOffroadTimers();
+    mHandler.removeCallbacks(mManualOverrideExpiryRunnable);
+    mHandler.postDelayed(mManualOverrideExpiryRunnable,
+        Math.max(1L, mManualOverrideExpiresAtMs - now));
+    Log.i(TAG, "manual ambient override id=" + id);
+    if (!mReverseActive) {
+      applyVehicleStateTargets();
+    }
+  }
+
+  private void clearManualOverride(String reason) {
+    if (!mManualOverrideActive && mManualOverrideId.length() == 0) {
+      return;
+    }
+    Log.i(TAG, "manual ambient override cleared reason=" + reason);
+    mManualOverrideActive = false;
+    mManualOverrideExpiresAtMs = 0L;
+    mManualOverrideId = "";
+    mHandler.removeCallbacks(mManualOverrideExpiryRunnable);
+    if (mReverseActive) {
+      hardAmbientOff("reverse");
+    } else if (!mOnroad && !mDoorOpen) {
+      startAmbientFade(0, 0, profileFadeMs());
+    } else {
+      applyVehicleStateTargets();
+    }
+  }
+
   private void requestOverspeed(boolean overspeed) {
-    if (!mVehicleStateKnown || mVehicleDataTimedOut || !mOnroad || mReverseActive) {
+    if (!profileMasterEnabled() || !profileFeatureEnabled("overspeed", true)
+        || !mVehicleStateKnown || mVehicleDataTimedOut || !mOnroad || mReverseActive) {
       overspeed = false;
     }
     if (mRequestedOverspeed == overspeed) {
@@ -587,7 +884,10 @@ public final class AmbientLightController {
     Log.i(TAG, "gear=" + normalized);
 
     if (isReverse(normalized)) {
-      mReverseActive = true;
+      mReverseActive = profileFeatureEnabled("reverseOff", true);
+      if (!mReverseActive) {
+        return;
+      }
       stopBlink();
       stopBrightnessSync();
       hardAmbientOff("reverse");
@@ -607,7 +907,7 @@ public final class AmbientLightController {
         mOnroad = true;
         mAmbientActive = true;
         startBrightnessSync();
-        sendPacket(PACKET_RESTORE);
+        startAmbientFade(normalZone1Brightness(), normalZone2Brightness(), profileFadeMs());
       }
     }
   }
@@ -632,7 +932,14 @@ public final class AmbientLightController {
       Log.i(TAG, "vehicle state onroad=" + onroad + " doorOpen=" + doorOpen);
     }
 
+    if (!profileMasterEnabled() && !mManualOverrideActive) {
+      cancelOffroadTimers();
+      hardAmbientOff("profile disabled");
+      return;
+    }
+
     if (onroad) {
+      mExitCourtesyActive = false;
       cancelOffroadTimers();
       mOffroadDoorMaxExpired = false;
       if (onroadChanged) {
@@ -651,17 +958,28 @@ public final class AmbientLightController {
     }
 
     if (doorOpen) {
+      mExitCourtesyActive = false;
       mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
       mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
+      if (!profileFeatureEnabled("offroadDoor", true) && !mManualOverrideActive) {
+        hardAmbientOff("offroad door profile disabled");
+        return;
+      }
       if (doorChanged || onroadChanged) {
         mOffroadDoorMaxExpired = false;
         mHandler.removeCallbacks(mOffroadDoorMaxRunnable);
-        mHandler.postDelayed(mOffroadDoorMaxRunnable, OFFROAD_DOOR_MAX_ON_MS);
+        mHandler.postDelayed(mOffroadDoorMaxRunnable, profileDoorMaxOnMs());
       }
       if (!mOffroadDoorMaxExpired && (doorChanged || onroadChanged)) {
-        startAmbientFade(OFFROAD_DOOR_ZONE_1_BRIGHTNESS,
-            OFFROAD_DOOR_ZONE_2_BRIGHTNESS, AMBIENT_NORMAL_FADE_MS);
+        startAmbientFade(offroadDoorZone1Brightness(),
+            offroadDoorZone2Brightness(), profileFadeMs());
       }
+      return;
+    }
+
+    if (mManualOverrideActive) {
+      cancelOffroadTimers();
+      startAmbientFade(normalZone1Brightness(), normalZone2Brightness(), profileFadeMs());
       return;
     }
 
@@ -670,13 +988,18 @@ public final class AmbientLightController {
     if (doorChanged && !firstState) {
       mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
       mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
-      mHandler.postDelayed(mOffroadDoorCloseRunnable, OFFROAD_DOOR_CLOSE_DELAY_MS);
+      mHandler.postDelayed(mOffroadDoorCloseRunnable, profileDoorCloseDelayMs());
     } else if (!firstState && onroadChanged) {
       mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
       mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
-      startAmbientFade(mCurrentZone1, OFFROAD_DOOR_ZONE_2_BRIGHTNESS,
-          AMBIENT_NORMAL_FADE_MS);
-      mHandler.postDelayed(mOffroadDelayedOffRunnable, OFFROAD_TRANSITION_LIGHT_MS);
+      if (profileFeatureEnabled("exitCourtesy", true) && profileExitCourtesyMs() > 0L) {
+        mExitCourtesyActive = true;
+        startAmbientFade(mCurrentZone1, exitCourtesyZone2Brightness(), profileFadeMs());
+        mHandler.postDelayed(mOffroadDelayedOffRunnable, profileExitCourtesyMs());
+      } else {
+        mExitCourtesyActive = false;
+        startAmbientFade(0, 0, profileFadeMs());
+      }
     } else if (firstState) {
       mHandler.removeCallbacks(mOffroadDelayedOffRunnable);
       mHandler.removeCallbacks(mOffroadDoorCloseRunnable);
@@ -699,14 +1022,25 @@ public final class AmbientLightController {
   }
 
   private void applyVehicleStateTargets() {
-    if (mReverseActive || mVehicleDataTimedOut) {
+    if (!profileMasterEnabled() && !mManualOverrideActive) {
+      hardAmbientOff("profile disabled");
+    } else if (mReverseActive || mVehicleDataTimedOut) {
       hardAmbientOff(mReverseActive ? "reverse" : "comma data timeout");
     } else if (mOnroad) {
-      startAmbientFade(readAmbientBrightness(), mDoorOpen ? 100 : ZONE_2_AMBIENT_BRIGHTNESS,
-          AMBIENT_NORMAL_FADE_MS);
+      mExitCourtesyActive = false;
+      startAmbientFade(normalZone1Brightness(),
+          mDoorOpen && profileFeatureEnabled("onroadDoor", true)
+              ? onroadDoorZone2Brightness() : normalZone2Brightness(),
+          profileFadeMs());
     } else if (mDoorOpen && !mOffroadDoorMaxExpired) {
-      startAmbientFade(OFFROAD_DOOR_ZONE_1_BRIGHTNESS,
-          OFFROAD_DOOR_ZONE_2_BRIGHTNESS, AMBIENT_NORMAL_FADE_MS);
+      if (profileFeatureEnabled("offroadDoor", true) || mManualOverrideActive) {
+        startAmbientFade(offroadDoorZone1Brightness(),
+            offroadDoorZone2Brightness(), profileFadeMs());
+      } else {
+        hardAmbientOff("offroad door profile disabled");
+      }
+    } else if (mManualOverrideActive) {
+      startAmbientFade(normalZone1Brightness(), normalZone2Brightness(), profileFadeMs());
     }
   }
 
@@ -760,8 +1094,10 @@ public final class AmbientLightController {
       return;
     }
     stopBlink();
-    sendPacket(PACKET_RESTORE);
-    syncAmbientBrightness(true);
+    startAmbientFade(normalZone1Brightness(),
+        mDoorOpen && profileFeatureEnabled("onroadDoor", true)
+            ? onroadDoorZone2Brightness() : normalZone2Brightness(),
+        profileFadeMs());
   }
 
   private void startBrightnessSync() {
@@ -779,7 +1115,7 @@ public final class AmbientLightController {
     if (!mOnroad || mReverseActive || mVehicleDataTimedOut) {
       return;
     }
-    int brightness = readAmbientBrightness();
+    int brightness = normalZone1Brightness();
     if (mWarningAnimationStarted) {
       mLastAmbientBrightness = brightness;
       return;
@@ -790,7 +1126,8 @@ public final class AmbientLightController {
     }
     mLastAmbientBrightness = brightness;
     Log.i(TAG, "ambient brightness=" + brightness + " screen=" + readScreenBrightness());
-    int zone2Brightness = mDoorOpen ? 100 : ZONE_2_AMBIENT_BRIGHTNESS;
+    int zone2Brightness = mDoorOpen && profileFeatureEnabled("onroadDoor", true)
+        ? onroadDoorZone2Brightness() : normalZone2Brightness();
     if (force || brightness != mAmbientTargetZone1 || zone2Brightness != mAmbientTargetZone2) {
       startAmbientFade(brightness, zone2Brightness, AMBIENT_NORMAL_FADE_MS);
     }
@@ -801,30 +1138,64 @@ public final class AmbientLightController {
     removePendingAmbientStatePackets();
     mAmbientFadeStartZone1 = mCurrentZone1;
     mAmbientFadeStartZone2 = mCurrentZone2;
+    mAmbientFadeStartZone1Red = mCurrentZone1Red;
+    mAmbientFadeStartZone1Green = mCurrentZone1Green;
+    mAmbientFadeStartZone1Blue = mCurrentZone1Blue;
+    mAmbientFadeStartZone2Red = mCurrentZone2Red;
+    mAmbientFadeStartZone2Green = mCurrentZone2Green;
+    mAmbientFadeStartZone2Blue = mCurrentZone2Blue;
     mAmbientTargetZone1 = clamp(zone1, 0, 100);
     mAmbientTargetZone2 = clamp(zone2, 0, 100);
+    byte[] targetColor = activeStateColorPacket();
+    mAmbientTargetZone1Red = colorPacketValue(targetColor, 5, 255);
+    mAmbientTargetZone1Green = colorPacketValue(targetColor, 6, 255);
+    mAmbientTargetZone1Blue = colorPacketValue(targetColor, 7, 255);
+    mAmbientTargetZone2Red = colorPacketValue(targetColor, 8, 255);
+    mAmbientTargetZone2Green = colorPacketValue(targetColor, 9, 255);
+    mAmbientTargetZone2Blue = colorPacketValue(targetColor, 10, 255);
     mAmbientFadeStartedAtMs = SystemClock.elapsedRealtime();
     mAmbientFadeDurationMs = Math.max(0L, durationMs);
     if (mAmbientTargetZone1 > 0 || mAmbientTargetZone2 > 0) {
       mAmbientActive = true;
-      if (!mOverspeedActive) {
-        sendPacket(PACKET_RESTORE);
-      }
     }
-    long firstStepMs = Math.min(readAmbientTransitionStepMs(), mAmbientFadeDurationMs);
+    long firstStepMs = Math.min(readAmbientFrameStepMs(), mAmbientFadeDurationMs);
     mHandler.postDelayed(mAmbientFadeRunnable, Math.max(0L, firstStepMs));
   }
 
-  private void applyAmbientBrightness(int zone1, int zone2, boolean finished) {
+  private void applyAmbientFrame(int zone1, int zone2,
+                                 int zone1Red, int zone1Green, int zone1Blue,
+                                 int zone2Red, int zone2Green, int zone2Blue,
+                                 boolean finished) {
     mCurrentZone1 = clamp(zone1, 0, 100);
     mCurrentZone2 = clamp(zone2, 0, 100);
+    mCurrentZone1Red = clamp(zone1Red, 0, 255);
+    mCurrentZone1Green = clamp(zone1Green, 0, 255);
+    mCurrentZone1Blue = clamp(zone1Blue, 0, 255);
+    mCurrentZone2Red = clamp(zone2Red, 0, 255);
+    mCurrentZone2Green = clamp(zone2Green, 0, 255);
+    mCurrentZone2Blue = clamp(zone2Blue, 0, 255);
     if (finished && mCurrentZone1 == 0 && mCurrentZone2 == 0) {
       mAmbientActive = false;
       sendPacket(PACKET_OFF);
     } else {
       mAmbientActive = true;
-      sendPacket(buildBrightnessPacket(true, mCurrentZone1, mCurrentZone2));
+      sendAmbientFrame(
+          buildColorPacket(
+              mCurrentZone1Red, mCurrentZone1Green, mCurrentZone1Blue,
+              mCurrentZone2Red, mCurrentZone2Green, mCurrentZone2Blue),
+          buildBrightnessPacket(true, mCurrentZone1, mCurrentZone2));
     }
+  }
+
+  private void sendAmbientFrame(byte[] colorPacket, byte[] brightnessPacket) {
+    removePendingAmbientStatePackets();
+    if (mQueue.size() > 18) {
+      mQueue.poll();
+    }
+    mQueue.offer(colorPacket.clone());
+    mQueue.offer(brightnessPacket.clone());
+    connectIfNeeded();
+    flushNext();
   }
 
   private void hardAmbientOff(String reason) {
@@ -839,10 +1210,77 @@ public final class AmbientLightController {
   }
 
   private int warningZone2Brightness() {
-    return mDoorOpen ? 100 : ZONE_2_AMBIENT_BRIGHTNESS;
+    return mDoorOpen && profileFeatureEnabled("onroadDoor", true)
+        ? onroadDoorZone2Brightness() : normalZone2Brightness();
+  }
+
+  private int normalZone1Brightness() {
+    if (mManualOverrideActive) {
+      return mManualZone1Enabled ? mManualZone1Brightness : 0;
+    }
+    JSONObject zone = profileZone("driving", "zone1");
+    if (!zone.optBoolean("automaticBrightness", true)) {
+      return profileBrightness("driving", "zone1", 20);
+    }
+    return readAmbientBrightness();
+  }
+
+  private int normalZone2Brightness() {
+    if (mManualOverrideActive) {
+      return mManualZone2Enabled ? mManualZone2Brightness : 0;
+    }
+    return profileBrightness("driving", "zone2", ZONE_2_AMBIENT_BRIGHTNESS);
+  }
+
+  private int onroadDoorZone2Brightness() {
+    return mManualOverrideActive
+        ? normalZone2Brightness() : profileBrightness("onroadDoor", "zone2", 100);
+  }
+
+  private int offroadDoorZone1Brightness() {
+    return mManualOverrideActive
+        ? normalZone1Brightness()
+        : profileBrightness("offroadDoor", "zone1", OFFROAD_DOOR_ZONE_1_BRIGHTNESS);
+  }
+
+  private int offroadDoorZone2Brightness() {
+    return mManualOverrideActive
+        ? normalZone2Brightness()
+        : profileBrightness("offroadDoor", "zone2", OFFROAD_DOOR_ZONE_2_BRIGHTNESS);
+  }
+
+  private int exitCourtesyZone2Brightness() {
+    return mManualOverrideActive
+        ? normalZone2Brightness()
+        : profileBrightness("exitCourtesy", "zone2", OFFROAD_DOOR_ZONE_2_BRIGHTNESS);
+  }
+
+  private byte[] normalColorPacket() {
+    if (!mManualOverrideActive) {
+      return drivingColorPacket();
+    }
+    return buildColorPacket(
+        mManualZone1Red, mManualZone1Green, mManualZone1Blue,
+        mManualZone2Red, mManualZone2Green, mManualZone2Blue);
+  }
+
+  private byte[] warningColorPacket() {
+    if (mManualOverrideActive) {
+      return buildColorPacket(255, 0, 0,
+          mManualZone2Red, mManualZone2Green, mManualZone2Blue);
+    }
+    JSONObject zone1 = profileZone("overspeed", "zone1");
+    JSONObject zone2 = mDoorOpen && profileFeatureEnabled("onroadDoor", true)
+        ? profileZone("onroadDoor", "zone2") : profileZone("driving", "zone2");
+    return buildColorPacket(
+        colorValue(zone1, 0, 255), colorValue(zone1, 1, 0), colorValue(zone1, 2, 0),
+        colorValue(zone2, 0, 255), colorValue(zone2, 1, 255), colorValue(zone2, 2, 255));
   }
 
   private void sendPacket(byte[] packet) {
+    if (isColorPacket(packet)) {
+      rememberColorPacket(packet);
+    }
     if (isBrightnessPacket(packet)) {
       coalescePendingBrightnessPackets();
     }
@@ -1034,7 +1472,9 @@ public final class AmbientLightController {
       return;
     }
     if (mAmbientActive) {
-      mQueue.offer(PACKET_RESTORE.clone());
+      byte[] color = activeStateColorPacket();
+      rememberColorPacket(color);
+      mQueue.offer(color.clone());
       if (mOnroad) {
         startBrightnessSync();
       } else {
@@ -1098,9 +1538,21 @@ public final class AmbientLightController {
   }
 
   private int readAmbientTransitionStepMs() {
+    JSONObject timing = profileSection("timing");
+    if (timing.has("transitionUpdatesPerSecond")) {
+      int updatesPerSecond = clamp(timing.optInt("transitionUpdatesPerSecond", 30), 5, 30);
+      return Math.max(MIN_AMBIENT_TRANSITION_STEP_MS,
+          Math.min(MAX_AMBIENT_TRANSITION_STEP_MS, 1000 / updatesPerSecond));
+    }
     return clamp(Settings.System.getInt(mContext.getContentResolver(),
         AMBIENT_TRANSITION_STEP_SETTING, DEFAULT_AMBIENT_TRANSITION_STEP_MS),
         MIN_AMBIENT_TRANSITION_STEP_MS, MAX_AMBIENT_TRANSITION_STEP_MS);
+  }
+
+  private int readAmbientFrameStepMs() {
+    // A color fade frame writes one RGB packet and one brightness packet. Keep
+    // their combined BLE rate within the configured transition update limit.
+    return Math.min(MAX_AMBIENT_TRANSITION_STEP_MS, readAmbientTransitionStepMs() * 2);
   }
 
   private int readAckSettleIntervalMs() {
@@ -1138,6 +1590,21 @@ public final class AmbientLightController {
         && packet[2] == 0x04 && packet[4] == 0x48;
   }
 
+  private static boolean isColorPacket(byte[] packet) {
+    return packet != null && packet.length == 12
+        && packet[0] == 0x2e && packet[1] == (byte) 0x8d
+        && packet[2] == 0x08 && packet[3] == 0x01;
+  }
+
+  private void rememberColorPacket(byte[] packet) {
+    mCurrentZone1Red = colorPacketValue(packet, 5, mCurrentZone1Red);
+    mCurrentZone1Green = colorPacketValue(packet, 6, mCurrentZone1Green);
+    mCurrentZone1Blue = colorPacketValue(packet, 7, mCurrentZone1Blue);
+    mCurrentZone2Red = colorPacketValue(packet, 8, mCurrentZone2Red);
+    mCurrentZone2Green = colorPacketValue(packet, 9, mCurrentZone2Green);
+    mCurrentZone2Blue = colorPacketValue(packet, 10, mCurrentZone2Blue);
+  }
+
   private static byte[] buildBrightnessPacket(boolean powerOn, int brightness) {
     return buildBrightnessPacket(powerOn, brightness, ZONE_2_AMBIENT_BRIGHTNESS);
   }
@@ -1147,6 +1614,24 @@ public final class AmbientLightController {
     int zone2Level = powerOn ? clamp(zone2Brightness, 0, 100) : 0;
     int switchType = powerOn ? 0x48 : 0x00;
     return buildPacket(0x8d, new int[] { 0x00, switchType, zone1Level, zone2Level });
+  }
+
+  private static byte[] buildColorPacket(int zone1Red, int zone1Green, int zone1Blue,
+                                         int zone2Red, int zone2Green, int zone2Blue) {
+    return buildPacket(0x8d, new int[] {
+        0x01, 0x08,
+        clamp(zone1Red, 0, 255), clamp(zone1Green, 0, 255), clamp(zone1Blue, 0, 255),
+        clamp(zone2Red, 0, 255), clamp(zone2Green, 0, 255), clamp(zone2Blue, 0, 255)
+    });
+  }
+
+  private static int colorPacketValue(byte[] packet, int index, int fallback) {
+    return packet != null && index >= 0 && index < packet.length - 1
+        ? packet[index] & 0xff : fallback;
+  }
+
+  private static int interpolate(int start, int target, float progress) {
+    return Math.round(start + ((target - start) * progress));
   }
 
   private static byte[] buildPacket(int dataType, int[] payload) {

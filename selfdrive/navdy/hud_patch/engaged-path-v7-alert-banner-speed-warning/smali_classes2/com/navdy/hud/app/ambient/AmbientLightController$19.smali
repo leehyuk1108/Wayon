@@ -8,7 +8,7 @@
 
 # annotations
 .annotation system Ldalvik/annotation/EnclosingMethod;
-    value = Lcom/navdy/hud/app/ambient/AmbientLightController;->onOverspeedChanged(Landroid/content/Context;Z)V
+    value = Lcom/navdy/hud/app/ambient/AmbientLightController;->onGearText(Landroid/content/Context;Ljava/lang/String;)V
 .end annotation
 
 .annotation system Ldalvik/annotation/InnerClass;
@@ -20,11 +20,11 @@
 # instance fields
 .field final synthetic val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-.field final synthetic val$overspeed:Z
+.field final synthetic val$gear:Ljava/lang/String;
 
 
 # direct methods
-.method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)V
+.method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
     .locals 0
     .annotation system Ldalvik/annotation/Signature;
         value = {
@@ -32,10 +32,10 @@
         }
     .end annotation
 
-    .line 527
+    .line 586
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$19;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    iput-boolean p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$19;->val$overspeed:Z
+    iput-object p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$19;->val$gear:Ljava/lang/String;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
 
@@ -47,13 +47,13 @@
 .method public run()V
     .locals 2
 
-    .line 530
+    .line 589
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$19;->val$controller:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    iget-boolean v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$19;->val$overspeed:Z
+    iget-object v1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$19;->val$gear:Ljava/lang/String;
 
-    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7600(Lcom/navdy/hud/app/ambient/AmbientLightController;Z)V
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$9400(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
 
-    .line 531
+    .line 590
     return-void
 .end method

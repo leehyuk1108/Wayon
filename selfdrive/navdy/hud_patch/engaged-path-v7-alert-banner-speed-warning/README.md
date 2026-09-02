@@ -28,8 +28,15 @@ Current ambient controller behavior:
   Zone 1/2 fade to 20/100 percent with a door open, remain on for at most 20
   minutes, and fade out 20 seconds after the door closes. An onroad-to-offroad
   transition holds Zone 1 and raises Zone 2 to 100 percent for two minutes.
-- Runs one-second courtesy fades at no more than roughly 30 updates per second
-  (33 ms minimum step), coalescing queued brightness frames when BLE ACKs lag.
+- Runs one-second courtesy fades with paired RGB and brightness updates while
+  keeping their combined BLE traffic at no more than roughly 30 packets per
+  second. Queued color/brightness frames are coalesced when BLE ACKs lag.
+  Door-open and door-close transitions interpolate both zones from their
+  current RGB and brightness to the configured profile values, so returning
+  from a custom door color no longer snaps immediately back to white.
+- Stores Wayon ambient profiles on Navdy and ignores repeated copies of the
+  same durable profile instead of restarting the active fade on every comma
+  payload.
 - Reconnects first to the last successfully selected ambient-module MAC, then
   falls back to bonded-device matching and an active BLE scan.
 - Keeps overspeed warnings red for their full duration: white fades out once,

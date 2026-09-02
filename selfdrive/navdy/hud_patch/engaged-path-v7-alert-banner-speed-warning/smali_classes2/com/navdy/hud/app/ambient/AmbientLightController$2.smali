@@ -25,7 +25,7 @@
 .method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
 
-    .line 196
+    .line 201
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -38,13 +38,13 @@
 .method public onLeScan(Landroid/bluetooth/BluetoothDevice;I[B)V
     .locals 0
 
-    .line 199
+    .line 204
     if-nez p1, :cond_0
 
-    .line 200
+    .line 205
     return-void
 
-    .line 202
+    .line 207
     :cond_0
     invoke-static {p1, p3}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$2900(Landroid/bluetooth/BluetoothDevice;[B)Z
 
@@ -52,15 +52,15 @@
 
     if-nez p3, :cond_1
 
-    .line 203
+    .line 208
     iget-object p3, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {p3, p1, p2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3000(Lcom/navdy/hud/app/ambient/AmbientLightController;Landroid/bluetooth/BluetoothDevice;I)V
 
-    .line 204
+    .line 209
     return-void
 
-    .line 206
+    .line 211
     :cond_1
     new-instance p2, Ljava/lang/StringBuilder;
 
@@ -102,16 +102,16 @@
 
     invoke-static {p3, p2}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 207
+    .line 212
     iget-object p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {p2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3200(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
 
-    .line 208
+    .line 213
     iget-object p2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$2;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-static {p2, p1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$3300(Lcom/navdy/hud/app/ambient/AmbientLightController;Landroid/bluetooth/BluetoothDevice;)V
 
-    .line 209
+    .line 214
     return-void
 .end method

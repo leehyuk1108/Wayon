@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
     <title>My Traverse Next</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -50,6 +51,11 @@
             --border-color: #2b2b2b;
             --button-radius: 16px;
             --long-press-duration: 0.5s;
+        }
+
+        html {
+            background: #0b0b0c;
+            color-scheme: dark;
         }
 
         /* === ANIMATION DEFINITIONS === */
@@ -1983,6 +1989,13 @@
             height: 100%;
             background: #08090a;
             font-family: inherit;
+        }
+
+        .hero-map .leaflet-map-pane,
+        .hero-map .leaflet-tile-pane,
+        .hero-map .maplibregl-map,
+        .hero-map .maplibregl-canvas-container {
+            background-color: #0e0f11;
         }
 
         .hero-map .leaflet-tile {

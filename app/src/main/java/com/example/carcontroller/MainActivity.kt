@@ -722,6 +722,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         myWebView = findViewById(R.id.webview)
+        myWebView.setBackgroundColor(android.graphics.Color.rgb(11, 11, 12))
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
 

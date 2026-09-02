@@ -8,4 +8,5 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="notification_chevrolet_gold">#D6A229</color>
+    <color name="app_background">#0B0B0C</color>
 </resources>

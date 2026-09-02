@@ -101,6 +101,24 @@ def test_lane_risk_accepts_navdy_radar_dicts_and_fades():
   assert 0.0 < detector.lane_risks["left"] < initial_risk
 
 
+def test_cutin_risk_survives_one_brief_lateral_motion_dropout():
+  detector = RadarLaneIntrusionDetector()
+  for index, lateral in enumerate([-3.5, -3.5, -3.5, -3.2, -2.9]):
+    update(detector, index * 0.05, lateral)
+  assert detector.cutin_risk is not None
+
+  detector.update(20.0, [], model(), 0.25)
+  assert detector.cutin_risk is not None
+  assert detector.cutin_risk.score > 0.0
+
+
+def test_cutin_detection_remains_available_in_low_speed_traffic():
+  detector = RadarLaneIntrusionDetector()
+  for index, lateral in enumerate([-3.5, -3.5, -3.5, -3.2, -2.9]):
+    update(detector, index * 0.05, lateral, speed=3.0)
+  assert detector.cutin_risk is not None
+
+
 def test_five_hz_navdy_samples_keep_track_history():
   detector = RadarLaneIntrusionDetector()
   samples = [-3.5, -3.4, -3.3, -3.0, -2.7, -2.4, -2.2, -2.0]
@@ -177,7 +195,7 @@ def test_curved_lane_following_vehicle_does_not_false_alert():
   assert all(result is None for result in results)
 
 
-def test_detector_is_disabled_at_low_speed():
+def test_detector_is_disabled_below_minimum_speed():
   detector = RadarLaneIntrusionDetector()
-  assert all(update(detector, index * 0.05, lateral, speed=4.9) is None
+  assert all(update(detector, index * 0.05, lateral, speed=1.9) is None
              for index, lateral in enumerate([-3.2, -3.1, -3.0, -2.45, -2.30, -2.15]))

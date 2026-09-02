@@ -23,6 +23,7 @@ def lead(**kwargs):
     "score": 0.0,
     "dRel": 30.0,
     "vRel": -5.0,
+    "vLat": 0.5,
   }
   values.update(kwargs)
   return SimpleNamespace(**values)
@@ -85,6 +86,10 @@ def test_t_follow_ramp_is_bounded():
   assert ramp_t_follow(0.8, 1.4, 0.05) == pytest.approx(1.375)
 
 
+def test_t_follow_ramp_can_raise_faster_for_active_cutin():
+  assert ramp_t_follow(2.0, 1.4, 0.05, rise_rate=0.75) == pytest.approx(1.4375)
+
+
 def test_vision_only_lead_does_not_change_dynamic_follow():
   assert dynamic_t_follow_target(1.45, lead(radar=False, jLead=-2.0), -1.0) == 1.45
 
@@ -99,3 +104,35 @@ def test_radar_cutin_predecel_is_bounded():
 def test_nonclosing_or_vision_cutin_does_not_predecelerate():
   assert cutin_predecel_accel(lead(vRel=1.0), 20.0) is None
   assert cutin_predecel_accel(lead(radar=False), 20.0) is None
+
+
+def test_early_cutin_releases_throttle_before_braking_is_needed():
+  risk = lead(score=0.3, dRel=49.0, vRel=-4.0, vLat=0.6)
+  assert cutin_predecel_accel(risk, 15.0) == 0.0
+
+
+def test_urgent_cutin_does_not_drop_out_below_old_minimum_ttc():
+  risk = lead(score=0.8, dRel=8.0, vRel=-5.0, vLat=0.7)
+  accel = cutin_predecel_accel(risk, 15.0)
+  assert accel is not None
+  assert accel <= -0.6
+
+
+def test_fast_closing_cutin_uses_lower_score_threshold():
+  risk = lead(score=0.12, dRel=38.9, vRel=-8.2, vLat=1.68)
+  assert cutin_predecel_accel(risk, 8.2) is not None
+
+
+def test_distant_low_score_cutin_does_not_trigger():
+  risk = lead(score=0.12, dRel=44.0, vRel=-4.0, vLat=0.5)
+  assert cutin_predecel_accel(risk, 15.0) is None
+
+
+def test_slow_lateral_motion_does_not_trigger_cutin_predecel():
+  risk = lead(score=0.2, dRel=25.0, vRel=-4.0, vLat=0.05)
+  assert cutin_predecel_accel(risk, 15.0) is None
+
+
+def test_cutin_predecel_operates_in_low_speed_traffic():
+  risk = lead(score=0.7, dRel=7.0, vRel=-1.0, vLat=0.4)
+  assert cutin_predecel_accel(risk, 3.0) is not None

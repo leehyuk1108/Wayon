@@ -4,7 +4,7 @@ import math
 from typing import Any
 
 
-MIN_EGO_SPEED_MPS = 5.0
+MIN_EGO_SPEED_MPS = 2.0
 MIN_TRACK_DISTANCE_M = 4.0
 MAX_TRACK_DISTANCE_M = 60.0
 MIN_LANE_LINE_PROBABILITY = 0.45
@@ -15,6 +15,7 @@ MIN_INWARD_SPEED_MPS = 0.25
 LANE_RISK_MIN_INWARD_SPEED_MPS = 0.20
 LANE_RISK_START_GAP_M = 0.80
 LANE_RISK_FADE_TIME_S = 0.45
+CUTIN_RISK_HOLD_TIME_S = 0.40
 REQUIRED_OUTSIDE_SAMPLES = 3
 REQUIRED_INTRUSION_SAMPLES = 3
 # Navdy evaluates at 5 Hz. Preserve history through short lane-confidence dropouts.
@@ -134,6 +135,7 @@ class RadarLaneIntrusionDetector:
     self._tracks: dict[int, _TrackState] = {}
     self._lane_risks = {"left": 0.0, "right": 0.0}
     self._cutin_risk: RadarCutInRisk | None = None
+    self._cutin_risk_seen_s: float | None = None
     self._last_risk_update_s: float | None = None
 
   @property
@@ -148,6 +150,7 @@ class RadarLaneIntrusionDetector:
     self._tracks.clear()
     self._lane_risks = {"left": 0.0, "right": 0.0}
     self._cutin_risk = None
+    self._cutin_risk_seen_s = None
     self._last_risk_update_s = None
 
   def _update_lane_risks(self, seen_tracks: set[int], now_s: float) -> None:
@@ -178,7 +181,31 @@ class RadarLaneIntrusionDetector:
     for side in ("left", "right"):
       self._lane_risks[side] = max(frame_risks[side], self._lane_risks[side] * decay)
     self._last_risk_update_s = now_s
-    self._cutin_risk = min(candidates, key=lambda risk: (-risk.score, risk.distance_m), default=None)
+    selected = min(candidates, key=lambda risk: (-risk.score, risk.distance_m), default=None)
+    if selected is not None:
+      self._cutin_risk = selected
+      self._cutin_risk_seen_s = now_s
+    elif self._cutin_risk is not None and self._cutin_risk_seen_s is not None and \
+         now_s - self._cutin_risk_seen_s <= CUTIN_RISK_HOLD_TIME_S:
+      state = self._tracks.get(self._cutin_risk.track_id)
+      if state is not None:
+        held_score = self._cutin_risk.score * math.exp(
+          -(now_s - self._cutin_risk_seen_s) / CUTIN_RISK_HOLD_TIME_S)
+        self._cutin_risk = RadarCutInRisk(
+          track_id=self._cutin_risk.track_id,
+          side=state.side,
+          distance_m=state.distance_m,
+          radar_y_rel_m=state.radar_y_rel_m,
+          relative_speed_mps=state.relative_speed_mps,
+          inward_speed_mps=max(0.0, state.inward_speed_mps),
+          score=held_score,
+        )
+      else:
+        self._cutin_risk = None
+        self._cutin_risk_seen_s = None
+    else:
+      self._cutin_risk = None
+      self._cutin_risk_seen_s = None
 
   def _new_state(self, side: str, distance_m: float, lateral_m: float, radar_y_rel_m: float,
                  relative_speed_mps: float, penetration_m: float, now_s: float) -> _TrackState:

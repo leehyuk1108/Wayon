@@ -228,7 +228,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       accel_clip[1] = min(accel_clip[1], self.cutin_shadow_accel)
 
     for idx in range(2):
-      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
+      lower_step = 0.20 if idx == 1 and self.cutin_shadow_accel is not None else 0.05
+      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - lower_step, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 

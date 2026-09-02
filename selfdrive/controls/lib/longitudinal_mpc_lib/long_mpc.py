@@ -357,7 +357,9 @@ class LongitudinalMpc:
     cutin_risk = radarstate.leadCutInRisk if self.cutin_predecel_mode == 2 else None
     if self.dynamic_follow_enabled:
       target_t_follow = dynamic_t_follow_target(base_t_follow, radarstate.leadOne, self.x0[2], cutin_risk)
-      self.t_follow = ramp_t_follow(target_t_follow, self.t_follow, self.dt)
+      cutin_active = cutin_risk is not None and getattr(cutin_risk, "status", False)
+      self.t_follow = ramp_t_follow(target_t_follow, self.t_follow, self.dt,
+                                    rise_rate=0.75 if cutin_active else 0.25)
     else:
       self.t_follow = base_t_follow
     t_follow = self.t_follow

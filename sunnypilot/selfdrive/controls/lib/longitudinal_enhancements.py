@@ -10,8 +10,13 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 FUTURE_CURVATURE_LOOKAHEAD_S = 1.2
 FUTURE_CURVATURE_MIN_SPEED = 2.0
 CUTIN_MIN_SCORE = 0.15
+CUTIN_URGENT_MIN_SCORE = 0.08
 CUTIN_MIN_TTC_S = 2.5
 CUTIN_MAX_TTC_S = 8.0
+CUTIN_COAST_MAX_TTC_S = 13.0
+CUTIN_MAX_CROSSING_TIME_S = 3.5
+CUTIN_MIN_EGO_SPEED_MPS = 2.0
+CUTIN_LATERAL_WINDOW_M = 0.90
 
 
 def future_curvature(model_msg: Any, fallback_curvature: float,
@@ -78,8 +83,8 @@ def dynamic_t_follow_target(base_t_follow: float, lead: Any, a_ego: float,
   return float(np.clip(target, 0.80, 2.10))
 
 
-def ramp_t_follow(target: float, current: float, dt: float = DT_MDL) -> float:
-  rise_rate = 0.25
+def ramp_t_follow(target: float, current: float, dt: float = DT_MDL,
+                  rise_rate: float = 0.25) -> float:
   fall_rate = 0.50
   delta = np.clip(target - current, -fall_rate * dt, rise_rate * dt)
   return float(current + delta)
@@ -92,13 +97,26 @@ def cutin_predecel_accel(cutin_risk: Any, v_ego: float) -> float | None:
   score = float(np.clip(getattr(cutin_risk, "score", 0.0), 0.0, 1.0))
   d_rel = float(getattr(cutin_risk, "dRel", 0.0))
   v_rel = float(getattr(cutin_risk, "vRel", 0.0))
-  if score < CUTIN_MIN_SCORE or d_rel <= 0.0 or v_rel >= -0.1 or v_ego < 5.0:
+  inward_speed = max(0.0, float(getattr(cutin_risk, "vLat", 0.0)))
+  if d_rel <= 0.0 or v_rel >= -0.1 or v_ego < CUTIN_MIN_EGO_SPEED_MPS:
     return None
 
   ttc = d_rel / max(-v_rel, 0.1)
-  if not CUTIN_MIN_TTC_S <= ttc <= CUTIN_MAX_TTC_S:
+  required_score = float(np.interp(
+    ttc, [CUTIN_MIN_TTC_S, CUTIN_MAX_TTC_S], [CUTIN_URGENT_MIN_SCORE, CUTIN_MIN_SCORE]))
+  if score < required_score:
+    return None
+  boundary_gap = max(0.0, (1.0 - score) * CUTIN_LATERAL_WINDOW_M)
+  crossing_time = boundary_gap / max(inward_speed, 0.05)
+  if ttc > CUTIN_COAST_MAX_TTC_S or crossing_time > CUTIN_MAX_CROSSING_TIME_S:
     return None
 
+  if ttc > CUTIN_MAX_TTC_S:
+    # Stop adding propulsion while the vehicle is still beside the lane. The
+    # normal lead MPC takes over once it actually enters the ego lane.
+    return 0.0
+
   ttc_urgency = float(np.interp(ttc, [CUTIN_MIN_TTC_S, CUTIN_MAX_TTC_S], [1.0, 0.0]))
-  urgency = max(score, ttc_urgency)
+  crossing_urgency = float(np.interp(crossing_time, [0.5, CUTIN_MAX_CROSSING_TIME_S], [1.0, 0.0]))
+  urgency = max(score, ttc_urgency, crossing_urgency)
   return float(np.interp(urgency, [0.0, 1.0], [-0.25, -0.65]))

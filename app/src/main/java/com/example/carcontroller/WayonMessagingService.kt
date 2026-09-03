@@ -14,22 +14,60 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 import org.json.JSONObject
 
 private object WayonPushDeduplicator {
-    private const val PREFS = "wayon_push_dedup"
-    private const val WINDOW_MS = 30_000L
+    private const val PREFS = "wayon_push_dedup_v2"
+    private const val FALLBACK_WINDOW_MS = 5 * 60_000L
+    private const val MAX_DOOR_EVENT_AGE_MS = 10 * 60_000L
+    private const val FUTURE_TOLERANCE_MS = 2 * 60_000L
+
+    private fun eventEpochMs(value: String?): Long? {
+        if (value.isNullOrBlank()) return null
+        val patterns = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        )
+        return patterns.firstNotNullOfOrNull { pattern ->
+            runCatching {
+                SimpleDateFormat(pattern, Locale.US).apply {
+                    isLenient = false
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }.parse(value)?.time
+            }.getOrNull()
+        }
+    }
 
     fun shouldShow(context: Context, category: String, data: Map<String, String>): Boolean {
         if (data["test"] == "true") return true
-        val identity = data["vehicleEventId"]
-            ?: data["impactId"]
-            ?: listOf(data["type"], data["locked"], data["occurredAt"], data["detectedAt"]).joinToString("|")
-        val key = "${category}_${identity.hashCode()}"
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        if (now - prefs.getLong(key, 0L) < WINDOW_MS) return false
+
+        if (category == "door") {
+            val occurredAt = eventEpochMs(data["occurredAt"])
+            if (occurredAt != null &&
+                (now - occurredAt > MAX_DOOR_EVENT_AGE_MS || occurredAt - now > FUTURE_TOLERANCE_MS)
+            ) {
+                Log.i("WayonDoorLock", "Suppressed stale door-lock event")
+                return false
+            }
+        }
+
+        val durableId = data["vehicleEventId"] ?: data["impactId"]
+        if (!durableId.isNullOrBlank()) {
+            val key = "event_${category}_${durableId.hashCode()}"
+            if (prefs.getString(key, null) == durableId) return false
+            prefs.edit().putString(key, durableId).apply()
+            return true
+        }
+
+        val identity = listOf(data["type"], data["locked"], data["occurredAt"], data["detectedAt"])
+            .joinToString("|")
+        val key = "fallback_${category}_${identity.hashCode()}"
+        if (now - prefs.getLong(key, 0L) < FALLBACK_WINDOW_MS) return false
         prefs.edit().putLong(key, now).apply()
         return true
     }

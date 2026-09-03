@@ -224,7 +224,11 @@ class CarState(CarStateBase, CarStateExt):
 
   @staticmethod
   def get_can_parsers(CP, CP_SP):
-    pt_messages = []
+    # EPBStatus is consumed through vl_all for debouncing, so register it
+    # before the first parser update. vl_all does not add messages on access.
+    pt_messages = [
+      ("EPBStatus", float('nan')),
+    ]
     if CP.networkLocation == NetworkLocation.fwdCamera:
       pt_messages += [
         ("ASCMLKASteeringCmd", float('nan')),

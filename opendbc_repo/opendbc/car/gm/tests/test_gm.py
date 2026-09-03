@@ -5,13 +5,13 @@ from cereal import car, custom
 from opendbc.can import CANPacker, CANParser
 from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
-from opendbc.car import gen_empty_fingerprint
+from opendbc.car import Bus, gen_empty_fingerprint
 from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, gm_auto_hold_command,
                                          gm_long_auto_hold_command, gm_uses_auto_hold_sng,
                                          limit_traverse_stopping_brake, update_gm_long_auto_hold_brake,
                                          update_epb_hold_handoff, update_traverse_coasting)
 from opendbc.car.gm.carstate import (EPB_CONFIRM_FRAMES, STANDSTILL_THRESHOLD, TRAVERSE_STANDSTILL_THRESHOLD,
-                                    get_standstill_threshold, update_epb_closed)
+                                    CarState as GMCarState, get_standstill_threshold, update_epb_closed)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.gmcan import create_acc_dashboard_command
 from opendbc.car.gm.fingerprints import FINGERPRINTS
@@ -25,6 +25,14 @@ GearShifter = CarState.GearShifter
 
 
 class TestGMEpbState(unittest.TestCase):
+  def test_epb_status_is_registered_for_vl_all(self):
+    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE,
+                         networkLocation=CarParams.NetworkLocation.gateway)
+    parsers = GMCarState.get_can_parsers(CP, None)
+
+    self.assertIn("EPBStatus", parsers[Bus.pt].vl_all)
+    self.assertEqual(parsers[Bus.pt].vl_all["EPBStatus"]["EPBClosed"], [])
+
   def test_requires_consecutive_new_frames(self):
     closed_frames, open_frames, closed = 0, 0, False
     closed_frames, open_frames, closed = update_epb_closed(

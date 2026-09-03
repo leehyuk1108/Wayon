@@ -485,6 +485,12 @@ struct CarStateSP @0xb86e6369214c01c8 {
   navdyRightBlindspot @13 :Bool;
   navdyBrakeHoldActive @14 :Bool;
   navdyDoorOpen @15 :Bool;
+  gmAutoHoldActive @16 :Bool;
+  gmAutoHoldElapsedS @17 :Float32;
+  gmAutoHoldExpectedProgress @18 :Float32;
+  gmEpbClosed @19 :Bool;
+  gmAutoHoldEpbTransferred @20 :Bool;
+  gmAutoHoldEpbTransitionAgeS @21 :Float32;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

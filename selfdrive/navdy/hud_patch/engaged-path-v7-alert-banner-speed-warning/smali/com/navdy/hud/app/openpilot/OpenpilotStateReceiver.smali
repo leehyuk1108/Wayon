@@ -88,6 +88,8 @@
 
 .field private static sAutomaticControlSource:Ljava/lang/String;
 
+.field private static sAutoHoldView:Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;
+
 .field private static sCameraDistanceTextView:Landroid/widget/TextView;
 
 .field private static sCameraSpeedTextView:Landroid/widget/TextView;
@@ -1036,6 +1038,30 @@
     move-result-object p0
 
     sput-object p0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sStandstillView:Landroid/widget/ImageView;
+
+    new-instance v2, Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;
+
+    invoke-direct {v2, v0}, Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;-><init>(Landroid/content/Context;)V
+
+    sput-object v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutoHoldView:Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;
+
+    new-instance v3, Landroid/widget/FrameLayout$LayoutParams;
+
+    const/16 v4, 0x88
+
+    const/16 v5, 0x2c
+
+    invoke-direct {v3, v4, v5}, Landroid/widget/FrameLayout$LayoutParams;-><init>(II)V
+
+    const/16 v4, 0xd9
+
+    iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    const/16 v4, 0x108
+
+    iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v1, v2, v3}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
 
     .line 305
     const/16 v5, 0x28
@@ -2154,6 +2180,16 @@
     invoke-virtual {v0, v1, v2}, Lcom/navdy/hud/app/openpilot/OpenpilotActuatorView;->updatePayload(Lorg/json/JSONObject;Z)V
 
     :cond_navdy_actuator_updated
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutoHoldView:Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;
+
+    if-eqz v0, :cond_navdy_autohold_updated
+
+    move-object/from16 v1, v18
+
+    invoke-virtual {v0, v1}, Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;->updatePayload(Lorg/json/JSONObject;)V
+
+    :cond_navdy_autohold_updated
 
     :cond_5
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAlertBannerView:Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;

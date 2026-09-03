@@ -183,3 +183,4 @@ class CarControlSP:
 class CarStateSP:
   speedLimit: float = auto_field()
   navdyDoorOpen: bool = auto_field()
+  gmEpbClosed: bool = auto_field()

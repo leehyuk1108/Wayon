@@ -15,6 +15,7 @@ NetworkLocation = structs.CarParams.NetworkLocation
 
 STANDSTILL_THRESHOLD = 10 * 0.0311
 TRAVERSE_STANDSTILL_THRESHOLD = 0.5 * 0.0311
+EPB_CONFIRM_FRAMES = 3
 
 
 def get_standstill_threshold(CP):
@@ -24,6 +25,22 @@ def get_standstill_threshold(CP):
   if CP.carFingerprint == CAR.CHEVROLET_TRAVERSE:
     return TRAVERSE_STANDSTILL_THRESHOLD
   return STANDSTILL_THRESHOLD
+
+
+def update_epb_closed(samples, closed_frames, open_frames, closed):
+  """Debounce the physical EPB state using newly received 0x230 frames only."""
+  for sample in samples:
+    if sample == 1:
+      closed_frames += 1
+      open_frames = 0
+      if closed_frames >= EPB_CONFIRM_FRAMES:
+        closed = True
+    else:
+      open_frames += 1
+      closed_frames = 0
+      if open_frames >= EPB_CONFIRM_FRAMES:
+        closed = False
+  return closed_frames, open_frames, closed
 
 BUTTONS_DICT = {CruiseButtons.RES_ACCEL: ButtonType.accelCruise, CruiseButtons.DECEL_SET: ButtonType.decelCruise,
                 CruiseButtons.MAIN: ButtonType.mainCruise, CruiseButtons.CANCEL: ButtonType.cancel}
@@ -57,6 +74,9 @@ class CarState(CarStateBase, CarStateExt):
     self.autoHoldActivated = False
     self.longAutoHoldActive = False
     self.brake_pedal_position = 0
+    self.epb_closed_frames = 0
+    self.epb_open_frames = 0
+    self.gmEpbClosed = False
 
   def update_button_enable(self, buttonEvents: list[structs.CarState.ButtonEvent]):
     if not self.CP.pcmCruise:
@@ -149,7 +169,12 @@ class CarState(CarStateBase, CarStateExt):
     ret.leftBlinker = pt_cp.vl["BCMTurnSignals"]["TurnSignals"] == 1
     ret.rightBlinker = pt_cp.vl["BCMTurnSignals"]["TurnSignals"] == 2
 
-    ret.parkingBrake = pt_cp.vl["BCMGeneralPlatformStatus"]["ParkBrakeSwActive"] == 1
+    self.epb_closed_frames, self.epb_open_frames, self.gmEpbClosed = update_epb_closed(
+      pt_cp.vl_all["EPBStatus"]["EPBClosed"], self.epb_closed_frames,
+      self.epb_open_frames, self.gmEpbClosed,
+    )
+    ret_sp.gmEpbClosed = self.gmEpbClosed
+    ret.parkingBrake = self.gmEpbClosed or pt_cp.vl["BCMGeneralPlatformStatus"]["ParkBrakeSwActive"] == 1
     ret.cruiseState.available = pt_cp.vl["ECMEngineStatus"]["CruiseMainOn"] != 0
     ret.espDisabled = pt_cp.vl["ESPStatus"]["TractionControlOn"] != 1
     ret.accFaulted = (pt_cp.vl["AcceleratorPedal2"]["CruiseState"] == AccState.FAULTED or

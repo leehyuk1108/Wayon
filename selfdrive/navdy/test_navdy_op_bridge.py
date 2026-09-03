@@ -535,6 +535,87 @@ def test_payload_exports_standstill_and_op_available():
   assert payload["engaged"] is False
 
 
+def test_payload_exports_stable_auto_hold_session_and_epb_transfer_banner():
+  car_state_sp = SimpleNamespace(
+    navdyCruiseStandstill=False,
+    navdyCruiseSpeed=0.0,
+    navdyCruiseSpeedCluster=0.0,
+    navdyGearShifter="drive",
+    navdyLeftBlinker=False,
+    navdyRightBlinker=False,
+    navdyLeftBlindspot=False,
+    navdyRightBlindspot=False,
+    navdyDoorOpen=False,
+    navdyBrakeHoldActive=False,
+    navdyStandstill=True,
+    navdyVCruise=80.0,
+    navdyVCruiseCluster=80.0,
+    navdyVEgo=0.0,
+    navdyVEgoCluster=0.0,
+    gmAutoHoldActive=False,
+    gmAutoHoldElapsedS=120.4,
+    gmAutoHoldExpectedProgress=1.0,
+    gmEpbClosed=True,
+    gmAutoHoldEpbTransferred=True,
+    gmAutoHoldEpbTransitionAgeS=0.4,
+  )
+  car_state = navdy_op_bridge.car_state_from_sp(car_state_sp)
+  selfdrive_state = SimpleNamespace(
+    active=False, enabled=False, engageable=True, state="disabled",
+    alertText1="", alertText2="", alertType="", alertStatus="normal", alertSize="none",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 8)
+
+  assert payload["autoHoldActive"] is False
+  assert payload["autoHoldElapsedSec"] == 120.4
+  assert payload["autoHoldEpbProgress"] == 1.0
+  assert payload["epbClosed"] is True
+  assert payload["epbTransferred"] is True
+  assert payload["alertText1"] == "주차 브레이크로 전환됨"
+  assert payload["alertType"] == "gmEpbTransferred/normal"
+  assert payload["alertSize"] == "mid"
+
+
+def test_epb_transfer_banner_does_not_replace_critical_alert():
+  car_state = SimpleNamespace(
+    standstill=True,
+    brakeHoldActive=False,
+    gmAutoHoldActive=False,
+    gmAutoHoldElapsedS=120.4,
+    gmAutoHoldExpectedProgress=1.0,
+    gmEpbClosed=True,
+    gmAutoHoldEpbTransferred=True,
+    gmAutoHoldEpbTransitionAgeS=0.4,
+  )
+  selfdrive_state = SimpleNamespace(
+    active=False, enabled=False, engageable=False, state="disabled",
+    alertText1="긴급 경고", alertText2="즉시 확인하세요",
+    alertType="testCritical/critical", alertStatus="critical", alertSize="full",
+  )
+
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 9)
+
+  assert payload["epbTransferred"] is True
+  assert payload["alertText1"] == "긴급 경고"
+  assert payload["alertType"] == "testCritical/critical"
+  assert payload["alertStatus"] == "critical"
+
+
+def test_navdy_autohold_progress_view_is_wired_into_receiver():
+  patch = (Path(__file__).parent /
+           "hud_patch/engaged-path-v7-alert-banner-speed-warning")
+  receiver = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotStateReceiver.smali").read_text()
+  view = (patch / "smali/com/navdy/hud/app/openpilot/OpenpilotAutoHoldView.smali").read_text()
+  java = (patch / "src/com/navdy/hud/app/openpilot/OpenpilotAutoHoldView.java").read_text()
+
+  assert "sAutoHoldView:Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;" in receiver
+  assert "OpenpilotAutoHoldView;->updatePayload(Lorg/json/JSONObject;)V" in receiver
+  for key in ("autoHoldActive", "autoHoldElapsedSec", "autoHoldEpbProgress"):
+    assert f'"{key}"' in java
+    assert key in view
+
+
 def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
   car_state = SimpleNamespace(
     cruiseState=SimpleNamespace(standstill=True, speed=0.0),

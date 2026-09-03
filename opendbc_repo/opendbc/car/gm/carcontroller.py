@@ -39,6 +39,7 @@ GM_STOPPING_BRAKE_TAPER_MAX = 12
 GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 20
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 GM_SNG_BUTTON_FRAMES = 4  # physical Traverse press: four frames over about 0.12 seconds
+GM_EPB_HOLD_OVERLAP_FRAMES = 5  # 0.20 seconds at the 25 Hz brake command rate
 
 
 def get_friction_brake_bus(CP):
@@ -128,6 +129,27 @@ def gm_uses_auto_hold_sng(CP):
   return CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.autoResumeSng
 
 
+def update_epb_hold_handoff(parking_brake, hold_requested, long_hold_requested,
+                            hold_was_commanded, hold_was_long, overlap_frames):
+  """Keep hydraulic pressure briefly while a confirmed EPB takes ownership."""
+  overlap_active = False
+  overlap_was_long = hold_was_long
+  if parking_brake:
+    if hold_was_commanded and overlap_frames == 0:
+      overlap_frames = GM_EPB_HOLD_OVERLAP_FRAMES
+    if overlap_frames > 0:
+      overlap_active = True
+      overlap_frames -= 1
+    hold_was_commanded = overlap_frames > 0
+    hold_was_long = overlap_was_long if hold_was_commanded else False
+  else:
+    overlap_frames = 0
+    hold_was_commanded = hold_requested
+    hold_was_long = long_hold_requested
+
+  return overlap_active, overlap_was_long, hold_was_commanded, hold_was_long, overlap_frames
+
+
 class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterface):
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
@@ -149,6 +171,9 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.gm_auto_hold_zero_frames = 0
     self.gm_auto_hold_settled_frames = 0
     self.gm_auto_hold_brake = 0
+    self.gm_epb_hold_overlap_frames = 0
+    self.gm_hold_was_commanded = False
+    self.gm_hold_was_long = False
 
     self.lka_steering_cmd_counter = 0
     self.lka_icon_status_last = (False, False)
@@ -344,6 +369,10 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         manual_auto_hold = gm_auto_hold_command(self.CP, CC, CS)
         long_auto_hold = gm_long_auto_hold_command(self.CP, CC, CS, actuators)
+        epb_hold_overlap, epb_overlap_was_long, self.gm_hold_was_commanded, \
+          self.gm_hold_was_long, self.gm_epb_hold_overlap_frames = update_epb_hold_handoff(
+            CS.out.parkingBrake, manual_auto_hold or long_auto_hold, long_auto_hold,
+            self.gm_hold_was_commanded, self.gm_hold_was_long, self.gm_epb_hold_overlap_frames)
 
         long_hold_brake, self.gm_auto_hold_confirmed, self.gm_auto_hold_zero_frames, \
           self.gm_auto_hold_settled_frames, self.gm_auto_hold_brake = update_gm_long_auto_hold_brake(
@@ -354,12 +383,13 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
         can_sends.append(gmcan.create_gas_regen_command(self.packer_pt, CanBus.POWERTRAIN, self.apply_gas,
                                                         idx, CC.enabled, at_full_stop))
-        if manual_auto_hold or long_auto_hold:
-          hold_brake = GM_AUTO_HOLD_BRAKE if manual_auto_hold else long_hold_brake
+        if manual_auto_hold or long_auto_hold or epb_hold_overlap:
+          hold_brake = GM_AUTO_HOLD_BRAKE if manual_auto_hold or epb_hold_overlap else long_hold_brake
+          hold_enabled = CC.enabled and (long_auto_hold or (epb_hold_overlap and epb_overlap_was_long))
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, hold_brake,
-                                                               idx, CC.enabled and long_auto_hold, True, False, self.CP))
+                                                               idx, hold_enabled, True, False, self.CP))
           self.apply_brake = hold_brake
-          CS.autoHoldActivated = True
+          CS.autoHoldActivated = not epb_hold_overlap
         else:
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, self.apply_brake,
                                                                idx, CC.enabled, near_stop, at_full_stop, self.CP))

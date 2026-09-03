@@ -38,6 +38,9 @@ AUTOHOLD_TIMER_FONT_SIZE = 62
 AUTOHOLD_TIMER_GAP = 18
 AUTOHOLD_TIMER_BG_HEIGHT = 150
 AUTOHOLD_TIMER_BG_ALPHA = 170
+AUTOHOLD_RING_GAP = 7
+AUTOHOLD_RING_WIDTH = 4
+EPB_TRANSFER_FONT_SIZE = 44
 
 SELFDRIVE_STATE_TIMEOUT = 5  # Seconds
 SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
@@ -359,12 +362,17 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     event_name = alert.alert_type.split('/')[0] if alert is not None and alert.alert_type else ''
     brake_hold_active = ui_state.sm["carState"].brakeHoldActive
     parking_brake_active = ui_state.sm["carState"].parkingBrake
+    car_state_sp = ui_state.sm["carStateSP"]
+    canonical_auto_hold_active = bool(getattr(car_state_sp, "gmAutoHoldActive", False))
+    canonical_auto_hold_elapsed = max(0.0, float(getattr(car_state_sp, "gmAutoHoldElapsedS", 0.0)))
+    canonical_auto_hold_progress = max(0.0, min(1.0, float(getattr(car_state_sp, "gmAutoHoldExpectedProgress", 0.0))))
+    epb_transfer_visible = bool(getattr(car_state_sp, "gmAutoHoldEpbTransferred", False))
     car_control = ui_state.sm["carControl"]
     long_auto_hold_active = bool(
       car_control.longActive and ui_state.sm["carState"].standstill and
       car_control.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping
     )
-    auto_hold_active = brake_hold_active or long_auto_hold_active or event_name in AUTO_HOLD_EVENT_NAMES
+    auto_hold_active = canonical_auto_hold_active or brake_hold_active or long_auto_hold_active or event_name in AUTO_HOLD_EVENT_NAMES
     if auto_hold_active and self._resume_required_start_time is None:
       self._resume_required_start_time = time.monotonic()
     elif not auto_hold_active:
@@ -375,10 +383,10 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
       self._parking_brake_start_time = None
     draw_parking_timer = should_show_parking_brake_timer(parking_brake_active=parking_brake_active,
                                                          alert_event_name=event_name)
-    draw_auto_hold_timer = should_show_auto_hold_timer(brake_hold_active=brake_hold_active,
+    draw_auto_hold_timer = should_show_auto_hold_timer(brake_hold_active=canonical_auto_hold_active or brake_hold_active,
                                                        alert_event_name=event_name,
                                                        has_alert=alert is not None)
-    has_active_indicator = alert is not None or draw_auto_hold_timer or draw_parking_timer
+    has_active_indicator = alert is not None or draw_auto_hold_timer or draw_parking_timer or epb_transfer_visible
 
     # Animate fade and slide in/out
     self._alert_y_filter.update(self._rect.y - 50 if not has_active_indicator else self._rect.y)
@@ -388,11 +396,19 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
       ui_state.onroad_brightness_handle_alerts(ui_state, alert)
 
     active_alert = alert
+    # The informational EPB handoff must never hide a prompt or critical alert.
+    if epb_transfer_visible and (alert is None or alert.status == AlertStatus.normal):
+      self._prev_alert = None
+      self._parking_brake_timer_visible = True
+      self._draw_center_timer(self._txt_parking, "주차 브레이크로 전환됨",
+                              draw_gradient=True, font_size=EPB_TRANSFER_FONT_SIZE)
+      return True
+
     if alert is None:
       if draw_auto_hold_timer:
         self._prev_alert = None
         self._parking_brake_timer_visible = False
-        self._draw_resume_required(True)
+        self._draw_resume_required(True, canonical_auto_hold_elapsed, canonical_auto_hold_progress)
         return True
 
       if draw_parking_timer:
@@ -416,7 +432,7 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     alert_layout = self._icon_helper(alert)
     event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
     if event_name in AUTO_HOLD_EVENT_NAMES:
-      self._draw_resume_required(active_alert is not None)
+      self._draw_resume_required(active_alert is not None, canonical_auto_hold_elapsed, canonical_auto_hold_progress)
       return True
     if event_name in PARKING_BRAKE_EVENT_NAMES and parking_brake_active:
       self._parking_brake_timer_visible = True
@@ -428,14 +444,15 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
     return True
 
-  def _draw_resume_required(self, is_active: bool) -> None:
+  def _draw_resume_required(self, is_active: bool, elapsed_s: float = 0.0, progress: float = 0.0) -> None:
     if is_active and self._resume_required_start_time is None:
       self._resume_required_start_time = time.monotonic()
     elif self._resume_required_start_time is None:
       return
 
-    elapsed = time.monotonic() - self._resume_required_start_time
-    self._draw_center_timer(self._txt_autohold, format_mmss(elapsed), draw_gradient=True)
+    elapsed = elapsed_s if elapsed_s > 0.0 else time.monotonic() - self._resume_required_start_time
+    self._draw_center_timer(self._txt_autohold, format_mmss(elapsed), draw_gradient=True,
+                            progress=progress)
 
   def _draw_parking_brake_timer(self, is_active: bool) -> None:
     if is_active and self._parking_brake_start_time is None:
@@ -446,15 +463,16 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     elapsed = time.monotonic() - self._parking_brake_start_time
     self._draw_center_timer(self._txt_parking, format_mmss(elapsed))
 
-  def _draw_center_timer(self, icon_texture: rl.Texture, timer_text: str, draw_gradient: bool = False) -> None:
+  def _draw_center_timer(self, icon_texture: rl.Texture, timer_text: str, draw_gradient: bool = False,
+                         progress: float = 0.0, font_size: int = AUTOHOLD_TIMER_FONT_SIZE) -> None:
     color = rl.Color(255, 255, 255, int(255 * 0.9 * self._alpha_filter.x))
     self._alert_text1_label.set_text(timer_text)
     self._alert_text1_label.set_text_color(color)
-    self._alert_text1_label.set_font_size(AUTOHOLD_TIMER_FONT_SIZE)
+    self._alert_text1_label.set_font_size(font_size)
     self._alert_text1_label.set_alignment(rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
 
-    timer_size = measure_text_cached(gui_app.font(FontWeight.DISPLAY), timer_text, AUTOHOLD_TIMER_FONT_SIZE,
-                                     AUTOHOLD_TIMER_FONT_SIZE * -0.02)
+    timer_size = measure_text_cached(gui_app.font(FontWeight.DISPLAY), timer_text, font_size,
+                                     font_size * -0.02)
     group_width = icon_texture.width + AUTOHOLD_TIMER_GAP + timer_size.x
     group_x = self._rect.x + (self._rect.width - group_width) / 2
     center_y = self._rect.y + self._rect.height / 2 + (self._alert_y_filter.x - self._rect.y)
@@ -464,6 +482,14 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
 
     icon_x = group_x
     icon_y = center_y - icon_texture.height / 2
+    if progress > 0.0:
+      ring_center = rl.Vector2(icon_x + icon_texture.width / 2, center_y)
+      ring_radius = max(icon_texture.width, icon_texture.height) / 2 + AUTOHOLD_RING_GAP
+      ring_alpha = int(255 * 0.28 * self._alpha_filter.x)
+      rl.draw_ring(ring_center, ring_radius - AUTOHOLD_RING_WIDTH, ring_radius,
+                   0, 360, 36, rl.Color(255, 255, 255, ring_alpha))
+      rl.draw_ring(ring_center, ring_radius - AUTOHOLD_RING_WIDTH, ring_radius,
+                   -90, -90 + 360 * progress, 36, rl.Color(57, 255, 112, int(255 * self._alpha_filter.x)))
     rl.draw_texture_ex(icon_texture, rl.Vector2(icon_x, icon_y), 0.0, 1.0,
                        rl.Color(255, 255, 255, int(255 * self._alpha_filter.x)))
 

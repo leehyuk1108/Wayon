@@ -9,8 +9,9 @@ from opendbc.car import gen_empty_fingerprint
 from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, gm_auto_hold_command,
                                          gm_long_auto_hold_command, gm_uses_auto_hold_sng,
                                          limit_traverse_stopping_brake, update_gm_long_auto_hold_brake,
-                                         update_traverse_coasting)
-from opendbc.car.gm.carstate import STANDSTILL_THRESHOLD, TRAVERSE_STANDSTILL_THRESHOLD, get_standstill_threshold
+                                         update_epb_hold_handoff, update_traverse_coasting)
+from opendbc.car.gm.carstate import (EPB_CONFIRM_FRAMES, STANDSTILL_THRESHOLD, TRAVERSE_STANDSTILL_THRESHOLD,
+                                    get_standstill_threshold, update_epb_closed)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.gmcan import create_acc_dashboard_command
 from opendbc.car.gm.fingerprints import FINGERPRINTS
@@ -21,6 +22,41 @@ from opendbc.testing import parameterized
 CAMERA_DIAGNOSTIC_ADDRESS = 0x24b
 LongCtrlState = CarControl.Actuators.LongControlState
 GearShifter = CarState.GearShifter
+
+
+class TestGMEpbState(unittest.TestCase):
+  def test_requires_consecutive_new_frames(self):
+    closed_frames, open_frames, closed = 0, 0, False
+    closed_frames, open_frames, closed = update_epb_closed(
+      [1] * (EPB_CONFIRM_FRAMES - 1), closed_frames, open_frames, closed)
+    self.assertFalse(closed)
+
+    closed_frames, open_frames, closed = update_epb_closed([1], closed_frames, open_frames, closed)
+    self.assertTrue(closed)
+    self.assertEqual(closed_frames, EPB_CONFIRM_FRAMES)
+
+    closed_frames, open_frames, closed = update_epb_closed(
+      [0] * (EPB_CONFIRM_FRAMES - 1), closed_frames, open_frames, closed)
+    self.assertTrue(closed)
+    closed_frames, open_frames, closed = update_epb_closed([0], closed_frames, open_frames, closed)
+    self.assertFalse(closed)
+
+  def test_empty_update_does_not_advance_debounce(self):
+    state = update_epb_closed([1], 0, 0, False)
+    self.assertEqual(update_epb_closed([], *state), state)
+
+  def test_hydraulic_hold_overlaps_confirmed_epb_then_stops(self):
+    state = (True, True, 0)
+    overlap_count = 0
+    for _ in range(10):
+      overlap, was_long, commanded, long_commanded, frames = update_epb_hold_handoff(
+        True, False, False, *state)
+      overlap_count += int(overlap)
+      if overlap:
+        self.assertTrue(was_long)
+      state = commanded, long_commanded, frames
+    self.assertEqual(overlap_count, 5)
+    self.assertEqual(state, (False, False, 0))
 
 
 class TestGMFingerprint(unittest.TestCase):

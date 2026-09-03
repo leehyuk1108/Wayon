@@ -18,6 +18,7 @@ from opendbc.car.fw_versions import ObdCallback
 from opendbc.car.car_helpers import get_car, interfaces
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
+from openpilot.selfdrive.car.auto_hold_session import AutoHoldSessionTracker
 from openpilot.selfdrive.car.cruise import VCruiseHelper
 from openpilot.selfdrive.car.helpers import convert_carControlSP, convert_to_capnp
 
@@ -81,6 +82,11 @@ class Car:
     self.initialized_prev = False
 
     self.last_actuators_output = structs.CarControl.Actuators()
+    self.gm_auto_hold_tracker = AutoHoldSessionTracker()
+    self.gm_auto_hold_session = self.gm_auto_hold_tracker.update(
+      0.0, hold_requested=False, epb_closed=False, speed_ms=0.0,
+      gas_pressed=False, drivable_gear=False,
+    )
 
     self.params = Params()
 
@@ -218,6 +224,24 @@ class Car:
       # Use CarState w/ buttons from the step selfdrived enables on
       self.v_cruise_helper.initialize_v_cruise(self.CS_prev, self.experimental_mode, self.dynamic_experimental_control)
 
+    car_control = self.sm['carControl']
+    long_auto_hold_active = bool(
+      getattr(self.CI.CS, "autoHold", False) and car_control.longActive and CS.standstill and
+      car_control.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping
+    )
+    hold_requested = bool(getattr(self.CI.CS, "autoHold", False) and
+                          (CS.brakeHoldActive or long_auto_hold_active))
+    drivable_gear = CS.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low)
+    session_now = self.can_log_mono_time * 1e-9 if REPLAY else time.monotonic()
+    self.gm_auto_hold_session = self.gm_auto_hold_tracker.update(
+      session_now,
+      hold_requested=hold_requested,
+      epb_closed=bool(getattr(self.CI.CS, "gmEpbClosed", False)),
+      speed_ms=abs(CS.vEgoRaw),
+      gas_pressed=CS.gasPressed,
+      drivable_gear=drivable_gear,
+    )
+
     # TODO: mirror the carState.cruiseState struct?
     CS.vCruise = float(self.v_cruise_helper.v_cruise_kph)
     CS.vCruiseCluster = float(self.v_cruise_helper.v_cruise_cluster_kph)
@@ -279,6 +303,12 @@ class Car:
     cs_sp_send.carStateSP.navdyRightBlindspot = CS.rightBlindspot
     cs_sp_send.carStateSP.navdyBrakeHoldActive = CS.brakeHoldActive
     cs_sp_send.carStateSP.navdyDoorOpen = CS.doorOpen
+    cs_sp_send.carStateSP.gmAutoHoldActive = self.gm_auto_hold_session.active
+    cs_sp_send.carStateSP.gmAutoHoldElapsedS = self.gm_auto_hold_session.elapsed_s
+    cs_sp_send.carStateSP.gmAutoHoldExpectedProgress = self.gm_auto_hold_session.expected_progress
+    cs_sp_send.carStateSP.gmEpbClosed = bool(getattr(self.CI.CS, "gmEpbClosed", False))
+    cs_sp_send.carStateSP.gmAutoHoldEpbTransferred = self.gm_auto_hold_session.epb_transferred
+    cs_sp_send.carStateSP.gmAutoHoldEpbTransitionAgeS = self.gm_auto_hold_session.epb_transition_age_s
     self.pm.send('carStateSP', cs_sp_send)
 
   def controls_update(self, CS: car.CarState, CC: car.CarControl, CC_SP: custom.CarControlSP):

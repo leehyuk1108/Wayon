@@ -490,6 +490,12 @@ def default_car_state() -> Any:
     rightBlindspot=False,
     doorOpen=False,
     brakeHoldActive=False,
+    gmAutoHoldActive=False,
+    gmAutoHoldElapsedS=0.0,
+    gmAutoHoldExpectedProgress=0.0,
+    gmEpbClosed=False,
+    gmAutoHoldEpbTransferred=False,
+    gmAutoHoldEpbTransitionAgeS=-1.0,
     standstill=False,
     vCruise=0.0,
     vCruiseCluster=0.0,
@@ -512,6 +518,12 @@ def car_state_from_sp(car_state_sp: Any) -> Any:
     rightBlindspot=bool(getattr(car_state_sp, "navdyRightBlindspot", False)),
     doorOpen=bool(getattr(car_state_sp, "navdyDoorOpen", False)),
     brakeHoldActive=bool(getattr(car_state_sp, "navdyBrakeHoldActive", False)),
+    gmAutoHoldActive=bool(getattr(car_state_sp, "gmAutoHoldActive", False)),
+    gmAutoHoldElapsedS=finite_float(getattr(car_state_sp, "gmAutoHoldElapsedS", 0.0)),
+    gmAutoHoldExpectedProgress=finite_float(getattr(car_state_sp, "gmAutoHoldExpectedProgress", 0.0)),
+    gmEpbClosed=bool(getattr(car_state_sp, "gmEpbClosed", False)),
+    gmAutoHoldEpbTransferred=bool(getattr(car_state_sp, "gmAutoHoldEpbTransferred", False)),
+    gmAutoHoldEpbTransitionAgeS=finite_float(getattr(car_state_sp, "gmAutoHoldEpbTransitionAgeS", -1.0), -1.0),
     standstill=bool(getattr(car_state_sp, "navdyStandstill", False)),
     vCruise=finite_float(getattr(car_state_sp, "navdyVCruise", 0.0)),
     vCruiseCluster=finite_float(getattr(car_state_sp, "navdyVCruiseCluster", 0.0)),
@@ -1282,7 +1294,8 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
   alert_type = str(getattr(selfdrive_state, "alertType", ""))
   vehicle_standstill = bool(getattr(car_state, "standstill", False))
   alert_event_name = alert_type.split("/", 1)[0]
-  manual_auto_hold = bool(getattr(car_state, "brakeHoldActive", False)) or alert_event_name in ("brakeHold", "silentBrakeHold")
+  auto_hold_active = bool(getattr(car_state, "gmAutoHoldActive", False))
+  manual_auto_hold = auto_hold_active or bool(getattr(car_state, "brakeHoldActive", False)) or alert_event_name in ("brakeHold", "silentBrakeHold")
   # preEnabled is the stopped engagement-wait state. Otherwise show the stop
   # icon while openpilot is engaged, or while manual GM Auto Hold is active.
   show_stop_icon = state == "preEnabled" or (vehicle_standstill and ((enabled or active) or manual_auto_hold))
@@ -1300,6 +1313,14 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     alert_type = ""
     alert_status = "normal"
     alert_size = "none"
+  epb_transferred = bool(getattr(car_state, "gmAutoHoldEpbTransferred", False))
+  # Keep driver prompts and critical alerts visible over this status message.
+  if epb_transferred and alert_status == "normal":
+    alert_text_1 = "주차 브레이크로 전환됨"
+    alert_text_2 = ""
+    alert_type = "gmEpbTransferred/normal"
+    alert_status = "normal"
+    alert_size = "mid"
   e2e_alerts = getattr(longitudinal_plan_sp, "e2eAlerts", None)
   green_light_alert = bool(getattr(e2e_alerts, "greenLightAlert", False))
   lead_depart_alert = bool(getattr(e2e_alerts, "leadDepartAlert", False))
@@ -1342,6 +1363,12 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "opAvailable": engageable,
     "standstill": show_stop_icon,
     "cruiseStandstill": show_stop_icon,
+    "autoHoldActive": auto_hold_active,
+    "autoHoldElapsedSec": rounded(max(0.0, finite_float(getattr(car_state, "gmAutoHoldElapsedS", 0.0))), 1),
+    "autoHoldEpbProgress": rounded(max(0.0, min(1.0, finite_float(getattr(car_state, "gmAutoHoldExpectedProgress", 0.0)))), 3),
+    "epbClosed": bool(getattr(car_state, "gmEpbClosed", False)),
+    "epbTransferred": epb_transferred,
+    "epbTransitionAgeSec": rounded(finite_float(getattr(car_state, "gmAutoHoldEpbTransitionAgeS", -1.0), -1.0), 1),
     "setSpeedKph": rounded(set_speed_kph(car_state, controls_state, starpilot_plan, longitudinal_plan)),
     "_physicalAccSetKph": rounded(physical_acc_speed_kph),
     "actualAccSetKph": rounded(physical_acc_speed_kph) if automatic_acc_active else 0.0,
@@ -1868,6 +1895,11 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
     payload.get("opAvailable"),
     payload.get("standstill"),
     payload.get("cruiseStandstill"),
+    payload.get("autoHoldActive"),
+    payload.get("autoHoldElapsedSec"),
+    payload.get("autoHoldEpbProgress"),
+    payload.get("epbClosed"),
+    payload.get("epbTransferred"),
     payload.get("setSpeedKph"),
     payload.get("actualAccSetKph"),
     payload.get("automaticAccTargetKph"),

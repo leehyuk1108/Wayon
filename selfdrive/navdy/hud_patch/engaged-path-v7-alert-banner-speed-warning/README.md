@@ -99,6 +99,12 @@ Behavior:
   critical alerts so HUD information remains visible behind the banner.
 - Does not restart animation for repeated copies of the same event.
 - Slides up and hides when the alert clears.
+- Shows a stable `MM:SS` GM Auto Hold timer beside the hold icon, with a green
+  progress ring toward the stock two-minute EPB handoff. Other alerts may cover
+  the timer but do not restart its underlying session.
+- Detects the actual GM `EPBStatus.EPBClosed` CAN state before ending hydraulic
+  hold, overlaps pressure for 0.2 seconds during handoff, and displays
+  `주차 브레이크로 전환됨` through the normal alert banner on both displays.
 - Uses the same camera speed limit as the ambient-light overspeed warning.
 - Keeps the current-speed text red immediately above the camera limit, but
   applies a separate comfort filter to the ambient warning: enter at limit +2

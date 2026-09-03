@@ -36,6 +36,7 @@ GM_STOPPING_BRAKE_TAPER_TWO_KPH = 42
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 3.0 * CV.KPH_TO_MS
 GM_STOPPING_BRAKE_TAPER_MAX = 80
 GM_STOPPING_BRAKE_TAPER_BYPASS = 180
+GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 60
 GM_SNG_CREEP_RESUME_MIN_SPEED = 1.45  # m/s; physical RES succeeded at 1.59 m/s in the Traverse route
 GM_SNG_CREEP_RESUME_MAX_SPEED = 1.90
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(12.0 / DT_CTRL)
@@ -62,8 +63,10 @@ def update_traverse_coasting(CP, coasting, long_active, stopping, v_ego, accel):
 
 
 def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
+  low_speed = v_ego < 1.0 * CV.KPH_TO_MS
+  brake_bypass = GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS if low_speed else GM_STOPPING_BRAKE_TAPER_BYPASS
   if (CP.carFingerprint != CAR.CHEVROLET_TRAVERSE or not stopping or
-      v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED or apply_brake >= GM_STOPPING_BRAKE_TAPER_BYPASS):
+      v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED or apply_brake >= brake_bypass):
     return apply_brake
   brake_limit = round(np.interp(max(v_ego, 0.0),
                                 [0.0, 0.5 * CV.KPH_TO_MS, 0.8 * CV.KPH_TO_MS, 1.0 * CV.KPH_TO_MS,

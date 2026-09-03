@@ -110,6 +110,10 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
     self.assertEqual(2, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
     self.assertEqual(2, limit_traverse_stopping_brake(self.CP, True, 0.2, 10))
 
+  def test_preserves_requested_brake_when_stopping_reserve_is_small(self):
+    self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 0.2, 60))
+    self.assertEqual(180, limit_traverse_stopping_brake(self.CP, True, 1.1 / 3.6, 180))
+
   def test_only_changes_traverse_final_stopping_phase(self):
     self.assertEqual(132, limit_traverse_stopping_brake(self.CP, False, 0.2, 132))
     self.assertEqual(132, limit_traverse_stopping_brake(self.CP, True, 3.1 / 3.6, 132))

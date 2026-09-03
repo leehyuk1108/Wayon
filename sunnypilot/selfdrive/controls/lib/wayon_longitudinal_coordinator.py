@@ -131,11 +131,11 @@ class WayonCoastController:
 
 
 class LowSpeedStopController:
-  """Release near walking speed, then recapture before GM hydraulic hold."""
+  """Taper residual braking only in the final fraction of a stop."""
 
-  RELEASE_START = 3.0 * CV.KPH_TO_MS
-  CAPTURE_START = 1.0 * CV.KPH_TO_MS
-  STOP_EPSILON = 0.08
+  TAPER_START = 0.8 * CV.KPH_TO_MS
+  STOP_EPSILON = 0.015
+  MAX_TAPER_REQUEST = -0.6
 
   def __init__(self):
     self.phase = "inactive"
@@ -151,8 +151,13 @@ class LowSpeedStopController:
       self.phase = "hold"
       self.output_accel = requested_accel
       return requested_accel
-    if not should_stop or v_ego >= self.RELEASE_START:
+    if not should_stop or v_ego >= self.TAPER_START:
       self.phase = "approach"
+      self.output_accel = requested_accel
+      return requested_accel
+
+    if requested_accel <= self.MAX_TAPER_REQUEST:
+      self.phase = "safety"
       self.output_accel = requested_accel
       return requested_accel
 
@@ -170,25 +175,13 @@ class LowSpeedStopController:
       self.output_accel = requested_accel
       return requested_accel
 
-    if v_ego >= self.CAPTURE_START:
-      self.phase = "release"
-      soft_target = float(np.interp(v_ego, [self.CAPTURE_START, self.RELEASE_START], [-0.20, -0.55]))
-    else:
-      self.phase = "capture"
-      soft_target = float(np.interp(v_ego, [self.STOP_EPSILON, self.CAPTURE_START], [-0.55, -0.20]))
-
-    available_m = max(float(getattr(lead, "dRel", 1000.0)) - 3.0, 0.25)
-    required_accel = -(v_ego ** 2) / (2.0 * available_m)
-    # Never relax beyond the acceleration needed to retain a 3 m stopping reserve.
-    desired_accel = min(soft_target, required_accel)
-    if a_ego > -0.05 and v_ego < self.CAPTURE_START:
-      desired_accel = min(desired_accel, -0.25)
+    self.phase = "taper"
+    desired_accel = float(np.interp(v_ego, [self.STOP_EPSILON, self.TAPER_START], [0.0, -0.12]))
 
     if self.output_accel is None:
       self.output_accel = requested_accel
-    release_step = 0.8 * DT_CTRL
-    build_step = 1.2 * DT_CTRL
-    self.output_accel += float(np.clip(desired_accel - self.output_accel, -build_step, release_step))
+    release_step = 1.5 * DT_CTRL
+    self.output_accel += float(np.clip(desired_accel - self.output_accel, 0.0, release_step))
     return self.output_accel
 
 

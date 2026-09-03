@@ -50,25 +50,29 @@ def test_low_speed_follow_coasts_only_with_stable_radar_lead():
                                lead(8.0, 0.0, radar=False))
 
 
-def test_low_speed_stop_releases_then_recaptures_with_verified_lead():
+def test_low_speed_stop_only_tapers_final_stop_with_verified_lead():
   controller = LowSpeedStopController()
-  for _ in range(100):
-    release = controller.update(-0.8, 2.0 * CV.KPH_TO_MS, -0.5, False, True, lead(8.0))
-  assert controller.phase == "release"
-  assert -0.8 < release < -0.2
+  assert controller.update(-0.4, 1.0 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0)) == -0.4
+  assert controller.phase == "approach"
 
-  for _ in range(100):
-    capture = controller.update(-0.8, 0.5 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0))
-  assert controller.phase == "capture"
-  assert capture < release
-  assert capture <= -0.25
+  tapered = -0.4
+  for _ in range(30):
+    tapered = controller.update(tapered, 0.5 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0))
+  assert controller.phase == "taper"
+  assert -0.4 < tapered < 0.0
+
+  assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) == -0.2
+  assert controller.phase == "hold"
 
 
 def test_low_speed_stop_never_relaxes_close_or_unverified_stop():
   controller = LowSpeedStopController()
-  assert controller.update(-0.8, 2.0 * CV.KPH_TO_MS, -0.5, False, True, lead(3.2)) == -0.8
+  speed = 0.5 * CV.KPH_TO_MS
+  assert controller.update(-0.8, speed, -0.5, False, True, lead(8.0)) == -0.8
   assert controller.phase == "safety"
-  assert controller.update(-0.8, 2.0 * CV.KPH_TO_MS, -0.5, False, True, None) == -0.8
+  assert controller.update(-0.4, speed, -0.2, False, True, lead(3.2)) == -0.4
+  assert controller.phase == "safety"
+  assert controller.update(-0.4, speed, -0.2, False, True, None) == -0.4
   assert controller.phase == "unverified"
 
 

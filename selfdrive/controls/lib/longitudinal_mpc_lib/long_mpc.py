@@ -68,6 +68,9 @@ CRUISE_MIN_ACCEL = -1.2
 CRUISE_MAX_ACCEL = 1.6
 MIN_X_LEAD_FACTOR = 0.5
 MPC_LEAD_SOURCE_LOOKAHEAD_S = 5.0
+WAYON_STOP_SMOOTHING_BUFFER_M = 0.25
+WAYON_STOP_SMOOTHING_MAX_EGO_SPEED = 3.0
+WAYON_STOP_SMOOTHING_MAX_LEAD_SPEED = 0.5
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
@@ -95,6 +98,14 @@ def get_stopped_equivalence_factor(v_lead):
 
 def get_safe_obstacle_distance(v_ego, t_follow):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
+
+
+def get_wayon_stop_smoothing_buffer(enabled, v_ego, lead_status=False, v_lead=0.0,
+                                    traffic_stop_active=False):
+  stopping_for_lead = lead_status and v_lead <= WAYON_STOP_SMOOTHING_MAX_LEAD_SPEED
+  if enabled and v_ego <= WAYON_STOP_SMOOTHING_MAX_EGO_SPEED and (stopping_for_lead or traffic_stop_active):
+    return WAYON_STOP_SMOOTHING_BUFFER_M
+  return 0.0
 
 
 def get_mpc_source(x_obstacles, lead_status, traffic_stop_active=False):
@@ -370,8 +381,12 @@ class LongitudinalMpc:
     # To estimate a safe distance from a moving lead, we calculate how much stopping
     # distance that lead needs as a minimum. We can add that to the current distance
     # and then treat that as a stopped car/obstacle at this new distance.
-    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1])
-    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1])
+    lead_0_buffer = get_wayon_stop_smoothing_buffer(
+      self.wayon_carrot_profile, v_ego, radarstate.leadOne.status, radarstate.leadOne.vLead)
+    lead_1_buffer = get_wayon_stop_smoothing_buffer(
+      self.wayon_carrot_profile, v_ego, radarstate.leadTwo.status, radarstate.leadTwo.vLead)
+    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1]) - lead_0_buffer
+    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1]) - lead_1_buffer
 
     # Fake an obstacle for cruise, this ensures smooth acceleration to set speed
     # when the leads are no factor.
@@ -382,6 +397,9 @@ class LongitudinalMpc:
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
 
     traffic_stop_obstacle = get_traffic_stop_obstacle_distance(traffic_stop_distance)
+    traffic_stop_obstacle -= get_wayon_stop_smoothing_buffer(
+      self.wayon_carrot_profile, v_ego, traffic_stop_active=traffic_stop_active)
+    traffic_stop_obstacle = max(0.0, traffic_stop_obstacle)
     traffic_stop_obstacle = traffic_stop_obstacle * np.ones(N+1)
     x_obstacles = np.column_stack([
       lead_0_obstacle, lead_1_obstacle, cruise_obstacle, traffic_stop_obstacle,

@@ -4,7 +4,13 @@ from openpilot.common.parameterized import parameterized_class
 
 from cereal import log
 
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_safe_obstacle_distance, get_stopped_equivalence_factor, get_T_FOLLOW
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
+  WAYON_STOP_SMOOTHING_BUFFER_M,
+  get_safe_obstacle_distance,
+  get_stopped_equivalence_factor,
+  get_T_FOLLOW,
+  get_wayon_stop_smoothing_buffer,
+)
 from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 
 
@@ -28,6 +34,14 @@ def run_following_distance_simulation(v_lead, t_end=100.0, e2e=False, personalit
   valid, output = man.evaluate()
   assert valid
   return output[-1,2] - output[-1,1]
+
+
+def test_wayon_stop_smoothing_buffer_only_moves_low_speed_stop_target_forward():
+  assert get_wayon_stop_smoothing_buffer(True, 2.0, True, 0.0) == WAYON_STOP_SMOOTHING_BUFFER_M
+  assert get_wayon_stop_smoothing_buffer(True, 2.0, traffic_stop_active=True) == WAYON_STOP_SMOOTHING_BUFFER_M
+  assert get_wayon_stop_smoothing_buffer(True, 4.0, True, 0.0) == 0.0
+  assert get_wayon_stop_smoothing_buffer(True, 2.0, True, 1.0) == 0.0
+  assert get_wayon_stop_smoothing_buffer(False, 2.0, True, 0.0) == 0.0
 
 
 @parameterized_class(("e2e", "personality", "speed"), itertools.product(

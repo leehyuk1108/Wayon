@@ -99,25 +99,23 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
     self.CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
 
   def test_tapers_to_soft_release_near_stop(self):
-    self.assertEqual(80, limit_traverse_stopping_brake(self.CP, True, 3.0 / 3.6 - 1e-3, 132))
-    self.assertEqual(42, limit_traverse_stopping_brake(self.CP, True, 2.0 / 3.6, 132))
-    self.assertEqual(8, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
-    self.assertEqual(3, limit_traverse_stopping_brake(self.CP, True, 0.8 / 3.6, 132))
-    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.5 / 3.6, 132))
-    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
+    self.assertEqual(12, limit_traverse_stopping_brake(self.CP, True, 0.8 / 3.6 - 1e-3, 12))
+    self.assertEqual(3, limit_traverse_stopping_brake(self.CP, True, 0.5 / 3.6, 12))
+    self.assertEqual(1, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 12))
+    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.15 / 3.6, 12))
+    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.0, 12))
 
   def test_does_not_increase_requested_brake(self):
-    self.assertEqual(2, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
-    self.assertEqual(2, limit_traverse_stopping_brake(self.CP, True, 0.2, 10))
+    self.assertEqual(1, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 10))
+    self.assertEqual(1, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 1))
 
   def test_preserves_requested_brake_when_stopping_reserve_is_small(self):
-    self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.2, 20))
-    self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 0.2, 60))
-    self.assertEqual(180, limit_traverse_stopping_brake(self.CP, True, 1.1 / 3.6, 180))
+    self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 20))
+    self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 60))
 
   def test_only_changes_traverse_final_stopping_phase(self):
     self.assertEqual(132, limit_traverse_stopping_brake(self.CP, False, 0.2, 132))
-    self.assertEqual(132, limit_traverse_stopping_brake(self.CP, True, 3.1 / 3.6, 132))
+    self.assertEqual(12, limit_traverse_stopping_brake(self.CP, True, 0.9 / 3.6, 12))
     self.assertEqual(180, limit_traverse_stopping_brake(self.CP, True, 0.2, 180))
     other = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertEqual(132, limit_traverse_stopping_brake(other, True, 0.2, 132))

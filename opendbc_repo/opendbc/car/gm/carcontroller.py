@@ -29,13 +29,10 @@ GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES = 20  # Ensure hold engages even when aEgo re
 GM_AUTO_HOLD_RAMP_STEP = 32
 GM_AUTO_HOLD_ROLL_SPEED = 0.08
 GM_STOPPING_BRAKE_TAPER_ZERO = 0
-GM_STOPPING_BRAKE_TAPER_HALF_KPH = 0
-GM_STOPPING_BRAKE_TAPER_EIGHT_TENTHS_KPH = 3
-GM_STOPPING_BRAKE_TAPER_ONE_KPH = 8
-GM_STOPPING_BRAKE_TAPER_TWO_KPH = 42
-GM_STOPPING_BRAKE_TAPER_START_SPEED = 3.0 * CV.KPH_TO_MS
-GM_STOPPING_BRAKE_TAPER_MAX = 80
-GM_STOPPING_BRAKE_TAPER_BYPASS = 180
+GM_STOPPING_BRAKE_TAPER_THREE_TENTHS_KPH = 1
+GM_STOPPING_BRAKE_TAPER_HALF_KPH = 3
+GM_STOPPING_BRAKE_TAPER_START_SPEED = 0.8 * CV.KPH_TO_MS
+GM_STOPPING_BRAKE_TAPER_MAX = 12
 # Keep the comfort taper limited to residual brake pressure. If longitudinal
 # control asks for more than a very light stop, preserve the full command so
 # smoothing cannot consume meaningful stopping distance.
@@ -66,18 +63,16 @@ def update_traverse_coasting(CP, coasting, long_active, stopping, v_ego, accel):
 
 
 def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
-  low_speed = v_ego < 1.0 * CV.KPH_TO_MS
-  brake_bypass = GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS if low_speed else GM_STOPPING_BRAKE_TAPER_BYPASS
   if (CP.carFingerprint != CAR.CHEVROLET_TRAVERSE or not stopping or
-      v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED or apply_brake >= brake_bypass):
+      v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED or
+      apply_brake >= GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS):
     return apply_brake
   brake_limit = round(np.interp(max(v_ego, 0.0),
-                                [0.0, 0.5 * CV.KPH_TO_MS, 0.8 * CV.KPH_TO_MS, 1.0 * CV.KPH_TO_MS,
-                                 2.0 * CV.KPH_TO_MS, GM_STOPPING_BRAKE_TAPER_START_SPEED],
-                                [GM_STOPPING_BRAKE_TAPER_ZERO, GM_STOPPING_BRAKE_TAPER_HALF_KPH,
-                                 GM_STOPPING_BRAKE_TAPER_EIGHT_TENTHS_KPH, GM_STOPPING_BRAKE_TAPER_ONE_KPH,
-                                 GM_STOPPING_BRAKE_TAPER_TWO_KPH,
-                                 GM_STOPPING_BRAKE_TAPER_MAX]))
+                                [0.0, 0.15 * CV.KPH_TO_MS, 0.3 * CV.KPH_TO_MS,
+                                 0.5 * CV.KPH_TO_MS, GM_STOPPING_BRAKE_TAPER_START_SPEED],
+                                [GM_STOPPING_BRAKE_TAPER_ZERO, GM_STOPPING_BRAKE_TAPER_ZERO,
+                                 GM_STOPPING_BRAKE_TAPER_THREE_TENTHS_KPH,
+                                 GM_STOPPING_BRAKE_TAPER_HALF_KPH, GM_STOPPING_BRAKE_TAPER_MAX]))
   return min(apply_brake, brake_limit)
 
 

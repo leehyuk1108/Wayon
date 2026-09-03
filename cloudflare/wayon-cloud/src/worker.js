@@ -893,6 +893,17 @@ function validIsoOrNow(value) {
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : nowIso();
 }
 
+export function vehicleEventNotificationEligible(
+  occurredAt,
+  nowMs = Date.now(),
+  maxAgeSeconds = 600,
+) {
+  const occurredAtMs = Date.parse(String(occurredAt || ""));
+  if (!Number.isFinite(occurredAtMs)) return false;
+  const ageSeconds = (nowMs - occurredAtMs) / 1000;
+  return ageSeconds >= -120 && ageSeconds <= maxAgeSeconds;
+}
+
 async function latestGmoneStatus(env, deviceId) {
   const row = await env.DB.prepare(`
     SELECT source, collected_at, vehicle_updated_at, payload_json, updated_at
@@ -1442,8 +1453,9 @@ async function handleVehicleEvent(request, env) {
 
   const id = String(payload.id || crypto.randomUUID()).slice(0, 128);
   const deviceId = authenticatedDeviceId(request);
-  const occurredAt = String(payload.occurredAt || nowIso()).slice(0, 64);
+  const occurredAt = validIsoOrNow(payload.occurredAt);
   const receivedAt = nowIso();
+  const notificationEligible = vehicleEventNotificationEligible(occurredAt);
   const locked = doorLockEvent ? Boolean(payload.locked) : null;
   const delaySeconds = parkingUnlockedEvent
     ? Math.max(0, Math.min(3600, Number.parseInt(payload.delaySeconds || "180", 10) || 180))
@@ -1458,7 +1470,7 @@ async function handleVehicleEvent(request, env) {
   const inserted = await env.DB.prepare(`
     INSERT OR IGNORE INTO vehicle_events (
       id, device_id, event_type, occurred_at, received_at, locked, notified_count, raw_json
-    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id,
     deviceId,
@@ -1466,8 +1478,19 @@ async function handleVehicleEvent(request, env) {
     occurredAt,
     receivedAt,
     locked == null ? null : toInt(locked),
+    notificationEligible ? 0 : -3,
     JSON.stringify(payload),
   ).run();
+
+  if (!notificationEligible) {
+    if (!inserted.meta?.changes) {
+      await env.DB.prepare(`
+        UPDATE vehicle_events SET notified_count = -3
+        WHERE id = ? AND notified_count = 0
+      `).bind(id).run();
+    }
+    return json({ ok: true, id, stale: true, notified: 0 });
+  }
 
   if (!inserted.meta?.changes) {
     const existing = await env.DB.prepare("SELECT notified_count FROM vehicle_events WHERE id = ?")

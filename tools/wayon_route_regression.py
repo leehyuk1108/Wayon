@@ -6,6 +6,12 @@ import json
 from pathlib import Path
 import sys
 
+# Direct execution from tools/ otherwise omits the repository root from
+# sys.path on the comma device.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+  sys.path.insert(0, str(REPO_ROOT))
+
 from openpilot.system.wayon_drive_quality import evaluate_route_report
 
 
@@ -27,12 +33,34 @@ def reports_from_payload(payload):
 
 def main():
   parser = argparse.ArgumentParser(description="Check Wayon route quality regressions")
-  parser.add_argument("input", type=Path, help="Trip, state export, or report JSON")
+  parser.add_argument("input", nargs="?", type=Path, help="Trip, state export, or report JSON")
+  parser.add_argument("--latest", type=int, metavar="COUNT",
+                      help="Analyze the latest COUNT routes directly from the device log root")
+  parser.add_argument("--max-age-hours", type=float, default=168.0,
+                      help="Maximum route age used with --latest (default: 168)")
   parser.add_argument("--minimum-stop-score", type=int, default=70)
   parser.add_argument("--output", type=Path)
   args = parser.parse_args()
 
-  payload = json.loads(args.input.read_text(encoding="utf-8"))
+  if args.latest is not None:
+    if args.input is not None:
+      parser.error("input and --latest cannot be used together")
+    if args.latest < 1:
+      parser.error("--latest must be at least 1")
+    from openpilot.system.wayon_cloud_uploader import recent_route_groups, summarize_route_from_logs
+
+    route_groups = recent_route_groups(max(0.0, args.max_age_hours) * 3600.0)
+    payload = [
+      report for report in (
+        summarize_route_from_logs(group, {}, "local-regression")
+        for group in route_groups[:args.latest]
+      ) if report is not None
+    ]
+  elif args.input is not None:
+    payload = json.loads(args.input.read_text(encoding="utf-8"))
+  else:
+    parser.error("provide an input JSON file or --latest COUNT")
+
   results = [
     {"route": route, **evaluate_route_report(report, args.minimum_stop_score)}
     for route, report in reports_from_payload(payload)

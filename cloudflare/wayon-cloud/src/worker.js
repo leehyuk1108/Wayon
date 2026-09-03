@@ -1470,9 +1470,21 @@ async function handleVehicleEvent(request, env) {
   if (!inserted.meta?.changes) {
     const existing = await env.DB.prepare("SELECT notified_count FROM vehicle_events WHERE id = ?")
       .bind(id).first();
-    if (Number(existing?.notified_count || 0) > 0) {
+    if (Number(existing?.notified_count || 0) !== 0) {
       return json({ ok: true, id, duplicate: true, notified: existing.notified_count });
     }
+  }
+
+  // Claim delivery before calling FCM. A timed-out FCM request may still reach
+  // the phone, so retrying the same event would produce an alert storm.
+  const claimed = await env.DB.prepare(`
+    UPDATE vehicle_events SET notified_count = -1
+    WHERE id = ? AND notified_count = 0
+  `).bind(id).run();
+  if (!claimed.meta?.changes) {
+    const existing = await env.DB.prepare("SELECT notified_count FROM vehicle_events WHERE id = ?")
+      .bind(id).first();
+    return json({ ok: true, id, duplicate: true, notified: existing?.notified_count || 0 });
   }
 
   const event = {
@@ -1490,7 +1502,9 @@ async function handleVehicleEvent(request, env) {
   const notificationData = parkingUnlockedEvent ? parkingUnlockedData(event) : doorLockData(event);
   const notification = await sendDataNotifications(env, deviceId, notificationData);
   if (notification.failed > 0 && notification.sent === 0) {
-    throw new Error("FCM delivery failed; vehicle event remains pending");
+    await env.DB.prepare("UPDATE vehicle_events SET notified_count = -2 WHERE id = ?")
+      .bind(id).run();
+    return json({ ok: true, id, notificationAccepted: false, notified: 0 });
   }
   await env.DB.prepare("UPDATE vehicle_events SET notified_count = ? WHERE id = ?")
     .bind(notification.sent, id).run();

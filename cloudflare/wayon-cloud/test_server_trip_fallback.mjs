@@ -114,6 +114,7 @@ try {
     trips: [{
       id: "d1-trip",
       max_speed_mps: 7.25,
+      report: {},
     }],
   });
 } finally {

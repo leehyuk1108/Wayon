@@ -26,9 +26,17 @@ from openpilot.system.wayon_vehicle_events import (
   remove_vehicle_events,
 )
 from openpilot.system.wayon_identity import ensure_wayon_identity
+from openpilot.system.wayon_drive_quality import (
+  StopQualityTracker,
+  cutin_risk_stage,
+  resolve_operating_state,
+  telemetry_signature,
+)
 
 CONFIG_PATH = Path(os.getenv("WAYON_CLOUD_CONFIG", str(Path.home() / ".wayon_cloud" / "config.json") if PC else "/data/wayon_cloud/config.json"))
 ROUTE_STATE_PATH = Path(os.getenv("WAYON_CLOUD_ROUTE_STATE", str(CONFIG_PATH.with_name("route_state.json"))))
+UPLOAD_HEALTH_PATH = Path(os.getenv("WAYON_CLOUD_UPLOAD_HEALTH", "/dev/shm/wayon_cloud_health.json"))
+NAVDY_HEALTH_PATH = Path(os.getenv("WAYON_NAVDY_HEALTH", "/dev/shm/navdy_bridge_health.json"))
 USER_AGENT = "wayon-cloud-uploader/1.0"
 GPS_SERVICE_MAX_AGE_S = 5.0
 GPS_TIMESTAMP_MAX_AGE_MS = 15_000
@@ -71,11 +79,116 @@ LOOP_SLEEP_ONROAD = 1.0
 LOOP_SLEEP_OFFROAD = 1.0
 LOG_FILE_CANDIDATES = ("qlog.zst", "qlog.bz2", "qlog", "rlog.zst", "rlog.bz2", "rlog")
 STATE_SERVICES = ["deviceState", "pandaStates", "gpsLocationExternal", "gpsLocation", "selfdriveState"]
-TELEMETRY_SERVICES = STATE_SERVICES + ["carState"]
+TELEMETRY_SERVICES = STATE_SERVICES + ["carState", "radarState"]
 
 
 def utc_now():
   return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def read_json_file(path):
+  try:
+    with Path(path).open("r", encoding="utf-8") as f:
+      payload = json.load(f)
+    return payload if isinstance(payload, dict) else {}
+  except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    return {}
+
+
+def write_json_atomic(path, payload):
+  path = Path(path)
+  try:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    os.replace(temporary, path)
+  except OSError:
+    pass
+
+
+def iso_age_seconds(value, now_epoch=None):
+  try:
+    timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+  except (TypeError, ValueError):
+    return None
+  return max(0.0, (time.time() if now_epoch is None else now_epoch) - timestamp)
+
+
+def service_timestamps_payload(sm, services):
+  now_monotonic = time.monotonic()
+  result = {}
+  for service in services:
+    receive_time = float(sm.recv_time.get(service, 0.0))
+    age = now_monotonic - receive_time if receive_time > 0.0 else None
+    seen = bool(sm.seen.get(service, False))
+    alive = bool(sm.alive.get(service, False)) if hasattr(sm, "alive") else seen
+    freq_ok = bool(sm.freq_ok.get(service, False)) if hasattr(sm, "freq_ok") else alive
+    result[service] = {
+      "seen": seen,
+      "alive": alive,
+      "frequencyOk": freq_ok,
+      "ageSeconds": round(max(0.0, age), 3) if age is not None else None,
+    }
+  return result
+
+
+def connection_state(ok, detail, updated_at=None, age_seconds=None):
+  return {
+    "state": "ok" if ok else "fault",
+    "detail": detail,
+    "updatedAt": updated_at,
+    "ageSeconds": round(age_seconds, 1) if age_seconds is not None else None,
+  }
+
+
+def connection_diagnostics(sm, services, gps, panda, vehicle, openpilot):
+  timestamps = service_timestamps_payload(sm, services)
+  navdy = read_json_file(NAVDY_HEALTH_PATH)
+  navdy_age = iso_age_seconds(navdy.get("updatedAt"))
+  upload = read_json_file(UPLOAD_HEALTH_PATH)
+  upload_age = iso_age_seconds(upload.get("lastSuccessAt"))
+  can = vehicle.get("can") if isinstance(vehicle, dict) else {}
+  car_seen = timestamps.get("carState", {}).get("seen", False)
+  car_ok = (not vehicle.get("available", False)) or (
+    car_seen and bool(can.get("valid", False)) and not bool(can.get("timeout", False)))
+  panda_ok = panda is not None and not panda.get("heartbeatLost", False) and panda.get("faultStatus") in ("none", "normal", "")
+  navdy_ok = navdy_age is not None and navdy_age <= 8.0 and bool(navdy.get("transportConnected", False))
+  gps_timestamp_ms = gps.get("timestampMillis")
+  gps_age = max(0.0, time.time() - float(gps_timestamp_ms) / 1000.0) if gps_timestamp_ms else None
+  service_age = lambda name: timestamps.get(name, {}).get("ageSeconds")
+  return {
+    "comma": connection_state(timestamps.get("deviceState", {}).get("alive", False), "cereal device state",
+                              age_seconds=service_age("deviceState")),
+    "vehicleCan": connection_state(car_ok, "CAN valid" if car_ok else "CAN unavailable or invalid",
+                                   age_seconds=service_age("carState")),
+    "panda": connection_state(panda_ok, "safety interface online" if panda_ok else "panda fault or heartbeat missing",
+                              age_seconds=service_age("pandaStates")),
+    "gps": connection_state(bool(gps.get("fresh", False)), str(gps.get("source") or "unavailable"),
+                            age_seconds=gps_age),
+    "openpilot": connection_state(bool(openpilot.get("available", False)), str(openpilot.get("state") or "unavailable"),
+                                  age_seconds=service_age("selfdriveState")),
+    "navdy": connection_state(navdy_ok, str(navdy.get("transport") or "disconnected"),
+                              navdy.get("updatedAt"), navdy_age),
+    "cloud": connection_state(upload_age is not None and upload_age <= 600.0,
+                              "last telemetry upload", upload.get("lastSuccessAt"), upload_age),
+  }
+
+
+def radar_cutin_payload(sm):
+  try:
+    lead = sm["radarState"].leadCutInRisk
+    if not bool(lead.status):
+      return cutin_risk_stage(0.0)
+    result = cutin_risk_stage(lead.score, lead.dRel, lead.vRel)
+    result.update({
+      "trackId": int(lead.radarTrackId),
+      "distanceM": round(float(lead.dRel), 2),
+      "lateralM": round(float(lead.yRel), 2),
+      "relativeSpeedMps": round(float(lead.vRel), 2),
+    })
+    return result
+  except Exception:
+    return cutin_risk_stage(0.0)
 
 
 def read_config():
@@ -798,11 +911,28 @@ def telemetry_payload(sm, params, device_id, started_override: bool | None = Non
   panda = panda_details_payload(panda_state)
   vehicle = vehicle_details_payload(sm, started)
   openpilot = openpilot_details_payload(sm)
+  gps = gps_payload(sm, params)
+  services = list(getattr(sm, "services", TELEMETRY_SERVICES if started else STATE_SERVICES))
+  service_timestamps = service_timestamps_payload(sm, services)
+  connections = connection_diagnostics(sm, services, gps, panda, vehicle, openpilot)
+  connected = connections.get("comma", {}).get("state") == "ok" and connections.get("vehicleCan", {}).get("state") == "ok"
+  system_state = resolve_operating_state(
+    connected=connected,
+    onroad=started,
+    door_open=bool(vehicle.get("doorOpen", False)),
+    gear=str(vehicle.get("gear") or "unknown"),
+  )
 
   return {
-    "schemaVersion": "wayon-telemetry-v2",
+    "schemaVersion": "wayon-telemetry-v3",
     "deviceId": device_id,
     "updatedAt": utc_now(),
+    "timestamps": {
+      "generatedAt": utc_now(),
+      "services": service_timestamps,
+    },
+    "connections": connections,
+    "systemState": system_state,
     "onroad": started,
     "ignition": ignition,
     "enabled": bool(openpilot.get("enabled", False)),
@@ -813,7 +943,7 @@ def telemetry_payload(sm, params, device_id, started_override: bool | None = Non
     "thermalStatus": enum_name(device_state.thermalStatus),
     "fanPercent": int(device_state.fanSpeedPercentDesired),
     "screenBrightnessPercent": int(device_state.screenBrightnessPercent),
-    "gps": gps_payload(sm, params),
+    "gps": gps,
     "vehicleSpeedMps": vehicle_speed.get("speedMps"),
     "vehicleSpeedSource": vehicle_speed.get("source"),
     "dongleId": get_param_str(params, "DongleId"),
@@ -821,6 +951,7 @@ def telemetry_payload(sm, params, device_id, started_override: bool | None = Non
     "panda": panda,
     "vehicle": vehicle,
     "openpilot": openpilot,
+    "cutInRisk": radar_cutin_payload(sm) if started else cutin_risk_stage(0.0),
   }
 
 
@@ -833,6 +964,60 @@ def fresh_telemetry_payload(params, device_id, started):
     if sm.seen["deviceState"] and (not started or sm.seen["carState"]):
       break
   return telemetry_payload(sm, params, device_id, started_override=started)
+
+
+def connection_status_signature(payload):
+  return tuple(sorted(
+    (name, str(item.get("state") or "unknown"))
+    for name, item in (payload.get("connections") or {}).items()
+    if isinstance(item, dict)
+  ))
+
+
+def health_event_from_telemetry(payload, previous_signature=None):
+  signature = connection_status_signature(payload)
+  voltage = payload.get("voltageV")
+  thermal = str(payload.get("thermalStatus") or "").lower()
+  panda = payload.get("panda") or {}
+  cutin = payload.get("cutInRisk") or {}
+  issues = []
+  severity = "normal"
+  if voltage is not None and float(voltage) <= 11.5:
+    issues.append(f"12V battery {float(voltage):.1f}V")
+    severity = "critical"
+  elif voltage is not None and float(voltage) < 11.9:
+    issues.append(f"12V battery {float(voltage):.1f}V")
+    severity = "warning"
+  if thermal in ("yellow", "red", "danger", "overheated"):
+    issues.append(f"device thermal {thermal}")
+    severity = "critical" if thermal in ("red", "danger", "overheated") else "warning"
+  if str(panda.get("faultStatus") or "none").lower() not in ("", "none", "normal"):
+    issues.append(f"safety interface {panda.get('faultStatus')}")
+    severity = "warning" if severity == "normal" else severity
+  cutin_level = int(cutin.get("level") or 0)
+  if cutin_level >= 2:
+    issues.append(f"cut-in risk {cutin.get('name') or cutin_level}")
+    severity = "critical" if cutin_level >= 3 else "warning"
+  health_signature = (signature, tuple(issues), severity)
+  if health_signature == previous_signature:
+    return None, health_signature
+  faults = [name for name, state in signature if state != "ok"]
+  details = faults + issues
+  return {
+    "id": f"health-{payload.get('deviceId', 'unknown')}-{int(time.time() * 1000)}",
+    "deviceId": payload.get("deviceId"),
+    "occurredAt": payload.get("updatedAt") or utc_now(),
+    "category": "vehicle_health" if issues else "connection",
+    "severity": "warning" if faults and severity == "normal" else severity,
+    "title": "Vehicle attention required" if issues else "Connection degraded" if faults else "Connections restored",
+    "detail": ", ".join(details) if details else "All monitored connections are healthy",
+    "snapshot": {
+      "connections": payload.get("connections") or {},
+      "voltageV": voltage,
+      "thermalStatus": payload.get("thermalStatus"),
+      "systemState": payload.get("systemState"),
+    },
+  }, health_signature
 
 
 def haversine_m(a, b):
@@ -1060,6 +1245,14 @@ def summarize_route_from_logs(route_group, config, device_id):
   last_mono = None
   last_point_mono = None
   last_vehicle_speed = None
+  stop_quality = StopQualityTracker()
+  active_duration_s = 0.0
+  last_selfdrive_mono = None
+  last_selfdrive_active = False
+  cutin_stage_counts = {"watch": 0, "prepare": 0, "brake": 0}
+  cutin_stage_max = 0
+  cutin_event_count = 0
+  previous_cutin_stage = 0
 
   point_interval_s = float(config.get("route_point_interval_s", DEFAULT_ROUTE_POINT_INTERVAL))
   min_distance_m = float(config.get("route_point_min_distance_m", DEFAULT_ROUTE_POINT_MIN_DISTANCE_M))
@@ -1080,6 +1273,38 @@ def summarize_route_from_logs(route_group, config, device_id):
             last_vehicle_speed = car_state_speed_payload(msg.carState)
             if last_vehicle_speed.get("speedMps") is not None:
               speed_samples.append(float(last_vehicle_speed["speedMps"]))
+              stop_quality.update(
+                msg_mono,
+                last_vehicle_speed["speedMps"],
+                float(msg.carState.aEgo),
+                bool(msg.carState.standstill),
+              )
+          except Exception:
+            pass
+          continue
+
+        if which == "selfdriveState":
+          if last_selfdrive_mono is not None and last_selfdrive_active:
+            active_duration_s += min(1.0, max(0.0, msg_mono - last_selfdrive_mono))
+          last_selfdrive_active = bool(msg.selfdriveState.active)
+          last_selfdrive_mono = msg_mono
+          continue
+
+        if which == "radarState":
+          try:
+            lead = msg.radarState.leadCutInRisk
+            stage = cutin_risk_stage(
+              lead.score if lead.status else 0.0,
+              lead.dRel if lead.status else None,
+              lead.vRel if lead.status else None,
+            )
+            level = int(stage["level"])
+            cutin_stage_max = max(cutin_stage_max, level)
+            if level > 0:
+              cutin_stage_counts[stage["name"]] += 1
+            if level >= 2 and previous_cutin_stage < 2:
+              cutin_event_count += 1
+            previous_cutin_stage = level
           except Exception:
             pass
           continue
@@ -1112,6 +1337,8 @@ def summarize_route_from_logs(route_group, config, device_id):
   avg_speed_mps = distance_m / duration_s if duration_s > 0 else 0.0
   max_speed_mps = max(speed_samples) if speed_samples else max(float(point.get("speedMps") or 0.0) for point in route)
   payload_route = downsample_route(route, point_limit)
+  stop_summary = stop_quality.summary()
+  openpilot_active_percent = round(active_duration_s / duration_s * 100.0, 1) if duration_s > 0 else 0.0
 
   return {
     "id": f"{device_id}-{route_name}",
@@ -1129,6 +1356,19 @@ def summarize_route_from_logs(route_group, config, device_id):
     "segmentCount": len(route_group["segments"]),
     "avgSpeedMps": avg_speed_mps,
     "maxSpeedMps": max_speed_mps,
+    "report": {
+      "schemaVersion": "wayon-trip-report-v1",
+      "openpilot": {
+        "activeDurationS": round(active_duration_s, 1),
+        "activePercent": openpilot_active_percent,
+      },
+      "stopQuality": stop_summary,
+      "cutInRisk": {
+        "eventCount": cutin_event_count,
+        "maxLevel": cutin_stage_max,
+        "sampleCounts": cutin_stage_counts,
+      },
+    },
     "route": payload_route,
   }
 
@@ -1276,7 +1516,7 @@ def capture_offroad_images():
 def main():
   set_core_affinity([0, 1, 2, 3])
   params = Params()
-  sm = messaging.SubMaster(STATE_SERVICES)
+  sm = messaging.SubMaster(TELEMETRY_SERVICES)
 
   config = None
   next_config_load = 0.0
@@ -1287,6 +1527,9 @@ def main():
   next_vehicle_event_upload = 0.0
   next_ambient_command_poll = 0.0
   previous_started = False
+  last_telemetry_signature = None
+  last_telemetry_upload_at = 0.0
+  last_connection_signature = None
 
   while True:
     sm.update(1000)
@@ -1351,10 +1594,29 @@ def main():
 
     if now >= next_telemetry:
       try:
-        post_json(config, "/api/telemetry", fresh_telemetry_payload(params, device_id, started))
-        next_telemetry = now + max(5.0, telemetry_interval)
+        payload = telemetry_payload(sm, params, device_id, started_override=started)
+        signature = telemetry_signature(payload)
+        heartbeat_due = now - last_telemetry_upload_at >= max(5.0, telemetry_interval)
+        if signature != last_telemetry_signature or heartbeat_due:
+          post_json(config, "/api/telemetry", payload)
+          last_telemetry_signature = signature
+          last_telemetry_upload_at = now
+          write_json_atomic(UPLOAD_HEALTH_PATH, {
+            "lastSuccessAt": utc_now(),
+            "lastReason": "state_changed" if not heartbeat_due else "heartbeat",
+          })
+          health_event, last_connection_signature = health_event_from_telemetry(
+            payload, last_connection_signature)
+          if health_event is not None:
+            post_json(config, "/api/health-event", health_event)
+        next_telemetry = now + (5.0 if started else 15.0)
       except Exception as exc:
         print(f"Wayon cloud: telemetry upload failed: {exc}")
+        write_json_atomic(UPLOAD_HEALTH_PATH, {
+          "lastSuccessAt": read_json_file(UPLOAD_HEALTH_PATH).get("lastSuccessAt"),
+          "lastFailureAt": utc_now(),
+          "lastError": str(exc)[:240],
+        })
         next_telemetry = now + 30.0
 
     if not started and now >= next_route_summary:

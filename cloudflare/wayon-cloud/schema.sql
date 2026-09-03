@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS trips (
   end_lon REAL,
   route_point_count INTEGER NOT NULL DEFAULT 0,
   route_json TEXT NOT NULL,
+  report_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL
 );
 
@@ -143,6 +144,21 @@ CREATE TABLE IF NOT EXISTS vehicle_events (
 
 CREATE INDEX IF NOT EXISTS vehicle_events_device_occurred_idx
   ON vehicle_events(device_id, occurred_at DESC);
+
+CREATE TABLE IF NOT EXISTS health_events (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  category TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT,
+  snapshot_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS health_events_device_occurred_idx
+  ON health_events(device_id, occurred_at DESC);
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   token TEXT PRIMARY KEY,

@@ -1109,6 +1109,42 @@ async function handleTelemetry(request, env) {
   return json({ ok: true });
 }
 
+async function handleHealthEvent(request, env) {
+  if (!authorize(request, env, true)) return json({ error: "unauthorized" }, 401);
+  const payload = await request.json();
+  const deviceId = authenticatedDeviceId(request);
+  const id = String(payload.id || crypto.randomUUID()).slice(0, 160);
+  const occurredAt = validIsoOrNow(payload.occurredAt);
+  const category = String(payload.category || "system").slice(0, 48);
+  const severity = ["normal", "warning", "critical"].includes(payload.severity)
+    ? payload.severity : "warning";
+  const title = String(payload.title || "Vehicle health update").slice(0, 120);
+  const detail = String(payload.detail || "").slice(0, 500);
+  const snapshot = payload.snapshot && typeof payload.snapshot === "object" ? payload.snapshot : {};
+  await env.DB.prepare(`
+    INSERT OR REPLACE INTO health_events (
+      id, device_id, occurred_at, category, severity, title, detail, snapshot_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, deviceId, occurredAt, category, severity, title, detail, JSON.stringify(snapshot), nowIso()).run();
+  return json({ ok: true, id });
+}
+
+async function latestHealthTimeline(env, deviceId, limit = 40) {
+  const result = await env.DB.prepare(`
+    SELECT id, occurred_at, category, severity, title, detail, snapshot_json
+    FROM health_events WHERE device_id = ? ORDER BY occurred_at DESC LIMIT ?
+  `).bind(deviceId, limit).all();
+  return (result.results || []).map((row) => ({
+    id: row.id,
+    occurred_at: row.occurred_at,
+    category: row.category,
+    severity: row.severity,
+    title: row.title,
+    detail: row.detail,
+    snapshot: parseJsonObject(row.snapshot_json),
+  }));
+}
+
 function impactData(event) {
   return Object.fromEntries(Object.entries({
     type: "wayon_impact",
@@ -1908,8 +1944,8 @@ async function handleTrip(request, env) {
   await env.DB.prepare(`
     INSERT OR REPLACE INTO trips (
       id, device_id, started_at, ended_at, duration_s, distance_m, start_lat,
-      start_lon, end_lat, end_lon, route_point_count, route_json, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      start_lon, end_lat, end_lon, route_point_count, route_json, report_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id,
     deviceId,
@@ -1923,6 +1959,7 @@ async function handleTrip(request, env) {
     nullableNumber(payload.endLon ?? end.longitude),
     route.length,
     JSON.stringify(route),
+    JSON.stringify(payload.report && typeof payload.report === "object" ? payload.report : {}),
     nowIso(),
   ).run();
 
@@ -1935,7 +1972,7 @@ async function handleState(request, env) {
   }
 
   const deviceId = authenticatedDeviceId(request);
-  const [state, snapshots, vehicleStatus, vehicleLock] = await Promise.all([
+  const [state, snapshots, vehicleStatus, vehicleLock, healthTimeline] = await Promise.all([
     env.DB.prepare(`
       SELECT * FROM latest_state WHERE device_id = ? LIMIT 1
     `).bind(deviceId).first(),
@@ -1953,9 +1990,10 @@ async function handleState(request, env) {
     `).bind(deviceId).all(),
     fetchMergedVehicleStatus(env, deviceId),
     latestVehicleLock(env, deviceId),
+    latestHealthTimeline(env, deviceId),
   ]);
 
-  return json({ state, snapshots: snapshots.results || [], vehicleStatus, vehicleLock });
+  return json({ state, snapshots: snapshots.results || [], vehicleStatus, vehicleLock, healthTimeline });
 }
 
 function ambientByte(value, maximum, field) {
@@ -2188,10 +2226,11 @@ async function latestVehicleLock(env, deviceId) {
 }
 
 function parseTripRoute(trip) {
-  const { route_json: routeJson, ...rest } = trip;
+  const { route_json: routeJson, report_json: reportJson, ...rest } = trip;
   return {
     ...rest,
     route: JSON.parse(routeJson || "[]"),
+    report: parseJsonObject(reportJson),
   };
 }
 
@@ -2216,10 +2255,11 @@ function maxRouteSpeedMps(routeJson) {
 }
 
 function parseTripSummary(trip) {
-  const { route_json: routeJson, ...rest } = trip;
+  const { route_json: routeJson, report_json: reportJson, ...rest } = trip;
   return {
     ...rest,
     max_speed_mps: maxRouteSpeedMps(routeJson),
+    report: parseJsonObject(reportJson),
   };
 }
 
@@ -2496,7 +2536,7 @@ async function handleExport(request, env) {
   }
 
   const deviceId = authenticatedDeviceId(request);
-  const [state, snapshots, trips, vehicleStatus, vehicleLock] = await Promise.all([
+  const [state, snapshots, trips, vehicleStatus, vehicleLock, healthTimeline] = await Promise.all([
     env.DB.prepare(`
       SELECT * FROM latest_state WHERE device_id = ? LIMIT 1
     `).bind(deviceId).first(),
@@ -2509,6 +2549,7 @@ async function handleExport(request, env) {
     `).bind(deviceId).all(),
     fetchMergedVehicleStatus(env, deviceId),
     latestVehicleLock(env, deviceId),
+    latestHealthTimeline(env, deviceId),
   ]);
 
   return json({
@@ -2516,6 +2557,7 @@ async function handleExport(request, env) {
     state,
     vehicleStatus,
     vehicleLock,
+    healthTimeline,
     snapshots: snapshots.results || [],
     trips: (trips.results || []).map(parseTripRoute),
   });
@@ -2590,10 +2632,7 @@ async function handleTrips(request, env, pathname) {
       .first();
     if (!trip) return json({ error: "not_found" }, 404);
 
-    return historyJson({
-      ...trip,
-      route: JSON.parse(trip.route_json || "[]"),
-    }, "d1");
+    return historyJson(parseTripRoute(trip), "d1");
   }
 
   const url = new URL(request.url);
@@ -2612,7 +2651,7 @@ async function handleTrips(request, env, pathname) {
              WHEN duration_s > 0 AND distance_m IS NOT NULL THEN distance_m / duration_s
              ELSE NULL
            END AS avg_speed_mps,
-           route_json
+           route_json, report_json
     FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT ?
   `).bind(deviceId, limit).all();
 
@@ -2993,6 +3032,9 @@ export default {
 
     if (request.method === "POST" && pathname === "/api/telemetry") {
       return handleTelemetry(request, env);
+    }
+    if (request.method === "POST" && pathname === "/api/health-event") {
+      return handleHealthEvent(request, env);
     }
     if (request.method === "POST" && pathname === "/api/ambient/command") {
       return handleAmbientCommandCreate(request, env);

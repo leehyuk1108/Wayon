@@ -22,6 +22,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
+from openpilot.system.wayon_drive_quality import resolve_operating_state
+
 
 KPH_PER_MS = 3.6
 DEFAULT_ACTION = "com.navdy.OPENPILOT_STATE"
@@ -32,6 +34,7 @@ DEFAULT_PACKAGE_NAME = "com.navdy.hud.app"
 NAVDY_IR_BRIGHTNESS_PATH = "/sys/class/leds/ir-control/brightness"
 NAVDY_IR_ON_BRIGHTNESS = 127
 NAVDY_POWER_STATE_PATH = "/dev/shm/navdy_power_state.json"
+NAVDY_BRIDGE_HEALTH_PATH = "/dev/shm/navdy_bridge_health.json"
 DEFAULT_SOCKET_PORT = 18765
 DEFAULT_DEVICE_SOCKET_PORT = 8765
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
@@ -93,6 +96,31 @@ WAYON_AMBIENT_OVERRIDE_PATHS = (
   "/dev/shm/params/d/WayonAmbientOverride",
   "/data/params/d/WayonAmbientOverride",
 )
+
+
+def publish_bridge_health(args: argparse.Namespace, transport: str, connected: bool,
+                          error: str = "", force: bool = False) -> None:
+  now = time.monotonic()
+  last = float(getattr(args, "_last_health_publish_at", 0.0))
+  signature = (transport, bool(connected), str(error))
+  if not force and signature == getattr(args, "_last_health_signature", None) and now - last < 1.0:
+    return
+  payload = {
+    "updatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+    "transport": transport,
+    "transportConnected": bool(connected),
+    "runtimeSuspended": bool(getattr(args, "_navdy_runtime_suspended", False)),
+    "error": str(error)[:240],
+  }
+  try:
+    temporary = NAVDY_BRIDGE_HEALTH_PATH + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as health_file:
+      json.dump(payload, health_file, separators=(",", ":"))
+    os.replace(temporary, NAVDY_BRIDGE_HEALTH_PATH)
+    setattr(args, "_last_health_publish_at", now)
+    setattr(args, "_last_health_signature", signature)
+  except OSError:
+    pass
 
 
 def quiet_completed(cmd: list[str], returncode: int = 1) -> subprocess.CompletedProcess:
@@ -173,6 +201,8 @@ def ambient_heartbeat_payload(started: bool, door_open: bool,
     "onroad": bool(started),
     "doorOpen": bool(door_open),
     "gear": gear,
+    "ambientState": resolve_operating_state(
+      connected=True, onroad=bool(started), door_open=bool(door_open), gear=gear),
   }
   ambient_override = read_wayon_ambient_override()
   if ambient_override is not None:
@@ -1404,6 +1434,12 @@ def payload_from_messages(selfdrive_state: Any, car_state: Any, seq: int,
     "longitudinalActuator": longitudinal_actuator,
     "longitudinalActuatorLevel": rounded(longitudinal_actuator_level, 2),
   }
+  payload["ambientState"] = resolve_operating_state(
+    connected=True,
+    onroad=bool(onroad),
+    door_open=bool(payload["doorOpen"]),
+    gear=str(payload["gear"]),
+  )
   if active:
     payload.update(navdy_model_geometry(model_v2))
     payload.update(navdy_traffic_stop_geometry(model_v2, longitudinal_plan_sp))
@@ -1466,6 +1502,7 @@ def synthetic_payload(args: argparse.Namespace, seq: int) -> dict[str, Any]:
 
 def send_adb(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   if getattr(args, "_navdy_runtime_suspended", False):
+    publish_bridge_health(args, "adb", False, "runtime suspended")
     return False
   json_payload = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
   shell_cmd = "am broadcast"
@@ -1473,7 +1510,9 @@ def send_adb(payload: dict[str, Any], args: argparse.Namespace) -> bool:
     shell_cmd += " -n " + shlex.quote(args.component)
   shell_cmd += " -a " + shlex.quote(args.action)
   shell_cmd += " --es payload " + shlex.quote(json_payload)
-  return run_adb(args, ["shell", shell_cmd]).returncode == 0
+  success = run_adb(args, ["shell", shell_cmd]).returncode == 0
+  publish_bridge_health(args, "adb", success, "" if success else "broadcast failed")
+  return success
 
 
 def adb_sender_loop(args: argparse.Namespace) -> None:
@@ -1566,6 +1605,7 @@ def start_socket_transport(args: argparse.Namespace) -> None:
 
 def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   if not args.socket_transport or not connect_socket(args):
+    publish_bridge_health(args, "socket", False, "connect failed")
     return False
   json_payload = json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n"
   try:
@@ -1573,8 +1613,10 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
     conn.sendall(json_payload.encode("utf-8"))
     if not read_navdy_feedback(conn, args):
       raise ConnectionError("Navdy socket acknowledgement timed out")
+    publish_bridge_health(args, "socket", True)
     return True
-  except OSError:
+  except OSError as exc:
+    publish_bridge_health(args, "socket", False, str(exc))
     close_socket(args)
   return False
 
@@ -2431,6 +2473,9 @@ def main() -> int:
   setattr(args, "_last_socket_connect_at", 0.0)
   setattr(args, "_socket_conn", None)
   setattr(args, "_navdy_runtime_suspended", False)
+  setattr(args, "_last_health_publish_at", 0.0)
+  setattr(args, "_last_health_signature", None)
+  publish_bridge_health(args, "starting", False, "initializing", force=True)
   if args.adb_path:
     recover_adb(args, "startup", force=True)
   if args.adb_path:

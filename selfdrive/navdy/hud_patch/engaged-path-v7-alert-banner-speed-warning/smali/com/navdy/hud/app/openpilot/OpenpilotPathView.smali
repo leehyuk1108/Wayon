@@ -3001,6 +3001,8 @@
 
     move-result-object v6
 
+    const/4 v8, 0x1
+
     const-string v7, "cutInRisk"
 
     invoke-virtual {v5, v7, v0}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
@@ -3020,8 +3022,6 @@
     invoke-virtual {v5, v7, v0}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
 
     move-result v7
-
-    const/4 v8, 0x1
 
     if-eqz v7, :cond_37
 

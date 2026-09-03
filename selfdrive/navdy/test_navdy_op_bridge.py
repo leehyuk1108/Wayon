@@ -2088,8 +2088,13 @@ def test_navdy_path_renderer_highlights_only_the_active_longitudinal_lead():
   assert "COLOR_VEHICLE_CUTIN" in java
   assert 'vehicle.optBoolean("longitudinalLead", false)' in java
   assert 'vehicle.optBoolean("cutInRisk", false)' in java
-  assert '"longitudinalLead"' in (
-    patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
+  assert '"longitudinalLead"' in smali
+  read_vehicles = smali[smali.index(".method private static readVehicles"):]
+  # The cut-in branch jumps over the legacy source classifier, so the default
+  # right-lane code must be initialized before that branch for Android 5's
+  # verifier and for the lane parser below it.
+  assert read_vehicles.index("const/4 v8, 0x1") < read_vehicles.index('const-string v7, "cutInRisk"')
   assert "BitmapFactory.decodeResource" in java
   assert "new LightingColorFilter" in java
   assert "vehicleRect.set(" in java

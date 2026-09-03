@@ -108,6 +108,8 @@
 
 .field private static sHaveBlinker:Z
 
+.field private static sHaveOnroad:Z
+
 .field private static sLastActive:Z
 
 .field private static sLastGear:Ljava/lang/String;
@@ -117,6 +119,8 @@
 .field private static sLastLeftBlinker:Z
 
 .field private static sLastOutsideTempUpdateMs:J
+
+.field private static sLastOnroad:Z
 
 .field private static sLastRightBlindspot:Z
 
@@ -422,14 +426,14 @@
 
     const/16 v2, 0xe2
 
-    const/16 v3, 0x112
+    const/16 v3, 0x114
 
     goto :goto_4
 
     :cond_4
     const/16 v2, 0xe4
 
-    const/16 v3, 0xeb
+    const/16 v3, 0xed
 
     :goto_4
     iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
@@ -437,6 +441,34 @@
     iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 
     invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
+
+    sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutoHoldView:Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;
+
+    invoke-virtual {v0}, Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;->getLayoutParams()Landroid/view/ViewGroup$LayoutParams;
+
+    move-result-object v1
+
+    check-cast v1, Landroid/widget/FrameLayout$LayoutParams;
+
+    if-eqz p0, :cond_autohold_disengaged
+
+    const/16 v2, 0xd9
+
+    const/16 v3, 0x10a
+
+    goto :goto_autohold_layout
+
+    :cond_autohold_disengaged
+    const/16 v2, 0xdb
+
+    const/16 v3, 0xe3
+
+    :goto_autohold_layout
+    iput v2, v1, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
+
+    iput v3, v1, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
+
+    invoke-virtual {v0, v1}, Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;->setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V
 
     sget-object v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sOpReadyView:Landroid/widget/ImageView;
 
@@ -1031,7 +1063,7 @@
 
     const/16 v3, 0xe2
 
-    const/16 v4, 0x112
+    const/16 v4, 0x114
 
     invoke-static/range {v0 .. v6}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->addImage(Landroid/content/Context;Landroid/widget/FrameLayout;Ljava/lang/String;IIII)Landroid/widget/ImageView;
 
@@ -1057,7 +1089,7 @@
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
-    const/16 v4, 0x108
+    const/16 v4, 0x10a
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 
@@ -1973,6 +2005,42 @@
 
     .line 156
     const/4 v0, 0x0
+
+    const-string v6, "onroad"
+
+    invoke-virtual {v4, v6}, Lorg/json/JSONObject;->has(Ljava/lang/String;)Z
+
+    move-result v7
+
+    if-eqz v7, :boot_state_done
+
+    invoke-virtual {v4, v6, v0}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
+
+    move-result v6
+
+    sget-boolean v7, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sHaveOnroad:Z
+
+    if-nez v7, :boot_state_known
+
+    const/4 v7, 0x1
+
+    sput-boolean v7, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sHaveOnroad:Z
+
+    goto :boot_state_store
+
+    :boot_state_known
+    sget-boolean v7, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOnroad:Z
+
+    if-nez v7, :boot_state_store
+
+    if-eqz v6, :boot_state_store
+
+    invoke-static {}, Lcom/navdy/hud/app/view/TraverseBootView;->replayIfAttached()V
+
+    :boot_state_store
+    sput-boolean v6, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sLastOnroad:Z
+
+    :boot_state_done
 
     invoke-virtual {v4, v1, v0}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
 

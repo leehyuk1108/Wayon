@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.navdy.hud.app.view.MainView android:id="@id/mainView" android:background="@android:color/black" android:layout_width="@dimen/dashboard_width" android:layout_height="@dimen/dashboard_height"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <FrameLayout android:id="@id/splitter" android:layout_width="fill_parent" android:layout_height="@dimen/dashboard_box_height">
+        <com.navdy.hud.app.view.ContainerView android:id="@id/container" android:layout_width="0.0dip" android:layout_height="fill_parent">
+            <FrameLayout android:id="@id/screenContainer" android:layout_width="fill_parent" android:layout_height="fill_parent" />
+            <com.navdy.hud.app.ui.component.image.ColorImageView android:layout_gravity="right|center" android:id="@id/notificationColorView" android:layout_width="10.0dip" android:layout_height="10.0dip" android:layout_marginRight="10.0dip" />
+            <com.navdy.hud.app.ui.component.SystemTrayView android:gravity="bottom" android:layout_gravity="right|bottom" android:id="@id/systemTray" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginRight="20.0dip" android:layout_marginBottom="14.0dip" android:animateLayoutChanges="true" />
+        </com.navdy.hud.app.view.ContainerView>
+        <View android:id="@id/expandedNotifCoverView" android:background="@android:color/black" android:visibility="gone" android:layout_width="@dimen/expand_notif_cover_width" android:layout_height="fill_parent" />
+        <FrameLayout android:id="@id/expandedNotifView" android:background="@android:color/black" android:visibility="gone" android:layout_width="@dimen/expand_notif_width" android:layout_height="fill_parent" />
+        <FrameLayout android:id="@id/notificationExtensionView" android:visibility="gone" android:layout_width="@dimen/expand_notif_cover_width" android:layout_height="fill_parent" />
+        <com.navdy.hud.app.ui.component.main.MainLowerView android:layout_gravity="bottom" android:id="@id/mainLowerView" android:background="@android:color/black" android:visibility="gone" android:layout_width="@dimen/expand_notif_cover_width" android:layout_height="80.0dip" />
+        <include android:id="@id/notification" android:layout_width="0.0dip" android:layout_height="fill_parent" layout="@layout/notification_alert" />
+        <com.navdy.hud.app.ui.component.carousel.CarouselIndicator android:layout_gravity="center_vertical" android:id="@id/notifIndicator" android:visibility="gone" android:layout_width="14.0dip" android:layout_height="@dimen/carousel_progress_indicator_vertical_h" app:circleIndicatorSize="4.0dip" app:circleIndicatorFocusSize="@dimen/glance_scrolling_indicator_focus_circle_size" app:circleIndicatorMargin="14.0dip" app:progress_item_radius="@dimen/glance_scrolling_indicator_focus_circle_radius" app:progress_full_background="true" app:progress_view_bar_size="@dimen/glance_scrolling_indicator_bar_size" app:progress_view_bar_parent_size="14.0dip" />
+        <FrameLayout android:gravity="center" android:background="@android:color/black" android:visibility="gone" android:layout_width="@dimen/glance_scrolling_indicator_parent_width" android:layout_height="@dimen/glance_scrolling_indicator_parent_height">
+            <com.navdy.hud.app.ui.component.carousel.ProgressIndicator android:id="@id/notifScrollIndicator" android:layout_width="@dimen/glance_scrolling_indicator_width" android:layout_height="@dimen/glance_scrolling_indicator_height" />
+        </FrameLayout>
+        <include android:id="@id/toastView" android:visibility="gone" android:layout_width="fill_parent" android:layout_height="fill_parent" layout="@layout/screen_toast" />
+        <com.navdy.hud.app.view.TraverseBootView android:background="@android:color/black" android:focusable="false" android:clickable="false" android:layout_width="fill_parent" android:layout_height="fill_parent">
+            <ImageView android:layout_gravity="center|top" android:layout_width="220.0dip" android:layout_height="84.0dip" android:layout_marginTop="78.0dip" android:src="@drawable/traverse_chevrolet_logo" android:scaleType="fitCenter" />
+            <com.navdy.hud.app.view.FontTextView android:textSize="30.0sp" android:textColor="@android:color/white" android:gravity="center" android:layout_gravity="center|top" android:layout_width="260.0dip" android:layout_height="50.0dip" android:layout_marginTop="142.0dip" android:text="TRAVERSE" android:singleLine="true" android:includeFontPadding="false" app:fontFile="fonts/FSElliot-Heavy.ttf" />
+        </com.navdy.hud.app.view.TraverseBootView>
+    </FrameLayout>
+</com.navdy.hud.app.view.MainView>

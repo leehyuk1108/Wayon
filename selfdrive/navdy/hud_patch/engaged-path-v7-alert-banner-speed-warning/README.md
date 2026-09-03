@@ -99,9 +99,16 @@ Behavior:
   critical alerts so HUD information remains visible behind the banner.
 - Does not restart animation for repeated copies of the same event.
 - Slides up and hides when the alert clears.
-- Shows a stable `MM:SS` GM Auto Hold timer beside the hold icon, with a green
-  progress ring toward the stock two-minute EPB handoff. Other alerts may cover
-  the timer but do not restart its underlying session.
+- Shows a green progress ring over the GM Auto Hold icon toward the stock
+  two-minute EPB handoff. The Navdy HUD intentionally omits the elapsed text;
+  the comma display retains the independent `MM:SS` timer.
+- Keeps the Navdy Auto Hold icon and its progress-ring layer on the same layout
+  anchor in both engaged and disengaged modes, so the ring stays centered over
+  the icon instead of remaining below it after a HUD layout transition. Both
+  layers are shifted down by 2px from the previous layout.
+- Replays the Chevrolet/TRAVERSE boot overlay when the comma state changes from
+  offroad to onroad. This preserves the offroad ambient controller process while
+  avoiding the stock Navdy wake screen on the next ignition cycle.
 - Detects the actual GM `EPBStatus.EPBClosed` CAN state before ending hydraulic
   hold, overlaps pressure for 0.2 seconds during handoff, and displays
   `주차 브레이크로 전환됨` through the normal alert banner on both displays.

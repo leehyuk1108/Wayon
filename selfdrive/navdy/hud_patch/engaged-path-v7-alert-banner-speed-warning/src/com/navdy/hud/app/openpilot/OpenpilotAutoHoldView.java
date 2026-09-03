@@ -5,7 +5,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.graphics.Typeface;
 import android.view.View;
 
 import org.json.JSONObject;
@@ -17,9 +16,7 @@ public final class OpenpilotAutoHoldView extends View {
   private static final float RING_WIDTH = 3.0f;
 
   private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF ringBounds = new RectF();
-  private float elapsedSeconds;
   private float progress;
 
   public OpenpilotAutoHoldView(Context context) {
@@ -27,18 +24,12 @@ public final class OpenpilotAutoHoldView extends View {
     ringPaint.setStyle(Paint.Style.STROKE);
     ringPaint.setStrokeCap(Paint.Cap.ROUND);
     ringPaint.setStrokeWidth(RING_WIDTH);
-    textPaint.setColor(Color.WHITE);
-    textPaint.setTextSize(20.0f);
-    textPaint.setTypeface(Typeface.DEFAULT_BOLD);
-    textPaint.setTextAlign(Paint.Align.LEFT);
     setWillNotDraw(false);
     setVisibility(GONE);
   }
 
   public void updatePayload(JSONObject root) {
     boolean active = root != null && root.optBoolean("autoHoldActive", false);
-    elapsedSeconds = root == null ? 0.0f : Math.max(0.0f,
-        (float) root.optDouble("autoHoldElapsedSec", 0.0));
     progress = root == null ? 0.0f : clamp01(
         (float) root.optDouble("autoHoldEpbProgress", 0.0));
     setVisibility(active ? VISIBLE : GONE);
@@ -60,12 +51,6 @@ public final class OpenpilotAutoHoldView extends View {
       ringPaint.setColor(COLOR_PROGRESS);
       canvas.drawArc(ringBounds, -90.0f, 360.0f * progress, false, ringPaint);
     }
-
-    int elapsed = Math.max(0, (int) elapsedSeconds);
-    String text = String.format(java.util.Locale.US, "%02d:%02d", elapsed / 60, elapsed % 60);
-    Paint.FontMetrics metrics = textPaint.getFontMetrics();
-    float baseline = centerY - (metrics.ascent + metrics.descent) * 0.5f;
-    canvas.drawText(text, 54.0f, baseline, textPaint);
   }
 
   private static float clamp01(float value) {

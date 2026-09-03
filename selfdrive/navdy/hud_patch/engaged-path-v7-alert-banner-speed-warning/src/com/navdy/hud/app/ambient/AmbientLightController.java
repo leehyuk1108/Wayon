@@ -356,6 +356,21 @@ public final class AmbientLightController {
       if (mReverseActive) {
         return;
       }
+      if (!mConnected || !mNotifyReady) {
+        // Do not let a fade finish in software while the BLE module is still
+        // connecting. Restart its clock until the transport can render it.
+        connectIfNeeded();
+        mAmbientFadeStartedAtMs = SystemClock.elapsedRealtime();
+        mHandler.postDelayed(this, readAmbientFrameStepMs());
+        return;
+      }
+      if (ambientFrameTransportBusy()) {
+        // A visual frame consists of a color packet followed by a brightness
+        // packet. Wait for both to clear so a newer frame cannot discard the
+        // brightness half of the frame currently being rendered.
+        mHandler.postDelayed(this, readAmbientFrameStepMs());
+        return;
+      }
       long elapsedMs = SystemClock.elapsedRealtime() - mAmbientFadeStartedAtMs;
       float progress = mAmbientFadeDurationMs > 0L
           ? Math.min(1.0f, (float) elapsedMs / (float) mAmbientFadeDurationMs) : 1.0f;
@@ -1204,7 +1219,6 @@ public final class AmbientLightController {
   }
 
   private void sendAmbientFrame(byte[] colorPacket, byte[] brightnessPacket) {
-    removePendingAmbientStatePackets();
     if (mQueue.size() > 18) {
       mQueue.poll();
     }
@@ -1503,13 +1517,14 @@ public final class AmbientLightController {
       return;
     }
     if (mAmbientActive) {
-      byte[] color = activeStateColorPacket();
-      rememberColorPacket(color);
-      mQueue.offer(color.clone());
+      byte[] targetColor = buildColorPacket(
+          mAmbientTargetZone1Red, mAmbientTargetZone1Green, mAmbientTargetZone1Blue,
+          mAmbientTargetZone2Red, mAmbientTargetZone2Green, mAmbientTargetZone2Blue);
+      startAmbientFade(mAmbientTargetZone1, mAmbientTargetZone2,
+          profileFadeMs(), targetColor);
       if (mOnroad) {
-        startBrightnessSync();
-      } else {
-        mQueue.offer(buildBrightnessPacket(true, mAmbientTargetZone1, mAmbientTargetZone2));
+        mHandler.removeCallbacks(mBrightnessSyncRunnable);
+        mHandler.postDelayed(mBrightnessSyncRunnable, profileFadeMs());
       }
       return;
     }
@@ -1528,6 +1543,18 @@ public final class AmbientLightController {
       }
     }
     mQueue.addAll(retained);
+  }
+
+  private boolean ambientFrameTransportBusy() {
+    if (mWriting) {
+      return true;
+    }
+    for (byte[] packet : mQueue) {
+      if (packet != null && packet.length >= 2 && packet[1] == (byte) 0x8d) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private void writeAck() {

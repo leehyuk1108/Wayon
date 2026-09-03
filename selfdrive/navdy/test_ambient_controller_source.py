@@ -48,6 +48,18 @@ def test_new_fade_discards_stale_ambient_commands() -> None:
   assert "removePendingAmbientStatePackets();" in fade
 
 
+def test_fade_waits_for_ble_and_keeps_each_frame_atomic() -> None:
+  source = controller_source()
+  runnable = source[source.index("private final Runnable mAmbientFadeRunnable"):source.index("private final Runnable mOffroadDelayedOffRunnable")]
+  sender = source[source.index("private void sendAmbientFrame"):source.index("private void hardAmbientOff")]
+  restore = source[source.index("private void restoreActiveStateAfterConnect"):source.index("private void removePendingAmbientStatePackets")]
+  assert "!mConnected || !mNotifyReady" in runnable
+  assert "connectIfNeeded();" in runnable
+  assert "ambientFrameTransportBusy()" in runnable
+  assert "removePendingAmbientStatePackets();" not in sender
+  assert "startAmbientFade(mAmbientTargetZone1, mAmbientTargetZone2" in restore
+
+
 def test_fade_interpolates_color_and_brightness_together() -> None:
   source = controller_source()
   runnable = source[source.index("private final Runnable mAmbientFadeRunnable"):source.index("private final Runnable mOffroadDelayedOffRunnable")]

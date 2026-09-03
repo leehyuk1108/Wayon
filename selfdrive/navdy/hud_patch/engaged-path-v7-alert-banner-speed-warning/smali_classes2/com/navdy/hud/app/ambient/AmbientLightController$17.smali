@@ -25,7 +25,7 @@
 .method constructor <init>(Lcom/navdy/hud/app/ambient/AmbientLightController;)V
     .locals 0
 
-    .line 422
+    .line 437
     iput-object p1, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$17;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -38,10 +38,10 @@
 .method public run()V
     .locals 5
 
-    .line 425
+    .line 440
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$17;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7800(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
+    invoke-static {v0}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$7900(Lcom/navdy/hud/app/ambient/AmbientLightController;)Z
 
     move-result v0
 
@@ -53,7 +53,7 @@
 
     iget-object v2, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$17;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
-    invoke-static {v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$8500(Lcom/navdy/hud/app/ambient/AmbientLightController;)J
+    invoke-static {v2}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$8600(Lcom/navdy/hud/app/ambient/AmbientLightController;)J
 
     move-result-wide v2
 
@@ -61,14 +61,14 @@
 
     if-ltz v4, :cond_0
 
-    .line 426
+    .line 441
     iget-object v0, p0, Lcom/navdy/hud/app/ambient/AmbientLightController$17;->this$0:Lcom/navdy/hud/app/ambient/AmbientLightController;
 
     const-string v1, "expired"
 
-    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$8600(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
+    invoke-static {v0, v1}, Lcom/navdy/hud/app/ambient/AmbientLightController;->access$8700(Lcom/navdy/hud/app/ambient/AmbientLightController;Ljava/lang/String;)V
 
-    .line 428
+    .line 443
     :cond_0
     return-void
 .end method

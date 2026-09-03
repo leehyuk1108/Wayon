@@ -255,7 +255,7 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventNameSP.radarLaneIntrusion: {
     ET.WARNING: Alert(
       "전방 차량 주의",
-      "전방 차량 차선 침범함",
+      "끼어들기 위험 감지됨",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 2.),
   },

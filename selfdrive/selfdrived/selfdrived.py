@@ -29,6 +29,7 @@ from openpilot.sunnypilot import get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
+from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import cutin_predecel_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.phone_forward_risk import lead_closing_risk
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
@@ -111,7 +112,7 @@ class SelfdriveD(CruiseHelper):
     self.car_state_sock = messaging.sub_sock('carState', timeout=20)
 
     ignore = self.sensor_packets + self.gps_packets + [
-      'alertDebug', 'lateralManeuverPlan', 'modelDataV2SP', 'radarLaneIntrusionSP']
+      'alertDebug', 'lateralManeuverPlan', 'modelDataV2SP']
     ignore_valid = ignore + ['liveDelay', 'liveParameters', 'liveTorqueParameters']
     if SIMULATION:
       ignore += ['driverCameraState', 'managerState']
@@ -124,7 +125,6 @@ class SelfdriveD(CruiseHelper):
                                    'carOutput', 'driverMonitoringState', 'longitudinalPlan', 'livePose', 'liveDelay',
                                    'managerState', 'liveParameters', 'radarState', 'liveTorqueParameters',
                                    'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback',
-                                   'radarLaneIntrusionSP',
                                    'lateralManeuverPlan', 'modelDataV2SP', 'longitudinalPlanSP'] + \
                                    self.camera_packets + self.sensor_packets + self.gps_packets,
                                   ignore_alive=ignore, ignore_avg_freq=ignore,
@@ -199,6 +199,8 @@ class SelfdriveD(CruiseHelper):
     self.previous_lead_closing_risk = False
     self.previous_lead_status = False
     self.radar_lane_intrusion_cooldown = 0.0
+    self.previous_cutin_warning_active = False
+    self.previous_cutin_warning_track_id = -1
 
     self.mads = ModularAssistiveDrivingSystem(self)
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
@@ -233,23 +235,35 @@ class SelfdriveD(CruiseHelper):
     self.previous_lead_closing_risk = lead_closing
     self.phone_forward_risk_lead_history_initialized = True
 
-  def _update_radar_lane_intrusion(self):
+  def _update_radar_lane_intrusion(self, CS):
     self.radar_lane_intrusion_cooldown = max(0.0, self.radar_lane_intrusion_cooldown - DT_CTRL)
-    if not self.sm.updated['radarLaneIntrusionSP']:
+    if not self.sm.updated['radarState']:
       return
 
-    intrusion = self.sm['radarLaneIntrusionSP']
-    if intrusion.detected and self.radar_lane_intrusion_cooldown <= 0.0:
+    cutin_risk = self.sm['radarState'].leadCutInRisk
+    predecel_accel = cutin_predecel_accel(cutin_risk, max(CS.vEgo, 0.0))
+    active = predecel_accel is not None
+    track_id = int(getattr(cutin_risk, 'radarTrackId', -1)) if active else -1
+    newly_active = active and (
+      not self.previous_cutin_warning_active or track_id != self.previous_cutin_warning_track_id
+    )
+
+    if newly_active and self.radar_lane_intrusion_cooldown <= 0.0:
       self.events_sp.add(custom.OnroadEventSP.EventName.radarLaneIntrusion)
       self.radar_lane_intrusion_cooldown = LANE_INTRUSION_COOLDOWN
       cloudlog.event(
-        "radarLaneIntrusion",
-        trackId=intrusion.trackId,
-        side=str(intrusion.side),
-        distance=intrusion.distance,
-        lateral=intrusion.lateral,
-        inwardSpeed=intrusion.inwardSpeed,
+        "radarCutInWarning",
+        trackId=track_id,
+        distance=float(getattr(cutin_risk, 'dRel', 0.0)),
+        lateral=float(getattr(cutin_risk, 'yRel', 0.0)),
+        relativeSpeed=float(getattr(cutin_risk, 'vRel', 0.0)),
+        inwardSpeed=float(getattr(cutin_risk, 'vLat', 0.0)),
+        score=float(getattr(cutin_risk, 'score', 0.0)),
+        predecelAccel=float(predecel_accel),
       )
+
+    self.previous_cutin_warning_active = active
+    self.previous_cutin_warning_track_id = track_id
 
   def update_events(self, CS):
     """Compute onroadEvents from carState"""
@@ -321,7 +335,7 @@ class SelfdriveD(CruiseHelper):
         self.dm_uncertain_alerted = True
       self.events_sp.add_from_msg(self.sm['longitudinalPlanSP'].events)
       self._update_phone_forward_risk(CS)
-      self._update_radar_lane_intrusion()
+      self._update_radar_lane_intrusion(CS)
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:

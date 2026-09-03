@@ -1599,6 +1599,45 @@ def test_navdy_vehicle_geometry_marks_only_the_active_mpc_lead():
   assert by_id[11]["longitudinalLead"] is False
 
 
+def test_navdy_vehicle_geometry_marks_longitudinal_cutin_target():
+  radar_points = [
+    {"trackId": 10, "dRel": 30.0, "yRel": -0.2, "vRel": -1.0},
+    {"trackId": 11, "dRel": 18.0, "yRel": 3.0, "vRel": -4.0},
+  ]
+  radar_state = SimpleNamespace(
+    leadOne=SimpleNamespace(status=False),
+    leadTwo=SimpleNamespace(status=False),
+    leadCutInRisk=SimpleNamespace(
+      status=True, radar=True, radarTrackId=11, dRel=18.0, yRel=3.0,
+      vRel=-4.0, vLat=0.5, score=0.6),
+  )
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state,
+    SimpleNamespace(longitudinalPlanSource="cruise"), v_ego=20.0)["navVehicles"]
+  by_id = {vehicle["trackId"]: vehicle for vehicle in vehicles}
+
+  assert by_id[11]["cutInRisk"] is True
+  assert by_id[10]["cutInRisk"] is False
+
+
+def test_navdy_vehicle_geometry_does_not_mark_nonclosing_cutin_candidate():
+  radar_points = [{"trackId": 11, "dRel": 18.0, "yRel": 3.0, "vRel": 1.0}]
+  radar_state = SimpleNamespace(
+    leadOne=SimpleNamespace(status=False),
+    leadTwo=SimpleNamespace(status=False),
+    leadCutInRisk=SimpleNamespace(
+      status=True, radar=True, radarTrackId=11, dRel=18.0, yRel=3.0,
+      vRel=1.0, vLat=0.5, score=0.6),
+  )
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state,
+    SimpleNamespace(longitudinalPlanSource="cruise"), v_ego=20.0)["navVehicles"]
+
+  assert all(vehicle["cutInRisk"] is False for vehicle in vehicles)
+
+
 def test_navdy_vehicle_geometry_does_not_mark_a_lead_when_cruise_controls():
   radar_points = [{"trackId": 10, "dRel": 30.0, "yRel": -0.2, "vRel": -5.0}]
   radar_state = SimpleNamespace(
@@ -2046,7 +2085,9 @@ def test_navdy_path_renderer_highlights_only_the_active_longitudinal_lead():
   assert "COLOR_VEHICLE_RADAR" in java
   assert "COLOR_VEHICLE_VISION" in java
   assert "COLOR_VEHICLE_LONGITUDINAL_LEAD" in java
+  assert "COLOR_VEHICLE_CUTIN" in java
   assert 'vehicle.optBoolean("longitudinalLead", false)' in java
+  assert 'vehicle.optBoolean("cutInRisk", false)' in java
   assert '"longitudinalLead"' in (
     patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
   assert "BitmapFactory.decodeResource" in java

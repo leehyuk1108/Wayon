@@ -23,6 +23,8 @@
 
 .field private static final COLOR_VEHICLE_LONGITUDINAL_LEAD:I = -0xff1a01
 
+.field private static final COLOR_VEHICLE_CUTIN:I = -0xdfd8
+
 .field private static final COLOR_VEHICLE_RADAR:I = -0x22000001
 
 .field private static final COLOR_VEHICLE_VISION:I = -0xff19ba
@@ -140,6 +142,8 @@
 .field private final vehicleLeftMarkerBitmaps:[Landroid/graphics/Bitmap;
 
 .field private final vehicleLongitudinalLeadFilter:Landroid/graphics/LightingColorFilter;
+
+.field private final vehicleCutInFilter:Landroid/graphics/LightingColorFilter;
 
 .field private final vehicleMarkerBitmap:Landroid/graphics/Bitmap;
 
@@ -300,6 +304,14 @@
     invoke-direct {v0, v6, v4}, Landroid/graphics/LightingColorFilter;-><init>(II)V
 
     iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleLongitudinalLeadFilter:Landroid/graphics/LightingColorFilter;
+
+    new-instance v0, Landroid/graphics/LightingColorFilter;
+
+    const v7, -0xdfd8
+
+    invoke-direct {v0, v7, v4}, Landroid/graphics/LightingColorFilter;-><init>(II)V
+
+    iput-object v0, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleCutInFilter:Landroid/graphics/LightingColorFilter;
 
     .line 61
     new-instance v0, Landroid/graphics/Path;
@@ -2049,9 +2061,32 @@
     mul-float v0, v0, p4
 
     .line 554
-    const/4 v1, 0x2
+    const/4 v1, 0x3
 
     const/16 v2, 0xff
+
+    if-ne p5, v1, :cond_navdy_not_cutin
+
+    iget-object p5, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleFillPaint:Landroid/graphics/Paint;
+
+    const v1, -0xdfd8
+
+    invoke-virtual {p5, v1}, Landroid/graphics/Paint;->setColor(I)V
+
+    iget-object p5, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleBitmapPaint:Landroid/graphics/Paint;
+
+    iget-object v1, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleCutInFilter:Landroid/graphics/LightingColorFilter;
+
+    invoke-virtual {p5, v1}, Landroid/graphics/Paint;->setColorFilter(Landroid/graphics/ColorFilter;)Landroid/graphics/ColorFilter;
+
+    iget-object p5, p0, Lcom/navdy/hud/app/openpilot/OpenpilotPathView;->vehicleBitmapPaint:Landroid/graphics/Paint;
+
+    invoke-virtual {p5, v2}, Landroid/graphics/Paint;->setAlpha(I)V
+
+    goto :goto_5e
+
+    :cond_navdy_not_cutin
+    const/4 v1, 0x2
 
     if-ne p5, v1, :cond_30
 
@@ -2966,6 +3001,19 @@
 
     move-result-object v6
 
+    const-string v7, "cutInRisk"
+
+    invoke-virtual {v5, v7, v0}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
+
+    move-result v7
+
+    if-eqz v7, :cond_navdy_not_cutin_source
+
+    const/4 v6, 0x3
+
+    goto :goto_42
+
+    :cond_navdy_not_cutin_source
     .line 701
     const-string v7, "longitudinalLead"
 

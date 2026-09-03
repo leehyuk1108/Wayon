@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from openpilot.system.wayon_drive_quality import resolve_operating_state
+from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import cutin_predecel_accel
 
 
 KPH_PER_MS = 3.6
@@ -989,10 +990,46 @@ def mark_navdy_longitudinal_lead(vehicles: list[dict[str, Any]], radar_state: An
     matching_vehicle["longitudinalLead"] = True
 
 
+def mark_navdy_cutin_risk(vehicles: list[dict[str, Any]], radar_state: Any,
+                          v_ego: float) -> None:
+  for vehicle in vehicles:
+    vehicle["cutInRisk"] = False
+
+  if radar_state is None:
+    return
+  risk = getattr(radar_state, "leadCutInRisk", None)
+  if risk is None or cutin_predecel_accel(risk, max(v_ego, 0.0)) is None:
+    return
+
+  track_id = int(getattr(risk, "radarTrackId", -1))
+  matching_vehicle = next(
+    (vehicle for vehicle in vehicles if vehicle["trackId"] == track_id), None)
+  if matching_vehicle is None:
+    risk_distance = finite_float(getattr(risk, "dRel", 0.0), 0.0)
+    risk_model_y = -finite_float(getattr(risk, "yRel", 0.0), 0.0)
+    distance_tolerance = max(5.0, risk_distance * 0.25)
+    candidates = [
+      vehicle for vehicle in vehicles
+      if abs(vehicle["distanceM"] - risk_distance) <= distance_tolerance and
+         abs(vehicle["modelY"] - risk_model_y) <= 2.0
+    ]
+    if candidates:
+      matching_vehicle = min(
+        candidates,
+        key=lambda vehicle: (
+          abs(vehicle["distanceM"] - risk_distance) / distance_tolerance +
+          abs(vehicle["modelY"] - risk_model_y) / 2.0
+        ),
+      )
+
+  if matching_vehicle is not None:
+    matching_vehicle["cutInRisk"] = True
+
+
 def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]],
                            radar_state: Any = None, longitudinal_plan: Any = None,
                            longitudinal_lead_tracker: NavdyLongitudinalLeadTracker | None = None,
-                           now: float | None = None) -> dict[str, Any]:
+                           now: float | None = None, v_ego: float = 0.0) -> dict[str, Any]:
   if model_v2 is None:
     return {"navVehicles": []}
 
@@ -1085,10 +1122,13 @@ def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]],
   vehicles.extend(unmatched_vision)
   mark_navdy_longitudinal_lead(
     vehicles, radar_state, longitudinal_plan, active_longitudinal_lead)
+  mark_navdy_cutin_risk(vehicles, radar_state, v_ego)
   priority = {"fused": 0, "vision": 1, "radar": 2}
   selected = sorted(
     vehicles,
-    key=lambda item: (not item["longitudinalLead"], priority[item["source"]], item["distanceM"]),
+    key=lambda item: (
+      not item["cutInRisk"], not item["longitudinalLead"],
+      priority[item["source"]], item["distanceM"]),
   )[:NAVDY_VEHICLE_MAX_COUNT]
   output = []
   for vehicle in sorted(selected, key=lambda item: item["distanceM"], reverse=True):
@@ -1110,6 +1150,7 @@ def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]],
       "lane": vehicle["lane"],
       "source": vehicle["source"],
       "longitudinalLead": bool(vehicle["longitudinalLead"]),
+      "cutInRisk": bool(vehicle["cutInRisk"]),
       "confidence": rounded(vehicle["confidence"], 2),
     })
   return {"navVehicles": output}
@@ -2023,6 +2064,7 @@ def payload_signature(payload: dict[str, Any]) -> tuple[Any, ...]:
         vehicle.get("lane"),
         vehicle.get("source"),
         vehicle.get("longitudinalLead"),
+        vehicle.get("cutInRisk"),
       )
       for vehicle in payload.get("navVehicles", [])
     ),
@@ -2351,7 +2393,8 @@ def run_live(args: argparse.Namespace) -> None:
             if "longitudinalPlan" in services and service_recent(sm, "longitudinalPlan", now) else None
           path_geometry.update(navdy_vehicle_geometry(
             model_v2, radar_points, radar_state, longitudinal_plan,
-            longitudinal_lead_tracker=longitudinal_lead_tracker, now=now))
+            longitudinal_lead_tracker=longitudinal_lead_tracker, now=now,
+            v_ego=finite_float(getattr(car_state, "vEgo", 0.0))))
           path_geometry.update(navdy_traffic_stop_geometry(
             model_v2, sm_optional(sm, services, "longitudinalPlanSP")))
           lane_risks, intrusion = evaluate_navdy_lane_risk(

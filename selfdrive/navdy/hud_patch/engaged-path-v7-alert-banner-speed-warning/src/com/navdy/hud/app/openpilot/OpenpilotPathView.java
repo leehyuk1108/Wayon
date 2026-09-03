@@ -27,6 +27,7 @@ public final class OpenpilotPathView extends View implements Runnable {
   private static final int COLOR_VEHICLE_RADAR = 0xddffffff;
   private static final int COLOR_VEHICLE_VISION = 0xff00e646;
   private static final int COLOR_VEHICLE_LONGITUDINAL_LEAD = 0xff00e5ff;
+  private static final int COLOR_VEHICLE_CUTIN = 0xffff2028;
   private static final int COLOR_TRAFFIC_STOP = 0xffff3b30;
   private static final float[] LANE_DASH_PATTERN = {56.0f, 24.0f};
   private static final float LANE_DASH_CYCLE = 80.0f;
@@ -55,6 +56,8 @@ public final class OpenpilotPathView extends View implements Runnable {
       COLOR_VEHICLE_VISION, 0);
   private final LightingColorFilter vehicleLongitudinalLeadFilter = new LightingColorFilter(
       COLOR_VEHICLE_LONGITUDINAL_LEAD, 0);
+  private final LightingColorFilter vehicleCutInFilter = new LightingColorFilter(
+      COLOR_VEHICLE_CUTIN, 0);
   private final Bitmap vehicleMarkerBitmap;
   private final Bitmap[] vehicleLeftMarkerBitmaps;
   private final Bitmap[] vehicleRightMarkerBitmaps;
@@ -551,7 +554,11 @@ public final class OpenpilotPathView extends View implements Runnable {
     float width = 12.0f + nearScale * 46.5f;
     float height = width * 1.55f;
 
-    if (source == 2) {
+    if (source == 3) {
+      vehicleFillPaint.setColor(COLOR_VEHICLE_CUTIN);
+      vehicleBitmapPaint.setColorFilter(vehicleCutInFilter);
+      vehicleBitmapPaint.setAlpha(255);
+    } else if (source == 2) {
       vehicleFillPaint.setColor(COLOR_VEHICLE_LONGITUDINAL_LEAD);
       vehicleBitmapPaint.setColorFilter(vehicleLongitudinalLeadFilter);
       vehicleBitmapPaint.setAlpha(255);
@@ -698,8 +705,9 @@ public final class OpenpilotPathView extends View implements Runnable {
         continue;
       }
       String source = vehicle.optString("source", "radar");
-      int sourceCode = vehicle.optBoolean("longitudinalLead", false)
-          ? 2 : ("vision".equals(source) ? 1 : 0);
+      int sourceCode = vehicle.optBoolean("cutInRisk", false)
+          ? 3 : (vehicle.optBoolean("longitudinalLead", false)
+              ? 2 : ("vision".equals(source) ? 1 : 0));
       String lane = vehicle.optString("lane", "center");
       int laneCode = "left".equals(lane) ? -1 : ("right".equals(lane) ? 1 : 0);
       values[output++] = (float) vehicle.optDouble("screenX", 160.0);

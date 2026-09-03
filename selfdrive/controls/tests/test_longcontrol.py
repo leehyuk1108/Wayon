@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from cereal import car, custom
 from openpilot.selfdrive.controls.lib.longcontrol import (LongControl, LongCtrlState,
                                                           SNG_LEAD_CONFIRM_FRAMES, SNG_RESUME_TIMEOUT_FRAMES,
-                                                          SNG_STOP_CONFIRM_FRAMES,
+                                                          SNG_PRESTOP_TRACK_SPEED, SNG_STOP_CONFIRM_FRAMES,
                                                           long_control_state_trans, use_gm_auto_hold_sng)
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 
@@ -139,6 +139,25 @@ def test_sng_resume_requires_confirmed_stop_and_departing_lead():
   assert controller.sng_resume_attempted
 
 
+def test_sng_resume_tracks_lead_before_full_stop():
+  controller = sng_controller()
+  CS = SimpleNamespace(vEgo=SNG_PRESTOP_TRACK_SPEED, standstill=False, brakePressed=False, gasPressed=False,
+                       cruiseState=SimpleNamespace(standstill=False))
+  plan = SimpleNamespace(shouldStop=True)
+  radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=5.5, vLead=0.0, vRel=0.0))
+
+  for _ in range(SNG_STOP_CONFIRM_FRAMES):
+    assert not controller.update_sng_resume(True, CS, plan, radar)
+
+  CS.vEgo = 0.35
+  plan.shouldStop = False
+  radar.leadOne.dRel = 6.1
+  radar.leadOne.vRel = 0.8
+  for _ in range(SNG_LEAD_CONFIRM_FRAMES - 1):
+    assert not controller.update_sng_resume(True, CS, plan, radar)
+  assert controller.update_sng_resume(True, CS, plan, radar)
+
+
 def test_sng_resume_rejects_lead_loss_and_driver_input():
   controller = sng_controller()
   CS = SimpleNamespace(vEgo=0.0, standstill=True, brakePressed=False, gasPressed=False,
@@ -186,7 +205,7 @@ def test_sng_resume_times_out_without_retrying_same_stop():
   for _ in range(SNG_STOP_CONFIRM_FRAMES + SNG_LEAD_CONFIRM_FRAMES):
     assert not controller.update_sng_resume(True, CS, plan, radar)
 
-  CS.vEgo = 1.0
+  CS.vEgo = SNG_PRESTOP_TRACK_SPEED + 0.1
   assert not controller.update_sng_resume(True, CS, plan, radar)
   assert not controller.sng_resume_attempted
 

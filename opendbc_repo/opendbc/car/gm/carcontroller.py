@@ -37,10 +37,8 @@ GM_STOPPING_BRAKE_TAPER_MAX = 12
 # control asks for more than a very light stop, preserve the full command so
 # smoothing cannot consume meaningful stopping distance.
 GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 20
-GM_SNG_CREEP_RESUME_MIN_SPEED = 1.45  # m/s; physical RES succeeded at 1.59 m/s in the Traverse route
-GM_SNG_CREEP_RESUME_MAX_SPEED = 1.90
-GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(12.0 / DT_CTRL)
-GM_SNG_BUTTON_FRAMES = 7  # about 0.18 seconds at the stock 33 Hz button rate
+GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
+GM_SNG_BUTTON_FRAMES = 4  # physical Traverse press: four frames over about 0.12 seconds
 
 
 def get_friction_brake_bus(CP):
@@ -214,9 +212,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       self.sng_resume_request_prev = resume_request
       return False
 
-    # The Traverse route showed that RES at zero speed does not release the ECU
-    # launch gate. Arm on lead departure, release the hydraulic hold, then wait
-    # for natural creep to reach the speed where a physical RES press succeeded.
+    # Arm on the confirmed lead departure edge. LongControl starts tracking the
+    # lead while approaching zero so this can run before GM latches full stop.
     if resume_request and not self.sng_resume_request_prev and self.sng_resume_frame < 0:
       self.sng_resume_frame = self.frame
       self.sng_last_stock_counter = None
@@ -233,19 +230,16 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       self.reset_sng_resume()
       return True
 
-    # An early standstill acknowledgement means the launch gate is already open.
+    # Once the vehicle rolls and the stock standstill flag clears, the launch
+    # gate is open. Explicitly release a sequence already in progress.
     if not CS.out.cruiseState.standstill:
       if self.sng_last_sent_counter is not None:
         self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
       return True
 
-    creep_speed_ready = GM_SNG_CREEP_RESUME_MIN_SPEED <= CS.out.vEgo <= GM_SNG_CREEP_RESUME_MAX_SPEED
-    if not creep_speed_ready and self.sng_button_frames_remaining == GM_SNG_BUTTON_FRAMES:
-      return True
-
-    # Match the successful physical press: seven consecutive stock-rate RES
-    # frames, mirrored to both sides, followed by one explicit release.
+    # Do not wait for natural creep: the ECU hold prevents the vehicle from
+    # reaching the old threshold. Send the physical-button pattern immediately.
     if stock_frame_updated:
       self.sng_last_stock_counter = stock_counter
 

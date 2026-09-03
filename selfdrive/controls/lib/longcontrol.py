@@ -29,6 +29,7 @@ SNG_LEAD_MAX_DISTANCE = 25.0
 SNG_LEAD_MIN_REL_SPEED = 0.35
 SNG_LEAD_MIN_DISTANCE_DELTA = 0.4
 SNG_RESUME_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
+SNG_PRESTOP_TRACK_SPEED = 1.5
 
 
 def use_gm_auto_hold_sng(CP) -> bool:
@@ -132,7 +133,9 @@ class LongControl:
       self.reset_sng_resume()
       return False
 
-    if CS.vEgo > self.CP.vEgoStarting:
+    # Observe the stopped lead before ego reaches zero. Waiting for standstill
+    # loses GM's short resume window and leaves the ECU full-stop latch closed.
+    if CS.vEgo > max(self.CP.vEgoStarting, SNG_PRESTOP_TRACK_SPEED):
       self.reset_sng_resume()
       return False
 
@@ -145,9 +148,12 @@ class LongControl:
         self.reset_sng_resume(clear_attempt=False)
       return self.sng_resume_ready
 
-    safe_stop = (CS.standstill and
-                 (use_gm_auto_hold_sng(self.CP) or CS.cruiseState.standstill) and
-                 self.long_control_state == LongCtrlState.stopping)
+    gm_prestop = (use_gm_auto_hold_sng(self.CP) and
+                  CS.vEgo <= SNG_PRESTOP_TRACK_SPEED and
+                  self.long_control_state == LongCtrlState.stopping)
+    safe_stop = ((CS.standstill and
+                  (use_gm_auto_hold_sng(self.CP) or CS.cruiseState.standstill) and
+                  self.long_control_state == LongCtrlState.stopping) or gm_prestop)
     if not safe_stop or self.sng_resume_attempted or not valid_lead:
       self.reset_sng_resume(clear_attempt=False)
       return False

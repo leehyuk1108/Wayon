@@ -340,7 +340,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.CI.update_auto_hold(control)
     self.assertFalse(self.CI.CS.longAutoHoldActive)
 
-  def test_controller_waits_for_creep_before_resume_pulse(self):
+  def test_controller_sends_resume_pulse_without_waiting_for_creep(self):
     fingerprint = gen_empty_fingerprint()
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
@@ -382,36 +382,31 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     _, stopped_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_000_000_000)
     button_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1]
     stopped_buttons = [msg for msg in stopped_sends if msg[0] == 0x1E1]
-    self.assertEqual(0, len(stopped_buttons))
+    self.assertEqual(2, len(stopped_buttons))
+    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in stopped_buttons})
+    self.assertTrue(all(get_raw_value(msg[1], button_msg.sigs["ACCButtons"]) == CruiseButtons.RES_ACCEL
+                        for msg in stopped_buttons))
 
-    # Keep the request armed after longcontrol leaves starting, but do not send
-    # RES until natural creep reaches the route-proven speed window.
+    # Continue the bounded physical-button sequence at the stock frame rate.
     control.cruiseControl.resume = False
     control.actuators.longControlState = car.CarControl.Actuators.LongControlState.pid
-    CS.out.standstill = False
-    CS.out.vEgo = 1.0
-    CS.buttons_counter = 1
-    CI.CC.frame = 100
-    _, slow_creep_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 11_000_000_000)
-    self.assertEqual(0, len([msg for msg in slow_creep_sends if msg[0] == 0x1E1]))
-
-    CS.out.vEgo = 1.5
+    CS.out.vEgo = 0.0
     pulse_sends = []
-    for i in range(7):
-      CS.buttons_counter = (i + 2) % 4
-      CI.CC.frame = 103 + (i * 3)
+    for i in range(3):
+      CS.buttons_counter = (i + 1) % 4
+      CI.CC.frame = 7 + (i * 3)
       _, sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS,
-                              11_030_000_000 + (i * 30_000_000))
+                              10_030_000_000 + (i * 30_000_000))
       pulse_sends.extend(msg for msg in sends if msg[0] == 0x1E1)
 
-    self.assertEqual(14, len(pulse_sends))
+    self.assertEqual(6, len(pulse_sends))
     self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in pulse_sends})
     self.assertTrue(all(get_raw_value(msg[1], button_msg.sigs["ACCButtons"]) == CruiseButtons.RES_ACCEL
                         for msg in pulse_sends))
 
-    CS.buttons_counter = 1
-    CI.CC.frame = 124
-    _, release_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 11_240_000_000)
+    CS.buttons_counter = 0
+    CI.CC.frame = 16
+    _, release_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_240_000_000)
     release_buttons = [msg for msg in release_sends if msg[0] == 0x1E1]
     self.assertEqual(2, len(release_buttons))
     self.assertEqual(CruiseButtons.UNPRESS, get_raw_value(release_buttons[0][1], button_msg.sigs["ACCButtons"]))
@@ -436,7 +431,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     sends = []
     controller.frame = 0
     self.assertTrue(controller.update_sng_resume(CC, CS, actuators, sends))
-    self.assertEqual([], sends)
+    self.assertEqual(2, len(sends))
 
     CS.out.cruiseState.standstill = False
     CS.out.vEgo = 0.2
@@ -445,7 +440,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     controller.frame = 3
     release = []
     self.assertTrue(controller.update_sng_resume(CC, CS, actuators, release))
-    self.assertEqual([], release)
+    self.assertEqual(2, len(release))
     self.assertEqual(-1, controller.sng_resume_frame)
 
   def test_controller_relays_driver_cancel_with_next_counter(self):
@@ -470,9 +465,8 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     armed = []
     controller.frame = 0
     controller.update_sng_resume(CC, CS, actuators, armed)
-    self.assertEqual([], armed)
+    self.assertEqual(2, len(armed))
 
-    CS.out.vEgo = 1.5
     CS.buttons_counter = 1
     first = []
     controller.frame = 3

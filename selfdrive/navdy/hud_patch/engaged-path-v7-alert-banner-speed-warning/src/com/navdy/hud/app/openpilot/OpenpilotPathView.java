@@ -19,6 +19,8 @@ import org.json.JSONObject;
 
 public final class OpenpilotPathView extends View implements Runnable {
   private static final int COLOR_GREEN = 0xff00e646;
+  private static final int COLOR_ACCEL_FLOW = 0xff66ff86;
+  private static final int COLOR_BRAKE_FLOW = 0xffffffff;
   private static final int COLOR_LANE_CLEAR = 0xffffffff;
   private static final int COLOR_LANE_CENTER = 0xffffd43b;
   private static final int COLOR_LANE_DANGER = 0xffff2028;
@@ -31,11 +33,14 @@ public final class OpenpilotPathView extends View implements Runnable {
   private static final float ROAD_EDGE_MIN_CONFIDENCE = 0.5f;
   private static final int LANE_RISK_FILTER_STEPS = 10;
   private static final long DASH_FRAME_MS = 66L;
+  private static final int FLOW_BAND_SLICES = 6;
 
   private final Paint lanePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint roadEdgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint pathEdgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint pathFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final Paint accelerationFlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final Paint brakeFlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint vehicleFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint vehicleBitmapPaint = new Paint(
       Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -53,6 +58,13 @@ public final class OpenpilotPathView extends View implements Runnable {
   private final Bitmap vehicleMarkerBitmap;
   private final Bitmap[] vehicleLeftMarkerBitmaps;
   private final Bitmap[] vehicleRightMarkerBitmaps;
+  private final Path scratchPath = new Path();
+  private final Path flowPath = new Path();
+  private final RectF vehicleRect = new RectF();
+  private final float[] flowLeftPoint = new float[2];
+  private final float[] flowRightPoint = new float[2];
+  private final float[] flowCenterPoint = new float[2];
+  private final float[] flowBackPoint = new float[2];
   private float[] laneFarLeft = new float[0];
   private float laneFarLeftProb;
   private String laneFarLeftType = "unknown";
@@ -78,9 +90,13 @@ public final class OpenpilotPathView extends View implements Runnable {
   private boolean trafficStopActive;
   private DashPathEffect laneDashEffect;
   private float dashPhase;
+  private float accelerationPhase;
+  private float brakePhase;
   private boolean dashFrameScheduled;
   private long lastDashFrameMs;
   private float vehicleSpeedKph;
+  private String longitudinalActuator = "none";
+  private float longitudinalActuatorLevel;
 
   public OpenpilotPathView(Context context) {
     super(context);
@@ -110,6 +126,14 @@ public final class OpenpilotPathView extends View implements Runnable {
     pathEdgePaint.setStrokeWidth(1.8f);
 
     pathFillPaint.setStyle(Paint.Style.FILL);
+
+    accelerationFlowPaint.setColor(COLOR_ACCEL_FLOW);
+    accelerationFlowPaint.setStyle(Paint.Style.FILL);
+
+    brakeFlowPaint.setColor(COLOR_BRAKE_FLOW);
+    brakeFlowPaint.setStyle(Paint.Style.STROKE);
+    brakeFlowPaint.setStrokeCap(Paint.Cap.ROUND);
+    brakeFlowPaint.setStrokeJoin(Paint.Join.ROUND);
 
     trafficStopGlowPaint.setColor(0x66ff3b30);
     trafficStopGlowPaint.setStyle(Paint.Style.STROKE);
@@ -149,14 +173,29 @@ public final class OpenpilotPathView extends View implements Runnable {
   }
 
   public void updatePayload(String payload, boolean active) {
-    if (!active || payload == null) {
+    if (payload == null) {
       clearGeometry();
       return;
     }
 
     try {
-      JSONObject json = new JSONObject(payload);
+      updatePayload(new JSONObject(payload), active);
+    } catch (Exception ignored) {
+      clearGeometry();
+    }
+  }
+
+  public void updatePayload(JSONObject json, boolean active) {
+    if (!active || json == null) {
+      clearGeometry();
+      return;
+    }
+
+    try {
       vehicleSpeedKph = Math.max(0.0f, (float) json.optDouble("vEgoKph", 0.0));
+      longitudinalActuator = json.optString("longitudinalActuator", "none");
+      longitudinalActuatorLevel = clamp01(
+          (float) json.optDouble("longitudinalActuatorLevel", 0.0));
       trafficStopActive = json.optBoolean("trafficStopActive", false);
       if (!trafficStopActive) {
         trafficStopLine = new float[0];
@@ -243,13 +282,14 @@ public final class OpenpilotPathView extends View implements Runnable {
     }
     path.close();
     canvas.drawPath(path, pathFillPaint);
+    updateDashPhase();
+    drawLongitudinalFlow(canvas);
     canvas.drawPath(linePath(pathLeft), pathEdgePaint);
     canvas.drawPath(linePath(pathRight), pathEdgePaint);
 
     drawRoadEdge(canvas, roadEdgeLeft, roadEdgeLeftProb);
     drawRoadEdge(canvas, roadEdgeRight, roadEdgeRightProb);
 
-    updateDashPhase();
     laneDashEffect = new DashPathEffect(LANE_DASH_PATTERN, dashPhase);
     drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f, laneFarLeftType);
     drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft, laneLeftType);
@@ -258,7 +298,7 @@ public final class OpenpilotPathView extends View implements Runnable {
     drawTrafficStopLine(canvas);
     drawVehicles(canvas);
 
-    if (vehicleSpeedKph > 1.0f) {
+    if (vehicleSpeedKph > 1.0f || pathAnimationActive()) {
       scheduleDashFrame();
     }
   }
@@ -274,7 +314,7 @@ public final class OpenpilotPathView extends View implements Runnable {
   @Override
   public void run() {
     dashFrameScheduled = false;
-    if (vehicleSpeedKph > 1.0f && getVisibility() == View.VISIBLE
+    if ((vehicleSpeedKph > 1.0f || pathAnimationActive()) && getVisibility() == View.VISIBLE
         && validLine(pathLeft) && validLine(pathRight)) {
       invalidate();
     }
@@ -322,12 +362,178 @@ public final class OpenpilotPathView extends View implements Runnable {
 
     long elapsedMs = Math.min(now - lastDashFrameMs, 150L);
     lastDashFrameMs = now;
-    if (vehicleSpeedKph <= 1.0f) {
+    float elapsedSeconds = elapsedMs / 1000.0f;
+    if (vehicleSpeedKph > 1.0f) {
+      float pixelsPerSecond = Math.min(80.0f, Math.max(18.0f, vehicleSpeedKph * 0.8f));
+      dashPhase = (dashPhase + elapsedSeconds * pixelsPerSecond) % LANE_DASH_CYCLE;
+    }
+
+    if ("accelerator".equals(longitudinalActuator)) {
+      float speed = 0.30f + 0.58f * longitudinalActuatorLevel;
+      accelerationPhase = (accelerationPhase + elapsedSeconds * speed) % 1.0f;
+    } else if ("brake".equals(longitudinalActuator)) {
+      float speed = 0.34f + 0.62f * longitudinalActuatorLevel;
+      brakePhase = (brakePhase + elapsedSeconds * speed) % 1.0f;
+    }
+  }
+
+  private boolean pathAnimationActive() {
+    return longitudinalActuatorLevel >= 0.05f
+        && ("accelerator".equals(longitudinalActuator)
+            || "brake".equals(longitudinalActuator));
+  }
+
+  private void drawLongitudinalFlow(Canvas canvas) {
+    if (!pathAnimationActive()) {
+      return;
+    }
+    if ("accelerator".equals(longitudinalActuator)) {
+      drawAccelerationFlow(canvas);
+    } else {
+      drawBrakeFlow(canvas);
+    }
+  }
+
+  private void drawAccelerationFlow(Canvas canvas) {
+    int bandCount = longitudinalActuatorLevel >= 0.55f ? 2 : 1;
+    float bandLength = 0.13f + 0.09f * longitudinalActuatorLevel;
+    int alpha = Math.round(72.0f + 118.0f * longitudinalActuatorLevel);
+    for (int index = 0; index < bandCount; index++) {
+      float center = (accelerationPhase + index / (float) bandCount) % 1.0f;
+      drawWrappedFlowBand(canvas, center, bandLength * 1.45f, alpha / 4);
+      drawWrappedFlowBand(canvas, center, bandLength, alpha / 2);
+      drawWrappedFlowBand(canvas, center, bandLength * 0.55f, alpha);
+    }
+  }
+
+  private void drawWrappedFlowBand(
+      Canvas canvas, float center, float length, int alpha) {
+    drawFlowBand(canvas, center, length, alpha);
+    if (center < length * 0.5f) {
+      drawFlowBand(canvas, center + 1.0f, length, alpha);
+    } else if (center > 1.0f - length * 0.5f) {
+      drawFlowBand(canvas, center - 1.0f, length, alpha);
+    }
+  }
+
+  private void drawFlowBand(Canvas canvas, float center, float length, int alpha) {
+    float start = Math.max(0.0f, center - length * 0.5f);
+    float end = Math.min(1.0f, center + length * 0.5f);
+    if (end - start < 0.01f) {
       return;
     }
 
-    float pixelsPerSecond = Math.min(80.0f, Math.max(18.0f, vehicleSpeedKph * 0.8f));
-    dashPhase = (dashPhase + elapsedMs * pixelsPerSecond / 1000.0f) % LANE_DASH_CYCLE;
+    flowPath.rewind();
+    for (int slice = 0; slice <= FLOW_BAND_SLICES; slice++) {
+      float progress = start + (end - start) * slice / FLOW_BAND_SLICES;
+      pointOnLine(pathLeft, progress, flowLeftPoint);
+      if (slice == 0) {
+        flowPath.moveTo(flowLeftPoint[0], flowLeftPoint[1]);
+      } else {
+        flowPath.lineTo(flowLeftPoint[0], flowLeftPoint[1]);
+      }
+    }
+    for (int slice = FLOW_BAND_SLICES; slice >= 0; slice--) {
+      float progress = start + (end - start) * slice / FLOW_BAND_SLICES;
+      pointOnLine(pathRight, progress, flowRightPoint);
+      flowPath.lineTo(flowRightPoint[0], flowRightPoint[1]);
+    }
+    flowPath.close();
+    accelerationFlowPaint.setAlpha(Math.min(255, Math.max(0, alpha)));
+    canvas.drawPath(flowPath, accelerationFlowPaint);
+  }
+
+  private void drawBrakeFlow(Canvas canvas) {
+    int arrowCount = 1 + Math.min(2, Math.round(longitudinalActuatorLevel * 2.0f));
+    float flowEnd = brakeFlowEndProgress();
+    float flowStart = Math.min(0.08f, flowEnd * 0.25f);
+    float flowSpan = flowEnd - flowStart;
+    if (flowSpan < 0.06f) {
+      return;
+    }
+    brakeFlowPaint.setAlpha(Math.round(125.0f + 110.0f * longitudinalActuatorLevel));
+    brakeFlowPaint.setStrokeWidth(2.2f + 1.8f * longitudinalActuatorLevel);
+    for (int index = 0; index < arrowCount; index++) {
+      float phase = 1.0f - ((brakePhase + index / (float) arrowCount) % 1.0f);
+      float progress = flowStart + (0.06f + phase * 0.88f) * flowSpan;
+      drawBrakeChevron(canvas, progress, flowEnd);
+    }
+  }
+
+  private float brakeFlowEndProgress() {
+    float flowEnd = 1.0f;
+    for (int index = 0; index + 5 < vehicles.length; index += 6) {
+      if ((int) vehicles[index + 3] == 2) {
+        flowEnd = Math.min(flowEnd,
+            Math.max(0.12f, progressForScreenPoint(vehicles[index], vehicles[index + 1]) - 0.05f));
+      }
+    }
+    return flowEnd;
+  }
+
+  private float progressForScreenPoint(float screenX, float screenY) {
+    int pointCount = Math.min(pathLeft.length, pathRight.length) / 2;
+    float bestProgress = 1.0f;
+    float bestDistanceSquared = Float.MAX_VALUE;
+    for (int index = 0; index + 1 < pointCount; index++) {
+      int offset = index * 2;
+      float startX = (pathLeft[offset] + pathRight[offset]) * 0.5f;
+      float startY = (pathLeft[offset + 1] + pathRight[offset + 1]) * 0.5f;
+      float endX = (pathLeft[offset + 2] + pathRight[offset + 2]) * 0.5f;
+      float endY = (pathLeft[offset + 3] + pathRight[offset + 3]) * 0.5f;
+      float deltaX = endX - startX;
+      float deltaY = endY - startY;
+      float lengthSquared = deltaX * deltaX + deltaY * deltaY;
+      float segment = lengthSquared <= 0.001f ? 0.0f : clamp01(
+          ((screenX - startX) * deltaX + (screenY - startY) * deltaY) / lengthSquared);
+      float nearestX = startX + deltaX * segment;
+      float nearestY = startY + deltaY * segment;
+      float distanceX = screenX - nearestX;
+      float distanceY = screenY - nearestY;
+      float distanceSquared = distanceX * distanceX + distanceY * distanceY;
+      if (distanceSquared < bestDistanceSquared) {
+        bestDistanceSquared = distanceSquared;
+        bestProgress = (index + segment) / (pointCount - 1.0f);
+      }
+    }
+    return bestProgress;
+  }
+
+  private void drawBrakeChevron(Canvas canvas, float progress, float flowEnd) {
+    float backProgress = Math.min(flowEnd, progress + Math.min(0.07f, flowEnd * 0.12f));
+    pointOnCenter(progress, flowCenterPoint);
+    pointOnCenter(backProgress, flowBackPoint);
+    pointOnLine(pathLeft, backProgress, flowLeftPoint);
+    pointOnLine(pathRight, backProgress, flowRightPoint);
+
+    float wingScale = 0.34f;
+    float leftX = flowBackPoint[0] + (flowLeftPoint[0] - flowBackPoint[0]) * wingScale;
+    float leftY = flowBackPoint[1] + (flowLeftPoint[1] - flowBackPoint[1]) * wingScale;
+    float rightX = flowBackPoint[0] + (flowRightPoint[0] - flowBackPoint[0]) * wingScale;
+    float rightY = flowBackPoint[1] + (flowRightPoint[1] - flowBackPoint[1]) * wingScale;
+
+    flowPath.rewind();
+    flowPath.moveTo(leftX, leftY);
+    flowPath.lineTo(flowCenterPoint[0], flowCenterPoint[1]);
+    flowPath.lineTo(rightX, rightY);
+    canvas.drawPath(flowPath, brakeFlowPaint);
+  }
+
+  private void pointOnCenter(float progress, float[] output) {
+    pointOnLine(pathLeft, progress, flowLeftPoint);
+    pointOnLine(pathRight, progress, flowRightPoint);
+    output[0] = (flowLeftPoint[0] + flowRightPoint[0]) * 0.5f;
+    output[1] = (flowLeftPoint[1] + flowRightPoint[1]) * 0.5f;
+  }
+
+  private static void pointOnLine(float[] points, float progress, float[] output) {
+    int pointCount = points.length / 2;
+    float scaled = clamp01(progress) * (pointCount - 1);
+    int index = Math.min(pointCount - 2, Math.max(0, (int) scaled));
+    float fraction = scaled - index;
+    int offset = index * 2;
+    output[0] = points[offset] + (points[offset + 2] - points[offset]) * fraction;
+    output[1] = points[offset + 1] + (points[offset + 3] - points[offset + 1]) * fraction;
   }
 
   private void drawVehicles(Canvas canvas) {
@@ -359,16 +565,16 @@ public final class OpenpilotPathView extends View implements Runnable {
       vehicleBitmapPaint.setAlpha(221);
     }
 
-    RectF destination = new RectF(
+    vehicleRect.set(
         centerX - width * 0.82f,
         centerY - height * 0.55f,
         centerX + width * 0.82f,
         centerY + height * 0.45f);
     Bitmap marker = vehicleMarkerForYaw(yawDeg, lane, centerX);
     if (marker != null) {
-      canvas.drawBitmap(marker, null, destination, vehicleBitmapPaint);
+      canvas.drawBitmap(marker, null, vehicleRect, vehicleBitmapPaint);
     } else {
-      canvas.drawRoundRect(destination, width * 0.24f, width * 0.24f, vehicleFillPaint);
+      canvas.drawRoundRect(vehicleRect, width * 0.24f, width * 0.24f, vehicleFillPaint);
     }
   }
 
@@ -428,6 +634,10 @@ public final class OpenpilotPathView extends View implements Runnable {
     roadEdgeLeftProb = 0.0f;
     roadEdgeRightProb = 0.0f;
     vehicleSpeedKph = 0.0f;
+    longitudinalActuator = "none";
+    longitudinalActuatorLevel = 0.0f;
+    accelerationPhase = 0.0f;
+    brakePhase = 0.0f;
     lastDashFrameMs = 0L;
     setVisibility(View.GONE);
     invalidate();
@@ -456,13 +666,13 @@ public final class OpenpilotPathView extends View implements Runnable {
     return 0xff000000 | (red << 16) | (green << 8) | blue;
   }
 
-  private static Path linePath(float[] points) {
-    Path path = new Path();
-    path.moveTo(points[0], points[1]);
+  private Path linePath(float[] points) {
+    scratchPath.rewind();
+    scratchPath.moveTo(points[0], points[1]);
     for (int index = 2; index < points.length; index += 2) {
-      path.lineTo(points[index], points[index + 1]);
+      scratchPath.lineTo(points[index], points[index + 1]);
     }
-    return path;
+    return scratchPath;
   }
 
   private static float[] readPoints(JSONArray json) {

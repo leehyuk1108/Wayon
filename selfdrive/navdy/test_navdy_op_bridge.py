@@ -1961,6 +1961,40 @@ def test_navdy_path_renderer_animates_dashed_lanes_and_keeps_road_edges_solid():
   assert java.index("drawRoadEdge(canvas, roadEdgeLeft") < java.index("laneDashEffect = new")
 
 
+def test_navdy_path_renderer_animates_longitudinal_output_without_reducing_frame_rate():
+  patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
+  java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java").read_text()
+  smali = (patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
+
+  assert 'json.optString("longitudinalActuator", "none")' in java
+  assert 'json.optDouble("longitudinalActuatorLevel", 0.0)' in java
+  assert "drawAccelerationFlow(canvas)" in java
+  assert "drawBrakeFlow(canvas)" in java
+  assert "int bandCount = longitudinalActuatorLevel >= 0.55f ? 2 : 1" in java
+  assert "int arrowCount = 1 + Math.min(2" in java
+  assert "float flowEnd = brakeFlowEndProgress()" in java
+  assert "progressForScreenPoint(vehicles[index], vehicles[index + 1])" in java
+  assert "(int) vehicles[index + 3] == 2" in java
+  assert "DASH_FRAME_MS = 66L" in java
+  assert "postDelayed(this, DASH_FRAME_MS)" in java
+  assert "vehicleSpeedKph > 1.0f || pathAnimationActive()" in java
+  assert "private final Path flowPath = new Path()" in java
+  assert "private final float[] flowLeftPoint = new float[2]" in java
+  assert "new Path()" not in java.split("protected void onDraw", 1)[1]
+  assert "new RectF(" not in java.split("protected void onDraw", 1)[1]
+
+  assert ".field private static final DASH_FRAME_MS:J = 0x42L" in smali
+  assert '"longitudinalActuator"' in smali
+  assert '"longitudinalActuatorLevel"' in smali
+  assert ".method private drawAccelerationFlow(Landroid/graphics/Canvas;)V" in smali
+  assert ".method private drawBrakeFlow(Landroid/graphics/Canvas;)V" in smali
+  assert ".method private pathAnimationActive()Z" in smali
+  assert ".method public updatePayload(Ljava/lang/String;Z)V" in smali
+  assert ".method public updatePayload(Lorg/json/JSONObject;Z)V" in smali
+  assert "->postDelayed(Ljava/lang/Runnable;J)Z" in smali
+  assert "->postInvalidateDelayed(J)V" not in smali
+
+
 def test_navdy_path_renderer_uses_classified_solid_and_center_lines():
   patch_root = Path(__file__).parent / "hud_patch" / "engaged-path-v7-alert-banner-speed-warning"
   java = (patch_root / "src/com/navdy/hud/app/openpilot/OpenpilotPathView.java").read_text()
@@ -2013,11 +2047,12 @@ def test_navdy_path_renderer_highlights_only_the_active_longitudinal_lead():
   assert "COLOR_VEHICLE_VISION" in java
   assert "COLOR_VEHICLE_LONGITUDINAL_LEAD" in java
   assert 'vehicle.optBoolean("longitudinalLead", false)' in java
-  assert 'const-string v6, "longitudinalLead"' in (
+  assert '"longitudinalLead"' in (
     patch_root / "smali/com/navdy/hud/app/openpilot/OpenpilotPathView.smali").read_text()
   assert "BitmapFactory.decodeResource" in java
   assert "new LightingColorFilter" in java
-  assert "canvas.drawBitmap(marker, null, destination, vehicleBitmapPaint)" in java
+  assert "vehicleRect.set(" in java
+  assert "canvas.drawBitmap(marker, null, vehicleRect, vehicleBitmapPaint)" in java
   assert png[:8] == b"\x89PNG\r\n\x1a\n"
   assert int.from_bytes(png[16:20], "big") == 256
   assert int.from_bytes(png[20:24], "big") == 256

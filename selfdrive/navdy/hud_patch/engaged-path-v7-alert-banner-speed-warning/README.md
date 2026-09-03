@@ -69,6 +69,15 @@ Behavior:
 - Animates lane dashes at 18-80 pixels per second based on vehicle speed.
 - Keeps only one pending dash-animation repaint so repeated socket updates
   cannot multiply render callbacks and stall the Navdy main thread.
+- Reuses that same 66 ms repaint callback for longitudinal path feedback, so
+  the existing lane-animation frame rate is not reduced or split across timers.
+- Shows accelerator output as one or two bright-green energy bands moving away
+  from the vehicle inside the planned path. Coast adds no moving overlay.
+- Shows brake output as up to three white chevrons moving toward the vehicle.
+  When an active longitudinal lead is present, the chevrons stay between the
+  ego vehicle and that lead instead of passing through or beyond its marker.
+- Reuses preallocated paths, point buffers, and the vehicle destination rect;
+  the animation loop does not allocate a bitmap, `Path`, or `RectF` per frame.
 - Uses 3.2px lane strokes, 2.8px road-edge strokes, and a stronger
   0x55-to-0xff distance gradient so projected boundaries remain legible.
 - Draws `modelV2.roadEdges` as red solid lines only when `1 - roadEdgeStd` is

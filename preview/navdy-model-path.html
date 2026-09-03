@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Navdy Model Path Preview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, Pretendard, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b0c0e;
+      color: #f5f7f8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px 18px;
+      background: #0b0c0e;
+    }
+
+    main {
+      width: min(960px, 100%);
+      display: grid;
+      gap: 18px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid #292c30;
+      border-radius: 8px;
+      background: #15171a;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .label {
+      margin-right: 4px;
+      color: #9da3aa;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    button {
+      min-height: 34px;
+      padding: 0 13px;
+      border: 1px solid #34383d;
+      border-radius: 6px;
+      background: #202328;
+      color: #c9ced3;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: #596169; }
+    button[aria-pressed="true"] {
+      border-color: #00d94f;
+      background: #153520;
+      color: #f6fff8;
+    }
+
+    .device-wrap {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      padding: 24px;
+      border: 1px solid #25282c;
+      border-radius: 8px;
+      background: #101214;
+    }
+
+    .device {
+      width: min(100%, 800px);
+      aspect-ratio: 4 / 3;
+      padding: 16px;
+      border: 1px solid #3a3d41;
+      border-radius: 22px;
+      background: #08090a;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border-radius: 10px;
+      background: #000;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 18px;
+      color: #9da3aa;
+      font-size: 13px;
+    }
+
+    .legend span { display: inline-flex; align-items: center; gap: 7px; }
+    .swatch { width: 18px; height: 4px; border-radius: 2px; background: #00e646; }
+    .swatch.accel { background: #5cff7e; box-shadow: 0 0 5px rgba(92, 255, 126, 0.7); }
+    .swatch.brake { background: #fff; }
+
+    @media (max-width: 620px) {
+      body { padding: 14px 8px; }
+      .device-wrap { padding: 8px; }
+      .device { padding: 8px; border-radius: 14px; }
+      .toolbar { align-items: flex-start; }
+      .control-group { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="toolbar" aria-label="미리보기 상태 선택">
+      <div class="control-group" id="drive-controls">
+        <span class="label">제어</span>
+        <button data-drive="coast" aria-pressed="false">탄력</button>
+        <button data-drive="accelMild" aria-pressed="true">약한 가속</button>
+        <button data-drive="accelStrong" aria-pressed="false">강한 가속</button>
+        <button data-drive="brakeMild" aria-pressed="false">약한 감속</button>
+        <button data-drive="brakeStrong" aria-pressed="false">강한 감속</button>
+      </div>
+      <div class="control-group" id="curve-controls">
+        <span class="label">경로</span>
+        <button data-curve="left" aria-pressed="true">좌커브</button>
+        <button data-curve="straight" aria-pressed="false">직선</button>
+        <button data-curve="right" aria-pressed="false">우커브</button>
+      </div>
+    </div>
+
+    <section class="device-wrap">
+      <div class="device">
+        <canvas id="hud" width="640" height="480" aria-label="나브디 주행 화면 미리보기"></canvas>
+      </div>
+    </section>
+
+    <div class="legend">
+      <span><i class="swatch"></i>모델 예정 경로</span>
+      <span><i class="swatch accel"></i>가속 강도</span>
+      <span><i class="swatch brake"></i>제동 방향·강도</span>
+    </div>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('hud');
+    const ctx = canvas.getContext('2d');
+    const state = { drive: 'accelMild', curve: 'left' };
+
+    function setPressed(selector, key, value) {
+      document.querySelectorAll(selector).forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset[key] === value));
+      });
+    }
+
+    document.getElementById('drive-controls').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-drive]');
+      if (!button) return;
+      state.drive = button.dataset.drive;
+      setPressed('[data-drive]', 'drive', state.drive);
+    });
+
+    document.getElementById('curve-controls').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-curve]');
+      if (!button) return;
+      state.curve = button.dataset.curve;
+      setPressed('[data-curve]', 'curve', state.curve);
+    });
+
+    function curveSign() {
+      if (state.curve === 'left') return -1;
+      if (state.curve === 'right') return 1;
+      return 0;
+    }
+
+    function roadPoint(t, lateral = 0) {
+      const eased = t * t * (3 - 2 * t);
+      const bend = curveSign() * 116 * eased;
+      const centerX = 320 + bend;
+      const y = 217 - 116 * t;
+      const width = 66 - 54 * t;
+      return { x: centerX + lateral * width, y, width };
+    }
+
+    function drawRoadLine(lateral, alpha, dashed = false) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+      ctx.lineWidth = lateral === -1 || lateral === 1 ? 3.2 : 2.2;
+      ctx.lineCap = 'round';
+      if (dashed) ctx.setLineDash([20, 14]);
+      ctx.beginPath();
+      for (let i = 0; i <= 40; i += 1) {
+        const p = roadPoint(i / 40, lateral);
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawPlannedPath() {
+      const left = [];
+      const right = [];
+      for (let i = 0; i <= 48; i += 1) {
+        const t = i / 48;
+        const p = roadPoint(t);
+        const half = 39 - 32 * t;
+        left.push({ x: p.x - half, y: p.y });
+        right.push({ x: p.x + half, y: p.y });
+      }
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 230, 70, 0.36)';
+      ctx.beginPath();
+      left.forEach((p, index) => index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      right.reverse().forEach((p) => ctx.lineTo(p.x, p.y));
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = '#00e646';
+      ctx.lineWidth = 2.2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      left.forEach((p, index) => index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      ctx.beginPath();
+      right.reverse().forEach((p, index) => index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawEnergyBand(center, length, strength) {
+      const slices = 20;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.shadowColor = `rgba(88,255,122,${0.22 + strength * 0.24})`;
+      ctx.shadowBlur = 5 + strength * 7;
+
+      for (let index = 0; index < slices; index += 1) {
+        const u0 = index / slices;
+        const u1 = (index + 1) / slices;
+        const t0 = center - length * 0.5 + length * u0;
+        const t1 = center - length * 0.5 + length * u1;
+        if (t1 < 0 || t0 > 1) continue;
+
+        const clampedT0 = Math.max(0, Math.min(1, t0));
+        const clampedT1 = Math.max(0, Math.min(1, t1));
+        const p0 = roadPoint(clampedT0);
+        const p1 = roadPoint(clampedT1);
+        const half0 = 38 - 31 * clampedT0;
+        const half1 = 38 - 31 * clampedT1;
+        const alpha = Math.sin(Math.PI * (u0 + u1) * 0.5) * (0.18 + strength * 0.24);
+
+        ctx.fillStyle = `rgba(92,255,126,${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(p0.x - half0, p0.y);
+        ctx.lineTo(p0.x + half0, p0.y);
+        ctx.lineTo(p1.x + half1, p1.y);
+        ctx.lineTo(p1.x - half1, p1.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawAccelerationFlow(now) {
+      if (state.drive !== 'accelMild' && state.drive !== 'accelStrong') return;
+      const strong = state.drive === 'accelStrong';
+      const speed = strong ? 0.00031 : 0.00018;
+      const strength = strong ? 1 : 0.48;
+      const count = strong ? 2 : 1;
+      const phase = (now * speed) % 1;
+
+      for (let index = 0; index < count; index += 1) {
+        const center = (phase + index / count) % 1;
+        drawEnergyBand(center, strong ? 0.24 : 0.3, strength);
+      }
+    }
+
+    function drawBrakeChevron(t, strength) {
+      const p = roadPoint(t);
+      const p2 = roadPoint(Math.min(1, t + 0.012));
+      const heading = Math.atan2(p2.y - p.y, p2.x - p.x) + Math.PI / 2;
+      const scale = 0.48 + (1 - t) * 0.78;
+      const width = 19 * scale;
+      const height = 11 * scale;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(heading);
+      ctx.strokeStyle = `rgba(255,255,255,${0.48 + strength * 0.46})`;
+      ctx.lineWidth = 3.2 * scale;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowColor = 'rgba(255,255,255,0.38)';
+      ctx.shadowBlur = strength > 0.7 ? 7 : 3;
+      ctx.beginPath();
+      ctx.moveTo(-width, -height);
+      ctx.lineTo(0, height);
+      ctx.lineTo(width, -height);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawBrakeFlow(now) {
+      if (state.drive !== 'brakeMild' && state.drive !== 'brakeStrong') return;
+      const strong = state.drive === 'brakeStrong';
+      const count = strong ? 3 : 2;
+      const speed = strong ? 0.00034 : 0.00023;
+      const phase = (now * speed) % 1;
+      const flowStart = 0.08;
+      const flowEnd = 0.65;
+      for (let i = 0; i < count; i += 1) {
+        const travel = 1 - ((phase + i / count) % 1);
+        const t = flowStart + (0.06 + travel * 0.88) * (flowEnd - flowStart);
+        drawBrakeChevron(t, strong ? 1 : 0.58);
+      }
+    }
+
+    function drawVehicle() {
+      const p = roadPoint(0.72);
+      ctx.save();
+      ctx.translate(p.x, p.y + 2);
+      ctx.fillStyle = '#00e5ff';
+      ctx.shadowColor = 'rgba(0,229,255,0.48)';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(-14, 6);
+      ctx.lineTo(-10, -8);
+      ctx.lineTo(10, -8);
+      ctx.lineTo(14, 6);
+      ctx.quadraticCurveTo(0, 12, -14, 6);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawActuatorIcon(x, y, active, color, type) {
+      ctx.save();
+      if (active) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, 14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = active ? '#fff' : 'rgba(255,255,255,0.72)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (type === 'brake') {
+        ctx.roundRect(x - 5, y - 8, 10, 16, 3);
+        ctx.moveTo(x - 10, y - 7);
+        ctx.lineTo(x - 10, y + 7);
+      } else {
+        ctx.moveTo(x - 4, y + 8);
+        ctx.lineTo(x - 7, y - 5);
+        ctx.quadraticCurveTo(x, y - 10, x + 7, y - 5);
+        ctx.lineTo(x + 4, y + 8);
+        ctx.closePath();
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawHudText() {
+      ctx.save();
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left';
+      ctx.font = '300 28px Roboto, Arial, sans-serif';
+      ctx.fillText('20:13', 37, 260);
+      ctx.fillStyle = '#2ad8ff';
+      ctx.fillRect(37, 271, 24, 2);
+      ctx.fillStyle = '#fff';
+      ctx.font = '500 17px Roboto, Arial, sans-serif';
+      ctx.fillText('♨ 18°C', 39, 300);
+
+      ctx.textAlign = 'center';
+      ctx.font = '500 16px Roboto, Arial, sans-serif';
+      ctx.fillText('♪  Harry Styles - Sign of the Times', 320, 244);
+      ctx.font = '300 64px Roboto, Arial, sans-serif';
+      const speed = state.drive === 'brakeStrong' ? '54' : state.drive === 'accelStrong' ? '68' : '62';
+      ctx.fillText(speed, 320, 306);
+      ctx.fillStyle = '#00e646';
+      ctx.font = '500 18px Roboto, Arial, sans-serif';
+      ctx.fillText('◴  70', 320, 335);
+
+      ctx.strokeStyle = '#00e646';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(401, 286, 13, Math.PI * 0.9, Math.PI * 2.1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(397, 286);
+      ctx.lineTo(401, 281);
+      ctx.lineTo(405, 286);
+      ctx.stroke();
+
+      const accelerating = state.drive === 'accelMild' || state.drive === 'accelStrong';
+      const braking = state.drive === 'brakeMild' || state.drive === 'brakeStrong';
+      drawActuatorIcon(306, 373, braking, '#ff3b30', 'brake');
+      drawActuatorIcon(346, 373, accelerating, '#1f76ff', 'gas');
+      ctx.restore();
+    }
+
+    function render(now) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      drawRoadLine(-2.35, 0.24, true);
+      drawRoadLine(-1, 0.82, true);
+      drawRoadLine(1, 0.82, true);
+      drawRoadLine(2.35, 0.24, true);
+      drawPlannedPath();
+      drawAccelerationFlow(now);
+      drawVehicle();
+      drawBrakeFlow(now);
+      drawHudText();
+
+      requestAnimationFrame(render);
+    }
+
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>

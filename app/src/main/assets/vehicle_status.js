@@ -42,6 +42,21 @@
         return Number.isFinite(parsed) ? Math.max(0, (nowMs - parsed) / 1000) : null;
     }
 
+    function sourceFreshness(details, live, nowMs) {
+        const liveAge = liveAgeSeconds(live, nowMs);
+        const liveThreshold = live?.onroad === true ? 45 : 600;
+        const liveFresh = !!live && live?.unavailable !== true
+            && (liveAge === null || liveAge <= liveThreshold);
+        const meta = details?.meta || {};
+        const detailTimestamp = Date.parse(meta.collectedAt || meta.updatedAt || "");
+        const detailAge = Number.isFinite(detailTimestamp)
+            ? Math.max(0, (nowMs - detailTimestamp) / 1000)
+            : null;
+        const detailsFresh = !!details && meta.stale !== true
+            && (detailAge === null || detailAge <= 15 * 60);
+        return { liveAge, liveFresh, detailAge, detailsFresh };
+    }
+
     function speedDetail(live, suffix) {
         const speedKph = number(live?.speedKph);
         return `${speedKph === null ? "--" : Math.round(speedKph)} km/h · ${suffix}`;
@@ -107,6 +122,7 @@
         }
 
         const closures = hasDetails ? details.closures || {} : {};
+        const freshness = sourceFreshness(details, live, nowMs);
         const voltage = number(details?.battery12v?.voltageV) ?? number(live?.voltageV);
         const batteryTemperature = number(details?.battery12v?.temperatureC);
         const failedDtc = number(details?.diagnostics?.alertCount)
@@ -171,21 +187,17 @@
             return report("warning", "CHECK\nVEHICLE", detail, "triangle-alert");
         }
 
-        if (live?.unavailable === true) {
+        if (live?.unavailable === true && !freshness.detailsFresh) {
             return report("offline", "VEHICLE\nOFFLINE", live.message || "Last connection unavailable", "cloud-off");
         }
 
-        if (details?.meta?.stale === true) {
+        if (!freshness.detailsFresh && !freshness.liveFresh) {
             return report("warning", "UPDATE\nDELAYED", "Vehicle data may be outdated", "clock-alert");
         }
 
         if (hasLive) {
-            const ageSeconds = liveAgeSeconds(live, nowMs);
-            const staleAfterSeconds = live.onroad === true ? 45 : 600;
-            if (ageSeconds !== null && ageSeconds > staleAfterSeconds) {
-                return report("warning", "UPDATE\nDELAYED", "Vehicle data may be outdated", "clock-alert");
-            }
-            if (live.onroad === true && (live.latitude == null || live.longitude == null || live.gpsFresh === false)) {
+            if (freshness.liveFresh && live.onroad === true
+                && (live.latitude == null || live.longitude == null || live.gpsFresh === false)) {
                 return report("warning", "LOCATION\nUNKNOWN", "Vehicle status received · GPS unavailable", "map-pin-off");
             }
         }
@@ -227,6 +239,7 @@
 
     return {
         evaluate,
+        sourceFreshness,
         thresholds: {
             tireWarningKpa: TIRE_WARNING_KPA,
             oilWarningPercent: OIL_WARNING_PERCENT,

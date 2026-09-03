@@ -51,6 +51,11 @@ data class WayonCloudState(
         put("speedKph", speedMps?.times(3.6))
         put("doorLocked", doorLocked)
         put("doorLockUpdatedAt", doorLockUpdatedAt)
+        put("connections", rawJson?.optJSONObject("connections") ?: JSONObject())
+        put("timestamps", rawJson?.optJSONObject("timestamps") ?: JSONObject())
+        put("cutInRisk", rawJson?.optJSONObject("cutInRisk") ?: JSONObject())
+        put("vehicle", rawJson?.optJSONObject("vehicle") ?: JSONObject())
+        put("systemState", rawJson?.optNullableString("systemState"))
     }.toString()
 }
 
@@ -71,6 +76,7 @@ data class WayonCloudHistoryItem(
     val endAddress: String,
     val route: JSONArray,
     val routePointCount: Int,
+    val report: JSONObject = JSONObject(),
 ) {
     fun toJsonObject(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -89,6 +95,7 @@ data class WayonCloudHistoryItem(
         put("endAddress", endAddress)
         put("route", route)
         put("routePointCount", routePointCount)
+        put("report", report)
     }
 }
 
@@ -130,6 +137,7 @@ data class WayonCloudFeed(
     val history: List<WayonCloudHistoryItem>,
     val snapshots: List<WayonCloudSnapshotItem> = emptyList(),
     val vehicleStatus: WayonVehicleStatus? = null,
+    val healthTimeline: JSONArray = JSONArray(),
 ) {
     val latestTrip: WayonCloudHistoryItem?
         get() = history.firstOrNull()
@@ -139,6 +147,13 @@ data class WayonCloudFeed(
 
     val snapshotsJson: String
         get() = JSONArray().apply { snapshots.forEach { put(it.toJsonObject()) } }.toString()
+
+    val diagnosticsJson: String
+        get() = JSONObject().apply {
+            put("live", state?.let { JSONObject(it.toLiveStatusJson()) })
+            put("healthTimeline", healthTimeline)
+            put("generatedAt", state?.updatedAt)
+        }.toString()
 
     fun withLatestTripLocationFallback(): WayonCloudFeed {
         val current = state ?: return this
@@ -182,7 +197,13 @@ object WayonCloudFeedParser {
             }
         }.sortedByDescending { it.capturedAtMillis }.map { it.item }
 
-        return WayonCloudFeed(state, history, snapshotItems, vehicleStatus)
+        return WayonCloudFeed(
+            state,
+            history,
+            snapshotItems,
+            vehicleStatus,
+            root.optJSONArray("healthTimeline") ?: JSONArray(),
+        )
     }
 
     private fun parseVehicleStatus(status: JSONObject): WayonVehicleStatus? {
@@ -344,6 +365,7 @@ object WayonCloudFeedParser {
                 endAddress = coordinateText(endLatitude, endLongitude),
                 route = route,
                 routePointCount = routePointCount,
+                report = trip.optJSONObject("report") ?: JSONObject(),
             ),
         )
     }

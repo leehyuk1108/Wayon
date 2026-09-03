@@ -1440,6 +1440,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         runJs("updateWayonCloudSnapshots(${jsQuote(feed.snapshotsJson)})")
         applyStoredWayonImpact()
         applyWayonVehicleStatus(feed.vehicleStatus)
+        runJs("updateWayonDiagnostics(${jsQuote(feed.diagnosticsJson)})")
 
         val state = feed.state
         if (state == null) {

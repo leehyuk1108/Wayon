@@ -17,6 +17,24 @@ import com.google.firebase.messaging.RemoteMessage
 import java.util.Locale
 import org.json.JSONObject
 
+private object WayonPushDeduplicator {
+    private const val PREFS = "wayon_push_dedup"
+    private const val WINDOW_MS = 30_000L
+
+    fun shouldShow(context: Context, category: String, data: Map<String, String>): Boolean {
+        if (data["test"] == "true") return true
+        val identity = data["vehicleEventId"]
+            ?: data["impactId"]
+            ?: listOf(data["type"], data["locked"], data["occurredAt"], data["detectedAt"]).joinToString("|")
+        val key = "${category}_${identity.hashCode()}"
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (now - prefs.getLong(key, 0L) < WINDOW_MS) return false
+        prefs.edit().putLong(key, now).apply()
+        return true
+    }
+}
+
 class WayonMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         WayonPushRegistrar.registerToken(this, token, force = true)
@@ -93,6 +111,7 @@ object WayonDoorLockNotifications {
     }
 
     fun show(context: Context, data: Map<String, String>) {
+        if (!WayonPushDeduplicator.shouldShow(context, "door", data)) return
         ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -133,7 +152,7 @@ object WayonDoorLockNotifications {
             .setContentIntent(pendingIntent)
             .build()
 
-        val notificationId = eventId.hashCode().let { if (it == 0) 9301 else it }
+        val notificationId = 9301
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .notify(notificationId, notification)
     }
@@ -158,6 +177,7 @@ object WayonParkingNotifications {
     }
 
     fun show(context: Context, data: Map<String, String>) {
+        if (!WayonPushDeduplicator.shouldShow(context, "parking", data)) return
         ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -202,7 +222,7 @@ object WayonParkingNotifications {
             .setContentIntent(pendingIntent)
             .build()
 
-        val notificationId = eventId.hashCode().let { if (it == 0) 9401 else it }
+        val notificationId = 9401
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .notify(notificationId, notification)
     }
@@ -227,6 +247,7 @@ object WayonImpactNotifications {
     }
 
     fun show(context: Context, data: Map<String, String>) {
+        if (!WayonPushDeduplicator.shouldShow(context, "impact", data)) return
         ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -272,7 +293,7 @@ object WayonImpactNotifications {
             .setContentIntent(pendingIntent)
             .build()
 
-        val notificationId = data["impactId"].orEmpty().hashCode().let { if (it == 0) 9201 else it }
+        val notificationId = 9201
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .notify(notificationId, notification)
     }

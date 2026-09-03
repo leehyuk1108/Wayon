@@ -6688,6 +6688,56 @@
             .ambient-card-summary-icon { width: 36px; height: 36px; }
             .ambient-card-body { padding: 4px 16px 18px; }
         }
+        .connection-diagnostics {
+            margin: 14px 16px 4px;
+            border-top: 1px solid rgba(255,255,255,.10);
+            border-bottom: 1px solid rgba(255,255,255,.10);
+        }
+        .connection-diagnostics > summary {
+            display: flex; align-items: center; gap: 10px; min-height: 52px;
+            list-style: none; cursor: pointer; color: #f5f5f7;
+        }
+        .connection-diagnostics > summary::-webkit-details-marker { display: none; }
+        .connection-diagnostics > summary i { width: 18px; color: #9a9aa1; }
+        .connection-diagnostics > summary strong { flex: 1; font-size: 14px; }
+        .connection-overall { font-size: 12px; color: #68cc89; }
+        .connection-overall.warning { color: #f2b85b; }
+        .connection-overall.fault { color: #ff6b63; }
+        .connection-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1px 16px; padding: 0 0 14px; }
+        .connection-row { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: center; gap: 8px; min-height: 38px; }
+        .connection-dot { width: 7px; height: 7px; border-radius: 50%; background: #68cc89; }
+        .connection-row.warning .connection-dot { background: #f2b85b; }
+        .connection-row.fault .connection-dot { background: #ff6b63; }
+        .connection-name { min-width: 0; }
+        .connection-name strong, .connection-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .connection-name strong { font-size: 12px; color: #eeeeF0; }
+        .connection-name span { margin-top: 2px; font-size: 10px; color: #77777d; }
+        .connection-age { font-size: 10px; color: #96969c; }
+        .health-timeline { padding: 2px 0 14px; }
+        .health-timeline-title { margin: 12px 0 4px; font-size: 11px; color: #77777d; text-transform: uppercase; }
+        .health-event { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; gap: 8px; padding: 8px 0; }
+        .health-event-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #68cc89; }
+        .health-event.warning .health-event-dot { background: #f2b85b; }
+        .health-event.critical .health-event-dot { background: #ff6b63; }
+        .health-event-copy strong, .health-event-copy span { display: block; }
+        .health-event-copy strong { font-size: 12px; color: #e9e9eb; }
+        .health-event-copy span { margin-top: 2px; font-size: 10px; line-height: 1.35; color: #85858b; }
+        .health-event time { font-size: 10px; color: #68686e; }
+        .ambient-preview { margin: 8px 0 14px; padding: 12px 0; border-top: 1px solid rgba(255,255,255,.09); border-bottom: 1px solid rgba(255,255,255,.09); }
+        .ambient-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+        .ambient-preview-head strong { font-size: 13px; color: #f2f2f4; }
+        .ambient-preview-head select { max-width: 150px; background: #242426; color: #eee; border: 0; border-radius: 6px; padding: 7px 9px; font-size: 11px; }
+        .ambient-preview-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .ambient-preview-zone { min-height: 54px; padding: 10px 12px; border-radius: 7px; background: rgba(var(--zone-rgb,255,255,255), calc(.05 + var(--zone-brightness,0) * .004)); }
+        .ambient-preview-zone span, .ambient-preview-zone strong { display: block; }
+        .ambient-preview-zone span { font-size: 10px; color: #8e8e94; }
+        .ambient-preview-zone strong { margin-top: 5px; font-size: 12px; color: rgb(var(--zone-rgb,255,255,255)); }
+        .trip-quality-line { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .trip-quality-chip { font-size: 10px; color: #a9a9ae; padding: 4px 7px; border-radius: 4px; background: rgba(255,255,255,.06); }
+        .trip-quality-chip.good { color: #76d899; background: rgba(65,180,105,.12); }
+        .trip-quality-chip.warning { color: #f0ba65; background: rgba(232,157,47,.12); }
+        .trip-detail-quality { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 7px; }
+        @media (max-width: 370px) { .connection-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 
@@ -6977,6 +7027,18 @@
                     </div>
                     <div class="vehicle-state-alerts" id="gmone-closure-grid" hidden></div>
                 </section>
+
+                <details class="connection-diagnostics" id="connection-diagnostics">
+                    <summary>
+                        <i data-lucide="network"></i>
+                        <strong>전체 연결 상태</strong>
+                        <span class="connection-overall" id="connection-overall">확인 중</span>
+                        <i data-lucide="chevron-down"></i>
+                    </summary>
+                    <div class="connection-grid" id="connection-grid"></div>
+                    <div class="health-timeline-title">Vehicle health timeline</div>
+                    <div class="health-timeline" id="health-timeline"></div>
+                </details>
 
                 <div class="info-grid">
                     <div class="info-card fuel-card" id="fuel-card">
@@ -7489,6 +7551,25 @@
                                     <span></span>
                                 </label>
                             </div>
+                            <div class="ambient-preview">
+                                <div class="ambient-preview-head">
+                                    <strong>상태 미리보기</strong>
+                                    <select id="ambient-preview-scenario" aria-label="앰비언트 상태 미리보기">
+                                        <option value="live">현재 차량 상태</option>
+                                        <option value="driving">평상시 주행</option>
+                                        <option value="onroadDoor">주행 중 문 열림</option>
+                                        <option value="offroadDoor">주차 중 문 열림</option>
+                                        <option value="exitCourtesy">하차 후 조명</option>
+                                        <option value="overspeed">과속 경고</option>
+                                        <option value="reverse">후진</option>
+                                        <option value="disconnected">데이터 단절</option>
+                                    </select>
+                                </div>
+                                <div class="ambient-preview-stage">
+                                    <div class="ambient-preview-zone" id="ambient-preview-zone1"><span>Zone 1</span><strong>꺼짐</strong></div>
+                                    <div class="ambient-preview-zone" id="ambient-preview-zone2"><span>Zone 2</span><strong>꺼짐</strong></div>
+                                </div>
+                            </div>
                             <div class="ambient-profile-list" id="ambient-profile-list"></div>
                             <div class="ambient-editor-actions">
                                 <button class="ambient-action" type="button" id="btnAmbientProfileReset">초기값으로</button>
@@ -7769,6 +7850,7 @@
                     <span class="trip-detail-stat-value" id="trip-detail-top">--</span>
                 </div>
             </div>
+            <div class="trip-detail-quality" id="trip-detail-quality"></div>
         </div>
     </div>
 
@@ -7891,6 +7973,7 @@
         let wayonCloudKeyActive = false;
         let wayonCloudDataAvailable = false;
         let wayonLiveStateCurrent = null;
+        let wayonDiagnosticsCurrent = { healthTimeline: [] };
         let wayonImpactStateCurrent = null;
         let wayonCloudSnapshots = [];
         let wayonLiveCaptures = [];
@@ -8301,6 +8384,57 @@
 
         let ambientProfile = loadAmbientProfileState();
 
+        function resolveAmbientPreviewScenario() {
+            const selector = document.getElementById('ambient-preview-scenario');
+            let scenario = selector?.value || 'live';
+            if (scenario === 'live') {
+                const live = wayonLiveStateCurrent;
+                const vehicle = live?.vehicle || {};
+                const gear = String(vehicle.gear || '').toLowerCase();
+                const canonical = String(live?.systemState || '');
+                const canonicalMap = {
+                    disconnected: 'disconnected', offroad: 'disconnected', offroad_door: 'offroadDoor',
+                    exit_courtesy: 'exitCourtesy', onroad: 'driving', onroad_door: 'onroadDoor',
+                    reverse: 'reverse', overspeed: 'overspeed'
+                };
+                if (canonicalMap[canonical]) scenario = canonicalMap[canonical];
+                else if (!live || live.unavailable === true) scenario = 'disconnected';
+                else if (live.onroad === true && (gear === 'r' || gear === 'reverse')) scenario = 'reverse';
+                else if (live.onroad === true && vehicle.doorOpen === true) scenario = 'onroadDoor';
+                else if (live.onroad === true) scenario = 'driving';
+                else if (vehicle.doorOpen === true) scenario = 'offroadDoor';
+                else scenario = 'disconnected';
+            }
+            if (scenario === 'reverse' || scenario === 'disconnected') {
+                return { scenario, zone1: { rgb: [255,255,255], brightness: 0 }, zone2: { rgb: [255,255,255], brightness: 0 } };
+            }
+            if (scenario === 'exitCourtesy') {
+                return { scenario, zone1: ambientProfile.driving.zone1, zone2: ambientProfile.exitCourtesy.zone2 };
+            }
+            if (scenario === 'overspeed') {
+                return { scenario, zone1: ambientProfile.overspeed.zone1, zone2: ambientProfile.driving.zone2 };
+            }
+            const section = ambientProfile[scenario] || ambientProfile.driving;
+            return { scenario, zone1: section.zone1 || ambientProfile.driving.zone1, zone2: section.zone2 || ambientProfile.driving.zone2 };
+        }
+
+        function renderAmbientPreview() {
+            const state = resolveAmbientPreviewScenario();
+            ['zone1', 'zone2'].forEach(key => {
+                const element = document.getElementById(`ambient-preview-${key}`);
+                const zone = state[key] || { rgb: [255,255,255], brightness: 0 };
+                if (!element) return;
+                const rgb = (zone.rgb || [255,255,255]).map(value => clampAmbient(value, 255));
+                const brightness = clampAmbient(zone.brightness, 100);
+                element.style.setProperty('--zone-rgb', rgb.join(','));
+                element.style.setProperty('--zone-brightness', String(brightness));
+                element.querySelector('strong').textContent = brightness > 0
+                    ? `${ambientHex(rgb)} · ${brightness}%` : '꺼짐';
+            });
+        }
+
+        document.getElementById('ambient-preview-scenario')?.addEventListener('change', renderAmbientPreview);
+
         function renderAmbientProfileSummary() {
             if (!ambientProfileSummary) return;
             const enabled = ambientProfile.enabled !== false;
@@ -8313,6 +8447,7 @@
 
         function persistAmbientProfile() {
             localStorage.setItem('wayonAmbientProfileV1', JSON.stringify(ambientProfile));
+            renderAmbientPreview();
         }
 
         function profileZoneMarkup(section, zoneKey, title, allowAutomaticBrightness = false) {
@@ -8501,6 +8636,7 @@
         });
         renderAmbientProfile();
         renderAmbientModeSummary();
+        renderAmbientPreview();
         window.setInterval(renderAmbientModeSummary, 30000);
         const gmoneRemoteCountdown = {
             active: false,
@@ -10990,10 +11126,84 @@
             if (typeof rawState === 'string') {
                 try { state = JSON.parse(rawState); } catch (_) { state = null; }
             }
+            if (state && typeof state === 'object') {
+                const updatedAtMs = Date.parse(state.updatedAt || '');
+                const maxAgeMs = state.onroad === true ? 45_000 : 600_000;
+                if (Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs > maxAgeMs) {
+                    state = {
+                        ...state,
+                        unavailable: true,
+                        message: 'Comma live telemetry delayed',
+                        onroad: false,
+                        ignition: false,
+                        openpilotActive: false,
+                        openpilotEnabled: false,
+                        speedMps: null,
+                        speedKph: null,
+                        gpsFresh: false,
+                    };
+                }
+            }
             wayonLiveStateCurrent = state && typeof state === 'object' ? state : null;
+            renderConnectionDiagnostics();
+            renderAmbientPreview();
             renderAmbientModeSummary();
             updateGmoneControlPanel(gmoneDetailsCurrent);
             renderVehicleReport(gmoneDetailsCurrent);
+        }
+
+        function connectionAgeLabel(item) {
+            const seconds = Number(item?.ageSeconds);
+            if (!Number.isFinite(seconds)) return '--';
+            if (seconds < 60) return `${Math.round(seconds)}초`;
+            if (seconds < 3600) return `${Math.round(seconds / 60)}분`;
+            return `${Math.round(seconds / 3600)}시간`;
+        }
+
+        function healthTimeLabel(value) {
+            const date = new Date(value || '');
+            if (Number.isNaN(date.getTime())) return '--:--';
+            return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+        }
+
+        function renderConnectionDiagnostics() {
+            const grid = document.getElementById('connection-grid');
+            const overall = document.getElementById('connection-overall');
+            const timeline = document.getElementById('health-timeline');
+            if (!grid || !overall || !timeline) return;
+            const connections = wayonLiveStateCurrent?.connections || {};
+            const labels = {
+                comma: 'Comma device', vehicleCan: 'Vehicle CAN', panda: 'Safety interface',
+                gps: 'GPS', openpilot: 'Openpilot', navdy: 'Navdy HUD', cloud: 'Wayon Cloud',
+            };
+            const entries = Object.entries(labels).map(([key, label]) => [key, label, connections[key] || { state: 'fault', detail: 'No timestamp' }]);
+            const faults = entries.filter(([, , item]) => item.state === 'fault').length;
+            const warnings = entries.filter(([, , item]) => item.state === 'warning').length;
+            overall.className = `connection-overall ${faults ? 'fault' : warnings ? 'warning' : ''}`;
+            overall.textContent = faults ? `${faults}개 연결 확인 필요` : warnings ? `${warnings}개 지연` : '정상';
+            grid.innerHTML = entries.map(([, label, item]) => `
+                <div class="connection-row ${escapeHtml(item.state || 'fault')}">
+                    <span class="connection-dot"></span>
+                    <span class="connection-name"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(item.detail || '')}</span></span>
+                    <span class="connection-age">${connectionAgeLabel(item)}</span>
+                </div>`).join('');
+            const events = Array.isArray(wayonDiagnosticsCurrent.healthTimeline)
+                ? wayonDiagnosticsCurrent.healthTimeline.slice(0, 8) : [];
+            timeline.innerHTML = events.length ? events.map(event => `
+                <div class="health-event ${escapeHtml(event.severity || 'normal')}">
+                    <span class="health-event-dot"></span>
+                    <span class="health-event-copy"><strong>${escapeHtml(event.title || '상태 변경')}</strong><span>${escapeHtml(event.detail || '')}</span></span>
+                    <time>${healthTimeLabel(event.occurred_at || event.occurredAt)}</time>
+                </div>`).join('') : '<div class="health-event-copy"><span>기록된 연결 상태 변경이 없습니다.</span></div>';
+        }
+
+        function updateWayonDiagnostics(raw) {
+            let data = raw;
+            if (typeof raw === 'string') {
+                try { data = JSON.parse(raw); } catch (_) { data = {}; }
+            }
+            wayonDiagnosticsCurrent = data && typeof data === 'object' ? data : { healthTimeline: [] };
+            renderConnectionDiagnostics();
         }
 
         function updateWayonImpactState(rawState) {
@@ -12482,7 +12692,10 @@
             const remainingStarts = gmoneNumber(remoteStart.remainingStarts);
             const settings = gmoneSettings(details?.module || {});
             const drivingActive = controlDrivingActive || wayonLiveStateCurrent?.onroad === true;
-            const controlsUnavailable = !details || wayonLiveStateCurrent?.unavailable === true;
+            const controlsFreshness = window.VehicleStatusPolicy?.sourceFreshness
+                ? window.VehicleStatusPolicy.sourceFreshness(details, wayonLiveStateCurrent, Date.now())
+                : { detailsFresh: !!details };
+            const controlsUnavailable = !details || !controlsFreshness.detailsFresh;
             document.querySelector('.home-command-bar')?.classList.toggle(
                 'controls-disabled',
                 drivingActive || controlsUnavailable,
@@ -13496,6 +13709,31 @@
             return `${item.time || "--:--"} ~ ${endTimeStr}`;
         }
 
+        function tripQualityChips(item) {
+            const report = item?.report || {};
+            const stop = report.stopQuality || {};
+            const op = report.openpilot || {};
+            const cutIn = report.cutInRisk || {};
+            const chips = [];
+            if (Number.isFinite(Number(stop.score))) {
+                const score = Math.round(Number(stop.score));
+                chips.push({ label: `정지 품질 ${score}`, tone: score >= 78 ? 'good' : 'warning' });
+            }
+            if (Number.isFinite(Number(op.activePercent))) {
+                chips.push({ label: `OP ${Math.round(Number(op.activePercent))}%`, tone: '' });
+            }
+            if (Number(cutIn.eventCount || 0) > 0) {
+                chips.push({ label: `끼어들기 ${Number(cutIn.eventCount)}회`, tone: Number(cutIn.maxLevel || 0) >= 3 ? 'warning' : '' });
+            }
+            return chips;
+        }
+
+        function tripQualityHtml(item) {
+            return tripQualityChips(item).map(chip =>
+                `<span class="trip-quality-chip ${chip.tone}">${escapeHtml(chip.label)}</span>`
+            ).join('');
+        }
+
         function renderTripDetail(item) {
             if (!item || !tripDetailOverlay) return;
 
@@ -13511,6 +13749,7 @@
             document.getElementById('trip-detail-duration').textContent = item.duration || "--";
             document.getElementById('trip-detail-avg').textContent = item.avgSpeed || "--";
             document.getElementById('trip-detail-top').textContent = item.topSpeed || "--";
+            document.getElementById('trip-detail-quality').innerHTML = tripQualityHtml(item);
 
             tripDetailOverlay.classList.add('visible');
             tripDetailOverlay.setAttribute('aria-hidden', 'false');
@@ -13718,6 +13957,8 @@
                          </div>
                          
                          <div class="list-big-dist">${distKm.toFixed(2)}<span style="font-size:16px; color:#888; font-weight:400;">km</span></div>
+
+                         <div class="trip-quality-line">${tripQualityHtml(item)}</div>
 
 
                          <div class="list-stats-box">

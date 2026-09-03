@@ -14,6 +14,16 @@ TransmissionType = structs.CarParams.TransmissionType
 NetworkLocation = structs.CarParams.NetworkLocation
 
 STANDSTILL_THRESHOLD = 10 * 0.0311
+TRAVERSE_STANDSTILL_THRESHOLD = 0.5 * 0.0311
+
+
+def get_standstill_threshold(CP):
+  # The Traverse route shows its filtered speed still near 0.3 km/h at the
+  # generic GM threshold. Require the zero wheel-speed bin before latching
+  # hydraulic hold so the final crawl is not mistaken for a complete stop.
+  if CP.carFingerprint == CAR.CHEVROLET_TRAVERSE:
+    return TRAVERSE_STANDSTILL_THRESHOLD
+  return STANDSTILL_THRESHOLD
 
 BUTTONS_DICT = {CruiseButtons.RES_ACCEL: ButtonType.accelCruise, CruiseButtons.DECEL_SET: ButtonType.decelCruise,
                 CruiseButtons.MAIN: ButtonType.mainCruise, CruiseButtons.CANCEL: ButtonType.cancel}
@@ -90,8 +100,9 @@ class CarState(CarStateBase, CarStateExt):
     )
     # sample rear wheel speeds to match the safety which only uses the rear CAN message
     # standstill=True if ECM allows engagement with brake
-    ret.standstill = abs(pt_cp.vl["EBCMWheelSpdRear"]["RLWheelSpd"]) <= STANDSTILL_THRESHOLD and \
-                     abs(pt_cp.vl["EBCMWheelSpdRear"]["RRWheelSpd"]) <= STANDSTILL_THRESHOLD
+    standstill_threshold = get_standstill_threshold(self.CP)
+    ret.standstill = abs(pt_cp.vl["EBCMWheelSpdRear"]["RLWheelSpd"]) <= standstill_threshold and \
+                     abs(pt_cp.vl["EBCMWheelSpdRear"]["RRWheelSpd"]) <= standstill_threshold
 
     if pt_cp.vl["ECMPRDNL2"]["ManualMode"] == 1:
       ret.gearShifter = self.parse_gear_shifter("T")

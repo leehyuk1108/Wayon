@@ -10,6 +10,7 @@ from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_frict
                                          gm_long_auto_hold_command, gm_uses_auto_hold_sng,
                                          limit_traverse_stopping_brake, update_gm_long_auto_hold_brake,
                                          update_traverse_coasting)
+from opendbc.car.gm.carstate import STANDSTILL_THRESHOLD, TRAVERSE_STANDSTILL_THRESHOLD, get_standstill_threshold
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.gmcan import create_acc_dashboard_command
 from opendbc.car.gm.fingerprints import FINGERPRINTS
@@ -100,13 +101,14 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
   def test_tapers_to_soft_release_near_stop(self):
     self.assertEqual(80, limit_traverse_stopping_brake(self.CP, True, 3.0 / 3.6 - 1e-3, 132))
     self.assertEqual(42, limit_traverse_stopping_brake(self.CP, True, 2.0 / 3.6, 132))
-    self.assertEqual(14, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
-    self.assertEqual(8, limit_traverse_stopping_brake(self.CP, True, 0.5 / 3.6, 132))
-    self.assertEqual(4, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
+    self.assertEqual(8, limit_traverse_stopping_brake(self.CP, True, 1.0 / 3.6, 132))
+    self.assertEqual(3, limit_traverse_stopping_brake(self.CP, True, 0.8 / 3.6, 132))
+    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.5 / 3.6, 132))
+    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.0, 132))
 
   def test_does_not_increase_requested_brake(self):
-    self.assertEqual(11, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
-    self.assertEqual(10, limit_traverse_stopping_brake(self.CP, True, 0.2, 10))
+    self.assertEqual(2, limit_traverse_stopping_brake(self.CP, True, 0.2, 30))
+    self.assertEqual(2, limit_traverse_stopping_brake(self.CP, True, 0.2, 10))
 
   def test_only_changes_traverse_final_stopping_phase(self):
     self.assertEqual(132, limit_traverse_stopping_brake(self.CP, False, 0.2, 132))
@@ -114,6 +116,15 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
     self.assertEqual(180, limit_traverse_stopping_brake(self.CP, True, 0.2, 180))
     other = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
     self.assertEqual(132, limit_traverse_stopping_brake(other, True, 0.2, 132))
+
+
+class TestGMStandstillThreshold(unittest.TestCase):
+  def test_traverse_requires_zero_wheel_speed_bin(self):
+    traverse = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
+    other = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
+    self.assertEqual(TRAVERSE_STANDSTILL_THRESHOLD, get_standstill_threshold(traverse))
+    self.assertLess(TRAVERSE_STANDSTILL_THRESHOLD, 0.0311)
+    self.assertEqual(STANDSTILL_THRESHOLD, get_standstill_threshold(other))
 
 
 class TestGMLongAutoHoldBrake(unittest.TestCase):

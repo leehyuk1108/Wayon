@@ -312,9 +312,11 @@ async function authenticateDeviceKey(request, env) {
   `).bind(keyHash).first();
   if (!device || !validDeviceId(device.device_id)) return null;
 
-  env.DB.prepare(`
-    UPDATE wayon_devices SET last_seen_at = ?, updated_at = ? WHERE device_id = ?
-  `).bind(nowIso(), nowIso(), device.device_id).run().catch(() => {});
+  // Authentication is also used by high-frequency read endpoints such as the
+  // ambient command poll. Writing last_seen_at here turns every read into D1
+  // write amplification and can exhaust the daily quota. Freshness is already
+  // represented by latest_state.updated_at, while registration maintains the
+  // device metadata timestamps.
   return { deviceId: device.device_id };
 }
 

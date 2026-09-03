@@ -336,6 +336,49 @@ def test_impact_upload_captures_both_cameras_and_cleans_local_media(tmp_path, mo
   assert not (media_root / "impact-with-cameras").exists()
 
 
+def test_impact_media_retry_does_not_repost_impact(tmp_path, monkeypatch):
+  queue = tmp_path / "impact_queue.jsonl"
+  media_root = tmp_path / "impact_media"
+  event = {
+    "id": "impact-media-retry",
+    "detectedAt": "2026-07-19T00:00:00Z",
+    "severity": "light",
+    "captureRequested": True,
+  }
+  enqueue_impact_event(event, queue)
+  calls = []
+  image = np.zeros((8, 12, 3), dtype=np.uint8)
+
+  def failing_media(config, path, payload):
+    calls.append(path)
+    if path == "/api/impact-media":
+      raise RuntimeError("temporary media failure")
+    return {"ok": True}
+
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json", failing_media)
+  now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+  try:
+    upload_pending_impacts(
+      {"endpoint": "test", "token": "test"}, "device", queue,
+      media_root=media_root, capture_fn=lambda: (image, image), now=now,
+    )
+    assert False, "media upload should fail"
+  except RuntimeError:
+    pass
+
+  queued = peek_impact_event(queue)
+  assert queued["impactUploaded"] is True
+  assert queued["uploadAttempts"] == 1
+  assert queued["nextUploadAt"] == "2026-07-19T00:01:00Z"
+  assert calls == ["/api/impact", "/api/impact-media"]
+
+  assert upload_pending_impacts(
+    {"endpoint": "test", "token": "test"}, "device", queue,
+    media_root=media_root, capture_fn=lambda: (image, image), now=now,
+  ) == 0
+  assert calls == ["/api/impact", "/api/impact-media"]
+
+
 if __name__ == "__main__":
   test_started_override_is_authoritative()
   test_missing_gps_clears_current_location()

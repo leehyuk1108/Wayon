@@ -39,6 +39,7 @@ LAST_SUPPRESSED_VEHICLE_PAIR_PATH = Path(os.getenv(
   "/data/wayon_cloud/last_suppressed_vehicle_pair.json",
 ))
 MAX_IMPACT_CAPTURE_ATTEMPTS = 3
+IMPACT_UPLOAD_RETRY_DELAYS_S = (60, 300, 900, 3600, 21600)
 WAYON_WIDE_SNAPSHOT_WARMUP_S = 0.5
 WAYON_DRIVER_SNAPSHOT_WARMUP_S = 0.8
 WAYON_SNAPSHOT_EXPOSURE_READY_RATIO = 0.78
@@ -63,7 +64,7 @@ DEFAULT_ROUTE_POINT_INTERVAL = 10.0
 DEFAULT_ROUTE_POINT_MIN_DISTANCE_M = 15.0
 DEFAULT_ROUTE_POINT_LIMIT = 720
 DEFAULT_SNAPSHOT_INTERVAL_OFFROAD = 3600.0
-DEFAULT_AMBIENT_COMMAND_POLL_INTERVAL = 2.0
+DEFAULT_AMBIENT_COMMAND_POLL_INTERVAL = 5.0
 AMBIENT_OVERRIDE_PATH = Path(os.getenv("WAYON_AMBIENT_OVERRIDE_PATH", "/data/params/d/WayonAmbientOverride"))
 CONFIG_RELOAD_INTERVAL = 60.0
 LOOP_SLEEP_ONROAD = 1.0
@@ -258,12 +259,41 @@ def remove_impact_media(event_id, media_root=IMPACT_MEDIA_ROOT):
   shutil.rmtree(impact_media_directory(event_id, media_root), ignore_errors=True)
 
 
+def _impact_retry_due(event, now=None):
+  retry_at = str(event.get("nextUploadAt") or "")
+  if not retry_at:
+    return True
+  try:
+    retry_time = datetime.fromisoformat(retry_at.replace("Z", "+00:00"))
+    if retry_time.tzinfo is None:
+      retry_time = retry_time.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) >= retry_time
+  except ValueError:
+    return True
+
+
+def _update_queued_impact(event_id, values, queue_path):
+  if queue_path is None:
+    return update_impact_event(event_id, values)
+  return update_impact_event(event_id, values, queue_path)
+
+
+def _defer_impact_upload(event, event_id, queue_path, now=None):
+  attempts = int(event.get("uploadAttempts", 0)) + 1
+  delay = IMPACT_UPLOAD_RETRY_DELAYS_S[min(attempts - 1, len(IMPACT_UPLOAD_RETRY_DELAYS_S) - 1)]
+  retry_at = (now or datetime.now(timezone.utc)).timestamp() + delay
+  retry_iso = datetime.fromtimestamp(retry_at, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+  _update_queued_impact(event_id, {"uploadAttempts": attempts, "nextUploadAt": retry_iso}, queue_path)
+
+
 def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
-                           media_root=IMPACT_MEDIA_ROOT, capture_fn=None):
+                           media_root=IMPACT_MEDIA_ROOT, capture_fn=None, now=None):
   uploaded = 0
   for _ in range(max(1, limit)):
     event = peek_impact_event() if queue_path is None else peek_impact_event(queue_path)
     if event is None:
+      break
+    if not _impact_retry_due(event, now):
       break
 
     payload = {**event, "deviceId": device_id}
@@ -273,34 +303,42 @@ def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
     attempts = int(event.get("captureAttempts", 0))
     capture_complete = False
 
-    if event.get("captureRequested"):
-      media, captured_at = capture_and_store_impact_media(event_id, media_root, capture_fn)
-      attempts += 1
-      capture_complete = all(camera in media for camera in ("wide", "driver"))
+    try:
+      if event.get("captureRequested"):
+        media, captured_at = capture_and_store_impact_media(event_id, media_root, capture_fn)
+        attempts += 1
+        capture_complete = all(camera in media for camera in ("wide", "driver"))
 
-    # Capture locally before network I/O so a slow connection cannot delay the evidence frame.
-    post_json(config, "/api/impact", payload)
+      # Persist completion of the event upload before attempting media. A media
+      # retry must not resend the notification-bearing /api/impact request.
+      if not event.get("impactUploaded"):
+        post_json(config, "/api/impact", payload)
+        event = _update_queued_impact(event_id, {
+          "impactUploaded": True,
+          "uploadAttempts": 0,
+          "nextUploadAt": None,
+        }, queue_path) or {**event, "impactUploaded": True}
 
-    if event.get("captureRequested"):
-      if not capture_complete and attempts < MAX_IMPACT_CAPTURE_ATTEMPTS:
-        update_args = (event_id, {"captureAttempts": attempts})
-        if queue_path is None:
-          update_impact_event(*update_args)
-        else:
-          update_impact_event(*update_args, queue_path)
-        raise RuntimeError(f"impact camera capture incomplete ({attempts}/{MAX_IMPACT_CAPTURE_ATTEMPTS})")
+      if event.get("captureRequested"):
+        if not capture_complete and attempts < MAX_IMPACT_CAPTURE_ATTEMPTS:
+          _update_queued_impact(event_id, {"captureAttempts": attempts}, queue_path)
+          raise RuntimeError(f"impact camera capture incomplete ({attempts}/{MAX_IMPACT_CAPTURE_ATTEMPTS})")
 
-      capture_status = "complete" if capture_complete else "partial" if media else "failed"
-      post_json(config, "/api/impact-media", {
-        "id": event_id,
-        "deviceId": device_id,
-        "capturedAt": captured_at or utc_now(),
-        "captureStatus": capture_status,
-        "captureAttempts": attempts,
-        "wideJpegBase64": base64.b64encode(media["wide"]).decode("ascii") if "wide" in media else None,
-        "driverJpegBase64": base64.b64encode(media["driver"]).decode("ascii") if "driver" in media else None,
-      })
-      remove_impact_media(event_id, media_root)
+        capture_status = "complete" if capture_complete else "partial" if media else "failed"
+        post_json(config, "/api/impact-media", {
+          "id": event_id,
+          "deviceId": device_id,
+          "capturedAt": captured_at or utc_now(),
+          "captureStatus": capture_status,
+          "captureAttempts": attempts,
+          "wideJpegBase64": base64.b64encode(media["wide"]).decode("ascii") if "wide" in media else None,
+          "driverJpegBase64": base64.b64encode(media["driver"]).decode("ascii") if "driver" in media else None,
+        })
+        remove_impact_media(event_id, media_root)
+    except Exception:
+      latest = peek_impact_event() if queue_path is None else peek_impact_event(queue_path)
+      _defer_impact_upload(latest or event, event_id, queue_path, now)
+      raise
 
     if queue_path is None:
       remove_impact_event(event_id)
@@ -1269,7 +1307,7 @@ def main():
           "ambient_command_poll_interval", DEFAULT_AMBIENT_COMMAND_POLL_INTERVAL)))
       except Exception as exc:
         print(f"Wayon cloud: ambient command poll failed: {exc}")
-        next_ambient_command_poll = now + 15.0
+        next_ambient_command_poll = now + 60.0
 
     if not sm.seen["deviceState"]:
       time.sleep(LOOP_SLEEP_OFFROAD)

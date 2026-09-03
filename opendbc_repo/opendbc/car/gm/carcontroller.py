@@ -36,7 +36,10 @@ GM_STOPPING_BRAKE_TAPER_TWO_KPH = 42
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 3.0 * CV.KPH_TO_MS
 GM_STOPPING_BRAKE_TAPER_MAX = 80
 GM_STOPPING_BRAKE_TAPER_BYPASS = 180
-GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 60
+# Keep the comfort taper limited to residual brake pressure. If longitudinal
+# control asks for more than a very light stop, preserve the full command so
+# smoothing cannot consume meaningful stopping distance.
+GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 20
 GM_SNG_CREEP_RESUME_MIN_SPEED = 1.45  # m/s; physical RES succeeded at 1.59 m/s in the Traverse route
 GM_SNG_CREEP_RESUME_MAX_SPEED = 1.90
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(12.0 / DT_CTRL)

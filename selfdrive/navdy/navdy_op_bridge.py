@@ -73,6 +73,7 @@ NAVDY_MODEL_SERVICE = "modelV2"
 NAVDY_CALIBRATION_SERVICE = "liveCalibration"
 NAVDY_RADAR_TO_CAMERA_M = 1.52
 NAVDY_VEHICLE_MAX_DISTANCE_M = 80.0
+NAVDY_CURVE_MIN_SCALE_PX_PER_M = 17.0
 NAVDY_VEHICLE_MAX_COUNT = 8
 NAVDY_RADAR_STALE_SEC = 0.35
 NAVDY_RADAR_RETRY_SEC = 5.0
@@ -596,7 +597,8 @@ def set_speed_kph(car_state: Any, controls_state: Any = None,
   return 0.0
 
 
-def navdy_model_line(x_values: Any, y_values: Any, lateral_offset: float = 0.0) -> list[float]:
+def navdy_model_line(x_values: Any, y_values: Any, lateral_offset: float = 0.0,
+                     path_x_values: Any = None, path_y_values: Any = None) -> list[float]:
   points = []
   x_values = x_values if x_values is not None else []
   y_values = y_values if y_values is not None else []
@@ -612,26 +614,33 @@ def navdy_model_line(x_values: Any, y_values: Any, lateral_offset: float = 0.0) 
 
   projected = []
   for x, y in points:
-    projected.extend(navdy_project_point(x, y))
+    path_y = None
+    if path_x_values is not None and path_y_values is not None:
+      path_y = model_line_y_at_values(path_x_values, path_y_values, x)
+    projected.extend(navdy_project_point(x, y, path_y))
   return projected
 
 
-def navdy_project_point(x_value: Any, y_value: Any) -> list[float]:
+def navdy_project_point(x_value: Any, y_value: Any, path_y_value: Any = None) -> list[float]:
   x = finite_float(x_value, -1.0)
   y = finite_float(y_value, 0.0)
   if not 0.0 <= x <= NAVDY_VEHICLE_MAX_DISTANCE_M:
     return []
   distance = min(x / NAVDY_VEHICLE_MAX_DISTANCE_M, 1.0) ** 0.65
   lateral_scale = 44.0 * (1.0 - distance) + 8.0 * distance
+  if path_y_value is None:
+    screen_x = 160.0 + y * lateral_scale
+  else:
+    path_y = finite_float(path_y_value, y)
+    curve_scale = max(lateral_scale, NAVDY_CURVE_MIN_SCALE_PX_PER_M)
+    screen_x = 160.0 + path_y * curve_scale + (y - path_y) * lateral_scale
   return [
-    rounded(160.0 + y * lateral_scale),
+    rounded(screen_x),
     rounded(96.0 - 88.0 * distance),
   ]
 
 
-def model_line_y_at(line: Any, distance_m: float) -> float | None:
-  x_values = list(getattr(line, "x", []))
-  y_values = list(getattr(line, "y", []))
+def model_line_y_at_values(x_values: Any, y_values: Any, distance_m: float) -> float | None:
   points = [(finite_float(x, -1.0), finite_float(y, 0.0)) for x, y in zip(x_values, y_values)]
   points = [(x, y) for x, y in points if x >= 0.0]
   if len(points) < 2 or distance_m < points[0][0] or distance_m > points[-1][0]:
@@ -643,6 +652,11 @@ def model_line_y_at(line: Any, distance_m: float) -> float | None:
       ratio = (distance_m - x0) / (x1 - x0)
       return y0 + (y1 - y0) * ratio
   return None
+
+
+def model_line_y_at(line: Any, distance_m: float) -> float | None:
+  return model_line_y_at_values(
+    getattr(line, "x", []), getattr(line, "y", []), distance_m)
 
 
 def navdy_traffic_stop_geometry(model_v2: Any, longitudinal_plan_sp: Any) -> dict[str, Any]:
@@ -670,8 +684,8 @@ def navdy_traffic_stop_geometry(model_v2: Any, longitudinal_plan_sp: Any) -> dic
        NAVDY_MIN_LANE_WIDTH_M <= measured_right - measured_left <= NAVDY_MAX_LANE_WIDTH_M:
       left_y, right_y = measured_left, measured_right
 
-  left_point = navdy_project_point(distance_m, left_y)
-  right_point = navdy_project_point(distance_m, right_y)
+  left_point = navdy_project_point(distance_m, left_y, path_y)
+  right_point = navdy_project_point(distance_m, right_y, path_y)
   if len(left_point) != 2 or len(right_point) != 2:
     return {}
   return {
@@ -1078,7 +1092,8 @@ def navdy_vehicle_geometry(model_v2: Any, radar_points: list[dict[str, Any]],
   )[:NAVDY_VEHICLE_MAX_COUNT]
   output = []
   for vehicle in sorted(selected, key=lambda item: item["distanceM"], reverse=True):
-    screen = navdy_project_point(vehicle["distanceM"], vehicle["modelY"])
+    path_y = model_line_y_at(getattr(model_v2, "position", None), vehicle["distanceM"])
+    screen = navdy_project_point(vehicle["distanceM"], vehicle["modelY"], path_y)
     if len(screen) != 2:
       continue
     output.append({
@@ -1115,10 +1130,12 @@ def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
   lane_left = lane_lines[1]
   lane_right = lane_lines[2]
   geometry = {
-    "navPathLeft": navdy_model_line(path_x, path_y, -1.0),
-    "navPathRight": navdy_model_line(path_x, path_y, 1.0),
-    "navLaneLeft": navdy_model_line(getattr(lane_left, "x", []), getattr(lane_left, "y", [])),
-    "navLaneRight": navdy_model_line(getattr(lane_right, "x", []), getattr(lane_right, "y", [])),
+    "navPathLeft": navdy_model_line(path_x, path_y, -1.0, path_x, path_y),
+    "navPathRight": navdy_model_line(path_x, path_y, 1.0, path_x, path_y),
+    "navLaneLeft": navdy_model_line(
+      getattr(lane_left, "x", []), getattr(lane_left, "y", []), 0.0, path_x, path_y),
+    "navLaneRight": navdy_model_line(
+      getattr(lane_right, "x", []), getattr(lane_right, "y", []), 0.0, path_x, path_y),
   }
   if not all(len(points) >= 4 for points in geometry.values()):
     return {}
@@ -1126,9 +1143,9 @@ def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
   lane_probs = list(getattr(model_v2, "laneLineProbs", []))
   if len(lane_lines) >= 4:
     geometry["navLaneFarLeft"] = navdy_model_line(
-      getattr(lane_lines[0], "x", []), getattr(lane_lines[0], "y", []))
+      getattr(lane_lines[0], "x", []), getattr(lane_lines[0], "y", []), 0.0, path_x, path_y)
     geometry["navLaneFarRight"] = navdy_model_line(
-      getattr(lane_lines[3], "x", []), getattr(lane_lines[3], "y", []))
+      getattr(lane_lines[3], "x", []), getattr(lane_lines[3], "y", []), 0.0, path_x, path_y)
 
   geometry["navLaneFarLeftProb"] = rounded(lane_probs[0] if len(lane_probs) > 0 else 0.0, 2)
   geometry["navLaneLeftProb"] = rounded(lane_probs[1] if len(lane_probs) > 1 else 0.0, 2)
@@ -1142,7 +1159,9 @@ def navdy_model_geometry(model_v2: Any) -> dict[str, Any]:
     confidence = max(0.0, min(1.0, 1.0 - finite_float(road_edge_stds[index], 1.0)))
     if confidence < 0.5:
       continue
-    points = navdy_model_line(getattr(road_edges[index], "x", []), getattr(road_edges[index], "y", []))
+    points = navdy_model_line(
+      getattr(road_edges[index], "x", []), getattr(road_edges[index], "y", []),
+      0.0, path_x, path_y)
     if len(points) >= 4:
       geometry[f"navRoadEdge{side}"] = points
       geometry[f"navRoadEdge{side}Prob"] = rounded(confidence, 2)

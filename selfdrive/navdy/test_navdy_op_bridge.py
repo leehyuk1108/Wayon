@@ -1490,6 +1490,50 @@ def test_navdy_model_line_keeps_modelv2_left_right_orientation():
   assert left[0] < 160.0 < right[0]
 
 
+def test_navdy_curve_projection_does_not_fold_back_toward_center():
+  path_x = [0.0, 35.0, 60.0, 75.0]
+  for direction in (-1.0, 1.0):
+    path_y = [direction * value for value in (0.0, 1.3, 3.38, 4.9)]
+    model = SimpleNamespace(
+      position=SimpleNamespace(x=path_x, y=path_y),
+      laneLines=[
+        SimpleNamespace(x=path_x, y=[value - 5.2 for value in path_y]),
+        SimpleNamespace(x=path_x, y=[value - 1.8 for value in path_y]),
+        SimpleNamespace(x=path_x, y=[value + 1.8 for value in path_y]),
+        SimpleNamespace(x=path_x, y=[value + 5.2 for value in path_y]),
+      ],
+      laneLineProbs=[0.5, 0.95, 0.95, 0.5],
+      roadEdges=[],
+      roadEdgeStds=[],
+    )
+
+    geometry = navdy_op_bridge.navdy_model_geometry(model)
+    centers = [
+      (left + right) * 0.5
+      for left, right in zip(geometry["navPathLeft"][::2], geometry["navPathRight"][::2])
+    ]
+    offsets = [abs(value - 160.0) for value in centers]
+
+    assert offsets[1] < offsets[2] < offsets[3]
+    assert direction * centers[-1] > direction * centers[-2] > direction * centers[-3]
+    assert geometry["navLaneLeft"][-2] < geometry["navLaneRight"][-2]
+
+
+def test_navdy_curve_projection_keeps_straight_lane_perspective():
+  path_x = [0.0, 40.0, 80.0]
+  path_y = [0.0, 0.0, 0.0]
+  left = navdy_op_bridge.navdy_model_line(
+    path_x, [-1.8, -1.8, -1.8], 0.0, path_x, path_y)
+  right = navdy_op_bridge.navdy_model_line(
+    path_x, [1.8, 1.8, 1.8], 0.0, path_x, path_y)
+
+  widths = [right[index] - left[index] for index in range(0, len(left), 2)]
+  centers = [(right[index] + left[index]) * 0.5 for index in range(0, len(left), 2)]
+
+  assert widths[0] > widths[1] > widths[2]
+  assert centers == [160.0, 160.0, 160.0]
+
+
 def navdy_vehicle_test_model():
   lane_lines = [
     SimpleNamespace(x=[0.0, 80.0], y=[-5.2, -5.2]),

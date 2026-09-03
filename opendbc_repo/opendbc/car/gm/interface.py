@@ -49,6 +49,7 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     was_long_auto_hold_active = getattr(self.CS, "longAutoHoldActive", False)
     self.CS.autoHoldActivated = False
     self.CS.longAutoHoldActive = False
+    strong_brake = self.CS.out.brakePressed and self.CS.brake_pedal_position >= GM_AUTO_HOLD_ARM_BRAKE
     hold_allowed = (
       not self.CS.out.parkingBrake and
       self.CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.low)
@@ -57,13 +58,32 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     if not self.CS.autoHold or not hold_allowed:
       self.CS.autoHoldActive = False
       self.CS.autoHoldBrakeArmed = False
+      self.CS.autoHoldBrakeReleased = False
+      self.CS.autoHoldBrakePressPeak = 0
     elif self.CS.out.gasPressed or self.CS.out.regenBraking:
       self.CS.autoHoldActive = False
       self.CS.autoHoldBrakeArmed = False
+      self.CS.autoHoldBrakeReleased = False
+      self.CS.autoHoldBrakePressPeak = 0
     elif self.CS.autoHoldActive:
-      self.CS.autoHoldActivated = True
+      # The pedal used to arm hold must be fully released before a new tap can
+      # cancel it. Evaluate the peak on release so a deliberate strong press
+      # is not mistaken for a light tap while pedal pressure is still rising.
+      if not self.CS.autoHoldBrakeReleased:
+        if not self.CS.out.brakePressed:
+          self.CS.autoHoldBrakeReleased = True
+          self.CS.autoHoldBrakePressPeak = 0
+      elif self.CS.out.brakePressed:
+        self.CS.autoHoldBrakePressPeak = max(self.CS.autoHoldBrakePressPeak, self.CS.brake_pedal_position)
+      elif self.CS.autoHoldBrakePressPeak > 0:
+        if self.CS.autoHoldBrakePressPeak < GM_AUTO_HOLD_ARM_BRAKE:
+          self.CS.autoHoldActive = False
+          self.CS.autoHoldBrakeArmed = False
+          self.CS.autoHoldBrakeReleased = False
+        self.CS.autoHoldBrakePressPeak = 0
+
+      self.CS.autoHoldActivated = self.CS.autoHoldActive
     else:
-      strong_brake = self.CS.out.brakePressed and self.CS.brake_pedal_position >= GM_AUTO_HOLD_ARM_BRAKE
       if strong_brake and (self.CS.out.standstill or self.CS.out.vEgo <= GM_AUTO_HOLD_ARM_SPEED):
         self.CS.autoHoldBrakeArmed = True
       elif not self.CS.out.brakePressed:
@@ -71,6 +91,8 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
 
       if self.CS.out.standstill and self.CS.out.brakePressed and self.CS.autoHoldBrakeArmed:
         self.CS.autoHoldActive = True
+        self.CS.autoHoldBrakeReleased = False
+        self.CS.autoHoldBrakePressPeak = 0
         self.CS.autoHoldActivated = True
 
     if control is not None:

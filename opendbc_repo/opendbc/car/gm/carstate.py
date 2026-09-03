@@ -52,6 +52,8 @@ class CarState(CarStateBase, CarStateExt):
     self.autoHold = CP.carFingerprint == CAR.CHEVROLET_TRAVERSE and CP.openpilotLongitudinalControl
     self.autoHoldActive = False
     self.autoHoldBrakeArmed = False
+    self.autoHoldBrakeReleased = False
+    self.autoHoldBrakePressPeak = 0
     self.autoHoldActivated = False
     self.longAutoHoldActive = False
     self.brake_pedal_position = 0

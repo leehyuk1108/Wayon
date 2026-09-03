@@ -190,6 +190,8 @@ class TestGMTraverseAutoHold(unittest.TestCase):
       autoHold=True,
       autoHoldActive=False,
       autoHoldBrakeArmed=False,
+      autoHoldBrakeReleased=False,
+      autoHoldBrakePressPeak=0,
       autoHoldActivated=False,
       longAutoHoldActive=False,
       brake_pedal_position=8,
@@ -219,6 +221,48 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.CI.CS.out.gasPressed = True
     self.CI.update_auto_hold()
     self.assertFalse(self.CI.CS.autoHoldActive)
+
+  def test_light_brake_tap_releases_hold(self):
+    self.CI.CS.brake_pedal_position = 80
+    self.CI.update_auto_hold()
+
+    # Releasing the original strong press only arms the tap-to-release gesture.
+    self.CI.CS.out.brakePressed = False
+    self.CI.CS.brake_pedal_position = 0
+    self.CI.update_auto_hold()
+    self.assertTrue(self.CI.CS.autoHoldActive)
+
+    self.CI.CS.out.brakePressed = True
+    self.CI.CS.brake_pedal_position = 20
+    self.CI.update_auto_hold()
+    self.assertTrue(self.CI.CS.autoHoldActive)
+
+    self.CI.CS.out.brakePressed = False
+    self.CI.CS.brake_pedal_position = 0
+    self.CI.update_auto_hold()
+    self.assertFalse(self.CI.CS.autoHoldActive)
+    self.assertFalse(self.CI.CS.out.brakeHoldActive)
+
+  def test_strong_brake_repress_keeps_hold(self):
+    self.CI.CS.brake_pedal_position = 80
+    self.CI.update_auto_hold()
+    self.CI.CS.out.brakePressed = False
+    self.CI.CS.brake_pedal_position = 0
+    self.CI.update_auto_hold()
+
+    # A press that eventually reaches the activation threshold must keep hold,
+    # even though it passes through lower pressure on the way up.
+    self.CI.CS.out.brakePressed = True
+    self.CI.CS.brake_pedal_position = 20
+    self.CI.update_auto_hold()
+    self.CI.CS.brake_pedal_position = 80
+    self.CI.update_auto_hold()
+    self.CI.CS.out.brakePressed = False
+    self.CI.CS.brake_pedal_position = 0
+    self.CI.update_auto_hold()
+
+    self.assertTrue(self.CI.CS.autoHoldActive)
+    self.assertTrue(self.CI.CS.out.brakeHoldActive)
 
   def test_strong_brake_arms_before_stop_and_activates_at_standstill(self):
     self.CI.CS.out.vEgo = 1.0

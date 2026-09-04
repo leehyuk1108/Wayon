@@ -8453,14 +8453,7 @@
                 </div>
                 <div id="drive-report-health-content"></div>
             </section>
-            <section class="drive-report-section" id="drive-report-sensors-section">
-                <div class="drive-report-section-head">
-                    <h2 class="drive-report-section-title">워치 신호</h2>
-                    <span class="drive-report-section-meta" id="drive-report-sensors-meta">워치 보조 분석</span>
-                </div>
-                <div id="drive-report-sensors-content"></div>
-            </section>
-            <section class="drive-report-section">
+            <section class="drive-report-section" id="drive-report-automation-section">
                 <div class="drive-report-section-head">
                     <h2 class="drive-report-section-title">오픈파일럿</h2>
                     <span class="drive-report-section-meta" id="drive-report-automation-meta">동일 주행 내 비교</span>
@@ -14317,13 +14310,62 @@
             return "이 기록에는 상세 차량 분석이 없습니다. 새로 기록되는 주행부터 세부 리포트가 생성됩니다.";
         }
 
+        function driveReportSensorMarkup(health) {
+            const sensors = health?.sensors || {};
+            const eda = sensors.eda || {};
+            const temperature = sensors.temperature || {};
+            const motion = sensors.motion || {};
+            const edaAvailable = eda.available === true;
+            const temperatureAvailable = temperature.available === true;
+            const motionAvailable = motion.available === true;
+            if (![edaAvailable, temperatureAvailable, motionAvailable].some(Boolean)) return "";
+
+            const contaminated = motion.signalContaminationLikely === true;
+            const note = contaminated
+                ? "손목 움직임이 많아 EDA와 심박 반응의 신뢰도를 낮춰 반영했습니다."
+                : "EDA는 긴장 반응을 보조하며, 피부온도는 열 환경 맥락으로만 사용합니다.";
+            const signalRows = [
+                edaAvailable ? reportSignalRow(
+                    "긴장 반응",
+                    eda.arousalProxy0To100,
+                    reportSignalLabel(eda.arousalProxy0To100),
+                    "피부전도"
+                ) : "",
+                motionAvailable ? reportSignalRow(
+                    "손목 움직임",
+                    motion.movingPercent,
+                    reportSignalLabel(motion.movingPercent, "적음", "많음"),
+                    `${Math.round(reportNumber(motion.movingPercent, 0))}%`
+                ) : "",
+            ].filter(Boolean).join("");
+            const temperatureContext = temperatureAvailable ? `
+                <div class="drive-report-context-row">
+                    <div class="drive-report-context-item"><i class="fas fa-temperature-low" aria-hidden="true"></i><div class="drive-report-context-copy"><span>손목 피부온도</span><strong>${reportValue(temperature.averageSkinC, "°C", 1)}</strong></div><em>측정값</em></div>
+                    <div class="drive-report-context-item"><i class="fas fa-cloud-sun" aria-hidden="true"></i><div class="drive-report-context-copy"><span>주변 온도</span><strong>${reportValue(temperature.averageAmbientC, "°C", 1)}</strong></div><em>환경</em></div>
+                </div>` : "";
+            return `
+                ${signalRows ? `<div class="drive-report-signal-list">${signalRows}</div>` : ""}
+                ${temperatureContext}
+                <div class="drive-report-sensor-note ${contaminated ? "warn" : ""}">
+                    <i class="fas fa-${contaminated ? "exclamation-triangle" : "info-circle"}" aria-hidden="true"></i>
+                    <span>${escapeHtml(note)}</span>
+                </div>
+                <details class="drive-report-raw"><summary>측정 상세</summary>${detailRows([
+                    ["평균 피부전도", edaAvailable ? reportValue(eda.averageMicrosiemens, " μS", 2) : "--"],
+                    ["피부전도 반응", edaAvailable ? reportValue(eda.phasicRiseCount, "회") : "--"],
+                    ["EDA 표본", edaAvailable ? reportValue(eda.sampleCount, "개") : "--"],
+                    ["가속도 표본", motionAvailable ? reportValue(motion.sampleCount, "개") : "--"],
+                ])}</details>`;
+        }
+
         function renderDriveReportHealth(health) {
             const container = document.getElementById("drive-report-health-content");
             const meta = document.getElementById("drive-report-health-meta");
             if (!container || !meta) return;
+            const sensorMarkup = driveReportSensorMarkup(health);
             if (!health?.available) {
-                meta.textContent = health?.status === "not_configured" ? "연결 필요" : "측정 데이터 없음";
-                container.innerHTML = `<div class="drive-report-empty">이 주행 시간대의 워치 심박 데이터가 없습니다. 차량 분석은 정상적으로 표시되며, Health Bridge가 동기화되면 심박 기반 부담도가 추가됩니다.</div>`;
+                meta.textContent = sensorMarkup ? "워치 보조 분석" : (health?.status === "not_configured" ? "연결 필요" : "측정 데이터 없음");
+                container.innerHTML = `<div class="drive-report-empty">이 주행 시간대의 워치 심박 데이터가 없습니다. 차량 분석은 정상적으로 표시되며, Health Bridge가 동기화되면 심박 기반 부담도가 추가됩니다.</div>${sensorMarkup}`;
                 return;
             }
             const hr = health.heartRate || {};
@@ -14346,7 +14388,8 @@
                     <div class="drive-report-context-row">
                         <div class="drive-report-context-item"><i class="fas fa-heartbeat" aria-hidden="true"></i><div class="drive-report-context-copy"><span>심박</span><strong>미수집</strong></div><em>--</em></div>
                         <div class="drive-report-context-item"><i class="fas fa-shield-alt" aria-hidden="true"></i><div class="drive-report-context-copy"><span>분석 신뢰도</span><strong>${reportConfidenceLabel(health.confidence).replace("신뢰도 ", "")}</strong></div><em>EDA</em></div>
-                    </div>`;
+                    </div>
+                    ${sensorMarkup}`;
                 return;
             }
             const average = reportNumber(hr.averageBpm);
@@ -14371,68 +14414,8 @@
                     <div class="drive-report-feature-side"><strong>${maximum === null ? "--" : Math.round(maximum)} bpm</strong><span>최고 심박</span></div>
                 </div>
                 ${contextItems ? `<div class="drive-report-context-row">${contextItems}</div>` : ""}
-                ${heartRateChart(health)}`;
-        }
-
-        function renderDriveReportSensors(health) {
-            const container = document.getElementById("drive-report-sensors-content");
-            const meta = document.getElementById("drive-report-sensors-meta");
-            const section = document.getElementById("drive-report-sensors-section");
-            if (!container || !meta || !section) return;
-
-            const sensors = health?.sensors || {};
-            const eda = sensors.eda || {};
-            const temperature = sensors.temperature || {};
-            const motion = sensors.motion || {};
-            const available = sensors.available === true;
-            section.style.display = available ? "block" : "none";
-            if (!available) {
-                container.innerHTML = "";
-                return;
-            }
-
-            const edaAvailable = eda.available === true;
-            const temperatureAvailable = temperature.available === true;
-            const motionAvailable = motion.available === true;
-            const contaminated = motion.signalContaminationLikely === true;
-            const sensorCount = [edaAvailable, temperatureAvailable, motionAvailable].filter(Boolean).length;
-            meta.textContent = `${sensorCount}종 · ${reportConfidenceLabel(eda.confidence)}`;
-
-            const note = contaminated
-                ? "손목 움직임이 많아 EDA와 심박 반응의 신뢰도를 낮춰 반영했습니다."
-                : "EDA는 긴장 반응을 보조하며, 피부온도는 열 환경 맥락으로만 사용합니다.";
-            const signalRows = [
-                edaAvailable ? reportSignalRow(
-                    "긴장 반응",
-                    eda.arousalProxy0To100,
-                    reportSignalLabel(eda.arousalProxy0To100),
-                    "피부전도"
-                ) : "",
-                motionAvailable ? reportSignalRow(
-                    "손목 움직임",
-                    motion.movingPercent,
-                    reportSignalLabel(motion.movingPercent, "적음", "많음"),
-                    `${Math.round(reportNumber(motion.movingPercent, 0))}%`
-                ) : "",
-            ].filter(Boolean).join("");
-            const temperatureContext = temperatureAvailable ? `
-                <div class="drive-report-context-row">
-                    <div class="drive-report-context-item"><i class="fas fa-temperature-low" aria-hidden="true"></i><div class="drive-report-context-copy"><span>손목 피부온도</span><strong>${reportValue(temperature.averageSkinC, "°C", 1)}</strong></div><em>측정값</em></div>
-                    <div class="drive-report-context-item"><i class="fas fa-cloud-sun" aria-hidden="true"></i><div class="drive-report-context-copy"><span>주변 온도</span><strong>${reportValue(temperature.averageAmbientC, "°C", 1)}</strong></div><em>환경</em></div>
-                </div>` : "";
-            container.innerHTML = `
-                ${signalRows ? `<div class="drive-report-signal-list">${signalRows}</div>` : ""}
-                ${temperatureContext}
-                <div class="drive-report-sensor-note ${contaminated ? "warn" : ""}">
-                    <i class="fas fa-${contaminated ? "exclamation-triangle" : "info-circle"}" aria-hidden="true"></i>
-                    <span>${escapeHtml(note)}</span>
-                </div>
-                <details class="drive-report-raw"><summary>측정 상세</summary>${detailRows([
-                    ["평균 피부전도", edaAvailable ? reportValue(eda.averageMicrosiemens, " μS", 2) : "--"],
-                    ["피부전도 반응", edaAvailable ? reportValue(eda.phasicRiseCount, "회") : "--"],
-                    ["EDA 표본", edaAvailable ? reportValue(eda.sampleCount, "개") : "--"],
-                    ["가속도 표본", motionAvailable ? reportValue(motion.sampleCount, "개") : "--"],
-                ])}</details>`;
+                ${heartRateChart(health)}
+                ${sensorMarkup}`;
         }
 
         function automationInsight(analysis, health) {
@@ -14452,20 +14435,12 @@
         function renderDriveReportAutomation(analysis, health) {
             const container = document.getElementById("drive-report-automation-content");
             const meta = document.getElementById("drive-report-automation-meta");
-            if (!container || !meta) return;
+            const section = document.getElementById("drive-report-automation-section");
+            if (!container || !meta || !section) return;
             const comparison = health?.automationComparison || {};
-            const usage = reportNumber(analysis?.automation?.opUsagePercent);
+            section.style.display = comparison.comparable ? "block" : "none";
             if (!comparison.comparable) {
-                meta.textContent = "비교 표본 수집 중";
-                container.innerHTML = `
-                    <div class="drive-report-feature">
-                        <div class="drive-report-feature-icon eda"><i class="fas fa-route" aria-hidden="true"></i></div>
-                        <div class="drive-report-feature-copy">
-                            <span>이 주행의 오픈파일럿</span>
-                            <strong>${usage === null ? "사용 기록 없음" : `${Math.round(usage)}% 사용`}</strong>
-                            <p>OP와 수동주행의 심박 표본이 더 쌓이면 부담 차이를 비교합니다.</p>
-                        </div>
-                    </div>`;
+                container.innerHTML = "";
                 return;
             }
             const opAverage = reportValue(comparison.opAverageBpm, " bpm");
@@ -14601,7 +14576,6 @@
             document.getElementById("drive-report-op-usage").textContent = opUsage === null ? "--" : `${Math.round(opUsage)}%`;
             document.getElementById("drive-report-op-bar-fill").style.width = `${Math.max(0, Math.min(100, opUsage ?? 0))}%`;
             renderDriveReportHealth(health);
-            renderDriveReportSensors(health);
             renderDriveReportAutomation(analysis, health);
             renderDriveReportMoments(analysis, health);
             renderDriveReportDetails(analysis);

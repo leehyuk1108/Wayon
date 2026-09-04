@@ -13,6 +13,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
+  LeadTrendAnticipator,
   LongitudinalResponseLearner,
   LowSpeedStopController,
   WayonCoastController,
@@ -95,6 +96,7 @@ class LongControl:
                                    rate=1 / DT_CTRL)
     self.accel_smoother = AdaptiveLongitudinalSmoother()
     self.coast_controller = WayonCoastController()
+    self.lead_trend_anticipator = LeadTrendAnticipator()
     self.stop_controller = LowSpeedStopController()
     self.response_learner = LongitudinalResponseLearner(
       float(CP.longitudinalActuatorDelay), enabled=self.wayon_carrot_profile)
@@ -191,12 +193,14 @@ class LongControl:
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       self.coast_controller.reset()
+      self.lead_trend_anticipator.reset()
       self.stop_controller.reset()
       output_accel = 0.
       self.accel_smoother.reset(CS.aEgo)
 
     elif self.long_control_state == LongCtrlState.stopping:
       self.coast_controller.reset()
+      self.lead_trend_anticipator.reset()
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
@@ -210,6 +214,7 @@ class LongControl:
 
     elif self.long_control_state == LongCtrlState.starting:
       self.coast_controller.reset()
+      self.lead_trend_anticipator.reset()
       self.stop_controller.reset()
       output_accel = self.CP.startAccel
       self.reset()
@@ -224,14 +229,18 @@ class LongControl:
         lead = radar_state.leadOne if radar_state is not None else None
         cutin_risk = radar_state.leadCutInRisk if radar_state is not None else None
         automatic_control = bool(icbm is not None and getattr(icbm, "automaticControlActive", False))
-        if self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,
-                                        automatic_control, lead, cutin_risk):
+        regular_coast = self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,
+                                                     automatic_control, lead, cutin_risk)
+        anticipatory_coast = self.lead_trend_anticipator.update(
+          active and self.wayon_carrot_profile, CS.vEgo, output_accel, CS.aEgo, lead)
+        if regular_coast or anticipatory_coast:
           output_accel = 0.0
         output_accel = self.response_learner.correction(output_accel, CS.vEgo)
         output_accel = self.accel_smoother.update(
           output_accel, CS.aEgo, CS.vEgo, v_target_now,
           planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
-          lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]))
+          lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]),
+          throttle_release=anticipatory_coast)
       else:
         error = a_target - CS.aEgo
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)

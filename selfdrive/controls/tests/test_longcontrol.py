@@ -269,6 +269,16 @@ def test_adaptive_smoother_preserves_emergency_brake_response():
   assert min(outputs) >= -3.0
 
 
+def test_adaptive_smoother_releases_throttle_quickly_without_braking():
+  smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  smoother.reset(1.43)
+  outputs = [smoother.update(0.0, measured_accel=0.9, v_ego=3.6, v_target=4.0,
+                             throttle_release=True) for _ in range(80)]
+
+  assert outputs[69] < 0.05
+  assert min(outputs) >= 0.0
+
+
 def test_adaptive_smoother_releases_brake_without_lingering_or_overshoot():
   smoother = AdaptiveLongitudinalSmoother(dt=0.01)
   smoother.reset(-1.0)

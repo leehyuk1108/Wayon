@@ -4,6 +4,7 @@ import pytest
 
 from openpilot.common.constants import CV
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
+  LeadTrendAnticipator,
   LongitudinalResponseLearner,
   LowSpeedStopController,
   WayonCoastController,
@@ -11,6 +12,60 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
   learned_delay_for_speed,
   speed_bin_index,
 )
+
+
+def radar_lead(**overrides):
+  values = {
+    "status": True,
+    "radar": True,
+    "radarTrackId": 7,
+    "dRel": 15.0,
+    "vRel": 1.0,
+    "aLeadK": 0.3,
+  }
+  values.update(overrides)
+  return SimpleNamespace(**values)
+
+
+def test_lead_trend_releases_throttle_before_relative_speed_turns_negative():
+  anticipator = LeadTrendAnticipator()
+  lead = radar_lead()
+
+  results = [anticipator.update(True, 3.6, 1.4, 0.9, lead)
+             for _ in range(LeadTrendAnticipator.ENTER_FRAMES)]
+
+  assert not any(results[:-1])
+  assert results[-1]
+  assert lead.vRel > 0.0
+
+
+def test_lead_trend_ignores_constant_opening_and_single_sample_noise():
+  anticipator = LeadTrendAnticipator()
+  lead = radar_lead(aLeadK=0.9)
+  assert not any(anticipator.update(True, 3.6, 1.4, 0.9, lead) for _ in range(50))
+
+  lead.aLeadK = 0.0
+  assert not anticipator.update(True, 3.6, 1.4, 0.9, lead)
+  lead.aLeadK = 0.9
+  assert not any(anticipator.update(True, 3.6, 1.4, 0.9, lead) for _ in range(50))
+
+
+def test_lead_trend_does_not_override_planned_braking_or_vision_lead():
+  anticipator = LeadTrendAnticipator()
+  lead = radar_lead()
+  for _ in range(LeadTrendAnticipator.ENTER_FRAMES):
+    anticipator.update(True, 3.6, 1.4, 0.9, lead)
+  assert anticipator.state.active
+  assert not anticipator.update(True, 3.6, -0.2, 0.9, lead)
+
+  lead.radar = False
+  assert not anticipator.update(True, 3.6, 1.4, 0.9, lead)
+
+
+def test_lead_trend_ignores_distant_lead():
+  anticipator = LeadTrendAnticipator()
+  lead = radar_lead(dRel=80.0)
+  assert not any(anticipator.update(True, 10.0, 1.0, 0.9, lead) for _ in range(50))
 from openpilot.sunnypilot.selfdrive.controls.lib import wayon_longitudinal_coordinator as coordinator_module
 
 

@@ -80,13 +80,16 @@ class AdaptiveLongitudinalSmoother:
 
   def update(self, target_accel: float, measured_accel: float, v_ego: float,
              v_target: float, planned_jerk: float = 0.0, lead: Any | None = None,
-             cutin_risk: Any | None = None, accel_limits: tuple[float, float] | None = None) -> float:
+             cutin_risk: Any | None = None, accel_limits: tuple[float, float] | None = None,
+             throttle_release: bool = False) -> float:
     if not math.isfinite(target_accel):
       target_accel = 0.0
     if not math.isfinite(measured_accel):
       measured_accel = self.output_accel
     if not math.isfinite(planned_jerk):
       planned_jerk = 0.0
+    if throttle_release:
+      target_accel = min(target_accel, 0.0)
 
     if accel_limits is not None:
       target_accel = float(np.clip(target_accel, accel_limits[0], accel_limits[1]))
@@ -105,7 +108,13 @@ class AdaptiveLongitudinalSmoother:
     emergency_braking = error < 0.0 and (
       target_accel <= -2.0 or self._lead_urgency(lead) >= 0.9 or self._cutin_urgency(cutin_risk) >= 0.9)
 
-    if emergency_braking:
+    if throttle_release and error < 0.0 and self.output_accel > 0.0:
+      # A release-only response may drop positive acceleration promptly, but
+      # cannot cross through zero and turn into an unplanned brake request.
+      natural_frequency = 8.0
+      jerk_limit = 8.0
+      snap_limit = 50.0
+    elif emergency_braking:
       # Preserve a short reaction time for severe deceleration while retaining a continuous command.
       natural_frequency = 8.0
       jerk_limit = 8.0

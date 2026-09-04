@@ -130,6 +130,88 @@ class WayonCoastController:
     return self.state.active
 
 
+@dataclass
+class LeadTrendDecision:
+  active: bool = False
+  enter_frames: int = 0
+  exit_frames: int = 0
+  track_id: int | None = None
+  relative_accel: float = 0.0
+  initialized: bool = False
+
+
+class LeadTrendAnticipator:
+  """Release throttle before a shrinking positive relative speed becomes closing."""
+
+  ENTER_FRAMES = round(0.20 / DT_CTRL)
+  EXIT_FRAMES = round(0.30 / DT_CTRL)
+  FILTER_TAU = 0.25
+  MIN_EGO_SPEED = 2.0
+  MIN_REL_SPEED = 0.15
+  MIN_REL_ACCEL = -0.25
+  MAX_ZERO_CROSSING_TIME = 3.0
+
+  def __init__(self):
+    self.state = LeadTrendDecision()
+
+  def reset(self) -> None:
+    self.state = LeadTrendDecision()
+
+  def update(self, active: bool, v_ego: float, requested_accel: float,
+             measured_accel: float, lead=None) -> bool:
+    valid_lead = bool(lead is not None and getattr(lead, "status", False) and getattr(lead, "radar", False))
+    track_id = int(getattr(lead, "radarTrackId", -1)) if valid_lead else None
+    if not active or not valid_lead or v_ego < self.MIN_EGO_SPEED:
+      self.reset()
+      return False
+
+    if self.state.track_id is not None and track_id != self.state.track_id:
+      self.reset()
+    self.state.track_id = track_id
+
+    raw_relative_accel = float(getattr(lead, "aLeadK", 0.0)) - measured_accel
+    if not math.isfinite(raw_relative_accel):
+      self.reset()
+      return False
+    if not self.state.initialized:
+      self.state.relative_accel = raw_relative_accel
+      self.state.initialized = True
+    else:
+      alpha = DT_CTRL / (self.FILTER_TAU + DT_CTRL)
+      self.state.relative_accel += alpha * (raw_relative_accel - self.state.relative_accel)
+
+    d_rel = float(getattr(lead, "dRel", 0.0))
+    v_rel = float(getattr(lead, "vRel", 0.0))
+    max_distance = max(35.0, v_ego * 2.5)
+    zero_crossing_time = v_rel / max(-self.state.relative_accel, 1e-3)
+    trend_valid = (
+      requested_accel > 0.05 and 4.0 < d_rel < max_distance and
+      v_rel > self.MIN_REL_SPEED and self.state.relative_accel < self.MIN_REL_ACCEL and
+      zero_crossing_time <= self.MAX_ZERO_CROSSING_TIME
+    )
+
+    if self.state.active:
+      # Once armed, hold zero throttle until the planner requests deceleration.
+      if requested_accel <= 0.0:
+        self.reset()
+        return False
+      if trend_valid or (v_rel <= self.MIN_REL_SPEED and self.state.relative_accel < -0.05):
+        self.state.exit_frames = 0
+      else:
+        self.state.exit_frames += 1
+        if self.state.exit_frames >= self.EXIT_FRAMES:
+          self.reset()
+    elif trend_valid:
+      self.state.enter_frames += 1
+      if self.state.enter_frames >= self.ENTER_FRAMES:
+        self.state.active = True
+        self.state.exit_frames = 0
+    else:
+      self.state.enter_frames = 0
+
+    return self.state.active
+
+
 class LowSpeedStopController:
   """Taper residual braking only in the final fraction of a stop."""
 

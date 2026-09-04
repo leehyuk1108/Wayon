@@ -13932,6 +13932,7 @@
         let tripDetailEndMarker = null;
         let tripDetailMomentMarkers = [];
         let tripDetailInitialView = null;
+        let tripDetailMapSettleTimer = null;
 
         btnToggleHistory.addEventListener('click', () => {
             loadHistory();
@@ -14145,7 +14146,7 @@
         function tripDetailFitPadding() {
             return {
                 paddingTopLeft: [34, 82],
-                paddingBottomRight: [34, 330],
+                paddingBottomRight: [34, 82],
             };
         }
 
@@ -14161,6 +14162,15 @@
             if (tripDetailInitialView.center) {
                 tripDetailMap.setView(tripDetailInitialView.center, tripDetailInitialView.zoom || 15, { animate: animated });
             }
+        }
+
+        function settleTripDetailMapView() {
+            clearTimeout(tripDetailMapSettleTimer);
+            tripDetailMapSettleTimer = setTimeout(() => {
+                if (!tripDetailMap || !tripDetailOverlay?.classList.contains('visible')) return;
+                tripDetailMap.invalidateSize({ pan: false });
+                restoreTripDetailInitialView(false);
+            }, 220);
         }
 
         function ensureTripDetailMap() {
@@ -14633,6 +14643,7 @@
             document.getElementById('trip-detail-top').textContent = item.topSpeed || "--";
             renderDriveReport(item);
 
+            tripDetailOverlay.scrollTop = 0;
             tripDetailOverlay.classList.add('visible');
             tripDetailOverlay.setAttribute('aria-hidden', 'false');
 
@@ -14695,7 +14706,7 @@
 
                 tripDetailInitialView = { bounds: L.latLngBounds(coords) };
                 restoreTripDetailInitialView(false);
-                setTimeout(() => map.invalidateSize({ pan: false }), 180);
+                settleTripDetailMapView();
             });
         }
 
@@ -14759,6 +14770,7 @@
         function closeTripDetail() {
             if (!tripDetailOverlay) return;
             clearTimeout(tripHealthRetryTimer);
+            clearTimeout(tripDetailMapSettleTimer);
             activeTripDetailIndex = -1;
             tripDetailOverlay.classList.remove('visible');
             tripDetailOverlay.setAttribute('aria-hidden', 'true');

@@ -5495,7 +5495,7 @@
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 18px;
-            align-items: end;
+            align-items: start;
             padding-bottom: 22px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
@@ -5562,23 +5562,43 @@
         }
 
         .drive-report-summary-stat {
-            min-width: 82px;
+            min-width: 78px;
             text-align: right;
         }
 
         .drive-report-summary-stat strong {
             display: block;
+            margin-top: 9px;
             color: #f4f4f4;
-            font-size: 24px;
-            line-height: 1.05;
+            font-size: 27px;
+            font-weight: 750;
+            line-height: 1;
         }
 
         .drive-report-summary-stat span {
             display: block;
-            margin-top: 5px;
             color: rgba(255, 255, 255, 0.46);
-            font-size: 10px;
-            font-weight: 650;
+            font-size: 9px;
+            font-weight: 720;
+            text-transform: uppercase;
+        }
+
+        .drive-report-op-bar {
+            width: 70px;
+            height: 3px;
+            margin: 9px 0 0 auto;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .drive-report-op-bar i {
+            display: block;
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: #74dc9a;
+            transition: width 260ms ease-out;
         }
 
         .drive-report-overview {
@@ -8415,8 +8435,9 @@
                     <p class="drive-report-summary-text" id="drive-report-summary-text">주행 데이터를 분석하고 있습니다.</p>
                 </div>
                 <div class="drive-report-summary-stat">
-                    <strong id="drive-report-op-usage">--</strong>
                     <span>OP 사용률</span>
+                    <strong id="drive-report-op-usage">--</strong>
+                    <div class="drive-report-op-bar" aria-hidden="true"><i id="drive-report-op-bar-fill"></i></div>
                 </div>
             </section>
             <div class="drive-report-overview">
@@ -14578,6 +14599,7 @@
             state.textContent = healthReady ? reportConditionLabel(score) : (score === null ? "분석 중" : score >= 85 ? "주행 안정적" : score >= 65 ? "개선 여지" : "주의 필요");
             document.getElementById("drive-report-summary-text").textContent = driveReportSummaryText(analysis, health);
             document.getElementById("drive-report-op-usage").textContent = opUsage === null ? "--" : `${Math.round(opUsage)}%`;
+            document.getElementById("drive-report-op-bar-fill").style.width = `${Math.max(0, Math.min(100, opUsage ?? 0))}%`;
             renderDriveReportHealth(health);
             renderDriveReportSensors(health);
             renderDriveReportAutomation(analysis, health);

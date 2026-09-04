@@ -2635,6 +2635,7 @@ export function buildTripHealthSummary(records, trip, analysis = {}) {
         notice: "심박은 수집되지 않아 EDA 기반 보조 추정치만 표시합니다. 의료적 스트레스 진단이 아닙니다.",
         load: {
           estimatedLoad0To100: loadScore,
+          driverConditionScore0To100: 100 - loadScore,
           band: loadScore >= 65 ? "high" : loadScore >= 35 ? "moderate" : "low",
           highLoadPercent: null,
           highLoadMinutesEstimate: null,
@@ -2704,6 +2705,7 @@ export function buildTripHealthSummary(records, trip, analysis = {}) {
     notice: "생활·웰니스 참고용 추정치이며 의료적 스트레스 진단이 아닙니다.",
     load: {
       estimatedLoad0To100: loadScore,
+      driverConditionScore0To100: 100 - loadScore,
       band: loadScore >= 65 ? "high" : loadScore >= 35 ? "moderate" : "low",
       highLoadPercent: rounded(highLoadPercent),
       highLoadMinutesEstimate: rounded(tripDurationMinutes * highLoadPercent / 100),

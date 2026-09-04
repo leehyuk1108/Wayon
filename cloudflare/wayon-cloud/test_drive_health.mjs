@@ -82,6 +82,7 @@ assert.equal(report.sensors.available, true);
 assert.equal(report.sensors.eda.available, true);
 assert.equal(report.sensors.temperature.averageSkinC, 33.2);
 assert.equal(report.sensors.motion.movingPercent, 22);
+assert.equal(report.load.driverConditionScore0To100, 100 - report.load.estimatedLoad0To100);
 
 const directWatchReport = buildTripHealthSummary([
   {
@@ -130,5 +131,6 @@ assert.equal(edaOnlyReport.available, true);
 assert.equal(edaOnlyReport.status, "ready_eda_only");
 assert.equal(edaOnlyReport.heartRate.available, false);
 assert.equal(edaOnlyReport.load.basis, "eda_only");
+assert.equal(edaOnlyReport.load.driverConditionScore0To100, 100 - edaOnlyReport.load.estimatedLoad0To100);
 
 console.log("drive health tests passed");

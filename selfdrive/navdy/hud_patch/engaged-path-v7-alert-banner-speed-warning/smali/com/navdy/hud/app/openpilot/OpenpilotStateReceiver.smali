@@ -426,7 +426,7 @@
 
     const/16 v2, 0xe2
 
-    const/16 v3, 0x114
+    const/16 v3, 0xfc
 
     goto :goto_4
 
@@ -454,7 +454,7 @@
 
     const/16 v2, 0xd9
 
-    const/16 v3, 0x10a
+    const/16 v3, 0xf2
 
     goto :goto_autohold_layout
 
@@ -1063,7 +1063,7 @@
 
     const/16 v3, 0xe2
 
-    const/16 v4, 0x114
+    const/16 v4, 0xfc
 
     invoke-static/range {v0 .. v6}, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->addImage(Landroid/content/Context;Landroid/widget/FrameLayout;Ljava/lang/String;IIII)Landroid/widget/ImageView;
 
@@ -1089,7 +1089,7 @@
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->leftMargin:I
 
-    const/16 v4, 0x10a
+    const/16 v4, 0xf2
 
     iput v4, v3, Landroid/widget/FrameLayout$LayoutParams;->topMargin:I
 

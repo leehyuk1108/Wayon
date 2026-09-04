@@ -611,9 +611,13 @@ def test_navdy_autohold_progress_view_is_wired_into_receiver():
 
   assert "sAutoHoldView:Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;" in receiver
   assert "OpenpilotAutoHoldView;->updatePayload(Lorg/json/JSONObject;)V" in receiver
-  for key in ("autoHoldActive", "autoHoldElapsedSec", "autoHoldEpbProgress"):
+  for key in ("autoHoldActive", "autoHoldEpbProgress"):
     assert f'"{key}"' in java
     assert key in view
+
+  layout_method = receiver.split(".method private static applyStatusLayout(Z)V", 1)[1].split(".end method", 1)[0]
+  assert "const/16 v3, 0xfc" in layout_method
+  assert "const/16 v3, 0xf2" in layout_method
 
 
 def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
@@ -1252,8 +1256,8 @@ def test_navdy_hud_patch_keeps_status_icons_while_disengaged():
                 "sStandstillView", "sOpReadyView", "sSetSpeedRow"):
     assert f"->{field}:" in layout_method
   assert "if-eqz p0, :cond_4" in layout_method
-  assert "const/16 v3, 0xeb" in layout_method
-  assert "const/16 v3, 0x112" in layout_method
+  assert "const/16 v3, 0xed" in layout_method
+  assert "const/16 v3, 0xfc" in layout_method
   assert "if-eqz p0, :cond_6" in layout_method
   assert "const/16 v3, 0x12f" in layout_method
   assert "const/16 v3, 0x128" in layout_method

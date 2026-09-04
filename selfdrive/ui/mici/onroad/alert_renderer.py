@@ -35,12 +35,13 @@ ALERT_FONT_SMALL = 66 - 50
 ALERT_FONT_BIG = 88 - 40
 AUTOHOLD_ICON_SIZE = 74
 AUTOHOLD_TIMER_FONT_SIZE = 62
-AUTOHOLD_TIMER_GAP = 50
+AUTOHOLD_TIMER_GAP = 18
 AUTOHOLD_TIMER_RESERVED_WIDTH = 190
 AUTOHOLD_TIMER_BG_HEIGHT = 150
 AUTOHOLD_TIMER_BG_ALPHA = 170
 AUTOHOLD_RING_RADIUS = 14
 AUTOHOLD_RING_WIDTH = 6
+AUTOHOLD_RING_MARGIN = 18
 EPB_TRANSFER_FONT_SIZE = 44
 
 SELFDRIVE_STATE_TIMEOUT = 5  # Seconds
@@ -468,6 +469,14 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
                          progress: float = 0.0, font_size: int = AUTOHOLD_TIMER_FONT_SIZE,
                          fixed_timer_width: float | None = None) -> None:
     color = rl.Color(255, 255, 255, int(255 * 0.9 * self._alpha_filter.x))
+    timer_size = measure_text_cached(gui_app.font(FontWeight.DISPLAY), timer_text, font_size,
+                                     font_size * -0.02)
+    available_text_width = max(1.0, self._rect.width - 2 * ALERT_MARGIN - icon_texture.width - AUTOHOLD_TIMER_GAP)
+    if fixed_timer_width is None and timer_size.x > available_text_width:
+      font_size = max(24, int(font_size * available_text_width / timer_size.x))
+      timer_size = measure_text_cached(gui_app.font(FontWeight.DISPLAY), timer_text, font_size,
+                                       font_size * -0.02)
+
     self._alert_text1_label.set_text(timer_text)
     self._alert_text1_label.set_text_color(color)
     self._alert_text1_label.set_font_size(font_size)
@@ -476,8 +485,6 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
       else rl.GuiTextAlignment.TEXT_ALIGN_LEFT
     )
 
-    timer_size = measure_text_cached(gui_app.font(FontWeight.DISPLAY), timer_text, font_size,
-                                     font_size * -0.02)
     timer_width = fixed_timer_width if fixed_timer_width is not None else timer_size.x
     group_width = icon_texture.width + AUTOHOLD_TIMER_GAP + timer_width
     group_x = self._rect.x + (self._rect.width - group_width) / 2
@@ -489,8 +496,8 @@ class AlertRenderer(Widget, SpeedLimitAlertRenderer):
     icon_x = group_x
     icon_y = center_y - icon_texture.height / 2
     if progress > 0.0:
-      ring_center = rl.Vector2(icon_x + icon_texture.width + AUTOHOLD_RING_RADIUS + 3,
-                               icon_y + icon_texture.height - AUTOHOLD_RING_RADIUS + 2)
+      ring_center = rl.Vector2(self._rect.x + self._rect.width - AUTOHOLD_RING_MARGIN - AUTOHOLD_RING_RADIUS,
+                               self._rect.y + self._rect.height - AUTOHOLD_RING_MARGIN - AUTOHOLD_RING_RADIUS)
       ring_alpha = int(255 * 0.28 * self._alpha_filter.x)
       rl.draw_ring(ring_center, AUTOHOLD_RING_RADIUS - AUTOHOLD_RING_WIDTH, AUTOHOLD_RING_RADIUS,
                    0, 360, 24, rl.Color(255, 255, 255, ring_alpha))

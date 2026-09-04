@@ -2294,9 +2294,13 @@ def test_navdy_power_rechecks_display_after_offroad_sleep(monkeypatch):
   assert runtime_calls == []
 
   _, target_on = navdy_op_bridge.manage_navdy_power(args, True, 137.0, offroad_since, target_on)
-  assert runtime_calls == []
+  assert runtime_calls == [True]
   assert display_calls[-1] == (True, "onroad")
   assert target_on is True
+
+  navdy_op_bridge.manage_navdy_power(args, True, 198.0, None, target_on)
+  assert runtime_calls == [True]
+  assert display_calls[-1] == (True, "onroad")
 
 
 def test_navdy_primary_power_state_overrides_stale_onroad_fallbacks(monkeypatch):

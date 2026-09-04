@@ -2236,8 +2236,11 @@ def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offr
     return offroad_since, last_target_on
 
   if started:
-    if last_target_on is not True or due_for_power_on_ensure(args, now):
-      if set_navdy_display(args, True, "onroad"):
+    transitioning_onroad = last_target_on is not True
+    if transitioning_onroad or due_for_power_on_ensure(args, now):
+      display_ready = set_navdy_display(args, True, "onroad")
+      runtime_ready = not transitioning_onroad or set_navdy_runtime(args, True)
+      if display_ready and runtime_ready:
         last_target_on = True
     return None, last_target_on
 

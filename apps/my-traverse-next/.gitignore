@@ -1,0 +1,15 @@
+.gradle/
+.idea/
+.playwright-cli/
+.DS_Store
+**/build/
+tmp/
+output/
+preview/
+local.properties
+app/google-services.json
+keystore.properties
+*.jks
+*.keystore
+*.apk
+*.aab

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Premium "Badass" Gradient
+         Dark, Sophisticated Midnight/Carbon feel
+         Angle 45 for diagonal dynamism
+    -->
+    <gradient
+        android:angle="45"
+        android:startColor="#1A1A1D"
+        android:centerColor="#2C3E50"
+        android:endColor="#000000"
+        android:type="linear" />
+
+    <!-- Deep Corners -->
+    <corners android:radius="24dp" />
+
+    <!-- Premium Stroke (Glass Edge Effect) -->
+    <stroke
+        android:width="1dp"
+        android:color="#33FFFFFF" />
+
+    <!-- Subtle Padding implicit in shape, but handy for touch feedback if needed -->
+</shape>

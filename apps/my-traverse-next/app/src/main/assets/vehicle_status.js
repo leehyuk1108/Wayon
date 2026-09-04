@@ -10,6 +10,7 @@
     const FUEL_WARNING_PERCENT = 10;
     const BATTERY_TEMPERATURE_WARNING_C = 55;
     const BATTERY_TEMPERATURE_CRITICAL_C = 65;
+    const VEHICLE_DETAILS_STALE_AFTER_SECONDS = 10 * 60;
 
     function number(value) {
         if (value === null || value === undefined || value === "") return null;
@@ -39,6 +40,17 @@
 
     function liveAgeSeconds(live, nowMs) {
         const parsed = Date.parse(live?.updatedAt || "");
+        return Number.isFinite(parsed) ? Math.max(0, (nowMs - parsed) / 1000) : null;
+    }
+
+    function detailsAgeSeconds(details, nowMs) {
+        const value = details?.meta?.updatedAt;
+        if (typeof value !== "string" || !value.trim()) return null;
+        const text = value.trim();
+        const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)
+            ? `${text.replace(" ", "T")}+09:00`
+            : text;
+        const parsed = Date.parse(normalized);
         return Number.isFinite(parsed) ? Math.max(0, (nowMs - parsed) / 1000) : null;
     }
 
@@ -107,6 +119,9 @@
         }
 
         const closures = hasDetails ? details.closures || {} : {};
+        const detailsAge = hasDetails ? detailsAgeSeconds(details, nowMs) : null;
+        const detailsStale = details?.meta?.stale === true
+            || (detailsAge !== null && detailsAge > VEHICLE_DETAILS_STALE_AFTER_SECONDS);
         const voltage = number(details?.battery12v?.voltageV) ?? number(live?.voltageV);
         const batteryTemperature = number(details?.battery12v?.temperatureC);
         const failedDtc = number(details?.diagnostics?.alertCount)
@@ -136,14 +151,14 @@
         if (failedDtc !== null && failedDtc > 0) {
             warningIssues.push(`${format(failedDtc)} diagnostic alert${failedDtc === 1 ? "" : "s"}`);
         }
-        if (closures.doors?.active === true) warningIssues.push("Doors unlocked");
-        if (closures.hood?.active === true) warningIssues.push("Hood open");
-        if (closures.trunk?.active === true) warningIssues.push("Trunk open");
+        if (!detailsStale && closures.doors?.active === true) warningIssues.push("Doors unlocked");
+        if (!detailsStale && closures.hood?.active === true) warningIssues.push("Hood open");
+        if (!detailsStale && closures.trunk?.active === true) warningIssues.push("Trunk open");
 
         const openWindows = ["windowFrontLeft", "windowFrontRight", "windowRearLeft", "windowRearRight"]
             .filter((key) => closures[key]?.active === true).length;
-        if (openWindows > 0) warningIssues.push(`${openWindows} window${openWindows === 1 ? "" : "s"} open`);
-        if (closures.sunroof?.active === true) warningIssues.push("Sunroof open");
+        if (!detailsStale && openWindows > 0) warningIssues.push(`${openWindows} window${openWindows === 1 ? "" : "s"} open`);
+        if (!detailsStale && closures.sunroof?.active === true) warningIssues.push("Sunroof open");
 
         if (criticalIssues.length) {
             const detail = [...criticalIssues, ...warningIssues].join(" · ");
@@ -175,8 +190,8 @@
             return report("offline", "VEHICLE\nOFFLINE", live.message || "Last connection unavailable", "cloud-off");
         }
 
-        if (details?.meta?.stale === true) {
-            return report("warning", "UPDATE\nDELAYED", "Vehicle data may be outdated", "clock-alert");
+        if (detailsStale) {
+            return report("warning", "UPDATE\nDELAYED", "Lock status is not confirmed", "clock-alert");
         }
 
         if (hasLive) {
@@ -233,6 +248,7 @@
             fuelWarningPercent: FUEL_WARNING_PERCENT,
             batteryTemperatureWarningC: BATTERY_TEMPERATURE_WARNING_C,
             batteryTemperatureCriticalC: BATTERY_TEMPERATURE_CRITICAL_C,
+            vehicleDetailsStaleAfterSeconds: VEHICLE_DETAILS_STALE_AFTER_SECONDS,
         },
     };
 });

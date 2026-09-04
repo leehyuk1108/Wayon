@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import sys
 from types import SimpleNamespace
 from urllib import error
@@ -528,6 +529,24 @@ def test_running_cycles_are_read_and_deduplicated_separately(tmp_path):
 
 
 class TestGmoneStore:
+  def test_closes_database_connections_after_each_operation(self, tmp_path, monkeypatch):
+    store = GmoneStore(tmp_path / "gmone.sqlite3")
+    original_connect = store._connect
+    opened = []
+
+    def tracked_connect():
+      connection = original_connect()
+      opened.append(connection)
+      return connection
+
+    monkeypatch.setattr(store, "_connect", tracked_connect)
+    store.save_snapshot("car_status", "gmone-direct", {"door": 0}, 100)
+    assert store.latest_snapshot("car_status") == {"door": 0}
+    assert len(opened) == 2
+    for connection in opened:
+      with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        connection.execute("SELECT 1")
+
   def test_persists_latest_snapshot_without_identity_data(self, tmp_path):
     path = tmp_path / "gmone.sqlite3"
     store = GmoneStore(path)

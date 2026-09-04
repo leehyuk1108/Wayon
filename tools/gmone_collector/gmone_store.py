@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import contextmanager
 from datetime import UTC, datetime
 import json
 import os
@@ -90,8 +91,17 @@ class GmoneStore:
     connection.execute("PRAGMA busy_timeout = 10000")
     return connection
 
+  @contextmanager
+  def _connection(self):
+    connection = self._connect()
+    try:
+      with connection:
+        yield connection
+    finally:
+      connection.close()
+
   def _initialize(self) -> None:
-    with self._connect() as connection:
+    with self._connection() as connection:
       connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS snapshots (
@@ -124,14 +134,14 @@ class GmoneStore:
     collected_at = datetime.now(UTC).isoformat()
     safe_payload = _without_sensitive_fields(payload)
     encoded = json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    with self._connect() as connection:
+    with self._connection() as connection:
       connection.execute(
         "INSERT INTO snapshots(kind, source, server_time, collected_at, payload_json) VALUES (?, ?, ?, ?, ?)",
         (kind, source, server_time, collected_at, encoded),
       )
 
   def latest_snapshot_server_time(self, kind: str) -> float | None:
-    with self._connect() as connection:
+    with self._connection() as connection:
       row = connection.execute(
         """
         SELECT server_time FROM snapshots
@@ -158,7 +168,7 @@ class GmoneStore:
       ))
     if not rows:
       return 0
-    with self._connect() as connection:
+    with self._connection() as connection:
       before = connection.total_changes
       connection.executemany(
         "INSERT OR IGNORE INTO running_cycles(server_time, payload_json, collected_at) VALUES (?, ?, ?)",
@@ -167,7 +177,7 @@ class GmoneStore:
       return connection.total_changes - before
 
   def latest_snapshot(self, kind: str) -> dict[str, Any] | None:
-    with self._connect() as connection:
+    with self._connection() as connection:
       row = connection.execute(
         "SELECT payload_json FROM snapshots WHERE kind = ? ORDER BY server_time DESC, id DESC LIMIT 1",
         (kind,),
@@ -178,13 +188,13 @@ class GmoneStore:
     return payload if isinstance(payload, dict) else None
 
   def running_cycle_count(self) -> int:
-    with self._connect() as connection:
+    with self._connection() as connection:
       row = connection.execute("SELECT COUNT(*) AS count FROM running_cycles").fetchone()
     return int(row["count"])
 
   def running_cycle_summary(self, recent_limit: int = 20) -> dict[str, Any]:
     limit = max(0, min(int(recent_limit), 100))
-    with self._connect() as connection:
+    with self._connection() as connection:
       summary = connection.execute(
         """
         SELECT COUNT(*) AS count,

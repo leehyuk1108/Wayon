@@ -10,6 +10,8 @@
     <string>/Users/ijonghyeog/Library/Application Support/Wayon/GmoneCollector/gmone_collector.py</string>
     <string>--poll-seconds</string>
     <string>60</string>
+    <string>--wayon-url</string>
+    <string>https://wayon-cloud.hyuklee.workers.dev</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/ijonghyeog/Library/Application Support/Wayon/GmoneCollector</string>

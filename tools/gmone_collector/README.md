@@ -57,8 +57,9 @@ python3 -m tools.gmone_collector.gmone_collector --once --json
 
 For temporary background verification on this Mac, install
 `com.wayon.gmone-collector.plist` into `~/Library/LaunchAgents/`. It checks the
-official cached status every minute without asking the vehicle to refresh and
-reuses the in-memory session token until authentication expires. Copy both
+official cached status every minute and consumes pending Wayon Cloud refresh
+requests every 30 seconds. A direct vehicle request is sent only while a refresh
+is pending. The collector reuses its in-memory session token until authentication expires. Copy both
 `gmone_collector.py` and `gmone_store.py` to
 `~/Library/Application Support/Wayon/GmoneCollector/` first; macOS blocks a
 LaunchAgent from directly reading source files under `Documents`.

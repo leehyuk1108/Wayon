@@ -14105,6 +14105,9 @@
                 const hasEda = reportNumber(topMoment.edaAboveBaselineMicrosiemens) !== null;
                 return `${topMoment.title || "주요 주행 이벤트"} 전후로 가장 큰 ${hasEda ? "심박·피부전도" : "심박"} 반응이 나타났습니다. 차량 움직임과 생체 반응이 함께 확인된 구간입니다.`;
             }
+            if (health?.status === "ready_eda_only") {
+                return `심박은 수집되지 않았지만 피부전도 반응으로 추정한 운전자 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 낮은 신뢰도의 보조 지표로 확인해 주세요.`;
+            }
             if (health?.available) {
                 return `주행 중 추정 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 심박 변화와 차량 움직임을 함께 분석했습니다.`;
             }
@@ -14125,6 +14128,19 @@
             }
             const hr = health.heartRate || {};
             const context = health.context || {};
+            if (hr.available === false || health.status === "ready_eda_only") {
+                const load = health.load || {};
+                meta.textContent = `EDA 기반 · ${reportConfidenceLabel(health.confidence)}`;
+                container.innerHTML = `
+                    <div class="drive-report-health-grid">
+                        <div class="drive-report-metric"><span>보조 부담 지수</span><strong>${reportValue(load.estimatedLoad0To100, "점")}</strong></div>
+                        <div class="drive-report-metric"><span>부담 구간</span><strong>${reportLoadLabel(load.band)}</strong></div>
+                        <div class="drive-report-metric"><span>심박</span><strong>미수집</strong></div>
+                        <div class="drive-report-metric"><span>평가 근거</span><strong>피부전도</strong></div>
+                    </div>
+                    <div class="drive-report-empty">워치 심박은 이 주행 시간대에 들어오지 않았습니다. 표시된 점수는 EDA만 사용한 보조 추정치이며, 다음 주행부터 직접 심박 전송으로 보완됩니다.</div>`;
+                return;
+            }
             meta.textContent = `${reportConfidenceLabel(health.confidence)} · ${reportNumber(hr.sampleCount, 0)}개 측정`;
             container.innerHTML = `
                 <div class="drive-report-health-grid">

@@ -38,6 +38,8 @@ const FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GMONE_MAX_PAYLOAD_BYTES = 256 * 1024;
 const GMONE_STALE_AFTER_SECONDS = 24 * 60 * 60;
 const REMOTE_START_IMPACT_SUPPRESSION_SECONDS = 45;
+const DEFAULT_HEALTH_BRIDGE_URL = "https://health-bridge-api.hyuklee.workers.dev";
+const TRIP_HEALTH_CACHE_SECONDS = 6 * 60 * 60;
 let cachedFcmAccessToken = null;
 
 function json(data, status = 200) {
@@ -2344,11 +2346,13 @@ async function latestVehicleLock(env, deviceId) {
 }
 
 function parseTripRoute(trip) {
-  const { route_json: routeJson, report_json: reportJson, ...rest } = trip;
-  return tripWithAnalysis({
+  const { route_json: routeJson, report_json: reportJson, health_json: healthJson, ...rest } = trip;
+  const parsed = tripWithAnalysis({
     ...rest,
     route: JSON.parse(routeJson || "[]"),
   }, parseJsonObject(reportJson));
+  parsed.health = parseJsonObject(healthJson);
+  return parsed;
 }
 
 function maxRoutePointSpeedMps(route) {
@@ -2372,11 +2376,13 @@ function maxRouteSpeedMps(routeJson) {
 }
 
 function parseTripSummary(trip) {
-  const { route_json: routeJson, report_json: reportJson, ...rest } = trip;
-  return tripWithAnalysis({
+  const { route_json: routeJson, report_json: reportJson, health_json: healthJson, ...rest } = trip;
+  const parsed = tripWithAnalysis({
     ...rest,
     max_speed_mps: maxRouteSpeedMps(routeJson),
   }, parseJsonObject(reportJson));
+  parsed.health = parseJsonObject(healthJson);
+  return parsed;
 }
 
 function parseServerTripSummary(trip) {
@@ -2400,7 +2406,7 @@ async function fetchD1TripSummaries(env, deviceId, limit) {
              WHEN duration_s > 0 AND distance_m IS NOT NULL THEN distance_m / duration_s
              ELSE NULL
            END AS avg_speed_mps,
-           route_json, report_json
+           route_json, report_json, health_json, health_updated_at
     FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT ?
   `).bind(deviceId, Math.min(limit, 1000)).all();
   return (trips.results || []).map(parseTripSummary);
@@ -2419,6 +2425,331 @@ function mergeServerTripsWithD1(serverTrips, d1Trips) {
       health: objectWithValues(serverTrip.health) ? serverTrip.health : d1Trip.health,
     };
   });
+}
+
+function finiteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function mean(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+function percentile(values, ratio) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const position = Math.max(0, Math.min(sorted.length - 1, (sorted.length - 1) * ratio));
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+function rounded(value, digits = 1) {
+  return value == null || !Number.isFinite(value) ? null : Number(value.toFixed(digits));
+}
+
+function clampNumber(value, lower, upper) {
+  return Math.max(lower, Math.min(upper, value));
+}
+
+function parseHealthValues(record) {
+  const values = record?.values;
+  return values && typeof values === "object" && !Array.isArray(values) ? values : {};
+}
+
+function heartSamples(records, since, until) {
+  const byTime = new Map();
+  for (const record of records.filter((item) => item.type === "heart_rate")) {
+    const values = parseHealthValues(record);
+    const series = Array.isArray(values.series) ? values.series : [];
+    const candidates = series.length ? series : [{
+      value: values.heart_rate,
+      start_time: record.start_time,
+    }];
+    for (const sample of candidates) {
+      const bpm = finiteNumber(sample?.value ?? sample?.heart_rate);
+      const time = finiteNumber(sample?.start_time ?? sample?.time ?? record.start_time);
+      if (bpm == null || time == null || bpm < 30 || bpm > 240 || time < since || time > until) continue;
+      byTime.set(time, { time, bpm });
+    }
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
+function closestTimelineState(timeline, timestamp) {
+  let closest = null;
+  let distance = Infinity;
+  for (const point of timeline) {
+    const time = Date.parse(point?.time || "");
+    const delta = Math.abs(time - timestamp);
+    if (Number.isFinite(time) && delta < distance) {
+      closest = point;
+      distance = delta;
+    }
+  }
+  return distance <= 12_000 ? closest : null;
+}
+
+function averageHeartRateByAutomation(samples, timeline) {
+  const op = [];
+  const manual = [];
+  for (const sample of samples) {
+    const state = closestTimelineState(timeline, sample.time);
+    if (!state) continue;
+    (state.opActive ? op : manual).push(sample.bpm);
+  }
+  const opAverage = op.length >= 3 ? mean(op) : null;
+  const manualAverage = manual.length >= 3 ? mean(manual) : null;
+  return {
+    opSampleCount: op.length,
+    manualSampleCount: manual.length,
+    opAverageBpm: rounded(opAverage),
+    manualAverageBpm: rounded(manualAverage),
+    opMinusManualBpm: opAverage != null && manualAverage != null ? rounded(opAverage - manualAverage) : null,
+    comparable: opAverage != null && manualAverage != null,
+  };
+}
+
+function correlateMomentsWithHealth(moments, heartRateSamples, sensorRecords) {
+  const severityWeight = { critical: 30, high: 20, medium: 10, low: 0 };
+  return moments.map((moment) => {
+    const eventTime = Date.parse(moment?.time || "");
+    if (!Number.isFinite(eventTime)) return null;
+    const before = heartRateSamples.filter((sample) => sample.time >= eventTime - 60_000 && sample.time <= eventTime - 8_000);
+    const after = heartRateSamples.filter((sample) => sample.time >= eventTime && sample.time <= eventTime + 90_000);
+    if (!before.length || !after.length) return null;
+    const baseline = mean(before.map((sample) => sample.bpm));
+    const peak = Math.max(...after.map((sample) => sample.bpm));
+    const delta = peak - baseline;
+    const peakSample = after.find((sample) => sample.bpm === peak);
+    const recovered = after.find((sample) => sample.time > (peakSample?.time ?? eventTime) && sample.bpm <= baseline + 3);
+    const nearbySensors = sensorRecords.filter((record) => (
+      Number(record.start_time) <= eventTime + 90_000 && Number(record.end_time) >= eventTime - 30_000
+    ));
+    const edaValues = nearbySensors.map((record) => finiteNumber(parseHealthValues(record).eda_mean_us)).filter((value) => value != null);
+    return {
+      ...moment,
+      baselineBpm: rounded(baseline),
+      peakBpm: rounded(peak),
+      heartRateDeltaBpm: rounded(delta),
+      edaAboveBaselineMicrosiemens: edaValues.length ? rounded(Math.max(...edaValues) - Math.min(...edaValues), 2) : null,
+      recoverySeconds: recovered && peakSample ? Math.round((recovered.time - peakSample.time) / 1000) : null,
+      correlationConfidence: before.length >= 2 && after.length >= 3 ? "high" : "medium",
+      loadRank: Math.max(0, delta) * 3 + (severityWeight[moment.severity] || 0),
+    };
+  }).filter(Boolean).sort((a, b) => b.loadRank - a.loadRank);
+}
+
+function recentContext(records, tripStart) {
+  const beforeTrip = records.filter((record) => Number(record.start_time) <= tripStart);
+  const latest = (type) => beforeTrip.filter((record) => record.type === type)
+    .sort((a, b) => Number(b.start_time) - Number(a.start_time))[0];
+  const sleepValues = parseHealthValues(latest("sleep"));
+  const sleepDailyValues = parseHealthValues(latest("sleep_duration_daily"));
+  const energyValues = parseHealthValues(latest("energy_score"));
+  const sleepDurationSeconds = finiteNumber(sleepValues.duration_seconds) ?? finiteNumber(sleepDailyValues.seconds);
+  return {
+    sleepScore: finiteNumber(sleepValues.sleep_score),
+    sleepDurationMinutes: sleepDurationSeconds == null ? null : rounded(sleepDurationSeconds / 60, 0),
+    energyScore: rounded(finiteNumber(energyValues.score), 0),
+  };
+}
+
+function buildAuxiliarySensorSummary(records, startedAt, endedAt) {
+  const sensorRecords = records.filter((record) => (
+    record.type === "watch_driver_sensors_1m" &&
+    Number(record.start_time) <= endedAt && Number(record.end_time) >= startedAt
+  ));
+  const values = sensorRecords.map(parseHealthValues);
+  const edaMeans = values.map((item) => finiteNumber(item.eda_mean_us)).filter((value) => value != null);
+  const edaP90 = values.map((item) => finiteNumber(item.eda_p90_us)).filter((value) => value != null);
+  const edaSamples = values.reduce((sum, item) => sum + (finiteNumber(item.eda_sample_count) ?? 0), 0);
+  const edaRises = values.reduce((sum, item) => sum + (finiteNumber(item.eda_phasic_rise_count) ?? 0), 0);
+  const skinMeans = values.map((item) => finiteNumber(item.skin_temperature_mean_c)).filter((value) => value != null);
+  const ambientMeans = values.map((item) => finiteNumber(item.ambient_temperature_mean_c)).filter((value) => value != null);
+  const skinSamples = values.reduce((sum, item) => sum + (finiteNumber(item.skin_temperature_sample_count) ?? 0), 0);
+  const motionRms = values.map((item) => finiteNumber(item.motion_rms_mps2)).filter((value) => value != null);
+  const motionP95 = values.map((item) => finiteNumber(item.motion_p95_mps2)).filter((value) => value != null);
+  const moving = values.map((item) => finiteNumber(item.moving_percent)).filter((value) => value != null);
+  const motionSamples = values.reduce((sum, item) => sum + (finiteNumber(item.accelerometer_sample_count) ?? 0), 0);
+  const edaAvailable = edaSamples > 0 && edaMeans.length > 0;
+  const temperatureAvailable = skinSamples > 0 && skinMeans.length > 0;
+  const motionAvailable = motionSamples > 0 && motionRms.length > 0;
+  const movingPercent = mean(moving);
+  const signalContaminationLikely = motionAvailable && movingPercent != null && movingPercent >= 75;
+  const edaRange = edaP90.length && edaMeans.length ? Math.max(...edaP90) - Math.min(...edaMeans) : 0;
+  const edaConfidence = !edaAvailable ? "low" : signalContaminationLikely ? "medium" : edaSamples >= 60 ? "high" : "medium";
+  return {
+    available: edaAvailable || temperatureAvailable || motionAvailable,
+    windowCount: sensorRecords.length,
+    eda: {
+      available: edaAvailable,
+      confidence: edaConfidence,
+      averageMicrosiemens: rounded(mean(edaMeans), 2),
+      p90Microsiemens: rounded(percentile(edaP90, 0.9), 2),
+      phasicRiseCount: edaRises,
+      sampleCount: edaSamples,
+      arousalProxy0To100: edaAvailable ? Math.round(clampNumber(edaRange * 18 + edaRises * 1.5, 0, 100)) : null,
+    },
+    temperature: {
+      available: temperatureAvailable,
+      confidence: temperatureAvailable && skinSamples >= 10 ? "high" : temperatureAvailable ? "medium" : "low",
+      averageSkinC: rounded(mean(skinMeans), 1),
+      averageAmbientC: rounded(mean(ambientMeans), 1),
+      sampleCount: skinSamples,
+    },
+    motion: {
+      available: motionAvailable,
+      confidence: motionAvailable && motionSamples >= 300 ? "high" : motionAvailable ? "medium" : "low",
+      rmsMps2: rounded(mean(motionRms), 2),
+      p95Mps2: rounded(percentile(motionP95, 0.95), 2),
+      movingPercent: rounded(movingPercent, 0),
+      sampleCount: motionSamples,
+      signalContaminationLikely,
+    },
+  };
+}
+
+export function buildTripHealthSummary(records, trip, analysis = {}) {
+  const startedAt = Date.parse(trip?.started_at || trip?.startedAt || "");
+  const endedAt = Date.parse(trip?.ended_at || trip?.endedAt || "");
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || endedAt <= startedAt) {
+    return { available: false, status: "invalid_trip_time" };
+  }
+
+  const samples = heartSamples(records, startedAt, endedAt);
+  const context = recentContext(records, startedAt);
+  const sensors = buildAuxiliarySensorSummary(records, startedAt, endedAt);
+  if (!samples.length) {
+    return {
+      available: false,
+      status: "no_heart_rate_during_trip",
+      context,
+      sensors,
+      notice: "심박 데이터가 없어 주행 부담도를 계산하지 않았습니다.",
+    };
+  }
+
+  const bpms = samples.map((sample) => sample.bpm);
+  const preDriveSamples = heartSamples(records, startedAt - 10 * 60_000, startedAt - 1);
+  const baseline = preDriveSamples.length >= 3 ? mean(preDriveSamples.map((sample) => sample.bpm)) : percentile(bpms, 0.2);
+  const average = mean(bpms);
+  const maximum = Math.max(...bpms);
+  const minimum = Math.min(...bpms);
+  const highLoadCount = samples.filter((sample) => sample.bpm >= baseline + 12).length;
+  const highLoadPercent = 100 * highLoadCount / samples.length;
+  const averageElevation = Math.max(0, average - baseline);
+  const loadScore = Math.round(clampNumber(averageElevation * 5 + highLoadPercent * 0.55, 0, 100));
+  const hrvWindows = records.filter((record) => {
+    if (record.type !== "watch_hrv_5m") return false;
+    const quality = finiteNumber(parseHealthValues(record).signal_quality_percent);
+    return Number(record.start_time) <= endedAt && Number(record.end_time) >= startedAt && quality != null && quality >= 80;
+  });
+  const hrvRmssd = hrvWindows.map((record) => finiteNumber(parseHealthValues(record).rmssd_ms)).filter((value) => value != null);
+  const timeline = Array.isArray(analysis.timeline) ? analysis.timeline : [];
+  const moments = Array.isArray(analysis.moments) ? analysis.moments : [];
+  const sensorRecords = records.filter((record) => record.type === "watch_driver_sensors_1m");
+  const correlations = correlateMomentsWithHealth(moments, samples, sensorRecords);
+  const tripDurationMinutes = Math.max(1, (endedAt - startedAt) / 60_000);
+  const expectedSamples = Math.max(1, tripDurationMinutes / 1.5);
+  const coveragePercent = Math.min(100, 100 * samples.length / expectedSamples);
+  const confidence = samples.length >= 20 && coveragePercent >= 65 ? "high" : samples.length >= 5 ? "medium" : "low";
+  const stride = Math.max(1, Math.ceil(samples.length / 80));
+
+  return {
+    schemaVersion: "wayon-driver-load-v1",
+    available: true,
+    status: "ready",
+    generatedAt: nowIso(),
+    confidence,
+    notice: "생활·웰니스 참고용 추정치이며 의료적 스트레스 진단이 아닙니다.",
+    load: {
+      estimatedLoad0To100: loadScore,
+      band: loadScore >= 65 ? "high" : loadScore >= 35 ? "moderate" : "low",
+      highLoadPercent: rounded(highLoadPercent),
+      highLoadMinutesEstimate: rounded(tripDurationMinutes * highLoadPercent / 100),
+    },
+    heartRate: {
+      sampleCount: samples.length,
+      coveragePercent: rounded(coveragePercent),
+      baselineBpm: rounded(baseline),
+      baselineMethod: preDriveSamples.length >= 3 ? "pre_drive_10m" : "trip_low_percentile",
+      averageBpm: rounded(average),
+      minimumBpm: rounded(minimum),
+      maximumBpm: rounded(maximum),
+      peakAboveBaselineBpm: rounded(maximum - baseline),
+      trend: samples.filter((_, index) => index % stride === 0).map((sample) => ({
+        time: new Date(sample.time).toISOString(),
+        bpm: rounded(sample.bpm),
+        load0To100: Math.round(clampNumber((sample.bpm - baseline) * 5, 0, 100)),
+        opActive: closestTimelineState(timeline, sample.time)?.opActive ?? null,
+      })),
+    },
+    hrv: {
+      validWindowCount: hrvRmssd.length,
+      averageRmssdMs: rounded(mean(hrvRmssd)),
+    },
+    sensors,
+    context,
+    automationComparison: averageHeartRateByAutomation(samples, timeline),
+    topStressMoments: correlations.slice(0, 5),
+  };
+}
+
+async function fetchHealthBridgeRecords(env, since, until, types) {
+  const token = String(env.HEALTH_BRIDGE_READ_TOKEN || "");
+  if (!token) return null;
+  const endpoint = String(env.HEALTH_BRIDGE_URL || DEFAULT_HEALTH_BRIDGE_URL).replace(/\/$/, "");
+  const url = new URL(`${endpoint}/v1/records`);
+  url.searchParams.set("since", String(Math.max(0, Math.floor(since))));
+  url.searchParams.set("until", String(Math.max(0, Math.floor(until))));
+  url.searchParams.set("limit", "500");
+  for (const type of types) url.searchParams.append("type", type);
+  const init = {
+    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+    cf: { cacheTtl: 0, cacheEverything: false },
+  };
+  const response = env.HEALTH_BRIDGE_API
+    ? await env.HEALTH_BRIDGE_API.fetch(new Request(`https://health-bridge-api${url.pathname}${url.search}`, init))
+    : await fetch(url, init);
+  if (!response.ok) throw new Error(`health_bridge_${response.status}`);
+  const payload = await response.json();
+  return Array.isArray(payload.records) ? payload.records : [];
+}
+
+async function tripWithHealth(env, trip) {
+  const parsed = parseTripRoute(trip);
+  const cachedAt = Date.parse(trip.health_updated_at || "");
+  if (parsed.health?.status === "ready" && Number.isFinite(cachedAt) && Date.now() - cachedAt < TRIP_HEALTH_CACHE_SECONDS * 1000) {
+    return parsed;
+  }
+  if (!env.HEALTH_BRIDGE_READ_TOKEN) {
+    parsed.health = { available: false, status: "not_configured" };
+    return parsed;
+  }
+  const startedAt = Date.parse(trip.started_at || "");
+  const endedAt = Date.parse(trip.ended_at || "");
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) return parsed;
+  try {
+    const [driveRecords, contextRecords] = await Promise.all([
+      // Samsung Health stores heart rate in hour-sized records. Fetch far enough
+      // back to include a record that started before the trip but overlaps it.
+      fetchHealthBridgeRecords(env, startedAt - 2 * 60 * 60_000, endedAt + 2 * 60_000, [
+        "heart_rate", "watch_hrv_5m", "watch_driver_sensors_1m",
+      ]),
+      fetchHealthBridgeRecords(env, startedAt - 36 * 60 * 60_000, startedAt, [
+        "sleep", "sleep_duration_daily", "energy_score",
+      ]),
+    ]);
+    parsed.health = buildTripHealthSummary([...(driveRecords || []), ...(contextRecords || [])], trip, parsed.analysis);
+    await env.DB.prepare("UPDATE trips SET health_json = ?, health_updated_at = ? WHERE id = ? AND device_id = ?")
+      .bind(JSON.stringify(parsed.health), nowIso(), trip.id, trip.device_id).run();
+  } catch (error) {
+    parsed.health = { available: false, status: "temporarily_unavailable", detail: String(error?.message || error) };
+  }
+  return parsed;
 }
 
 async function fetchServerApi(env, path, deviceId) {
@@ -2766,26 +3097,24 @@ async function handleTrips(request, env, pathname) {
   const deviceId = authenticatedDeviceId(request);
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length === 3) {
+    const d1Trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ? AND device_id = ?`)
+      .bind(parts[2], deviceId)
+      .first();
     try {
       const serverTrip = await fetchServerTrip(env, parts[2], deviceId);
-      const d1Trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ? AND device_id = ?`)
-        .bind(parts[2], deviceId)
-        .first();
+      const d1TripWithHealth = d1Trip ? await tripWithHealth(env, d1Trip) : null;
       const merged = mergeServerTripsWithD1(
         [serverTrip],
-        d1Trip ? [parseTripRoute(d1Trip)] : [],
+        d1TripWithHealth ? [d1TripWithHealth] : [],
       )[0];
       return historyJson(merged, "server+d1");
     } catch (error) {
       console.warn("Wayon server trip detail unavailable; using D1", error?.message || error);
     }
 
-    const trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ? AND device_id = ?`)
-      .bind(parts[2], deviceId)
-      .first();
-    if (!trip) return json({ error: "not_found" }, 404);
+    if (!d1Trip) return json({ error: "not_found" }, 404);
 
-    return historyJson(parseTripRoute(trip), "d1");
+    return historyJson(await tripWithHealth(env, d1Trip), "d1");
   }
 
   const url = new URL(request.url);

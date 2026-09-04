@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS trips (
   route_point_count INTEGER NOT NULL DEFAULT 0,
   route_json TEXT NOT NULL,
   report_json TEXT NOT NULL DEFAULT '{}',
+  health_json TEXT NOT NULL DEFAULT '{}',
+  health_updated_at TEXT,
   created_at TEXT NOT NULL
 );
 

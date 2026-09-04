@@ -14326,9 +14326,12 @@
             const analysis = item?.analysis && typeof item.analysis === "object" ? item.analysis : {};
             const health = item?.health && typeof item.health === "object" ? item.health : {};
             const healthReady = health.available === true;
-            const loadScore = healthReady ? reportNumber(health?.load?.estimatedLoad0To100) : null;
+            const estimatedLoad = healthReady ? reportNumber(health?.load?.estimatedLoad0To100) : null;
+            const conditionScore = healthReady
+                ? reportNumber(health?.load?.driverConditionScore0To100, estimatedLoad === null ? null : 100 - estimatedLoad)
+                : null;
             const comfortScore = reportNumber(analysis?.scores?.comfort);
-            const score = loadScore ?? comfortScore;
+            const score = conditionScore ?? comfortScore;
             const scoreElement = document.getElementById("drive-report-score");
             const kicker = document.getElementById("drive-report-kicker");
             const confidence = document.getElementById("drive-report-confidence");
@@ -14336,11 +14339,11 @@
             const opUsage = reportNumber(analysis?.automation?.opUsagePercent);
             const loadBand = healthReady ? health?.load?.band : comfortScore !== null ? (comfortScore >= 85 ? "low" : comfortScore >= 65 ? "moderate" : "high") : "";
 
-            kicker.textContent = healthReady ? "DRIVER LOAD" : "DRIVE QUALITY";
+            kicker.textContent = healthReady ? "DRIVER CONDITION" : "DRIVE QUALITY";
             confidence.textContent = reportConfidenceLabel(healthReady ? health.confidence : analysis?.dataQuality?.confidence);
             scoreElement.textContent = score === null ? "--" : Math.round(score);
             scoreElement.className = `drive-report-score ${loadBand || ""}`;
-            unit.textContent = healthReady ? `점 · ${reportLoadLabel(loadBand)}` : "점";
+            unit.textContent = healthReady ? `점 · 부담 ${reportLoadLabel(loadBand)}` : "점";
             document.getElementById("drive-report-summary-text").textContent = driveReportSummaryText(analysis, health);
             document.getElementById("drive-report-op-usage").textContent = opUsage === null ? "--" : `${Math.round(opUsage)}%`;
             renderDriveReportHealth(health);

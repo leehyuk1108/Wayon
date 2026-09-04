@@ -83,4 +83,52 @@ assert.equal(report.sensors.eda.available, true);
 assert.equal(report.sensors.temperature.averageSkinC, 33.2);
 assert.equal(report.sensors.motion.movingPercent, 22);
 
+const directWatchReport = buildTripHealthSummary([
+  {
+    type: "watch_heart_rate_1m",
+    start_time: start,
+    end_time: start + 60_000,
+    values: {
+      mean_heart_rate_bpm: 78,
+      series: [
+        { start_time: start + 5_000, value: 76 },
+        { start_time: start + 10_000, value: 80 },
+      ],
+    },
+  },
+], {
+  started_at: new Date(start).toISOString(),
+  ended_at: new Date(start + 60_000).toISOString(),
+});
+
+assert.equal(directWatchReport.available, true);
+assert.equal(directWatchReport.heartRate.available, true);
+assert.equal(directWatchReport.heartRate.sampleCount, 2);
+assert.equal(directWatchReport.heartRate.averageBpm, 78);
+
+const edaOnlyReport = buildTripHealthSummary([
+  {
+    type: "watch_driver_sensors_1m",
+    start_time: start,
+    end_time: start + 60_000,
+    values: {
+      eda_mean_us: 2.1,
+      eda_p90_us: 3.6,
+      eda_phasic_rise_count: 3,
+      eda_sample_count: 50,
+      moving_percent: 20,
+      motion_rms_mps2: 0.4,
+      accelerometer_sample_count: 600,
+    },
+  },
+], {
+  started_at: new Date(start).toISOString(),
+  ended_at: new Date(start + 60_000).toISOString(),
+});
+
+assert.equal(edaOnlyReport.available, true);
+assert.equal(edaOnlyReport.status, "ready_eda_only");
+assert.equal(edaOnlyReport.heartRate.available, false);
+assert.equal(edaOnlyReport.load.basis, "eda_only");
+
 console.log("drive health tests passed");

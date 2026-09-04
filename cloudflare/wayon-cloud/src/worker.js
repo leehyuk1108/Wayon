@@ -2461,11 +2461,11 @@ function parseHealthValues(record) {
 
 function heartSamples(records, since, until) {
   const byTime = new Map();
-  for (const record of records.filter((item) => item.type === "heart_rate")) {
+  for (const record of records.filter((item) => item.type === "heart_rate" || item.type === "watch_heart_rate_1m")) {
     const values = parseHealthValues(record);
     const series = Array.isArray(values.series) ? values.series : [];
     const candidates = series.length ? series : [{
-      value: values.heart_rate,
+      value: values.heart_rate ?? values.mean_heart_rate_bpm,
       start_time: record.start_time,
     }];
     for (const sample of candidates) {
@@ -2623,6 +2623,43 @@ export function buildTripHealthSummary(records, trip, analysis = {}) {
   const context = recentContext(records, startedAt);
   const sensors = buildAuxiliarySensorSummary(records, startedAt, endedAt);
   if (!samples.length) {
+    const edaLoad = finiteNumber(sensors?.eda?.arousalProxy0To100);
+    if (sensors?.eda?.available && edaLoad != null) {
+      const loadScore = Math.round(clampNumber(edaLoad, 0, 100));
+      return {
+        schemaVersion: "wayon-driver-load-v1",
+        available: true,
+        status: "ready_eda_only",
+        generatedAt: nowIso(),
+        confidence: sensors.motion?.signalContaminationLikely ? "low" : "medium",
+        notice: "심박은 수집되지 않아 EDA 기반 보조 추정치만 표시합니다. 의료적 스트레스 진단이 아닙니다.",
+        load: {
+          estimatedLoad0To100: loadScore,
+          band: loadScore >= 65 ? "high" : loadScore >= 35 ? "moderate" : "low",
+          highLoadPercent: null,
+          highLoadMinutesEstimate: null,
+          basis: "eda_only",
+        },
+        heartRate: {
+          available: false,
+          sampleCount: 0,
+          coveragePercent: 0,
+          trend: [],
+        },
+        hrv: { validWindowCount: 0, averageRmssdMs: null },
+        sensors,
+        context,
+        automationComparison: {
+          opSampleCount: 0,
+          manualSampleCount: 0,
+          opAverageBpm: null,
+          manualAverageBpm: null,
+          opMinusManualBpm: null,
+          comparable: false,
+        },
+        topStressMoments: [],
+      };
+    }
     return {
       available: false,
       status: "no_heart_rate_during_trip",
@@ -2672,6 +2709,7 @@ export function buildTripHealthSummary(records, trip, analysis = {}) {
       highLoadMinutesEstimate: rounded(tripDurationMinutes * highLoadPercent / 100),
     },
     heartRate: {
+      available: true,
       sampleCount: samples.length,
       coveragePercent: rounded(coveragePercent),
       baselineBpm: rounded(baseline),
@@ -2737,7 +2775,7 @@ async function tripWithHealth(env, trip) {
       // Samsung Health stores heart rate in hour-sized records. Fetch far enough
       // back to include a record that started before the trip but overlaps it.
       fetchHealthBridgeRecords(env, startedAt - 2 * 60 * 60_000, endedAt + 2 * 60_000, [
-        "heart_rate", "watch_hrv_5m", "watch_driver_sensors_1m",
+        "heart_rate", "watch_heart_rate_1m", "watch_hrv_5m", "watch_driver_sensors_1m",
       ]),
       fetchHealthBridgeRecords(env, startedAt - 36 * 60 * 60_000, startedAt, [
         "sleep", "sleep_duration_daily", "energy_score",

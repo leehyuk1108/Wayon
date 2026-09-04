@@ -766,6 +766,84 @@ function nullableNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function objectWithValues(value) {
+  return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
+}
+
+export function normalizeTripAnalysis(payload) {
+  if (objectWithValues(payload?.analysis)) return payload.analysis;
+
+  const report = payload?.report;
+  if (!objectWithValues(report) || !report.schemaVersion) return {};
+  if (String(report.schemaVersion).startsWith("wayon-drive-report-v1")) return report;
+
+  const durationS = Math.max(0, nullableNumber(payload.durationS ?? payload.duration_s) ?? 0);
+  const openpilot = report.openpilot || {};
+  const stopQuality = report.stopQuality || {};
+  const cutInRisk = report.cutInRisk || {};
+  const opActiveS = Math.max(0, nullableNumber(openpilot.activeDurationS) ?? 0);
+  const stopEvents = Array.isArray(stopQuality.events) ? stopQuality.events : [];
+  const peakJerkMps3 = stopEvents.reduce(
+    (peak, event) => Math.max(peak, nullableNumber(event?.peak_jerk_mps3) ?? 0),
+    0,
+  );
+
+  return {
+    schemaVersion: "wayon-drive-report-v1-legacy",
+    generatedAt: nowIso(),
+    dataQuality: {
+      confidence: durationS >= 60 ? "medium" : "low",
+      durationS,
+      source: report.schemaVersion,
+    },
+    scores: {
+      comfort: nullableNumber(stopQuality.score),
+      attention: null,
+      systemStability: null,
+    },
+    automation: {
+      opActiveS,
+      manualS: Math.max(0, durationS - opActiveS),
+      opUsagePercent: nullableNumber(openpilot.activePercent),
+      disengagementCount: null,
+      steeringInterventionCount: null,
+    },
+    comfort: {
+      stopCount: nullableNumber(stopQuality.count),
+      harshStopCount: nullableNumber(stopQuality.harshCount),
+      hardAccelerationCount: null,
+      hardBrakingCount: null,
+      lowSpeedOscillationCount: null,
+      peakJerkMps3: peakJerkMps3 || null,
+    },
+    longitudinal: {
+      leadAcquisitionCount: null,
+      fcwCount: null,
+      cutInEventCount: nullableNumber(cutInRisk.eventCount),
+      maximumCutInRiskLevel: nullableNumber(cutInRisk.maxLevel),
+    },
+    attention: {},
+    system: {},
+    moments: [],
+    timeline: [],
+    legacyReport: report,
+  };
+}
+
+function tripWithAnalysis(trip, report = trip?.report) {
+  const analysis = normalizeTripAnalysis({
+    analysis: trip?.analysis,
+    report,
+    durationS: trip?.duration_s ?? trip?.durationS,
+  });
+  return {
+    ...trip,
+    report: objectWithValues(report) ? report : analysis,
+    analysis,
+    health: objectWithValues(trip?.health) ? trip.health : {},
+  };
+}
+
 function validCoordinate(value) {
   const coordinate = nullableNumber(value);
   return coordinate != null && Math.abs(coordinate) > 0.001;
@@ -1979,6 +2057,7 @@ async function handleTrip(request, env) {
   const end = route[route.length - 1] || {};
   const id = String(payload.id || crypto.randomUUID());
   const deviceId = authenticatedDeviceId(request);
+  const analysis = normalizeTripAnalysis(payload);
 
   await env.DB.prepare(`
     INSERT OR REPLACE INTO trips (
@@ -1998,7 +2077,7 @@ async function handleTrip(request, env) {
     nullableNumber(payload.endLon ?? end.longitude),
     route.length,
     JSON.stringify(route),
-    JSON.stringify(payload.report && typeof payload.report === "object" ? payload.report : {}),
+    JSON.stringify(analysis),
     nowIso(),
   ).run();
 
@@ -2266,11 +2345,10 @@ async function latestVehicleLock(env, deviceId) {
 
 function parseTripRoute(trip) {
   const { route_json: routeJson, report_json: reportJson, ...rest } = trip;
-  return {
+  return tripWithAnalysis({
     ...rest,
     route: JSON.parse(routeJson || "[]"),
-    report: parseJsonObject(reportJson),
-  };
+  }, parseJsonObject(reportJson));
 }
 
 function maxRoutePointSpeedMps(route) {
@@ -2295,11 +2373,10 @@ function maxRouteSpeedMps(routeJson) {
 
 function parseTripSummary(trip) {
   const { route_json: routeJson, report_json: reportJson, ...rest } = trip;
-  return {
+  return tripWithAnalysis({
     ...rest,
     max_speed_mps: maxRouteSpeedMps(routeJson),
-    report: parseJsonObject(reportJson),
-  };
+  }, parseJsonObject(reportJson));
 }
 
 function parseServerTripSummary(trip) {
@@ -2307,12 +2384,41 @@ function parseServerTripSummary(trip) {
   const suppliedMaxSpeed = summary.max_speed_mps == null
     ? null
     : Number(summary.max_speed_mps);
-  return {
+  return tripWithAnalysis({
     ...summary,
     max_speed_mps: Number.isFinite(suppliedMaxSpeed)
       ? suppliedMaxSpeed
       : maxRoutePointSpeedMps(Array.isArray(route) ? route : []),
-  };
+  });
+}
+
+async function fetchD1TripSummaries(env, deviceId, limit) {
+  const trips = await env.DB.prepare(`
+    SELECT id, device_id, started_at, ended_at, duration_s, distance_m,
+           start_lat, start_lon, end_lat, end_lon, route_point_count,
+           CASE
+             WHEN duration_s > 0 AND distance_m IS NOT NULL THEN distance_m / duration_s
+             ELSE NULL
+           END AS avg_speed_mps,
+           route_json, report_json
+    FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT ?
+  `).bind(deviceId, Math.min(limit, 1000)).all();
+  return (trips.results || []).map(parseTripSummary);
+}
+
+function mergeServerTripsWithD1(serverTrips, d1Trips) {
+  const d1ById = new Map(d1Trips.map((trip) => [String(trip.id || ""), trip]));
+  return serverTrips.map((serverTrip) => {
+    const d1Trip = d1ById.get(String(serverTrip.id || ""));
+    if (!d1Trip) return serverTrip;
+    return {
+      ...d1Trip,
+      ...serverTrip,
+      report: objectWithValues(d1Trip.report) ? d1Trip.report : serverTrip.report,
+      analysis: objectWithValues(d1Trip.analysis) ? d1Trip.analysis : serverTrip.analysis,
+      health: objectWithValues(serverTrip.health) ? serverTrip.health : d1Trip.health,
+    };
+  });
 }
 
 async function fetchServerApi(env, path, deviceId) {
@@ -2363,7 +2469,7 @@ async function fetchServerTrip(env, tripId, deviceId) {
   }
   const tripDeviceId = String(payload.trip.device_id || payload.trip.deviceId || "");
   if (tripDeviceId !== deviceId) throw new Error("server_trip_device_mismatch");
-  return payload.trip;
+  return tripWithAnalysis(payload.trip);
 }
 
 async function fetchServerImpactList(env, limit, deviceId) {
@@ -2661,7 +2767,15 @@ async function handleTrips(request, env, pathname) {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length === 3) {
     try {
-      return historyJson(await fetchServerTrip(env, parts[2], deviceId), "server");
+      const serverTrip = await fetchServerTrip(env, parts[2], deviceId);
+      const d1Trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ? AND device_id = ?`)
+        .bind(parts[2], deviceId)
+        .first();
+      const merged = mergeServerTripsWithD1(
+        [serverTrip],
+        d1Trip ? [parseTripRoute(d1Trip)] : [],
+      )[0];
+      return historyJson(merged, "server+d1");
     } catch (error) {
       console.warn("Wayon server trip detail unavailable; using D1", error?.message || error);
     }
@@ -2677,24 +2791,16 @@ async function handleTrips(request, env, pathname) {
   const url = new URL(request.url);
   const requestedLimit = boundedLimit(url.searchParams.get("limit"), 100, 5000);
   try {
-    return historyJson({ trips: await fetchServerTripList(env, requestedLimit, deviceId) }, "server");
+    const [serverTrips, d1Trips] = await Promise.all([
+      fetchServerTripList(env, requestedLimit, deviceId),
+      fetchD1TripSummaries(env, deviceId, requestedLimit),
+    ]);
+    return historyJson({ trips: mergeServerTripsWithD1(serverTrips, d1Trips) }, "server+d1");
   } catch (error) {
     console.warn("Wayon server trip list unavailable; using D1", error?.message || error);
   }
 
-  const limit = Math.min(requestedLimit, 1000);
-  const trips = await env.DB.prepare(`
-    SELECT id, device_id, started_at, ended_at, duration_s, distance_m,
-           start_lat, start_lon, end_lat, end_lon, route_point_count,
-           CASE
-             WHEN duration_s > 0 AND distance_m IS NOT NULL THEN distance_m / duration_s
-             ELSE NULL
-           END AS avg_speed_mps,
-           route_json, report_json
-    FROM trips WHERE device_id = ? ORDER BY ended_at DESC LIMIT ?
-  `).bind(deviceId, limit).all();
-
-  return historyJson({ trips: (trips.results || []).map(parseTripSummary) }, "d1");
+  return historyJson({ trips: await fetchD1TripSummaries(env, deviceId, requestedLimit) }, "d1");
 }
 
 async function handleSnapshotImage(request, env) {

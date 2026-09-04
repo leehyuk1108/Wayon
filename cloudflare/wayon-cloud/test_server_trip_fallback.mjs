@@ -48,23 +48,43 @@ const serverEnv = {
   DB: {
     prepare(query) {
       if (/FROM wayon_devices/.test(query)) return authenticationQuery(query);
+      if (/FROM trips/.test(query)) {
+        return { bind() { return { async all() { return { results: [{
+          id: "server-trip",
+          device_id: deviceId,
+          route_json: "[]",
+          report_json: JSON.stringify({
+            schemaVersion: "wayon-drive-report-v1",
+            dataQuality: { confidence: "high" },
+          }),
+        }] }; } }; } };
+      }
       if (/UPDATE wayon_devices/.test(query)) {
         return { bind() { return { async run() {} }; } };
       }
-      throw new Error(`D1 should not be queried when the server is healthy: ${query}`);
+      throw new Error(`Unexpected D1 query while the server is healthy: ${query}`);
     },
   },
 };
 
 const serverResponse = await worker.fetch(request, serverEnv, {});
 assert.equal(serverResponse.status, 200);
-assert.equal(serverResponse.headers.get("x-wayon-history-source"), "server");
+assert.equal(serverResponse.headers.get("x-wayon-history-source"), "server+d1");
 assert.deepEqual(await serverResponse.json(), {
   trips: [{
     id: "server-trip",
     device_id: deviceId,
     distance_m: 1234,
     max_speed_mps: 14.5,
+    report: {
+      schemaVersion: "wayon-drive-report-v1",
+      dataQuality: { confidence: "high" },
+    },
+    analysis: {
+      schemaVersion: "wayon-drive-report-v1",
+      dataQuality: { confidence: "high" },
+    },
+    health: {},
   }],
 });
 
@@ -115,6 +135,8 @@ try {
       id: "d1-trip",
       max_speed_mps: 7.25,
       report: {},
+      analysis: {},
+      health: {},
     }],
   });
 } finally {

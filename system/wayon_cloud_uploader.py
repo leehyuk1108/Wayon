@@ -26,8 +26,8 @@ from openpilot.system.wayon_vehicle_events import (
   remove_vehicle_events,
 )
 from openpilot.system.wayon_identity import ensure_wayon_identity
+from openpilot.system.wayon_drive_report import DriveReportAccumulator
 from openpilot.system.wayon_drive_quality import (
-  StopQualityTracker,
   cutin_risk_stage,
   resolve_operating_state,
   telemetry_signature,
@@ -1048,7 +1048,13 @@ def read_route_state():
   uploaded_routes = state.get("uploaded_routes", [])
   if not isinstance(uploaded_routes, list):
     uploaded_routes = []
-  return {"uploaded_routes": [str(route) for route in uploaded_routes]}
+  report_routes = state.get("drive_report_routes", [])
+  if not isinstance(report_routes, list):
+    report_routes = []
+  return {
+    "uploaded_routes": [str(route) for route in uploaded_routes],
+    "drive_report_routes": [str(route) for route in report_routes],
+  }
 
 
 def write_route_state(state):
@@ -1066,7 +1072,12 @@ def mark_route_uploaded(route_name):
   state = read_route_state()
   uploaded_routes = [route for route in state.get("uploaded_routes", []) if route != route_name]
   uploaded_routes.insert(0, route_name)
-  write_route_state({"uploaded_routes": uploaded_routes[:100]})
+  report_routes = [route for route in state.get("drive_report_routes", []) if route != route_name]
+  report_routes.insert(0, route_name)
+  write_route_state({
+    "uploaded_routes": uploaded_routes[:100],
+    "drive_report_routes": report_routes[:100],
+  })
 
 
 def parse_segment_dir_name(name):
@@ -1245,14 +1256,7 @@ def summarize_route_from_logs(route_group, config, device_id):
   last_mono = None
   last_point_mono = None
   last_vehicle_speed = None
-  stop_quality = StopQualityTracker()
-  active_duration_s = 0.0
-  last_selfdrive_mono = None
-  last_selfdrive_active = False
-  cutin_stage_counts = {"watch": 0, "prepare": 0, "brake": 0}
-  cutin_stage_max = 0
-  cutin_event_count = 0
-  previous_cutin_stage = 0
+  drive_report = DriveReportAccumulator(route_start)
 
   point_interval_s = float(config.get("route_point_interval_s", DEFAULT_ROUTE_POINT_INTERVAL))
   min_distance_m = float(config.get("route_point_min_distance_m", DEFAULT_ROUTE_POINT_MIN_DISTANCE_M))
@@ -1264,47 +1268,17 @@ def summarize_route_from_logs(route_group, config, device_id):
       for msg in reader:
         which = msg.which()
         msg_mono = float(msg.logMonoTime) / 1e9
-        if first_mono is None:
-          first_mono = msg_mono
-        last_mono = msg_mono
+        if which in ("carState", "gpsLocationExternal", "gpsLocation"):
+          if first_mono is None:
+            first_mono = msg_mono
+          last_mono = msg_mono
+        drive_report.update(msg)
 
         if which == "carState":
           try:
             last_vehicle_speed = car_state_speed_payload(msg.carState)
             if last_vehicle_speed.get("speedMps") is not None:
               speed_samples.append(float(last_vehicle_speed["speedMps"]))
-              stop_quality.update(
-                msg_mono,
-                last_vehicle_speed["speedMps"],
-                float(msg.carState.aEgo),
-                bool(msg.carState.standstill),
-              )
-          except Exception:
-            pass
-          continue
-
-        if which == "selfdriveState":
-          if last_selfdrive_mono is not None and last_selfdrive_active:
-            active_duration_s += min(1.0, max(0.0, msg_mono - last_selfdrive_mono))
-          last_selfdrive_active = bool(msg.selfdriveState.active)
-          last_selfdrive_mono = msg_mono
-          continue
-
-        if which == "radarState":
-          try:
-            lead = msg.radarState.leadCutInRisk
-            stage = cutin_risk_stage(
-              lead.score if lead.status else 0.0,
-              lead.dRel if lead.status else None,
-              lead.vRel if lead.status else None,
-            )
-            level = int(stage["level"])
-            cutin_stage_max = max(cutin_stage_max, level)
-            if level > 0:
-              cutin_stage_counts[stage["name"]] += 1
-            if level >= 2 and previous_cutin_stage < 2:
-              cutin_event_count += 1
-            previous_cutin_stage = level
           except Exception:
             pass
           continue
@@ -1337,8 +1311,7 @@ def summarize_route_from_logs(route_group, config, device_id):
   avg_speed_mps = distance_m / duration_s if duration_s > 0 else 0.0
   max_speed_mps = max(speed_samples) if speed_samples else max(float(point.get("speedMps") or 0.0) for point in route)
   payload_route = downsample_route(route, point_limit)
-  stop_summary = stop_quality.summary()
-  openpilot_active_percent = round(active_duration_s / duration_s * 100.0, 1) if duration_s > 0 else 0.0
+  analysis = drive_report.finalize(payload_route)
 
   return {
     "id": f"{device_id}-{route_name}",
@@ -1356,19 +1329,7 @@ def summarize_route_from_logs(route_group, config, device_id):
     "segmentCount": len(route_group["segments"]),
     "avgSpeedMps": avg_speed_mps,
     "maxSpeedMps": max_speed_mps,
-    "report": {
-      "schemaVersion": "wayon-trip-report-v1",
-      "openpilot": {
-        "activeDurationS": round(active_duration_s, 1),
-        "activePercent": openpilot_active_percent,
-      },
-      "stopQuality": stop_summary,
-      "cutInRisk": {
-        "eventCount": cutin_event_count,
-        "maxLevel": cutin_stage_max,
-        "sampleCounts": cutin_stage_counts,
-      },
-    },
+    "analysis": analysis,
     "route": payload_route,
   }
 
@@ -1376,6 +1337,7 @@ def summarize_route_from_logs(route_group, config, device_id):
 def upload_recent_route_summary(config, device_id):
   state = read_route_state()
   uploaded_routes = set(state.get("uploaded_routes", []))
+  report_routes = set(state.get("drive_report_routes", []))
   max_age_s = float(config.get("route_summary_max_age_s", DEFAULT_ROUTE_SUMMARY_MAX_AGE))
   grace_period_s = float(config.get("route_summary_grace_period_s", DEFAULT_ROUTE_SUMMARY_GRACE_PERIOD))
 
@@ -1387,7 +1349,7 @@ def upload_recent_route_summary(config, device_id):
   # after a reboot while still catching the route that just finished.
   route_group = route_groups[0]
   route_name = route_group["route_name"]
-  if route_name in uploaded_routes:
+  if route_name in uploaded_routes and route_name in report_routes:
     return False
   if time.time() - route_group["mtime"] < grace_period_s:
     return False

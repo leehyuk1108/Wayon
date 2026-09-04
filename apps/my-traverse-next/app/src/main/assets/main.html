@@ -5433,6 +5433,7 @@
         }
 
         .trip-detail-header {
+            z-index: 20;
             background: rgba(11, 11, 12, 0.86);
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
@@ -5541,6 +5542,17 @@
             font-weight: 650;
         }
 
+        .drive-report-score-state {
+            align-self: center;
+            margin-left: 3px;
+            padding: 5px 8px;
+            border-radius: 5px;
+            color: rgba(255, 255, 255, 0.76);
+            background: rgba(255, 255, 255, 0.08);
+            font-size: 10px;
+            font-weight: 700;
+        }
+
         .drive-report-summary-text {
             margin: 12px 0 0;
             max-width: 520px;
@@ -5634,61 +5646,173 @@
             text-align: right;
         }
 
-        .drive-report-health-grid,
-        .drive-report-score-grid {
+        .drive-report-feature {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
-        }
-
-        .drive-report-metric {
-            min-height: 72px;
-            padding: 12px;
+            grid-template-columns: 46px minmax(0, 1fr) auto;
+            gap: 13px;
+            align-items: center;
+            padding: 15px;
             border-radius: 7px;
             background: #151516;
             border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
-        .drive-report-metric span {
-            display: block;
-            color: rgba(255, 255, 255, 0.46);
-            font-size: 10px;
-            font-weight: 650;
-        }
-
-        .drive-report-metric strong {
-            display: block;
-            margin-top: 8px;
-            color: #f2f2f2;
-            font-size: 18px;
-            font-weight: 730;
-        }
-
-        .drive-report-sensor-strip {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 14px;
-            padding: 2px 0 16px;
-        }
-
-        .drive-report-sensor-value { min-width: 0; }
-
-        .drive-report-sensor-value span {
-            display: block;
-            color: rgba(255, 255, 255, 0.46);
-            font-size: 10px;
-            font-weight: 650;
-        }
-
-        .drive-report-sensor-value strong {
-            display: block;
-            margin-top: 6px;
-            overflow: hidden;
-            color: #f2f2f2;
+        .drive-report-feature-icon {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ff7a70;
+            background: rgba(255, 117, 109, 0.1);
             font-size: 17px;
-            font-weight: 730;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+        }
+
+        .drive-report-feature-icon.eda {
+            color: #f0bb5a;
+            background: rgba(240, 187, 90, 0.1);
+        }
+
+        .drive-report-feature-copy { min-width: 0; }
+
+        .drive-report-feature-copy span,
+        .drive-report-context-copy span {
+            display: block;
+            color: rgba(255, 255, 255, 0.46);
+            font-size: 10px;
+            font-weight: 650;
+        }
+
+        .drive-report-feature-copy strong {
+            display: block;
+            margin-top: 3px;
+            color: #f2f2f2;
+            font-size: 20px;
+            font-weight: 740;
+        }
+
+        .drive-report-feature-copy strong small {
+            margin-left: 3px;
+            color: rgba(255, 255, 255, 0.48);
+            font-size: 11px;
+            font-weight: 650;
+        }
+
+        .drive-report-feature-copy p {
+            margin: 4px 0 0;
+            color: rgba(255, 255, 255, 0.54);
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .drive-report-feature-side { text-align: right; }
+
+        .drive-report-feature-side strong {
+            display: block;
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 14px;
+            font-weight: 720;
+        }
+
+        .drive-report-feature-side span {
+            display: block;
+            margin-top: 4px;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 9px;
+        }
+
+        .drive-report-context-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .drive-report-context-item {
+            display: grid;
+            grid-template-columns: 30px minmax(0, 1fr) auto;
+            gap: 9px;
+            align-items: center;
+            min-height: 54px;
+            padding: 10px 12px;
+            border-radius: 7px;
+            background: rgba(255, 255, 255, 0.035);
+            border: 1px solid rgba(255, 255, 255, 0.055);
+        }
+
+        .drive-report-context-item i {
+            color: rgba(255, 255, 255, 0.58);
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .drive-report-context-copy strong {
+            display: block;
+            margin-top: 2px;
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .drive-report-context-item em {
+            color: rgba(255, 255, 255, 0.48);
+            font-size: 12px;
+            font-style: normal;
+            font-weight: 680;
+        }
+
+        .drive-report-signal-list {
+            overflow: hidden;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .drive-report-signal-row {
+            display: grid;
+            grid-template-columns: minmax(92px, 0.8fr) minmax(90px, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            min-height: 55px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .drive-report-signal-row > span {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 12px;
+            font-weight: 660;
+        }
+
+        .drive-report-signal-track {
+            height: 4px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        .drive-report-signal-track i {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: #72d99a;
+        }
+
+        .drive-report-signal-row.moderate .drive-report-signal-track i { background: #f0bb5a; }
+        .drive-report-signal-row.high .drive-report-signal-track i { background: #ff746c; }
+
+        .drive-report-signal-result {
+            min-width: 50px;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 11px;
+            font-weight: 700;
+            text-align: right;
+        }
+
+        .drive-report-signal-result small {
+            display: block;
+            margin-top: 2px;
+            color: rgba(255, 255, 255, 0.38);
+            font-size: 8px;
+            font-weight: 600;
         }
 
         .drive-report-sensor-note {
@@ -5709,6 +5833,26 @@
         }
 
         .drive-report-sensor-note.warn i { color: #f3bd59; }
+
+        .drive-report-raw {
+            margin-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .drive-report-raw summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 42px;
+            color: rgba(255, 255, 255, 0.48);
+            font-size: 10px;
+            font-weight: 660;
+            list-style: none;
+        }
+
+        .drive-report-raw summary::-webkit-details-marker { display: none; }
+        .drive-report-raw summary::after { content: "+"; font-size: 15px; }
+        .drive-report-raw[open] summary::after { content: "−"; }
 
         .drive-report-chart {
             position: relative;
@@ -5924,10 +6068,10 @@
             .drive-report-score { font-size: 48px; }
             .drive-report-overview-item { padding: 0 6px; }
             .drive-report-overview-item strong { font-size: 15px; }
-            .drive-report-health-grid,
-            .drive-report-score-grid { grid-template-columns: 1fr 1fr; }
-            .drive-report-sensor-strip { gap: 10px; }
-            .drive-report-sensor-value strong { font-size: 15px; }
+            .drive-report-feature { grid-template-columns: 40px minmax(0, 1fr) auto; padding: 12px; }
+            .drive-report-feature-icon { width: 40px; height: 40px; }
+            .drive-report-context-row { grid-template-columns: 1fr; }
+            .drive-report-signal-row { grid-template-columns: 88px minmax(70px, 1fr) auto; gap: 8px; }
         }
         /* === My Traverse Next home === */
         #tab-control {
@@ -8266,6 +8410,7 @@
                     <div class="drive-report-score-line">
                         <strong class="drive-report-score" id="drive-report-score">--</strong>
                         <span class="drive-report-score-unit" id="drive-report-score-unit">점</span>
+                        <span class="drive-report-score-state" id="drive-report-score-state">분석 중</span>
                     </div>
                     <p class="drive-report-summary-text" id="drive-report-summary-text">주행 데이터를 분석하고 있습니다.</p>
                 </div>
@@ -8282,21 +8427,21 @@
             </div>
             <section class="drive-report-section" id="drive-report-health-section">
                 <div class="drive-report-section-head">
-                    <h2 class="drive-report-section-title">운전자 부담</h2>
+                    <h2 class="drive-report-section-title">운전자 상태</h2>
                     <span class="drive-report-section-meta" id="drive-report-health-meta">Health Bridge</span>
                 </div>
                 <div id="drive-report-health-content"></div>
             </section>
             <section class="drive-report-section" id="drive-report-sensors-section">
                 <div class="drive-report-section-head">
-                    <h2 class="drive-report-section-title">생체 센서</h2>
+                    <h2 class="drive-report-section-title">워치 신호</h2>
                     <span class="drive-report-section-meta" id="drive-report-sensors-meta">워치 보조 분석</span>
                 </div>
                 <div id="drive-report-sensors-content"></div>
             </section>
             <section class="drive-report-section">
                 <div class="drive-report-section-head">
-                    <h2 class="drive-report-section-title">자동화 비교</h2>
+                    <h2 class="drive-report-section-title">오픈파일럿</h2>
                     <span class="drive-report-section-meta" id="drive-report-automation-meta">동일 주행 내 비교</span>
                 </div>
                 <div id="drive-report-automation-content"></div>
@@ -14037,6 +14182,7 @@
         }
 
         function reportNumber(value, fallback = null) {
+            if (value === null || value === undefined || value === "") return fallback;
             const number = Number(value);
             return Number.isFinite(number) ? number : fallback;
         }
@@ -14053,6 +14199,39 @@
 
         function reportLoadLabel(value) {
             return value === "high" ? "높음" : value === "moderate" ? "보통" : value === "low" ? "낮음" : "분석 전";
+        }
+
+        function reportConditionLabel(score) {
+            const value = reportNumber(score);
+            if (value === null) return "분석 중";
+            return value >= 80 ? "컨디션 좋음" : value >= 60 ? "컨디션 보통" : "컨디션 주의";
+        }
+
+        function reportContextLabel(value, type) {
+            const score = reportNumber(value);
+            if (score === null) return "측정 없음";
+            if (type === "sleep") return score >= 80 ? "충분" : score >= 60 ? "보통" : "부족";
+            return score >= 80 ? "충분" : score >= 60 ? "보통" : "낮음";
+        }
+
+        function reportSignalBand(value) {
+            const score = reportNumber(value, 0);
+            return score >= 65 ? "high" : score >= 35 ? "moderate" : "low";
+        }
+
+        function reportSignalLabel(value, lowLabel = "낮음", highLabel = "높음") {
+            const band = reportSignalBand(value);
+            return band === "high" ? highLabel : band === "moderate" ? "보통" : lowLabel;
+        }
+
+        function reportSignalRow(label, value, result, detail = "") {
+            const percent = Math.max(0, Math.min(100, reportNumber(value, 0)));
+            const band = reportSignalBand(percent);
+            return `<div class="drive-report-signal-row ${band}">
+                <span>${escapeHtml(label)}</span>
+                <div class="drive-report-signal-track"><i style="width:${percent.toFixed(0)}%"></i></div>
+                <strong class="drive-report-signal-result">${escapeHtml(result)}${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</strong>
+            </div>`;
         }
 
         function reportClock(value) {
@@ -14130,27 +14309,47 @@
             const context = health.context || {};
             if (hr.available === false || health.status === "ready_eda_only") {
                 const load = health.load || {};
+                const loadValue = reportNumber(load.estimatedLoad0To100, 0);
+                const loadLabel = reportLoadLabel(load.band);
                 meta.textContent = `EDA 기반 · ${reportConfidenceLabel(health.confidence)}`;
                 container.innerHTML = `
-                    <div class="drive-report-health-grid">
-                        <div class="drive-report-metric"><span>보조 부담 지수</span><strong>${reportValue(load.estimatedLoad0To100, "점")}</strong></div>
-                        <div class="drive-report-metric"><span>부담 구간</span><strong>${reportLoadLabel(load.band)}</strong></div>
-                        <div class="drive-report-metric"><span>심박</span><strong>미수집</strong></div>
-                        <div class="drive-report-metric"><span>평가 근거</span><strong>피부전도</strong></div>
+                    <div class="drive-report-feature">
+                        <div class="drive-report-feature-icon eda"><i class="fas fa-wave-square" aria-hidden="true"></i></div>
+                        <div class="drive-report-feature-copy">
+                            <span>피부전도 기반 추정</span>
+                            <strong>부담 ${loadLabel}</strong>
+                            <p>심박 없이 피부전도 반응만으로 계산한 보조 결과입니다.</p>
+                        </div>
+                        <div class="drive-report-feature-side"><strong>${Math.round(loadValue)}점</strong><span>보조 지수</span></div>
                     </div>
-                    <div class="drive-report-empty">워치 심박은 이 주행 시간대에 들어오지 않았습니다. 표시된 점수는 EDA만 사용한 보조 추정치이며, 다음 주행부터 직접 심박 전송으로 보완됩니다.</div>`;
+                    <div class="drive-report-context-row">
+                        <div class="drive-report-context-item"><i class="fas fa-heartbeat" aria-hidden="true"></i><div class="drive-report-context-copy"><span>심박</span><strong>미수집</strong></div><em>--</em></div>
+                        <div class="drive-report-context-item"><i class="fas fa-shield-alt" aria-hidden="true"></i><div class="drive-report-context-copy"><span>분석 신뢰도</span><strong>${reportConfidenceLabel(health.confidence).replace("신뢰도 ", "")}</strong></div><em>EDA</em></div>
+                    </div>`;
                 return;
             }
-            meta.textContent = `${reportConfidenceLabel(health.confidence)} · ${reportNumber(hr.sampleCount, 0)}개 측정`;
+            const average = reportNumber(hr.averageBpm);
+            const maximum = reportNumber(hr.maximumBpm);
+            const peakDelta = Math.max(0, reportNumber(hr.peakAboveBaselineBpm, 0));
+            const deltaText = peakDelta < 2 ? "변화 거의 없음" : `기준 대비 +${peakDelta.toFixed(0)} bpm`;
+            const sleep = reportNumber(context.sleepScore);
+            const energy = reportNumber(context.energyScore);
+            const contextItems = [
+                sleep === null ? "" : `<div class="drive-report-context-item"><i class="fas fa-moon" aria-hidden="true"></i><div class="drive-report-context-copy"><span>수면</span><strong>${reportContextLabel(sleep, "sleep")}</strong></div><em>${Math.round(sleep)}</em></div>`,
+                energy === null ? "" : `<div class="drive-report-context-item"><i class="fas fa-bolt" aria-hidden="true"></i><div class="drive-report-context-copy"><span>에너지</span><strong>${reportContextLabel(energy, "energy")}</strong></div><em>${Math.round(energy)}</em></div>`,
+            ].filter(Boolean).join("");
+            meta.textContent = `${reportConfidenceLabel(health.confidence)} · ${reportNumber(hr.sampleCount, 0)}개`;
             container.innerHTML = `
-                <div class="drive-report-health-grid">
-                    <div class="drive-report-metric"><span>평균 심박</span><strong>${reportValue(hr.averageBpm, " bpm")}</strong></div>
-                    <div class="drive-report-metric"><span>최고 심박</span><strong>${reportValue(hr.maximumBpm, " bpm")}</strong></div>
-                    <div class="drive-report-metric"><span>기준 대비 최고</span><strong>+${reportValue(Math.max(0, reportNumber(hr.peakAboveBaselineBpm, 0)), " bpm")}</strong></div>
-                    <div class="drive-report-metric"><span>높은 부담 시간</span><strong>${reportValue(health?.load?.highLoadMinutesEstimate, "분", 1)}</strong></div>
-                    <div class="drive-report-metric"><span>수면 점수</span><strong>${reportValue(context.sleepScore)}</strong></div>
-                    <div class="drive-report-metric"><span>에너지 점수</span><strong>${reportValue(context.energyScore)}</strong></div>
+                <div class="drive-report-feature">
+                    <div class="drive-report-feature-icon"><i class="fas fa-heartbeat" aria-hidden="true"></i></div>
+                    <div class="drive-report-feature-copy">
+                        <span>주행 중 평균 심박</span>
+                        <strong>${average === null ? "--" : Math.round(average)}<small>bpm</small></strong>
+                        <p>${deltaText}</p>
+                    </div>
+                    <div class="drive-report-feature-side"><strong>${maximum === null ? "--" : Math.round(maximum)} bpm</strong><span>최고 심박</span></div>
                 </div>
+                ${contextItems ? `<div class="drive-report-context-row">${contextItems}</div>` : ""}
                 ${heartRateChart(health)}`;
         }
 
@@ -14181,21 +14380,38 @@
             const note = contaminated
                 ? "손목 움직임이 많아 EDA와 심박 반응의 신뢰도를 낮춰 반영했습니다."
                 : "EDA는 긴장 반응을 보조하며, 피부온도는 열 환경 맥락으로만 사용합니다.";
+            const signalRows = [
+                edaAvailable ? reportSignalRow(
+                    "긴장 반응",
+                    eda.arousalProxy0To100,
+                    reportSignalLabel(eda.arousalProxy0To100),
+                    "피부전도"
+                ) : "",
+                motionAvailable ? reportSignalRow(
+                    "손목 움직임",
+                    motion.movingPercent,
+                    reportSignalLabel(motion.movingPercent, "적음", "많음"),
+                    `${Math.round(reportNumber(motion.movingPercent, 0))}%`
+                ) : "",
+            ].filter(Boolean).join("");
+            const temperatureContext = temperatureAvailable ? `
+                <div class="drive-report-context-row">
+                    <div class="drive-report-context-item"><i class="fas fa-temperature-low" aria-hidden="true"></i><div class="drive-report-context-copy"><span>손목 피부온도</span><strong>${reportValue(temperature.averageSkinC, "°C", 1)}</strong></div><em>측정값</em></div>
+                    <div class="drive-report-context-item"><i class="fas fa-cloud-sun" aria-hidden="true"></i><div class="drive-report-context-copy"><span>주변 온도</span><strong>${reportValue(temperature.averageAmbientC, "°C", 1)}</strong></div><em>환경</em></div>
+                </div>` : "";
             container.innerHTML = `
-                <div class="drive-report-sensor-strip">
-                    <div class="drive-report-sensor-value"><span>긴장 반응</span><strong>${edaAvailable ? reportValue(eda.arousalProxy0To100, "점") : "--"}</strong></div>
-                    <div class="drive-report-sensor-value"><span>평균 피부전도</span><strong>${edaAvailable ? reportValue(eda.averageMicrosiemens, " μS", 2) : "--"}</strong></div>
-                    <div class="drive-report-sensor-value"><span>EDA 반응</span><strong>${edaAvailable ? reportValue(eda.phasicRiseCount, "회") : "--"}</strong></div>
-                </div>
-                <div class="drive-report-sensor-strip">
-                    <div class="drive-report-sensor-value"><span>손목 피부온도</span><strong>${temperatureAvailable ? reportValue(temperature.averageSkinC, "°C", 1) : "--"}</strong></div>
-                    <div class="drive-report-sensor-value"><span>주변 온도</span><strong>${temperatureAvailable ? reportValue(temperature.averageAmbientC, "°C", 1) : "--"}</strong></div>
-                    <div class="drive-report-sensor-value"><span>손목 움직임</span><strong>${motionAvailable ? reportValue(motion.movingPercent, "%", 0) : "--"}</strong></div>
-                </div>
+                ${signalRows ? `<div class="drive-report-signal-list">${signalRows}</div>` : ""}
+                ${temperatureContext}
                 <div class="drive-report-sensor-note ${contaminated ? "warn" : ""}">
                     <i class="fas fa-${contaminated ? "exclamation-triangle" : "info-circle"}" aria-hidden="true"></i>
                     <span>${escapeHtml(note)}</span>
-                </div>`;
+                </div>
+                <details class="drive-report-raw"><summary>측정 상세</summary>${detailRows([
+                    ["평균 피부전도", edaAvailable ? reportValue(eda.averageMicrosiemens, " μS", 2) : "--"],
+                    ["피부전도 반응", edaAvailable ? reportValue(eda.phasicRiseCount, "회") : "--"],
+                    ["EDA 표본", edaAvailable ? reportValue(eda.sampleCount, "개") : "--"],
+                    ["가속도 표본", motionAvailable ? reportValue(motion.sampleCount, "개") : "--"],
+                ])}</details>`;
         }
 
         function automationInsight(analysis, health) {
@@ -14217,9 +14433,23 @@
             const meta = document.getElementById("drive-report-automation-meta");
             if (!container || !meta) return;
             const comparison = health?.automationComparison || {};
+            const usage = reportNumber(analysis?.automation?.opUsagePercent);
+            if (!comparison.comparable) {
+                meta.textContent = "비교 표본 수집 중";
+                container.innerHTML = `
+                    <div class="drive-report-feature">
+                        <div class="drive-report-feature-icon eda"><i class="fas fa-route" aria-hidden="true"></i></div>
+                        <div class="drive-report-feature-copy">
+                            <span>이 주행의 오픈파일럿</span>
+                            <strong>${usage === null ? "사용 기록 없음" : `${Math.round(usage)}% 사용`}</strong>
+                            <p>OP와 수동주행의 심박 표본이 더 쌓이면 부담 차이를 비교합니다.</p>
+                        </div>
+                    </div>`;
+                return;
+            }
             const opAverage = reportValue(comparison.opAverageBpm, " bpm");
             const manualAverage = reportValue(comparison.manualAverageBpm, " bpm");
-            meta.textContent = comparison.comparable ? "심박 표본 비교" : "표본 수집 중";
+            meta.textContent = "심박 표본 비교";
             container.innerHTML = `
                 <div class="drive-report-compare">
                     <div class="drive-report-compare-side"><span>OPENPILOT</span><strong>${opAverage}</strong></div>
@@ -14336,6 +14566,7 @@
             const kicker = document.getElementById("drive-report-kicker");
             const confidence = document.getElementById("drive-report-confidence");
             const unit = document.getElementById("drive-report-score-unit");
+            const state = document.getElementById("drive-report-score-state");
             const opUsage = reportNumber(analysis?.automation?.opUsagePercent);
             const loadBand = healthReady ? health?.load?.band : comfortScore !== null ? (comfortScore >= 85 ? "low" : comfortScore >= 65 ? "moderate" : "high") : "";
 
@@ -14343,7 +14574,8 @@
             confidence.textContent = reportConfidenceLabel(healthReady ? health.confidence : analysis?.dataQuality?.confidence);
             scoreElement.textContent = score === null ? "--" : Math.round(score);
             scoreElement.className = `drive-report-score ${loadBand || ""}`;
-            unit.textContent = healthReady ? `점 · 부담 ${reportLoadLabel(loadBand)}` : "점";
+            unit.textContent = "점";
+            state.textContent = healthReady ? reportConditionLabel(score) : (score === null ? "분석 중" : score >= 85 ? "주행 안정적" : score >= 65 ? "개선 여지" : "주의 필요");
             document.getElementById("drive-report-summary-text").textContent = driveReportSummaryText(analysis, health);
             document.getElementById("drive-report-op-usage").textContent = opUsage === null ? "--" : `${Math.round(opUsage)}%`;
             renderDriveReportHealth(health);

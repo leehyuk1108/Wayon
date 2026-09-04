@@ -30,6 +30,7 @@ val wayonCloudUrl = configuredValue(
 ).trimEnd('/')
 val firebaseDatabaseUrl = configuredValue("firebase.databaseUrl", "FIREBASE_DATABASE_URL")
 val firebaseConfigured = file("google-services.json").isFile && firebaseDatabaseUrl.isNotBlank()
+val applicationIdOverride = providers.gradleProperty("app.applicationId").orNull
 
 android {
     namespace = "com.example.carcontroller"
@@ -38,7 +39,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.carcontroller.next"
+        applicationId = applicationIdOverride ?: "com.example.carcontroller.next"
         minSdk = 24
         targetSdk = 36
         versionCode = 22

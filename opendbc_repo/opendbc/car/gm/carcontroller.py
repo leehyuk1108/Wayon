@@ -221,8 +221,12 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     acknowledged_motion = (CS.out.canValid and not CS.out.accFaulted and
                            CS.out.cruiseState.enabled and not CS.out.cruiseState.standstill and
                            CS.out.vEgo > self.CP.vEgoStarting)
+    # LongControl owns the automatic same-stop attempt latch. After it withdraws
+    # the request and returns to stopping, a fresh explicit UI request may retry.
+    # Toggling the request while still starting must not re-arm this sequencer.
+    request_withdrawn_at_stop = not CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.stopping
     if (not CC.enabled or not CC.longActive or CS.out.brakePressed or CS.out.gasPressed or
-        acknowledged_motion):
+        acknowledged_motion or request_withdrawn_at_stop):
       self.sng_resume_attempted = False
 
     resume_eligible = (

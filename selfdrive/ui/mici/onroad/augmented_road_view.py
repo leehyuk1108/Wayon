@@ -10,6 +10,7 @@ from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.mici.onroad.model_renderer import ModelRenderer
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
 from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
+from openpilot.selfdrive.ui.mici.onroad.gm_resume_button import GMResumeButton
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets import Widget
@@ -153,6 +154,9 @@ class AugmentedRoadView(CameraView):
     self._alert_renderer = AlertRenderer()
     self._driver_state_renderer = DriverStateRenderer()
     self._confidence_ball = ConfidenceBall()
+    self._gm_resume_button = self._child(GMResumeButton())
+    self._gm_resume_button.set_enabled(lambda: self.enabled)
+    self._bookmark_icon.set_touch_valid_callback(lambda: not self._gm_resume_button.interacting())
     self._offroad_label = UnifiedLabel("start the car to\nuse sunnypilot", 54, FontWeight.DISPLAY,
                                        text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                        alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
@@ -177,7 +181,7 @@ class AugmentedRoadView(CameraView):
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     # Don't trigger click callback if bookmark was triggered
-    if not self._bookmark_icon.interacting():
+    if not self._gm_resume_button.consumes_touch(mouse_pos) and not self._bookmark_icon.interacting():
       super()._handle_mouse_release(mouse_pos)
 
   def _render(self, _):
@@ -242,6 +246,7 @@ class AugmentedRoadView(CameraView):
     # Use self._content_rect for positioning within camera bounds
     self._confidence_ball.render(self.rect)
 
+    self._gm_resume_button.render_centered(self._content_rect)
     self._bookmark_icon.render(self.rect)
 
   def _switch_stream_if_needed(self, sm):

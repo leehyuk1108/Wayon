@@ -150,6 +150,52 @@ def test_missing_source_aborts_even_without_a_counter_change(resume):
   assert tick(resume, 70) == []
 
 
+def test_withdrawn_request_at_stop_allows_a_fresh_explicit_retry(resume):
+  start_one_press(resume)
+  assert tick(resume, 60) == [(CruiseButtons.UNPRESS, 1)]
+  assert resume[0].CC.sng_resume_attempted
+
+  CC = resume[2]
+  CC.cruiseControl.resume = False
+  CC.actuators.longControlState = LongCtrlState.stopping
+  assert tick(resume, 70) == []
+  assert not resume[0].CC.sng_resume_attempted
+
+  # The caller has accepted a new explicit request. Its current original frame
+  # is only an arm snapshot; it cannot bootstrap another RES immediately.
+  CC.cruiseControl.resume = True
+  CC.actuators.longControlState = LongCtrlState.starting
+  assert tick(resume, 80, 76.824, 1) == []
+  assert tick(resume, 90) == []
+  assert tick(resume, 110, 106.853, 2) == [(CruiseButtons.RES_ACCEL, 3)]
+  assert tick(resume, 140, 136.853, 3) == [(CruiseButtons.RES_ACCEL, 0)]
+  assert tick(resume, 170, 166.853, 0) == [(CruiseButtons.RES_ACCEL, 1)]
+  assert tick(resume, 200, 196.853, 1) == [(CruiseButtons.RES_ACCEL, 2)]
+  assert tick(resume, 230, 226.853, 2) == [(CruiseButtons.UNPRESS, 3)]
+  assert resume[0].CC.sng_resume_attempted
+
+
+@pytest.mark.parametrize("state, resume_requested", [
+  (LongCtrlState.starting, False),
+  (LongCtrlState.pid, False),
+  (LongCtrlState.stopping, True),
+])
+def test_retry_requires_both_request_withdrawal_and_stopping(resume, state, resume_requested):
+  start_one_press(resume)
+  assert tick(resume, 60) == [(CruiseButtons.UNPRESS, 1)]
+  CC = resume[2]
+  CC.cruiseControl.resume = resume_requested
+  CC.actuators.longControlState = state
+  assert tick(resume, 70) == []
+  assert resume[0].CC.sng_resume_attempted
+
+  CC.cruiseControl.resume = True
+  CC.actuators.longControlState = LongCtrlState.starting
+  assert tick(resume, 80, 76.824, 1) == []
+  assert tick(resume, 110, 106.853, 2) == []
+  assert resume[0].CC.sng_resume_attempted
+
+
 def test_stale_source_cannot_arm(resume):
   assert tick(resume, 0, -60, 2) == []
   assert tick(resume, 10, 6.879, 3) == []

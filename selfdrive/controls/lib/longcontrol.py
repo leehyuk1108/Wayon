@@ -6,6 +6,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.sunnypilot.selfdrive.controls.lib.gm_manual_resume import manual_resume_eligible
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import (
   MOVING_STOPPING_DECEL_RATE,
   PID_KF,
@@ -122,6 +123,7 @@ class LongControl:
     self.sng_resume_started_at = None
     self.sng_started_frames = 0
     self.sng_manual_resume = False
+    self.sng_ui_resume = False
 
   def reset(self):
     self.pid.reset()
@@ -135,6 +137,7 @@ class LongControl:
     self.sng_resume_frames = 0
     self.sng_resume_started_at = None
     self.sng_started_frames = 0
+    self.sng_ui_resume = False
     if clear_attempt:
       self.sng_resume_attempted = False
       self.sng_resume_failed = False
@@ -160,7 +163,7 @@ class LongControl:
       return MOVING_STOPPING_DECEL_RATE
     return self.CP.stoppingDecelRate
 
-  def update_sng_resume(self, active, CS, long_plan, radar_state, now=None):
+  def update_sng_resume(self, active, CS, long_plan, radar_state, now=None, manual_resume=False):
     lead = radar_state.leadOne if radar_state is not None else None
     valid_lead = (lead is not None and lead.status and
                   SNG_LEAD_MIN_DISTANCE < lead.dRel < SNG_LEAD_MAX_DISTANCE)
@@ -170,7 +173,7 @@ class LongControl:
       return False
 
     if use_gm_auto_hold_sng(self.CP):
-      return self.update_gm_sng_resume(CS, long_plan, valid_lead, lead, monotonic() if now is None else now)
+      return self.update_gm_sng_resume(CS, long_plan, valid_lead, lead, monotonic() if now is None else now, manual_resume)
 
     if CS.vEgo > max(self.CP.vEgoStarting, SNG_PRESTOP_TRACK_SPEED):
       self.reset_sng_resume()
@@ -206,7 +209,7 @@ class LongControl:
     self.sng_resume_attempted |= self.sng_resume_ready
     return self.sng_resume_ready
 
-  def update_gm_sng_resume(self, CS, long_plan, valid_lead, lead, now):
+  def update_gm_sng_resume(self, CS, long_plan, valid_lead, lead, now, ui_resume=False):
     if CS.regenBraking or CS.parkingBrake or CS.gearShifter not in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low):
       self.reset_sng_resume()
       return False
@@ -223,9 +226,19 @@ class LongControl:
     # synthetic burst. Keep the normal planner/lead and driver-override gates.
     manual_resume = any(b.type == car.CarState.ButtonEvent.Type.accelCruise and b.pressed for b in CS.buttonEvents)
     cruise_valid = CS.canValid and CS.cruiseState.enabled and not CS.accFaulted
+    if (ui_resume and self.long_control_state == LongCtrlState.stopping and
+        manual_resume_eligible(self.CP, CS, True, True, long_plan.shouldStop)):
+      # An explicit screen tap may retry and does not require a lead. Its
+      # request already passed the local socket expiry and freshness checks.
+      self.reset_sng_resume()
+      self.sng_ui_resume = True
+      self.sng_resume_attempted = True
+      self.sng_resume_ready = True
+      self.sng_resume_started_at = now
     if manual_resume and cruise_valid and valid_lead and not long_plan.shouldStop and \
         (CS.standstill or self.sng_resume_ready or self.sng_resume_failed):
       self.sng_manual_resume = True
+      self.sng_ui_resume = False
       self.sng_resume_failed = False
       self.sng_resume_succeeded = False
       self.sng_resume_moved = False
@@ -245,7 +258,7 @@ class LongControl:
     # Process an outstanding attempt before any speed-based reset. Wheel creep
     # must not erase its deadline or masquerade as PCM acceptance.
     if self.sng_resume_ready:
-      if not cruise_valid or long_plan.shouldStop or not valid_lead:
+      if not cruise_valid or long_plan.shouldStop or (not valid_lead and not self.sng_ui_resume):
         self.fail_sng_resume()
         return False
       self.sng_resume_frames += 1
@@ -285,7 +298,7 @@ class LongControl:
       self.sng_resume_started_at = now
     return self.sng_resume_ready
 
-  def update(self, active, CS, long_plan, accel_limits, radar_state=None, icbm=None, pitch=0.0):
+  def update(self, active, CS, long_plan, accel_limits, radar_state=None, icbm=None, pitch=0.0, manual_resume=False):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     a_target = long_plan.aTarget
     should_stop = long_plan.shouldStop
@@ -293,7 +306,7 @@ class LongControl:
     self.pid.pos_limit = accel_limits[1]
     self.speed_pid.neg_limit = accel_limits[0]
     self.speed_pid.pos_limit = accel_limits[1]
-    sng_resume = self.update_sng_resume(active, CS, long_plan, radar_state)
+    sng_resume = self.update_sng_resume(active, CS, long_plan, radar_state, manual_resume=manual_resume)
     sng_launch_failed = (self.CP.autoResumeSng and self.sng_resume_attempted and not sng_resume and
                          self.long_control_state == LongCtrlState.starting and CS.vEgo <= self.CP.vEgoStarting)
     if use_gm_auto_hold_sng(self.CP):

@@ -9,6 +9,7 @@ from openpilot.selfdrive.ui.onroad.driver_state import DriverStateRenderer
 from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer
 from openpilot.selfdrive.ui.onroad.cameraview import CameraView
+from openpilot.selfdrive.ui.mici.onroad.gm_resume_button import GMResumeButton
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
@@ -56,6 +57,8 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
     self._hud_renderer = HudRenderer()
     self.alert_renderer = AlertRenderer()
     self.driver_state_renderer = DriverStateRenderer()
+    self._gm_resume_button = self._child(GMResumeButton())
+    self._gm_resume_button.set_enabled(lambda: self.enabled)
 
   def _render(self, rect):
     # Only render when system is started to avoid invalid data access
@@ -96,6 +99,7 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
 
     # Custom UI extension point - add custom overlays here
     # Use self._content_rect for positioning within camera bounds
+    self._gm_resume_button.render_centered(self._content_rect)
 
     # End clipping region
     rl.end_scissor_mode()
@@ -103,8 +107,8 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
     # Draw colored border based on driving state
     self._draw_border(rect)
 
-  def _handle_mouse_press(self, _):
-    if not self._hud_renderer.user_interacting() and self._click_callback is not None:
+  def _handle_mouse_press(self, pos):
+    if not self._gm_resume_button.consumes_touch(pos) and not self._hud_renderer.user_interacting() and self._click_callback is not None:
       self._click_callback()
 
   def _handle_mouse_release(self, _):

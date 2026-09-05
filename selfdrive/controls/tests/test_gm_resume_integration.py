@@ -52,7 +52,7 @@ class TraverseControlChain:
     self.brake_signals = DBC("gm_global_a_chassis").addr_to_msg[0x315].sigs
     self.trace = []
 
-  def step(self):
+  def step(self, manual_resume=False):
     # A fresh original button frame every 30 ms, observed 5 ms after reception.
     if self.ci.CC.frame % 3 == 0:
       self.cs.buttons_counter = (self.cs.buttons_counter + 1) % 4
@@ -60,7 +60,8 @@ class TraverseControlChain:
     control = car.CarControl.new_message()
     control.enabled = True
     control.longActive = True
-    control.actuators.accel = float(self.loc.update(True, self.cs.out, self.plan, (-3.5, 2.0), self.radar))
+    control.actuators.accel = float(self.loc.update(True, self.cs.out, self.plan, (-3.5, 2.0), self.radar,
+                                                   manual_resume=manual_resume))
     # Match controlsd: publish the state that produced this cycle's acceleration.
     control.actuators.longControlState = self.loc.long_control_state
     control.cruiseControl.resume = self.loc.get_resume_request(True, True, self.cs.out, self.plan)
@@ -161,3 +162,64 @@ def test_valid_pcm_ack_at_zero_prevents_timeout_failure(chain):
   assert chain.loc.sng_resume_succeeded
   assert not chain.loc.sng_resume_failed
   assert not chain.trace[-1].hold
+
+
+def test_screen_request_without_lead_retries_only_after_another_tap(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.plan.shouldStop = False
+  chain.run(80)
+  assert chain.buttons() == []
+  assert chain.trace[-1].hold
+  chain.step(manual_resume=True)
+  chain.run(80)
+  assert chain.loc.sng_ui_resume and chain.loc.sng_resume_ready
+  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 4
+  chain.run(300)
+  assert chain.loc.sng_resume_failed
+  assert chain.trace[-1].hold
+  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 4
+  chain.step(manual_resume=True)
+  chain.run(80)
+  assert not chain.loc.sng_resume_failed
+  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 8
+  chain.cs.out.cruiseState.standstill = False
+  chain.run(30)
+  assert chain.loc.sng_resume_succeeded
+
+
+@pytest.mark.parametrize("veto", ["planner_stop", "moving", "gas", "brake", "pcm_off", "invalid_can"])
+def test_screen_request_preserves_control_vetoes(chain, veto):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.plan.shouldStop = False
+  if veto == "planner_stop":
+    chain.plan.shouldStop = True
+  elif veto == "moving":
+    chain.cs.out.vEgo = 0.2
+    chain.cs.out.standstill = False
+  elif veto == "gas":
+    chain.cs.out.gasPressed = True
+  elif veto == "brake":
+    chain.cs.out.brakePressed = True
+  elif veto == "pcm_off":
+    chain.cs.out.cruiseState.enabled = False
+  else:
+    chain.cs.out.canValid = False
+  chain.step(manual_resume=True)
+  chain.run(30)
+  assert not chain.loc.sng_ui_resume
+  assert chain.buttons() == []
+
+
+def test_screen_resume_stops_if_planner_demands_a_stop(chain):
+  chain.run(110)
+  chain.radar.leadOne.status = False
+  chain.plan.shouldStop = False
+  chain.step(manual_resume=True)
+  chain.run(30)
+  chain.plan.shouldStop = True
+  entry = chain.step()
+  assert chain.loc.sng_resume_failed
+  assert entry.state == LongCtrlState.stopping
+  assert not entry.resume

@@ -135,6 +135,10 @@ class Controls(ControlsExt):
     actuators.accel = float(self.LoC.update(
       CC.longActive, CS, long_plan, pid_accel_limits, self.sm['radarState'],
       self.sm['selfdriveStateSP'].intelligentCruiseButtonManagement, pitch))
+    if self.CP.brand == "gm" and self.CP.autoResumeSng:
+      # Brake release and the RES sequencer must use the state that produced
+      # this acceleration, rather than the previous control cycle's state.
+      actuators.longControlState = self.LoC.long_control_state
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -175,9 +179,7 @@ class Controls(ControlsExt):
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    resume_requested = (CC.enabled and CS.cruiseState.standstill and
-                        not self.sm['longitudinalPlan'].shouldStop)
-    CC.cruiseControl.resume = resume_requested and (not self.CP.autoResumeSng or self.LoC.sng_resume_ready)
+    CC.cruiseControl.resume = self.LoC.get_resume_request(CC.enabled, CC.longActive, CS, self.sm['longitudinalPlan'])
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(CS.vCruiseCluster * CV.KPH_TO_MS)

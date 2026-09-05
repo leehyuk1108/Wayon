@@ -60,6 +60,7 @@ class CarState(CarStateBase, CarStateExt):
     self.pt_lka_steering_cmd_counter = 0
     self.cam_lka_steering_cmd_counter = 0
     self.buttons_counter = 0
+    self.buttons_ts_nanos = 0
     self.stock_fcw_alert = 0
 
     self.distance_button = 0
@@ -100,6 +101,7 @@ class CarState(CarStateBase, CarStateExt):
     self.cruise_buttons = pt_cp.vl["ASCMSteeringButton"]["ACCButtons"]
     self.distance_button = pt_cp.vl["ASCMSteeringButton"]["DistanceButton"]
     self.buttons_counter = pt_cp.vl["ASCMSteeringButton"]["RollingCounter"]
+    self.buttons_ts_nanos = pt_cp.ts_nanos["ASCMSteeringButton"]["RollingCounter"]
     self.pscm_status = copy.copy(pt_cp.vl["PSCMStatus"])
 
     # Variables used for avoiding LKAS faults
@@ -181,6 +183,9 @@ class CarState(CarStateBase, CarStateExt):
                       pt_cp.vl["EBCMFrictionBrakeStatus"]["FrictionBrakeUnavailable"] == 1)
 
     ret.cruiseState.enabled = pt_cp.vl["AcceleratorPedal2"]["CruiseState"] != AccState.OFF
+    if self.CP.carFingerprint == CAR.CHEVROLET_TRAVERSE:
+      # A fault or unknown PCM state must not acknowledge a pending resume.
+      ret.cruiseState.enabled = pt_cp.vl["AcceleratorPedal2"]["CruiseState"] in (AccState.ACTIVE, AccState.STANDSTILL)
     ret.cruiseState.standstill = pt_cp.vl["AcceleratorPedal2"]["CruiseState"] == AccState.STANDSTILL
     if self.CP.networkLocation == NetworkLocation.fwdCamera:
       if self.CP.carFingerprint not in ALT_ACCS and not self.CP_SP.flags & GMFlagsSP.NON_ACC:

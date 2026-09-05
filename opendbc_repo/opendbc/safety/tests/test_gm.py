@@ -436,6 +436,26 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
     self.assertEqual(2, self.safety.safety_fwd_hook(0, 0x1E1))
     self.safety.set_current_safety_param_sp(0)
 
+  def test_sng_button_filter_yields_to_each_physical_button(self):
+    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_RESUME_SNG)
+    self.addCleanup(self.safety.set_current_safety_param_sp, 0)
+    safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM
+    for button in range(8):
+      with self.subTest(button=button):
+        self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_RESUME_SNG)
+        self.safety.set_safety_hooks(CarParams.SafetyModel.gm, safety_param)
+        self.safety.init_tests()
+        self.safety.set_timer(100)
+        self.safety.set_controls_allowed(True)
+        self._rx(self._speed_msg(0))
+        self._rx(self._user_gas_msg(False))
+        self._rx(self._user_brake_msg(False))
+        resume = self.packer.make_can_msg_safety("ASCMSteeringButton", 2, {"ACCButtons": Buttons.RES_ACCEL})
+        self.assertTrue(self._tx(resume))
+        self.assertEqual(-1, self.safety.safety_fwd_hook(0, 0x1E1))
+        self._rx(self._button_msg(button))
+        self.assertEqual(-1 if button == Buttons.UNPRESS else 2, self.safety.safety_fwd_hook(0, 0x1E1))
+
   def test_sng_driver_cancel_is_always_relayable_on_camera_bus(self):
     self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.AUTO_RESUME_SNG)
     safety_param = GMSafetyFlags.HW_CAM | GMSafetyFlags.HW_CAM_LONG | GMSafetyFlags.HW_SDGM | self.EXTRA_SAFETY_PARAM

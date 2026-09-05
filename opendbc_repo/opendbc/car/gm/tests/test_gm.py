@@ -428,7 +428,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.CI.update_auto_hold(control)
     self.assertFalse(self.CI.CS.longAutoHoldActive)
 
-  def test_controller_sends_resume_pulse_without_waiting_for_creep(self):
+  def test_controller_sends_resume_only_after_new_original_frame(self):
     fingerprint = gen_empty_fingerprint()
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
@@ -443,6 +443,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
 
     CS = CI.CS
     CS.out = car.CarState.new_message()
+    CS.out.canValid = True
     CS.out.standstill = True
     CS.out.vEgo = 0.0
     CS.out.gearShifter = car.CarState.GearShifter.drive
@@ -451,6 +452,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CS.longAutoHoldActive = False
     CS.cruise_buttons = CruiseButtons.UNPRESS
     CS.buttons_counter = 0
+    CS.buttons_ts_nanos = 9_980_000_000
     CS.loopback_lka_steering_cmd_updated = False
     CS.loopback_lka_steering_cmd_ts_nanos = 0
     CS.pt_lka_steering_cmd_counter = 0
@@ -470,21 +472,31 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     _, stopped_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_000_000_000)
     button_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1]
     stopped_buttons = [msg for msg in stopped_sends if msg[0] == 0x1E1]
-    self.assertEqual(2, len(stopped_buttons))
-    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in stopped_buttons})
+    self.assertEqual(0, len(stopped_buttons))
+
+    # This tick sees the previously emitted zero brake command and arms.
+    CI.CC.frame = 5
+    _, armed_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_010_000_000)
+    self.assertFalse(any(msg[0] == 0x1E1 for msg in armed_sends))
+    CS.buttons_counter = 1
+    CS.buttons_ts_nanos = 10_015_000_000
+    CI.CC.frame = 6
+    _, first_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_020_000_000)
+    first_buttons = [msg for msg in first_sends if msg[0] == 0x1E1]
+    self.assertEqual(2, len(first_buttons))
+    self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in first_buttons})
     self.assertTrue(all(get_raw_value(msg[1], button_msg.sigs["ACCButtons"]) == CruiseButtons.RES_ACCEL
-                        for msg in stopped_buttons))
+                        for msg in first_buttons))
 
     # Continue the bounded physical-button sequence at the stock frame rate.
-    control.cruiseControl.resume = False
-    control.actuators.longControlState = car.CarControl.Actuators.LongControlState.pid
     CS.out.vEgo = 0.0
     pulse_sends = []
     for i in range(3):
-      CS.buttons_counter = (i + 1) % 4
-      CI.CC.frame = 7 + (i * 3)
+      CS.buttons_counter = (i + 2) % 4
+      CS.buttons_ts_nanos = 10_040_000_000 + (i * 30_000_000)
+      CI.CC.frame = 9 + (i * 3)
       _, sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS,
-                              10_030_000_000 + (i * 30_000_000))
+                              10_050_000_000 + (i * 30_000_000))
       pulse_sends.extend(msg for msg in sends if msg[0] == 0x1E1)
 
     self.assertEqual(6, len(pulse_sends))
@@ -492,9 +504,10 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.assertTrue(all(get_raw_value(msg[1], button_msg.sigs["ACCButtons"]) == CruiseButtons.RES_ACCEL
                         for msg in pulse_sends))
 
-    CS.buttons_counter = 0
-    CI.CC.frame = 16
-    _, release_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_240_000_000)
+    CS.buttons_counter = 1
+    CS.buttons_ts_nanos = 10_130_000_000
+    CI.CC.frame = 18
+    _, release_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_140_000_000)
     release_buttons = [msg for msg in release_sends if msg[0] == 0x1E1]
     self.assertEqual(2, len(release_buttons))
     self.assertEqual(CruiseButtons.UNPRESS, get_raw_value(release_buttons[0][1], button_msg.sigs["ACCButtons"]))
@@ -504,30 +517,37 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     controller = CarInterface(CP, CP_SP).CC
+    controller.sng_brake_release_ns = 990_000_000
     CC = SimpleNamespace(
       enabled=True, longActive=True,
       cruiseControl=SimpleNamespace(resume=True),
     )
     actuators = SimpleNamespace(longControlState=LongCtrlState.starting)
     CS = SimpleNamespace(
-      buttons_counter=0, cruise_buttons=CruiseButtons.UNPRESS,
+      buttons_counter=0, buttons_ts_nanos=1_000_000_000, cruise_buttons=CruiseButtons.UNPRESS,
       out=SimpleNamespace(
-        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive, vEgo=0.0,
-        cruiseState=SimpleNamespace(standstill=True),
+        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive, vEgo=0.0, standstill=True,
+        canValid=True, accFaulted=False, regenBraking=False, parkingBrake=False,
+        cruiseState=SimpleNamespace(standstill=True, enabled=True),
       ),
     )
     sends = []
     controller.frame = 0
-    self.assertTrue(controller.update_sng_resume(CC, CS, actuators, sends))
+    self.assertTrue(controller.update_sng_resume(CC, CS, actuators, sends, 1_010_000_000))
+    self.assertEqual(0, len(sends))
+    CS.buttons_counter = 1
+    CS.buttons_ts_nanos = 1_030_000_000
+    controller.frame = 3
+    controller.update_sng_resume(CC, CS, actuators, sends, 1_040_000_000)
     self.assertEqual(2, len(sends))
 
     CS.out.cruiseState.standstill = False
     CS.out.vEgo = 0.2
     CC.cruiseControl.resume = False
     actuators.longControlState = LongCtrlState.pid
-    controller.frame = 3
+    controller.frame = 4
     release = []
-    self.assertTrue(controller.update_sng_resume(CC, CS, actuators, release))
+    self.assertFalse(controller.update_sng_resume(CC, CS, actuators, release, 1_050_000_000))
     self.assertEqual(2, len(release))
     self.assertEqual(-1, controller.sng_resume_frame)
 
@@ -536,37 +556,41 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     controller = CarInterface(CP, CP_SP).CC
+    controller.sng_brake_release_ns = 990_000_000
     CC = SimpleNamespace(
       enabled=True, longActive=True,
       cruiseControl=SimpleNamespace(resume=True),
     )
     actuators = SimpleNamespace(longControlState=LongCtrlState.starting)
     CS = SimpleNamespace(
-      buttons_counter=0, cruise_buttons=CruiseButtons.UNPRESS,
+      buttons_counter=0, buttons_ts_nanos=1_000_000_000, cruise_buttons=CruiseButtons.UNPRESS,
       out=SimpleNamespace(
-        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive, vEgo=0.0,
-        cruiseState=SimpleNamespace(standstill=True),
+        brakePressed=False, gasPressed=False, gearShifter=GearShifter.drive, vEgo=0.0, standstill=True,
+        canValid=True, accFaulted=False, regenBraking=False, parkingBrake=False,
+        cruiseState=SimpleNamespace(standstill=True, enabled=True),
       ),
     )
     button_msg = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1]
 
     armed = []
     controller.frame = 0
-    controller.update_sng_resume(CC, CS, actuators, armed)
-    self.assertEqual(2, len(armed))
+    controller.update_sng_resume(CC, CS, actuators, armed, 1_010_000_000)
+    self.assertEqual(0, len(armed))
 
     CS.buttons_counter = 1
+    CS.buttons_ts_nanos = 1_030_000_000
     first = []
     controller.frame = 3
-    controller.update_sng_resume(CC, CS, actuators, first)
+    controller.update_sng_resume(CC, CS, actuators, first, 1_040_000_000)
     self.assertEqual(2, len(first))
     self.assertEqual(CruiseButtons.RES_ACCEL, get_raw_value(first[0][1], button_msg.sigs["ACCButtons"]))
 
     CS.buttons_counter = 2
+    CS.buttons_ts_nanos = 1_060_000_000
     CS.cruise_buttons = CruiseButtons.CANCEL
     cancel = []
     controller.frame = 6
-    self.assertTrue(controller.update_sng_resume(CC, CS, actuators, cancel))
+    self.assertTrue(controller.update_sng_resume(CC, CS, actuators, cancel, 1_070_000_000))
     self.assertEqual(2, len(cancel))
     self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in cancel})
     self.assertEqual(cancel[0][1], cancel[1][1])

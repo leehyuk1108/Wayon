@@ -39,6 +39,13 @@ GM_STOPPING_BRAKE_TAPER_MAX = 12
 GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 20
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 GM_SNG_BUTTON_FRAMES = 4  # physical Traverse press: four frames over about 0.12 seconds
+# Original buttons arrive at about 33 Hz. Allow 20-40 ms receive/control
+# quantization plus 2 ms of jitter, but never compress missed frames into a burst.
+GM_SNG_BUTTON_MIN_SOURCE_INTERVAL_NS = 18_000_000
+GM_SNG_BUTTON_MIN_SEND_INTERVAL_NS = 25_000_000
+GM_SNG_BUTTON_MAX_INTERVAL_NS = 50_000_000
+GM_SNG_BUTTON_MAX_AGE_NS = 20_000_000
+GM_SNG_MAX_RESUME_SPEED = 1.5
 GM_EPB_HOLD_OVERLAP_FRAMES = 5  # 0.20 seconds at the 25 Hz brake command rate
 
 
@@ -163,9 +170,14 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.cancel_counter = 0
     self.traverse_coasting = False
     self.sng_resume_request_prev = False
+    self.sng_resume_attempted = False
+    self.sng_brake_release_ns = 0
     self.sng_resume_frame = -1
+    self.sng_resume_arm_ns = 0
     self.sng_last_stock_counter = None
+    self.sng_last_stock_ts_ns = 0
     self.sng_last_sent_counter = None
+    self.sng_last_sent_ns = 0
     self.sng_button_frames_remaining = 0
     self.gm_auto_hold_confirmed = False
     self.gm_auto_hold_zero_frames = 0
@@ -186,8 +198,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
   def reset_sng_resume(self):
     self.sng_resume_frame = -1
+    self.sng_resume_arm_ns = 0
     self.sng_last_stock_counter = None
+    self.sng_last_stock_ts_ns = 0
     self.sng_last_sent_counter = None
+    self.sng_last_sent_ns = 0
     self.sng_button_frames_remaining = 0
 
   def send_sng_button(self, can_sends, button, counter=None):
@@ -195,86 +210,116 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       if self.sng_last_sent_counter is None:
         return False
       counter = (self.sng_last_sent_counter + 1) & 0x3
-    # A physical Traverse RES frame is visible on the powertrain side before
-    # it reaches the isolated camera side. Mirror the same payload and rolling
-    # counter onto both sides so both receivers observe one coherent press.
+    # Retain the existing two-bus request. This does not remove original button
+    # frames from their source bus or prove that an ECU accepted the request.
     can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, counter, button))
     can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.POWERTRAIN, counter, button))
     self.sng_last_sent_counter = counter
     return True
 
-  def update_sng_resume(self, CC, CS, actuators, can_sends):
-    resume_request = (
-      gm_uses_auto_hold_sng(self.CP) and CC.enabled and CC.longActive and
-      CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.starting and
-      not CS.out.brakePressed and not CS.out.gasPressed and
-      CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
-    )
+  def update_sng_resume(self, CC, CS, actuators, can_sends, now_nanos):
+    acknowledged_motion = (CS.out.canValid and not CS.out.accFaulted and
+                           CS.out.cruiseState.enabled and not CS.out.cruiseState.standstill and
+                           CS.out.vEgo > self.CP.vEgoStarting)
+    if (not CC.enabled or not CC.longActive or CS.out.brakePressed or CS.out.gasPressed or
+        acknowledged_motion):
+      self.sng_resume_attempted = False
+
     resume_eligible = (
       gm_uses_auto_hold_sng(self.CP) and CC.enabled and CC.longActive and
+      actuators.longControlState == LongCtrlState.starting and CS.out.canValid and
+      CS.out.cruiseState.enabled and not CS.out.accFaulted and
+      not CS.out.regenBraking and not CS.out.parkingBrake and
       not CS.out.brakePressed and not CS.out.gasPressed and
       CS.out.gearShifter in (GearShifter.drive, GearShifter.low)
     )
-
+    resume_request = (
+      resume_eligible and CC.cruiseControl.resume and
+      abs(CS.out.vEgo) < GM_SNG_MAX_RESUME_SPEED and CS.out.cruiseState.standstill and
+      0 < self.sng_brake_release_ns < now_nanos and self.apply_brake == 0
+    )
     stock_counter = int(CS.buttons_counter) & 0x3
-    stock_frame_updated = self.sng_last_stock_counter is None or stock_counter != self.sng_last_stock_counter
+    stock_ts = int(CS.buttons_ts_nanos)
+    request_rising = resume_request and not self.sng_resume_request_prev
+    self.sng_resume_request_prev = resume_request
 
-    # The stock CANCEL frame is blocked during interception. Relay CANCEL with
-    # the next synthetic counter before aborting so driver input wins.
-    if (self.sng_resume_frame >= 0 and stock_frame_updated and
-        CS.cruise_buttons == CruiseButtons.CANCEL):
+    # Forwarding may have blocked this original CANCEL. Relay it with the next
+    # synthetic counter before aborting; never wait for timing checks to pass.
+    if self.sng_resume_frame >= 0 and CS.cruise_buttons == CruiseButtons.CANCEL:
       was_intercepting = self.sng_last_sent_counter is not None
       if was_intercepting:
         self.send_sng_button(can_sends, CruiseButtons.CANCEL)
       self.reset_sng_resume()
-      self.sng_resume_request_prev = resume_request
       return was_intercepting
 
-    if not resume_eligible:
+    # Do not overlay an UNPRESS on a driver's RES/SET (or another physical
+    # button). Panda ends interception when it receives a physical button;
+    # forwarding may already have blocked that first frame before RX processing.
+    if CS.cruise_buttons != CruiseButtons.UNPRESS:
+      self.reset_sng_resume()
+      return False
+
+    if not resume_eligible or not CC.cruiseControl.resume or not CS.out.cruiseState.standstill:
       if self.sng_resume_frame >= 0:
         self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
-      self.sng_resume_request_prev = resume_request
       return False
 
-    # Arm on the confirmed lead departure edge. LongControl starts tracking the
-    # lead while approaching zero so this can run before GM latches full stop.
-    if resume_request and not self.sng_resume_request_prev and self.sng_resume_frame < 0:
+    # LongControl supplies a request originating from a confirmed full stop.
+    # First emit a zero brake command, then arm on a later control tick. This
+    # records a command, not proof of actual hydraulic pressure release.
+    # Snapshot the original frame on arm; an unset counter is not a new frame.
+    if request_rising and not self.sng_resume_attempted and self.sng_resume_frame < 0:
+      self.sng_resume_attempted = True
+      if stock_ts <= 0 or not 0 <= now_nanos - stock_ts <= GM_SNG_BUTTON_MAX_INTERVAL_NS:
+        return False
       self.sng_resume_frame = self.frame
-      self.sng_last_stock_counter = None
+      self.sng_resume_arm_ns = now_nanos
+      self.sng_last_stock_counter = stock_counter
+      self.sng_last_stock_ts_ns = stock_ts
       self.sng_last_sent_counter = None
       self.sng_button_frames_remaining = GM_SNG_BUTTON_FRAMES
-    self.sng_resume_request_prev = resume_request
+      return True
 
     if self.sng_resume_frame < 0:
       return False
 
-    if self.frame - self.sng_resume_frame > GM_SNG_RESUME_ARM_TIMEOUT_FRAMES:
-      if self.sng_last_sent_counter is not None:
-        self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
-      self.reset_sng_resume()
-      return True
-
-    # Once the vehicle rolls and the stock standstill flag clears, the launch
-    # gate is open. Explicitly release a sequence already in progress.
-    if not CS.out.cruiseState.standstill:
-      if self.sng_last_sent_counter is not None:
-        self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
-      self.reset_sng_resume()
-      return True
-
-    # Do not wait for natural creep: the ECU hold prevents the vehicle from
-    # reaching the old threshold. Send the physical-button pattern immediately.
+    source_age = now_nanos - stock_ts
+    source_interval = stock_ts - self.sng_last_stock_ts_ns
+    stock_frame_updated = source_interval > 0
+    valid_source = (stock_ts > 0 and source_interval >= 0 and
+                    0 <= source_age <= GM_SNG_BUTTON_MAX_INTERVAL_NS)
     if stock_frame_updated:
-      self.sng_last_stock_counter = stock_counter
+      valid_source &= (stock_ts > self.sng_resume_arm_ns and source_age <= GM_SNG_BUTTON_MAX_AGE_NS and
+                       GM_SNG_BUTTON_MIN_SOURCE_INTERVAL_NS <= source_interval <= GM_SNG_BUTTON_MAX_INTERVAL_NS and
+                       stock_counter == ((self.sng_last_stock_counter + 1) & 0x3))
+    else:
+      valid_source &= stock_counter == self.sng_last_stock_counter
 
-    if (stock_frame_updated and self.sng_button_frames_remaining > 0 and
-        CS.cruise_buttons == CruiseButtons.UNPRESS):
+    send_interval = now_nanos - self.sng_last_sent_ns
+    valid_send = self.sng_last_sent_counter is None or send_interval <= GM_SNG_BUTTON_MAX_INTERVAL_NS
+    if (not valid_source or not valid_send or self.apply_brake != 0 or
+        abs(CS.out.vEgo) >= GM_SNG_MAX_RESUME_SPEED or
+        self.frame - self.sng_resume_frame > GM_SNG_RESUME_ARM_TIMEOUT_FRAMES):
+      self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
+      self.reset_sng_resume()
+      return True
+
+    if not stock_frame_updated:
+      return True
+    if self.sng_last_sent_counter is not None and send_interval < GM_SNG_BUTTON_MIN_SEND_INTERVAL_NS:
+      # Keep this source frame pending. If it becomes stale or the next counter
+      # arrives before we can send, the validation above aborts instead.
+      return True
+    self.sng_last_stock_counter = stock_counter
+    self.sng_last_stock_ts_ns = stock_ts
+
+    if self.sng_button_frames_remaining > 0:
       resume_counter = (stock_counter + 1) & 0x3 if self.sng_last_sent_counter is None else None
       self.send_sng_button(can_sends, CruiseButtons.RES_ACCEL, resume_counter)
+      self.sng_last_sent_ns = now_nanos
       self.sng_button_frames_remaining -= 1
-    elif (stock_frame_updated and self.sng_button_frames_remaining == 0 and
-          CS.cruise_buttons == CruiseButtons.UNPRESS):
+    else:
       self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
 
@@ -327,7 +372,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     if self.CP.openpilotLongitudinalControl:
       # Stock steering-button frames update faster than the 25 Hz longitudinal
       # messages, so track every control frame without skipping counters.
-      self.update_sng_resume(CC, CS, actuators, can_sends)
+      self.update_sng_resume(CC, CS, actuators, can_sends, now_nanos)
 
       # Gas/regen, brakes, and UI commands - all at 25Hz
       if self.frame % 4 == 0:
@@ -394,6 +439,10 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
           can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, self.apply_brake,
                                                                idx, CC.enabled, near_stop, at_full_stop, self.CP))
           CS.autoHoldActivated = False
+
+        # SNG runs before this 25 Hz output block, so a later control tick must
+        # observe this emitted release before it can arm a RES sequence.
+        self.sng_brake_release_ns = now_nanos if self.apply_brake == 0 else 0
 
         # Send dashboard UI commands (ACC status)
         # SASCM blocks the stock 0x370 message while openpilot longitudinal is

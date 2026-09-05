@@ -1,0 +1,14 @@
+{
+  "description": "Sanitized original bus-0 0x1E1 receive timing relative to the first historical synthetic RES, Traverse route 49/7 at commit 225fc5e7e. All source frames were UNPRESS. Times are observations, not a receiver acceptance specification.",
+  "original_frames": [
+    {"offset_ms": -23.584, "counter": 2},
+    {"offset_ms": 6.879, "counter": 3},
+    {"offset_ms": 36.824, "counter": 0},
+    {"offset_ms": 66.853, "counter": 1},
+    {"offset_ms": 96.655, "counter": 2},
+    {"offset_ms": 126.904, "counter": 3},
+    {"offset_ms": 156.443, "counter": 0}
+  ],
+  "historical_res_offsets_ms": [0.0, 10.129, 39.856, 71.336],
+  "historical_release_offset_ms": 99.882
+}

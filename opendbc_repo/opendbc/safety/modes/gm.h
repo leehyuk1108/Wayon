@@ -95,7 +95,9 @@ static void gm_rx_hook(const CANPacket_t *msg) {
       // has already been blocked when this clears a completed interception.
       uint8_t stock_counter = msg->data[4] & 0x3U;
       bool release_matched = gm_sng_button_release_pending && (stock_counter == gm_sng_button_release_counter);
-      if (gm_sng_button_filter_active && ((button == GM_BTN_CANCEL) || release_matched)) {
+      // Yield interception to any physical button, including RES/SET. RX runs
+      // after forwarding, so this restores forwarding for subsequent frames.
+      if (gm_sng_button_filter_active && ((button != GM_BTN_UNPRESS) || release_matched)) {
         gm_reset_sng_button_filter();
       }
     }

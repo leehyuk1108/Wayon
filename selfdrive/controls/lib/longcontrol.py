@@ -12,6 +12,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   PID_KF,
   PID_KI,
   PID_KP,
+  get_max_accel as get_wayon_max_accel,
   is_enabled,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
@@ -303,6 +304,8 @@ class LongControl:
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     a_target = long_plan.aTarget
     should_stop = long_plan.shouldStop
+    if self.wayon_carrot_profile:
+      accel_limits = (accel_limits[0], min(accel_limits[1], get_wayon_max_accel(CS.vEgo)))
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
     self.speed_pid.neg_limit = accel_limits[0]

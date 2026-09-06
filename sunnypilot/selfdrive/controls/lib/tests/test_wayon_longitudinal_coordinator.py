@@ -93,6 +93,24 @@ def test_coasting_requires_stability_and_exits_for_camera_or_closing_lead():
   assert not controller.update(True, 20.0, 20.2, -0.1, 0.0, False, lead(10.0, -2.0))
 
 
+def test_high_speed_small_positive_accel_can_coast():
+  controller = WayonCoastController()
+  results = [controller.update(True, 12.0, 12.2, 0.09, 0.0, False)
+             for _ in range(controller.ENTER_FRAMES)]
+  assert results[-1]
+
+  controller.reset()
+  assert not any(controller.update(True, 10.0, 10.2, 0.09, 0.0, False)
+                 for _ in range(controller.ENTER_FRAMES))
+
+
+def test_high_speed_coast_still_rejects_closing_lead():
+  controller = WayonCoastController()
+  closing_lead = lead(10.0, -2.0)
+  assert not any(controller.update(True, 12.0, 12.2, 0.09, 0.0, False, closing_lead)
+                 for _ in range(controller.ENTER_FRAMES))
+
+
 def test_low_speed_follow_coasts_only_with_stable_radar_lead():
   controller = WayonCoastController()
   stable_lead = lead(d_rel=8.0, v_rel=0.05, a_lead=0.1)

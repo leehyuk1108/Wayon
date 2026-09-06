@@ -106,6 +106,28 @@ def test_selected_mild_cutin_recovers_gap_gradually():
   assert initial < recovered < 1.45
 
 
+def test_cutin_candidate_is_remembered_until_track_becomes_selected():
+  controller = CutInGapRecoveryController()
+  candidate = lead(score=0.3, dRel=30.0, vRel=-1.0)
+  old_lead = lead(radarTrackId=3, dRel=35.0, vRel=0.0)
+  assert controller.update(1.45, 20.0, old_lead, candidate) == 1.45
+
+  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  assert controller.update(1.45, 20.0, selected_lead, None) < 1.45
+
+
+def test_stale_cutin_candidate_is_not_applied_to_a_later_lead():
+  controller = CutInGapRecoveryController()
+  candidate = lead(score=0.3, dRel=30.0, vRel=-1.0)
+  old_lead = lead(radarTrackId=3, dRel=35.0, vRel=0.0)
+  controller.update(1.45, 20.0, old_lead, candidate)
+  for _ in range(41):
+    controller.update(1.45, 20.0, old_lead, None)
+
+  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  assert controller.update(1.45, 20.0, selected_lead, None) == 1.45
+
+
 @pytest.mark.parametrize("kwargs", [
   {"dRel": 8.0, "vRel": -0.5},
   {"dRel": 20.0, "vRel": -3.0},

@@ -27,6 +27,8 @@ CUTIN_GAP_RECOVERY_MIN_HEADWAY_S = 0.75
 CUTIN_GAP_RECOVERY_STOP_DISTANCE_M = 6.0
 CUTIN_GAP_RECOVERY_RATE_S_PER_S = 0.12
 CUTIN_GAP_RECOVERY_MAX_DURATION_S = 7.0
+CUTIN_GAP_RECOVERY_CANDIDATE_HOLD_S = 2.0
+CUTIN_GAP_RECOVERY_MIN_SCORE = 0.10
 
 
 def future_curvature(model_msg: Any, fallback_curvature: float,
@@ -110,6 +112,8 @@ class CutInGapRecoveryController:
     self.active_track_id = -1
     self.elapsed = 0.0
     self.t_follow_cap = math.inf
+    self.pending_track_id = -1
+    self.pending_elapsed = 0.0
 
   @staticmethod
   def _track_id(lead: Any) -> int:
@@ -135,22 +139,37 @@ class CutInGapRecoveryController:
     )
 
   def update(self, nominal_t_follow: float, v_ego: float, lead: Any,
-             selected_cutin: Any | None, dt: float = DT_MDL) -> float:
+             cutin_candidate: Any | None, dt: float = DT_MDL) -> float:
     track_id = self._track_id(lead)
-    selected_track_id = self._track_id(selected_cutin) if selected_cutin is not None else -1
+    candidate_valid = (
+      cutin_candidate is not None and getattr(cutin_candidate, "status", False) and
+      getattr(cutin_candidate, "radar", False) and
+      float(getattr(cutin_candidate, "score", 0.0)) >= CUTIN_GAP_RECOVERY_MIN_SCORE
+    )
+    if candidate_valid:
+      self.pending_track_id = self._track_id(cutin_candidate)
+      self.pending_elapsed = 0.0
+    elif self.pending_track_id >= 0:
+      self.pending_elapsed += dt
+      if self.pending_elapsed > CUTIN_GAP_RECOVERY_CANDIDATE_HOLD_S:
+        self.pending_track_id = -1
+        self.pending_elapsed = 0.0
 
-    if selected_track_id == track_id and selected_track_id >= 0 and self._is_nonurgent(v_ego, lead):
-      implied_t_follow = (
-        float(getattr(lead, "dRel", 0.0)) - CUTIN_GAP_RECOVERY_STOP_DISTANCE_M
-      ) / max(v_ego, 1.0)
-      if implied_t_follow < nominal_t_follow:
-        self.active_track_id = track_id
-        self.elapsed = 0.0
-        self.t_follow_cap = float(np.clip(
-          implied_t_follow,
-          CUTIN_GAP_RECOVERY_MIN_T_FOLLOW,
-          nominal_t_follow,
-        ))
+    if self.pending_track_id == track_id and track_id >= 0:
+      if self._is_nonurgent(v_ego, lead):
+        implied_t_follow = (
+          float(getattr(lead, "dRel", 0.0)) - CUTIN_GAP_RECOVERY_STOP_DISTANCE_M
+        ) / max(v_ego, 1.0)
+        if implied_t_follow < nominal_t_follow:
+          self.active_track_id = track_id
+          self.elapsed = 0.0
+          self.t_follow_cap = float(np.clip(
+            implied_t_follow,
+            CUTIN_GAP_RECOVERY_MIN_T_FOLLOW,
+            nominal_t_follow,
+          ))
+      self.pending_track_id = -1
+      self.pending_elapsed = 0.0
 
     if self.active_track_id < 0:
       return nominal_t_follow

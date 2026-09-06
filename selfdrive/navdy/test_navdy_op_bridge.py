@@ -1657,7 +1657,8 @@ def test_navdy_vehicle_geometry_marks_selected_nonclosing_cutin():
     navdy_vehicle_test_model(), radar_points, radar_state,
     SimpleNamespace(longitudinalPlanSource="cruise"), v_ego=20.0)["navVehicles"]
 
-  assert vehicles[0]["cutInRisk"] is True
+  by_id = {vehicle["trackId"]: vehicle for vehicle in vehicles}
+  assert by_id[11]["cutInRisk"] is True
 
 
 def test_navdy_vehicle_geometry_does_not_mark_unselected_cutin_candidate():

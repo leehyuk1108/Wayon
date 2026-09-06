@@ -31,7 +31,7 @@ from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import cutin_predecel_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.phone_forward_risk import lead_closing_risk
-from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import radar_track_matches_any_lead
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import selected_cutin_risk
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 REPLAY = "REPLAY" in os.environ
@@ -241,11 +241,12 @@ class SelfdriveD(CruiseHelper):
     if not self.sm.updated['radarState']:
       return
 
-    cutin_risk = self.sm['radarState'].leadCutInRisk
+    radar_state = self.sm['radarState']
+    cutin_risk = radar_state.leadCutInRisk
     predecel_accel = cutin_predecel_accel(cutin_risk, max(CS.vEgo, 0.0))
-    track_id = int(getattr(cutin_risk, 'radarTrackId', -1)) if getattr(cutin_risk, 'status', False) else -1
-    active = radar_track_matches_any_lead(
-      track_id, self.sm['radarState'].leadOne, self.sm['radarState'].leadTwo)
+    confirmed_risk = selected_cutin_risk(radar_state)
+    active = confirmed_risk is not None
+    track_id = int(getattr(confirmed_risk, 'radarTrackId', -1)) if active else -1
     newly_active = active and (
       not self.previous_cutin_warning_active or track_id != self.previous_cutin_warning_track_id
     )

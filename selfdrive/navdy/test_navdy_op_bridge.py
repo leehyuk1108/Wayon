@@ -1678,6 +1678,23 @@ def test_navdy_vehicle_geometry_does_not_mark_unselected_cutin_candidate():
   assert all(vehicle["cutInRisk"] is False for vehicle in vehicles)
 
 
+def test_navdy_vehicle_geometry_does_not_mark_low_score_selected_candidate():
+  radar_points = [{"trackId": 11, "dRel": 18.0, "yRel": 3.0, "vRel": -4.0}]
+  radar_state = SimpleNamespace(
+    leadOne=SimpleNamespace(status=True, radar=True, radarTrackId=11),
+    leadTwo=SimpleNamespace(status=False),
+    leadCutInRisk=SimpleNamespace(
+      status=True, radar=True, radarTrackId=11, dRel=18.0, yRel=3.0,
+      vRel=-4.0, vLat=0.5, score=0.20),
+  )
+
+  vehicles = navdy_op_bridge.navdy_vehicle_geometry(
+    navdy_vehicle_test_model(), radar_points, radar_state,
+    SimpleNamespace(longitudinalPlanSource="cruise"), v_ego=20.0)["navVehicles"]
+
+  assert all(vehicle["cutInRisk"] is False for vehicle in vehicles)
+
+
 def test_navdy_vehicle_geometry_does_not_mark_a_lead_when_cruise_controls():
   radar_points = [{"trackId": 10, "dRel": 30.0, "yRel": -0.2, "vRel": -5.0}]
   radar_state = SimpleNamespace(

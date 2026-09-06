@@ -77,6 +77,16 @@ def test_unselected_cutin_candidate_does_not_warn(monkeypatch):
   assert not instance.previous_cutin_warning_active
 
 
+def test_low_score_selected_candidate_does_not_warn(monkeypatch):
+  instance = make_instance(cutin_risk(score=0.20))
+  monkeypatch.setattr(selfdrived.cloudlog, "event", lambda *args, **kwargs: None)
+
+  instance._update_radar_lane_intrusion(SimpleNamespace(vEgo=20.0))
+
+  assert instance.events_sp.names == []
+  assert not instance.previous_cutin_warning_active
+
+
 def test_selected_nonclosing_cutin_still_warns(monkeypatch):
   instance = make_instance(cutin_risk(vRel=1.0))
   monkeypatch.setattr(selfdrived.cloudlog, "event", lambda *args, **kwargs: None)

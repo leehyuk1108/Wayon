@@ -76,6 +76,8 @@
 
 .field private static sAlertBannerView:Lcom/navdy/hud/app/openpilot/OpenpilotAlertBannerView;
 
+.field private static sAutoHoldActive:Z
+
 .field private static sAutoHoldView:Lcom/navdy/hud/app/openpilot/OpenpilotAutoHoldView;
 
 .field private static sAutomaticAccActive:Z
@@ -2218,6 +2220,14 @@
 
     move-result v7
 
+    const-string v8, "autoHoldActive"
+
+    invoke-virtual {v4, v8, v7}, Lorg/json/JSONObject;->optBoolean(Ljava/lang/String;Z)Z
+
+    move-result v2
+
+    sput-boolean v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutoHoldActive:Z
+
     .line 182
     invoke-virtual/range {p0 .. p0}, Landroid/content/Context;->getApplicationContext()Landroid/content/Context;
 
@@ -3085,7 +3095,13 @@
 
     const/16 p7, 0x8
 
-    if-eqz p1, :cond_1
+    if-nez p1, :show_status_masks
+
+    sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutoHoldActive:Z
+
+    if-eqz v0, :cond_1
+
+    :show_status_masks
 
     const/4 p7, 0x0
 

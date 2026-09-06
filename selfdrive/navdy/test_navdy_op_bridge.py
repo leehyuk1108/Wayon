@@ -630,6 +630,13 @@ def test_navdy_autohold_progress_view_is_wired_into_receiver():
   assert 'const-string v2, "autoHoldActive"' in speed_visibility
   assert "if-nez v2, :cond_d" in speed_visibility
 
+  assert ".field private static sAutoHoldActive:Z" in receiver
+  assert "sput-boolean v2, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutoHoldActive:Z" in receiver
+  overlay_method = receiver.split(".method private static updateOpenpilotOverlay", 1)[1].split(".end method", 1)[0]
+  mask_visibility = overlay_method.split("sEngagedTopMask", 1)[1].split("sMusicTextView", 1)[0]
+  assert "sget-boolean v0, Lcom/navdy/hud/app/openpilot/OpenpilotStateReceiver;->sAutoHoldActive:Z" in mask_visibility
+  assert "if-nez p1, :show_status_masks" in mask_visibility
+
 
 def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
   car_state = SimpleNamespace(

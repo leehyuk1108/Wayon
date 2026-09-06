@@ -342,9 +342,18 @@ class LongControl:
       self.coast_controller.reset()
       self.lead_trend_anticipator.reset()
       self.stop_controller.reset()
-      output_accel = self.CP.startAccel
       self.reset()
-      self.accel_smoother.reset(output_accel)
+      if self.wayon_carrot_profile:
+        v_target_now = float(long_plan.speeds[0]) if len(long_plan.speeds) else CS.vEgo
+        lead = radar_state.leadOne if radar_state is not None else None
+        cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None
+        output_accel = self.accel_smoother.update(
+          self.CP.startAccel, CS.aEgo, CS.vEgo, v_target_now,
+          planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
+          lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]))
+      else:
+        output_accel = self.CP.startAccel
+        self.accel_smoother.reset(output_accel)
 
     else:  # LongCtrlState.pid
       if self.speed_pid_enabled:

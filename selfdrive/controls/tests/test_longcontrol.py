@@ -427,3 +427,17 @@ def test_adaptive_smoother_acceleration_is_smooth_and_bounded():
   assert abs(outputs[-1] - 0.8) < 0.01
   assert slopes[2] < max(slopes)
   assert slopes[-2] < max(slopes)
+
+
+def test_adaptive_smoother_blends_brake_release_into_starting_accel():
+  smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  smoother.reset(-0.4)
+  outputs = [smoother.update(0.35, measured_accel=smoother.output_accel,
+                             v_ego=0.0, v_target=1.0) for _ in range(200)]
+  slopes = [(outputs[i] - outputs[i - 1]) / 0.01 for i in range(1, len(outputs))]
+
+  assert -0.4 < outputs[0] < -0.39
+  assert outputs[49] < 0.1
+  assert outputs[-1] > 0.32
+  assert slopes[2] < max(slopes)
+  assert slopes[-2] < max(slopes)

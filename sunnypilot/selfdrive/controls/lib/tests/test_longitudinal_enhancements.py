@@ -95,7 +95,7 @@ def test_t_follow_ramp_can_raise_faster_for_active_cutin():
 
 def test_selected_mild_cutin_recovers_gap_gradually():
   controller = CutInGapRecoveryController()
-  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  selected_lead = lead(score=0.3, dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
 
   initial = controller.update(1.45, 20.0, selected_lead, selected_lead)
   recovered = initial
@@ -112,7 +112,7 @@ def test_cutin_candidate_is_remembered_until_track_becomes_selected():
   old_lead = lead(radarTrackId=3, dRel=35.0, vRel=0.0)
   assert controller.update(1.45, 20.0, old_lead, candidate) == 1.45
 
-  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  selected_lead = lead(score=0.3, dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
   assert controller.update(1.45, 20.0, selected_lead, None) < 1.45
 
 
@@ -124,7 +124,7 @@ def test_stale_cutin_candidate_is_not_applied_to_a_later_lead():
   for _ in range(41):
     controller.update(1.45, 20.0, old_lead, None)
 
-  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  selected_lead = lead(score=0.3, dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
   assert controller.update(1.45, 20.0, selected_lead, None) == 1.45
 
 
@@ -136,13 +136,13 @@ def test_stale_cutin_candidate_is_not_applied_to_a_later_lead():
 ])
 def test_selected_urgent_cutin_keeps_nominal_gap(kwargs):
   controller = CutInGapRecoveryController()
-  selected_lead = lead(**kwargs)
+  selected_lead = lead(score=0.3, **kwargs)
   assert controller.update(1.45, 20.0, selected_lead, selected_lead) == 1.45
 
 
 def test_cutin_gap_recovery_cancels_as_approach_becomes_urgent():
   controller = CutInGapRecoveryController()
-  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  selected_lead = lead(score=0.3, dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
   assert controller.update(1.45, 20.0, selected_lead, selected_lead) < 1.45
 
   fast_closing = lead(dRel=18.0, vRel=-3.0, aLeadK=0.0, jLead=0.0)
@@ -151,7 +151,7 @@ def test_cutin_gap_recovery_cancels_as_approach_becomes_urgent():
 
 def test_cutin_gap_recovery_does_not_follow_a_different_track():
   controller = CutInGapRecoveryController()
-  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  selected_lead = lead(score=0.3, dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
   assert controller.update(1.45, 20.0, selected_lead, selected_lead) < 1.45
 
   replacement_lead = lead(radarTrackId=8, dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)

@@ -4,6 +4,7 @@ import pytest
 
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import (
+  CutInGapRecoveryController,
   cutin_predecel_accel,
   dynamic_a_change_cost,
   dynamic_t_follow_target,
@@ -24,6 +25,8 @@ def lead(**kwargs):
     "dRel": 30.0,
     "vRel": -5.0,
     "vLat": 0.5,
+    "vLead": 15.0,
+    "radarTrackId": 7,
   }
   values.update(kwargs)
   return SimpleNamespace(**values)
@@ -88,6 +91,49 @@ def test_t_follow_ramp_is_bounded():
 
 def test_t_follow_ramp_can_raise_faster_for_active_cutin():
   assert ramp_t_follow(2.0, 1.4, 0.05, rise_rate=0.75) == pytest.approx(1.4375)
+
+
+def test_selected_mild_cutin_recovers_gap_gradually():
+  controller = CutInGapRecoveryController()
+  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+
+  initial = controller.update(1.45, 20.0, selected_lead, selected_lead)
+  recovered = initial
+  for _ in range(20):
+    recovered = controller.update(1.45, 20.0, selected_lead, None)
+
+  assert 0.80 <= initial < 1.45
+  assert initial < recovered < 1.45
+
+
+@pytest.mark.parametrize("kwargs", [
+  {"dRel": 8.0, "vRel": -0.5},
+  {"dRel": 20.0, "vRel": -3.0},
+  {"dRel": 20.0, "vRel": -1.5, "aLeadK": -1.0},
+  {"dRel": 20.0, "vRel": -1.5, "jLead": -2.0},
+])
+def test_selected_urgent_cutin_keeps_nominal_gap(kwargs):
+  controller = CutInGapRecoveryController()
+  selected_lead = lead(**kwargs)
+  assert controller.update(1.45, 20.0, selected_lead, selected_lead) == 1.45
+
+
+def test_cutin_gap_recovery_cancels_as_approach_becomes_urgent():
+  controller = CutInGapRecoveryController()
+  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  assert controller.update(1.45, 20.0, selected_lead, selected_lead) < 1.45
+
+  fast_closing = lead(dRel=18.0, vRel=-3.0, aLeadK=0.0, jLead=0.0)
+  assert controller.update(1.45, 20.0, fast_closing, None) == 1.45
+
+
+def test_cutin_gap_recovery_does_not_follow_a_different_track():
+  controller = CutInGapRecoveryController()
+  selected_lead = lead(dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  assert controller.update(1.45, 20.0, selected_lead, selected_lead) < 1.45
+
+  replacement_lead = lead(radarTrackId=8, dRel=27.0, vRel=-1.0, aLeadK=0.0, jLead=0.0)
+  assert controller.update(1.45, 20.0, replacement_lead, None) == 1.45
 
 
 def test_vision_only_lead_does_not_change_dynamic_follow():

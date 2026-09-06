@@ -19,6 +19,14 @@ CUTIN_MIN_EGO_SPEED_MPS = 2.0
 CUTIN_LATERAL_WINDOW_M = 0.90
 CUTIN_EARLY_BRAKE_REL_SPEED_MPS = 3.0
 CUTIN_FULL_BRAKE_REL_SPEED_MPS = 8.0
+CUTIN_GAP_RECOVERY_MIN_T_FOLLOW = 0.80
+CUTIN_GAP_RECOVERY_MIN_TTC_S = 6.0
+CUTIN_GAP_RECOVERY_MAX_CLOSING_SPEED_MPS = 2.0
+CUTIN_GAP_RECOVERY_MIN_DISTANCE_M = 9.0
+CUTIN_GAP_RECOVERY_MIN_HEADWAY_S = 0.75
+CUTIN_GAP_RECOVERY_STOP_DISTANCE_M = 6.0
+CUTIN_GAP_RECOVERY_RATE_S_PER_S = 0.12
+CUTIN_GAP_RECOVERY_MAX_DURATION_S = 7.0
 
 
 def future_curvature(model_msg: Any, fallback_curvature: float,
@@ -90,6 +98,76 @@ def ramp_t_follow(target: float, current: float, dt: float = DT_MDL,
   fall_rate = 0.50
   delta = np.clip(target - current, -fall_rate * dt, rise_rate * dt)
   return float(current + delta)
+
+
+class CutInGapRecoveryController:
+  """Restore the configured gap gradually after a non-urgent cut-in."""
+
+  def __init__(self):
+    self.reset()
+
+  def reset(self) -> None:
+    self.active_track_id = -1
+    self.elapsed = 0.0
+    self.t_follow_cap = math.inf
+
+  @staticmethod
+  def _track_id(lead: Any) -> int:
+    return int(getattr(lead, "radarTrackId", -1))
+
+  @staticmethod
+  def _is_nonurgent(v_ego: float, lead: Any) -> bool:
+    if not getattr(lead, "status", False) or not getattr(lead, "radar", False):
+      return False
+
+    d_rel = float(getattr(lead, "dRel", 0.0))
+    v_rel = float(getattr(lead, "vRel", 0.0))
+    closing_speed = max(0.0, -v_rel)
+    ttc = d_rel / max(closing_speed, 0.1)
+    minimum_distance = max(CUTIN_GAP_RECOVERY_MIN_DISTANCE_M,
+                           v_ego * CUTIN_GAP_RECOVERY_MIN_HEADWAY_S)
+    return (
+      v_ego >= CUTIN_MIN_EGO_SPEED_MPS and d_rel >= minimum_distance and
+      0.1 <= closing_speed < CUTIN_GAP_RECOVERY_MAX_CLOSING_SPEED_MPS and
+      ttc > CUTIN_GAP_RECOVERY_MIN_TTC_S and
+      float(getattr(lead, "aLeadK", 0.0)) > -0.7 and
+      float(getattr(lead, "jLead", 0.0)) > -1.5
+    )
+
+  def update(self, nominal_t_follow: float, v_ego: float, lead: Any,
+             selected_cutin: Any | None, dt: float = DT_MDL) -> float:
+    track_id = self._track_id(lead)
+    selected_track_id = self._track_id(selected_cutin) if selected_cutin is not None else -1
+
+    if selected_track_id == track_id and selected_track_id >= 0 and self._is_nonurgent(v_ego, lead):
+      implied_t_follow = (
+        float(getattr(lead, "dRel", 0.0)) - CUTIN_GAP_RECOVERY_STOP_DISTANCE_M
+      ) / max(v_ego, 1.0)
+      if implied_t_follow < nominal_t_follow:
+        self.active_track_id = track_id
+        self.elapsed = 0.0
+        self.t_follow_cap = float(np.clip(
+          implied_t_follow,
+          CUTIN_GAP_RECOVERY_MIN_T_FOLLOW,
+          nominal_t_follow,
+        ))
+
+    if self.active_track_id < 0:
+      return nominal_t_follow
+
+    if track_id != self.active_track_id or not self._is_nonurgent(v_ego, lead):
+      self.reset()
+      return nominal_t_follow
+
+    self.elapsed += dt
+    self.t_follow_cap = min(
+      nominal_t_follow,
+      self.t_follow_cap + CUTIN_GAP_RECOVERY_RATE_S_PER_S * dt,
+    )
+    result = min(nominal_t_follow, self.t_follow_cap)
+    if self.elapsed >= CUTIN_GAP_RECOVERY_MAX_DURATION_S or result >= nominal_t_follow - 1e-3:
+      self.reset()
+    return result
 
 
 def cutin_predecel_accel(cutin_risk: Any, v_ego: float) -> float | None:

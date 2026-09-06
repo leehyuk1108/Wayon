@@ -10,10 +10,11 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import index_function
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import (
+  CutInGapRecoveryController,
   dynamic_t_follow_target,
   ramp_t_follow,
 )
-from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import cutin_risk_for_control
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import cutin_risk_for_control, selected_cutin_risk
 from openpilot.selfdrive.controls.lib.traffic_stop import (
   get_traffic_stop_accel_floor,
   get_traffic_stop_obstacle_distance,
@@ -72,6 +73,7 @@ MPC_LEAD_SOURCE_LOOKAHEAD_S = 5.0
 WAYON_STOP_SMOOTHING_BUFFER_M = 0.25
 WAYON_STOP_SMOOTHING_MAX_EGO_SPEED = 3.0
 WAYON_STOP_SMOOTHING_MAX_LEAD_SPEED = 0.5
+CUTIN_GAP_RECOVERY_MIN_SCORE = 0.10
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
@@ -255,6 +257,7 @@ class LongitudinalMpc:
     self.wayon_carrot_profile = wayon_carrot_profile
     self.dynamic_follow_enabled = wayon_carrot_profile
     self.cutin_predecel_mode = 2
+    self.cutin_gap_recovery = CutInGapRecoveryController()
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
     self.source = LongitudinalPlanSource.cruise
@@ -289,6 +292,7 @@ class LongitudinalMpc:
     self.time_integrator = 0.0
     self.x0 = np.zeros(X_DIM)
     self.t_follow = get_T_FOLLOW()
+    self.cutin_gap_recovery.reset()
     self.set_weights()
 
   def set_cost_weights(self, cost_weights, constraint_cost_weights):
@@ -374,6 +378,12 @@ class LongitudinalMpc:
                                     rise_rate=0.75 if cutin_active else 0.25)
     else:
       self.t_follow = base_t_follow
+    if self.wayon_carrot_profile:
+      self.t_follow = self.cutin_gap_recovery.update(
+        self.t_follow, v_ego, radarstate.leadOne,
+        selected_cutin_risk(radarstate, min_score=CUTIN_GAP_RECOVERY_MIN_SCORE), self.dt)
+    else:
+      self.cutin_gap_recovery.reset()
     t_follow = self.t_follow
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)

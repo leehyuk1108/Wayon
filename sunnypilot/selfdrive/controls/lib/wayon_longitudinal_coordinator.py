@@ -83,15 +83,30 @@ class WayonCoastController:
 
   ENTER_FRAMES = round(0.6 / DT_CTRL)
   LOW_SPEED_ENTER_FRAMES = round(0.3 / DT_CTRL)
+  NATURAL_ACCEL_TAU = 0.8
+  MAX_DOWNHILL_ALLOWANCE = 0.28
 
   def __init__(self):
     self.state = CoastDecision()
+    self.natural_accel = 0.0
+    self.natural_accel_initialized = False
 
   def reset(self) -> None:
     self.state = CoastDecision()
+    self.natural_accel = 0.0
+    self.natural_accel_initialized = False
 
   def update(self, active: bool, v_ego: float, v_target: float, requested_accel: float,
-             pitch: float, automatic_control: bool, lead=None, cutin_risk=None) -> bool:
+             pitch: float, automatic_control: bool, lead=None, cutin_risk=None,
+             measured_accel: float = 0.0, previous_accel: float = 0.0) -> bool:
+    if active and abs(previous_accel) <= 0.08 and math.isfinite(measured_accel) and abs(measured_accel) < 1.5:
+      if not self.natural_accel_initialized:
+        self.natural_accel = measured_accel
+        self.natural_accel_initialized = True
+      else:
+        alpha = DT_CTRL / (self.NATURAL_ACCEL_TAU + DT_CTRL)
+        self.natural_accel += alpha * (measured_accel - self.natural_accel)
+
     speed_error = v_target - v_ego
     lead_urgent = bool(lead is not None and getattr(lead, "status", False) and (
       (float(getattr(lead, "dRel", 1000.0)) < max(12.0, v_ego * 1.8) and float(getattr(lead, "vRel", 0.0)) < -0.8) or
@@ -102,16 +117,21 @@ class WayonCoastController:
     radar_lead = bool(lead is not None and getattr(lead, "status", False) and getattr(lead, "radar", False))
     stable_low_speed_lead = bool(
       1.0 <= v_ego < 5.0 and radar_lead and
-      float(getattr(lead, "dRel", 0.0)) > max(6.0, v_ego * 1.6) and
-      abs(float(getattr(lead, "vRel", 0.0))) < 0.35 and
-      abs(float(getattr(lead, "aLeadK", 0.0))) < 0.40
+      float(getattr(lead, "dRel", 0.0)) > max(7.0, v_ego * 1.8) and
+      -0.25 < float(getattr(lead, "vRel", 0.0)) < 0.90 and
+      abs(float(getattr(lead, "aLeadK", 0.0))) < 0.60
     )
+    gravity_allowance = float(np.clip(-math.sin(pitch) * 9.81 * 0.75, 0.0, self.MAX_DOWNHILL_ALLOWANCE))
+    observed_allowance = float(np.clip(self.natural_accel, 0.0, 0.25)) if self.natural_accel_initialized else 0.0
+    free_roll_allowance = max(gravity_allowance, observed_allowance)
     base_valid = (active and (v_ego >= 5.0 or stable_low_speed_lead) and
-                  abs(pitch) <= math.radians(2.0) and not automatic_control and
+                  abs(pitch) <= math.radians(4.0) and not automatic_control and
                   not lead_urgent and not cutin_urgent)
     if stable_low_speed_lead:
-      enter_valid = base_valid and -0.30 <= speed_error <= 0.55 and -0.12 <= requested_accel <= 0.08
-      stay_valid = base_valid and -0.40 <= speed_error <= 0.70 and -0.20 <= requested_accel <= 0.15
+      enter_valid = (base_valid and -0.30 <= speed_error <= 0.75 and
+                     -0.12 <= requested_accel <= 0.08 + free_roll_allowance)
+      stay_valid = (base_valid and -0.40 <= speed_error <= 0.90 and
+                    -0.20 <= requested_accel <= 0.15 + free_roll_allowance)
       enter_frames = self.LOW_SPEED_ENTER_FRAMES
     else:
       enter_valid = base_valid and -0.35 <= speed_error <= 0.75 and -0.30 <= requested_accel <= 0.05
@@ -215,21 +235,27 @@ class LeadTrendAnticipator:
 class LowSpeedStopController:
   """Taper residual braking only in the final fraction of a stop."""
 
-  TAPER_START = 0.8 * CV.KPH_TO_MS
+  TAPER_START = 1.5 * CV.KPH_TO_MS
   STOP_EPSILON = 0.015
-  MAX_TAPER_REQUEST = -0.6
+  HOLD_CONFIRM_FRAMES = round(0.2 / DT_CTRL)
+  MIN_LEAD_RESERVE = 4.2
+  MAX_CLOSING_SPEED = -0.8
 
   def __init__(self):
     self.phase = "inactive"
     self.output_accel = None
+    self.hold_confirm_frames = 0
 
   def reset(self) -> None:
     self.phase = "inactive"
     self.output_accel = None
+    self.hold_confirm_frames = 0
 
   def update(self, requested_accel: float, v_ego: float, a_ego: float, standstill: bool,
              should_stop: bool, lead=None) -> float:
-    if standstill or v_ego <= self.STOP_EPSILON:
+    filtered_stopped = standstill and v_ego <= self.STOP_EPSILON
+    self.hold_confirm_frames = self.hold_confirm_frames + 1 if filtered_stopped else 0
+    if self.hold_confirm_frames >= self.HOLD_CONFIRM_FRAMES:
       self.phase = "hold"
       self.output_accel = requested_accel
       return requested_accel
@@ -238,31 +264,34 @@ class LowSpeedStopController:
       self.output_accel = requested_accel
       return requested_accel
 
-    if requested_accel <= self.MAX_TAPER_REQUEST:
-      self.phase = "safety"
-      self.output_accel = requested_accel
-      return requested_accel
-
-    valid_lead = lead is not None and bool(getattr(lead, "status", False))
-    if valid_lead:
-      d_rel = float(getattr(lead, "dRel", 1000.0))
-      v_rel = float(getattr(lead, "vRel", 0.0))
-      if d_rel <= 3.5 or v_rel < -1.0:
-        self.phase = "safety"
+    if not filtered_stopped:
+      valid_lead = lead is not None and bool(getattr(lead, "status", False))
+      if valid_lead:
+        d_rel = float(getattr(lead, "dRel", 1000.0))
+        v_rel = float(getattr(lead, "vRel", 0.0))
+        if d_rel <= self.MIN_LEAD_RESERVE or v_rel < self.MAX_CLOSING_SPEED:
+          self.phase = "safety"
+          self.output_accel = requested_accel
+          return requested_accel
+      else:
+        # Without a measured stopping reserve, preserve the planner's braking.
+        self.phase = "unverified"
         self.output_accel = requested_accel
         return requested_accel
-    else:
-      # Without a measured stopping reserve, preserve the planner's braking.
-      self.phase = "unverified"
-      self.output_accel = requested_accel
-      return requested_accel
 
-    self.phase = "taper"
-    desired_accel = float(np.interp(v_ego, [self.STOP_EPSILON, self.TAPER_START], [0.0, -0.12]))
+    self.phase = "settle" if filtered_stopped else "taper"
+    desired_accel = -0.02 if filtered_stopped else float(np.interp(
+      v_ego,
+      [self.STOP_EPSILON, 0.15 * CV.KPH_TO_MS, 0.4 * CV.KPH_TO_MS,
+       0.8 * CV.KPH_TO_MS, self.TAPER_START],
+      [0.0, -0.02, -0.06, -0.16, -0.38],
+    ))
 
     if self.output_accel is None:
       self.output_accel = requested_accel
-    release_step = 1.5 * DT_CTRL
+    # Release quickly enough to shed residual hydraulic pressure before the
+    # wheel-speed zero bin, then let GM Auto Hold build stationary pressure.
+    release_step = 4.5 * DT_CTRL
     self.output_accel += float(np.clip(desired_accel - self.output_accel, 0.0, release_step))
     return self.output_accel
 

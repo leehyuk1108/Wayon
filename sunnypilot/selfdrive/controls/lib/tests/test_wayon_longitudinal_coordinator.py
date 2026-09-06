@@ -105,26 +105,66 @@ def test_low_speed_follow_coasts_only_with_stable_radar_lead():
                                lead(8.0, 0.0, radar=False))
 
 
+def test_downhill_low_speed_follow_can_coast_instead_of_gas_brake_hunting():
+  controller = WayonCoastController()
+  stable_lead = lead(d_rel=17.0, v_rel=0.6, a_lead=0.1)
+  pitch = -1.7 * CV.DEG_TO_RAD
+  results = [controller.update(True, 3.9, 4.2, 0.24, pitch, False, stable_lead,
+                               measured_accel=0.05, previous_accel=0.0)
+             for _ in range(controller.LOW_SPEED_ENTER_FRAMES)]
+
+  assert results[-1]
+  assert controller.natural_accel_initialized
+  assert not controller.update(True, 3.9, 4.2, -0.5, pitch, False,
+                               lead(d_rel=6.5, v_rel=-1.2),
+                               measured_accel=0.1, previous_accel=0.0)
+
+
 def test_low_speed_stop_only_tapers_final_stop_with_verified_lead():
   controller = LowSpeedStopController()
-  assert controller.update(-0.4, 1.0 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0)) == -0.4
+  assert controller.update(-0.4, 1.6 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0)) == -0.4
   assert controller.phase == "approach"
 
   tapered = -0.4
   for _ in range(30):
-    tapered = controller.update(tapered, 0.5 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0))
+    tapered = controller.update(tapered, 0.7 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0))
   assert controller.phase == "taper"
   assert -0.4 < tapered < 0.0
 
+  for _ in range(controller.HOLD_CONFIRM_FRAMES - 1):
+    assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) > -0.2
+    assert controller.phase == "settle"
   assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) == -0.2
   assert controller.phase == "hold"
+
+
+def test_low_speed_stop_relaxes_strong_request_with_verified_reserve():
+  controller = LowSpeedStopController()
+  speed = 0.7 * CV.KPH_TO_MS
+  output = -1.1
+  for _ in range(20):
+    output = controller.update(-1.1, speed, -0.5, False, True, lead(5.0, -0.2))
+  assert controller.phase == "taper"
+  assert -0.25 < output < -0.05
+
+
+def test_low_speed_stop_does_not_raise_hold_pressure_on_premature_standstill():
+  controller = LowSpeedStopController()
+  safe_lead = lead(5.0, -0.25)
+  output = -1.2
+  for _ in range(25):
+    output = controller.update(-1.2, 0.2, -0.4, False, True, safe_lead)
+  assert output > -0.3
+
+  output = controller.update(-1.2, 0.03, -1.4, True, True, safe_lead)
+
+  assert output > -0.3
+  assert controller.phase == "taper"
 
 
 def test_low_speed_stop_never_relaxes_close_or_unverified_stop():
   controller = LowSpeedStopController()
   speed = 0.5 * CV.KPH_TO_MS
-  assert controller.update(-0.8, speed, -0.5, False, True, lead(8.0)) == -0.8
-  assert controller.phase == "safety"
   assert controller.update(-0.4, speed, -0.2, False, True, lead(3.2)) == -0.4
   assert controller.phase == "safety"
   assert controller.update(-0.4, speed, -0.2, False, True, None) == -0.4

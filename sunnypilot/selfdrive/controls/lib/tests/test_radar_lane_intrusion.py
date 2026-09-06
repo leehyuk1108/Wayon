@@ -69,7 +69,8 @@ def test_left_lane_risk_grows_as_vehicle_approaches_boundary():
     risks.append(detector.lane_risks["left"])
 
   assert risks[:3] == [0.0, 0.0, 0.0]
-  assert 0.0 < risks[3] < risks[4] < risks[5] < risks[6]
+  assert risks[:4] == [0.0] * 4
+  assert 0.0 < risks[4] < risks[5] < risks[6]
   assert risks[6] > 0.99
   assert detector.lane_risks["right"] == 0.0
 
@@ -90,7 +91,7 @@ def test_cutin_risk_preserves_front_radar_motion():
 
 def test_lane_risk_accepts_navdy_radar_dicts_and_fades():
   detector = RadarLaneIntrusionDetector()
-  for index, lateral in enumerate([-3.5, -3.5, -3.5, -3.0]):
+  for index, lateral in enumerate([-3.5, -3.5, -3.5, -3.2, -3.0]):
     detector.update(20.0, [{"trackId": 8, "dRel": 30.0, "yRel": -lateral}],
                     model(), index * 0.05)
   initial_risk = detector.lane_risks["left"]
@@ -153,6 +154,13 @@ def test_single_lateral_jump_does_not_alert():
   samples = [-3.2, -3.1, -3.0, -2.2, -3.0, -3.0, -3.0]
   assert all(update(detector, index * 0.05, lateral) is None
              for index, lateral in enumerate(samples))
+
+
+def test_single_inward_radar_motion_does_not_publish_cutin_risk():
+  detector = RadarLaneIntrusionDetector()
+  for index, lateral in enumerate([-3.5, -3.5, -3.5, -2.8]):
+    update(detector, index * 0.05, lateral)
+  assert detector.cutin_risk is None
 
 
 def test_track_id_change_does_not_inherit_outside_history():

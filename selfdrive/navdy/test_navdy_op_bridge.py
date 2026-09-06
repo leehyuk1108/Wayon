@@ -44,7 +44,12 @@ def test_ambient_door_state_survives_onroad_startup_gap(tmp_path):
 
 def test_ambient_heartbeat_payload_needs_no_onroad_services():
   payload = navdy_op_bridge.ambient_heartbeat_payload(True, True)
-  assert payload == {"onroad": True, "doorOpen": True, "gear": "unknown"}
+  assert payload == {
+    "onroad": True,
+    "doorOpen": True,
+    "gear": "unknown",
+    "ambientState": "onroad_door",
+  }
 
   payload = navdy_op_bridge.ambient_heartbeat_payload(
     True, False, SimpleNamespace(gearShifter="park"))
@@ -616,8 +621,14 @@ def test_navdy_autohold_progress_view_is_wired_into_receiver():
     assert key in view
 
   layout_method = receiver.split(".method private static applyStatusLayout(Z)V", 1)[1].split(".end method", 1)[0]
-  assert "const/16 v3, 0xe6" in layout_method
-  assert "const/16 v3, 0xdc" in layout_method
+  assert layout_method.count("const/16 v2, 0xfe") >= 2
+  assert layout_method.count("const/16 v3, 0xf8") >= 2
+  assert layout_method.count("const/16 v2, 0xf5") >= 2
+  assert layout_method.count("const/16 v3, 0xee") >= 2
+
+  speed_visibility = receiver.split("sCurrentSpeedTextView", 2)[2].split(".line 185", 1)[0]
+  assert 'const-string v2, "autoHoldActive"' in speed_visibility
+  assert "if-nez v2, :cond_d" in speed_visibility
 
 
 def test_payload_keeps_pre_enabled_stop_icon_for_cruise_standstill():
@@ -1197,7 +1208,8 @@ def test_navdy_hud_patch_colors_current_speed_for_camera_overspeed():
 
   assert "TrafficIncidentWidgetPresenter;->getLastCameraSpeedLimit()I" in smali
   assert "cmpl-double v4, v16, v8" in smali
-  assert "if-lez v4, :cond_8" in smali
+  overspeed_block = smali.split("cmpl-double v4, v16, v8", 1)[1].split("const/high16 v1, -0x10000", 1)[0]
+  assert "if-lez v4," in overspeed_block
   assert "const/high16 v1, -0x10000" in smali
   assert "const/4 v1, -0x1" in smali
 
@@ -1256,8 +1268,7 @@ def test_navdy_hud_patch_keeps_status_icons_while_disengaged():
                 "sStandstillView", "sOpReadyView", "sSetSpeedRow"):
     assert f"->{field}:" in layout_method
   assert "if-eqz p0, :cond_4" in layout_method
-  assert "const/16 v3, 0xed" in layout_method
-  assert "const/16 v3, 0xe6" in layout_method
+  assert layout_method.count("const/16 v3, 0xf8") >= 2
   assert "if-eqz p0, :cond_6" in layout_method
   assert "const/16 v3, 0x12f" in layout_method
   assert "const/16 v3, 0x128" in layout_method

@@ -355,7 +355,9 @@ class LongControl:
         cutin_risk = radar_state.leadCutInRisk if radar_state is not None else None
         automatic_control = bool(icbm is not None and getattr(icbm, "automaticControlActive", False))
         regular_coast = self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,
-                                                     automatic_control, lead, cutin_risk)
+                                                     automatic_control, lead, cutin_risk,
+                                                     measured_accel=CS.aEgo,
+                                                     previous_accel=self.last_output_accel)
         anticipatory_coast = self.lead_trend_anticipator.update(
           active and self.wayon_carrot_profile, CS.vEgo, output_accel, CS.aEgo, lead)
         if regular_coast or anticipatory_coast:

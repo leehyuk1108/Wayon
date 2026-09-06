@@ -18,6 +18,8 @@ LANE_RISK_FADE_TIME_S = 0.45
 CUTIN_RISK_HOLD_TIME_S = 0.40
 REQUIRED_OUTSIDE_SAMPLES = 3
 REQUIRED_INTRUSION_SAMPLES = 3
+REQUIRED_RISK_SAMPLES = 2
+MIN_INWARD_TRAVEL_M = 0.30
 # Navdy evaluates at 5 Hz. Preserve history through short lane-confidence dropouts.
 MAX_SAMPLE_GAP_S = 0.75
 TRACK_STALE_S = 0.85
@@ -52,9 +54,11 @@ class _TrackState:
   radar_y_rel_m: float
   relative_speed_mps: float
   penetration_m: float
+  min_penetration_m: float
   last_seen_s: float
   outside_samples: int
   intrusion_samples: int = 0
+  risk_samples: int = 0
   inward_speed_mps: float = 0.0
   alerted: bool = False
 
@@ -159,7 +163,9 @@ class RadarLaneIntrusionDetector:
     for track_id in seen_tracks:
       state = self._tracks.get(track_id)
       if state is None or state.outside_samples < REQUIRED_OUTSIDE_SAMPLES or \
-         state.inward_speed_mps < LANE_RISK_MIN_INWARD_SPEED_MPS:
+         state.risk_samples < REQUIRED_RISK_SAMPLES or \
+         state.inward_speed_mps < LANE_RISK_MIN_INWARD_SPEED_MPS or \
+         state.penetration_m - state.min_penetration_m < MIN_INWARD_TRAVEL_M:
         continue
       proximity = (state.penetration_m + LANE_RISK_START_GAP_M) / \
                   (LANE_RISK_START_GAP_M + INSIDE_MARGIN_M)
@@ -216,6 +222,7 @@ class RadarLaneIntrusionDetector:
       radar_y_rel_m=radar_y_rel_m,
       relative_speed_mps=relative_speed_mps,
       penetration_m=penetration_m,
+      min_penetration_m=penetration_m,
       last_seen_s=now_s,
       outside_samples=1 if penetration_m <= -OUTSIDE_MARGIN_M else 0,
     )
@@ -276,7 +283,15 @@ class RadarLaneIntrusionDetector:
       state.radar_y_rel_m = radar_y_rel_m
       state.relative_speed_mps = relative_speed_mps
       state.penetration_m = penetration_m
+      state.min_penetration_m = min(state.min_penetration_m, penetration_m)
       state.last_seen_s = now_s
+
+      risk_motion_valid = (
+        state.outside_samples >= REQUIRED_OUTSIDE_SAMPLES and
+        state.inward_speed_mps >= LANE_RISK_MIN_INWARD_SPEED_MPS and
+        penetration_m > -LANE_RISK_START_GAP_M
+      )
+      state.risk_samples = state.risk_samples + 1 if risk_motion_valid else 0
 
       if penetration_m <= -OUTSIDE_MARGIN_M:
         state.outside_samples += 1

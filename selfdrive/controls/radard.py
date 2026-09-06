@@ -33,6 +33,14 @@ RADAR_TO_CAMERA = 1.52  # RADAR is ~ 1.5m ahead from center of mesh frame
 RADAR_LEAD_HOLD_TIME = 0.25
 
 
+def cutin_matches_selected_lead(track_id: int, *leads: Any) -> bool:
+  return any(
+    bool(getattr(lead, "status", False)) and bool(getattr(lead, "radar", False)) and
+    int(getattr(lead, "radarTrackId", -1)) == track_id
+    for lead in leads
+  )
+
+
 class KalmanParams:
   def __init__(self, dt: float):
     # Lead Kalman Filter params, calculating K from A, C, Q, R requires the control library.
@@ -266,6 +274,8 @@ class RadarD:
                                    lane_change_active=lane_change_active)
     risk = self.intrusion_detector.cutin_risk
     if risk is None:
+      return {"status": False}
+    if cutin_matches_selected_lead(risk.track_id, self.radar_state.leadOne, self.radar_state.leadTwo):
       return {"status": False}
 
     v_lead = max(0.0, self.v_ego + risk.relative_speed_mps)

@@ -6,6 +6,35 @@ LEAD_DUPLICATE_SPEED = 2.0
 LEAD_DUPLICATE_LATERAL = 1.2
 
 
+def _lead_value(lead: Any, name: str, default: Any) -> Any:
+  if isinstance(lead, dict):
+    return lead.get(name, default)
+  return getattr(lead, name, default)
+
+
+def radar_track_matches_any_lead(track_id: int, *leads: Any) -> bool:
+  return track_id >= 0 and any(
+    bool(_lead_value(lead, "status", False)) and bool(_lead_value(lead, "radar", False)) and
+    int(_lead_value(lead, "radarTrackId", -1)) == track_id
+    for lead in leads
+  )
+
+
+def cutin_risk_for_control(radar_state: Any) -> Any | None:
+  """Avoid applying pre-cut-in control twice after the same track becomes a lead."""
+  risk = _lead_value(radar_state, "leadCutInRisk", None)
+  if risk is None or not bool(_lead_value(risk, "status", False)):
+    return risk
+  track_id = int(_lead_value(risk, "radarTrackId", -1))
+  if radar_track_matches_any_lead(
+    track_id,
+    _lead_value(radar_state, "leadOne", None),
+    _lead_value(radar_state, "leadTwo", None),
+  ):
+    return None
+  return risk
+
+
 def leads_are_duplicates(lead_one: dict[str, Any], lead_two: dict[str, Any]) -> bool:
   if not lead_one.get("status", False) or not lead_two.get("status", False):
     return False

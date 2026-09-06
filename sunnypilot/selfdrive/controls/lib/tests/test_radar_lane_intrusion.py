@@ -163,6 +163,26 @@ def test_single_inward_radar_motion_does_not_publish_cutin_risk():
   assert detector.cutin_risk is None
 
 
+def test_lane_boundary_jitter_without_radar_motion_does_not_publish_cutin_risk():
+  detector = RadarLaneIntrusionDetector()
+  fixed_lateral = -3.0
+  left_boundaries = [-1.8, -1.8, -1.8, -1.95, -2.15, -2.30, -2.10]
+  for index, left in enumerate(left_boundaries):
+    shifted = model(left=[left] * 4, right=[left + 3.6] * 4)
+    update(detector, index * 0.05, fixed_lateral, model_v2=shifted)
+  assert detector.cutin_risk is None
+
+
+def test_radar_lateral_jitter_without_lane_relative_motion_does_not_publish_cutin_risk():
+  detector = RadarLaneIntrusionDetector()
+  laterals = [-3.3, -3.3, -3.3, -3.15, -2.95, -2.75]
+  for index, lateral in enumerate(laterals):
+    left = -1.8 + (lateral - laterals[0])
+    shifted = model(left=[left] * 4, right=[left + 3.6] * 4)
+    update(detector, index * 0.05, lateral, model_v2=shifted)
+  assert detector.cutin_risk is None
+
+
 def test_track_id_change_does_not_inherit_outside_history():
   detector = RadarLaneIntrusionDetector()
   for index, lateral in enumerate([-3.2, -3.1, -3.0]):

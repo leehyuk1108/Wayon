@@ -13,6 +13,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements impor
   dynamic_t_follow_target,
   ramp_t_follow,
 )
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import cutin_risk_for_control
 from openpilot.selfdrive.controls.lib.traffic_stop import (
   get_traffic_stop_accel_floor,
   get_traffic_stop_obstacle_distance,
@@ -365,7 +366,7 @@ class LongitudinalMpc:
     base_t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
-    cutin_risk = radarstate.leadCutInRisk if self.cutin_predecel_mode == 2 else None
+    cutin_risk = cutin_risk_for_control(radarstate) if self.cutin_predecel_mode == 2 else None
     if self.dynamic_follow_enabled:
       target_t_follow = dynamic_t_follow_target(base_t_follow, radarstate.leadOne, self.x0[2], cutin_risk)
       cutin_active = cutin_risk is not None and getattr(cutin_risk, "status", False)

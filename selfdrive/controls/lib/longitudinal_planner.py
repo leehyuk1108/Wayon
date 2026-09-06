@@ -24,6 +24,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements impor
   lead_response_factor,
   limit_accel_for_future_curve,
 )
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import cutin_risk_for_control
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import (
   A_CHANGE_COST_STARTING,
   get_max_accel as get_wayon_carrot_max_accel,
@@ -173,7 +174,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if force_slow_decel:
       v_cruise = 0.0
 
-    cutin_risk = sm['radarState'].leadCutInRisk
+    cutin_risk = cutin_risk_for_control(sm['radarState'])
     active_cutin_risk = cutin_risk if self.cutin_predecel_mode == 2 else None
     response_lead = sm['radarState'].leadOne
     response_factor = lead_response_factor(response_lead, active_cutin_risk)

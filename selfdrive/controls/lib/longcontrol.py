@@ -15,6 +15,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   is_enabled,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import cutin_risk_for_control
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
   LeadTrendAnticipator,
   LongitudinalResponseLearner,
@@ -352,7 +353,7 @@ class LongControl:
         output_accel = self.speed_pid.update(error, speed=CS.vEgo, feedforward=a_target * self.speed_pid_kf)
         self.pid.reset()
         lead = radar_state.leadOne if radar_state is not None else None
-        cutin_risk = radar_state.leadCutInRisk if radar_state is not None else None
+        cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None
         automatic_control = bool(icbm is not None and getattr(icbm, "automaticControlActive", False))
         regular_coast = self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,
                                                      automatic_control, lead, cutin_risk,
@@ -375,7 +376,7 @@ class LongControl:
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     lead = radar_state.leadOne if radar_state is not None else None
-    cutin_risk = radar_state.leadCutInRisk if radar_state is not None else None
+    cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None
     urgent = bool((lead is not None and getattr(lead, "status", False) and
                    (getattr(lead, "dRel", 1000.0) < 8.0 or getattr(lead, "vRel", 0.0) < -2.0)) or
                   (cutin_risk is not None and getattr(cutin_risk, "status", False) and

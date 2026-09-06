@@ -16,7 +16,7 @@ from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP
 from openpilot.sunnypilot.selfdrive.controls.lib.radar_lane_intrusion import RadarLaneIntrusionDetector
-from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import leads_are_duplicates
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import leads_are_duplicates, radar_track_matches_any_lead
 
 
 # Default lead acceleration decay set to 50% at 1s
@@ -34,11 +34,7 @@ RADAR_LEAD_HOLD_TIME = 0.25
 
 
 def cutin_matches_selected_lead(track_id: int, *leads: Any) -> bool:
-  return any(
-    bool(getattr(lead, "status", False)) and bool(getattr(lead, "radar", False)) and
-    int(getattr(lead, "radarTrackId", -1)) == track_id
-    for lead in leads
-  )
+  return radar_track_matches_any_lead(track_id, *leads)
 
 
 class KalmanParams:
@@ -275,9 +271,6 @@ class RadarD:
     risk = self.intrusion_detector.cutin_risk
     if risk is None:
       return {"status": False}
-    if cutin_matches_selected_lead(risk.track_id, self.radar_state.leadOne, self.radar_state.leadTwo):
-      return {"status": False}
-
     v_lead = max(0.0, self.v_ego + risk.relative_speed_mps)
     return {
       "dRel": risk.distance_m,

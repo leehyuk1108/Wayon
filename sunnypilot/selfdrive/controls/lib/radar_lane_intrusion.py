@@ -1,5 +1,6 @@
 from bisect import bisect_left
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 import math
 from typing import Any
 
@@ -19,7 +20,8 @@ CUTIN_RISK_HOLD_TIME_S = 0.40
 REQUIRED_OUTSIDE_SAMPLES = 3
 REQUIRED_INTRUSION_SAMPLES = 3
 REQUIRED_RISK_SAMPLES = 2
-MIN_INWARD_TRAVEL_M = 0.30
+MIN_INWARD_TRAVEL_M = 0.35
+MOTION_WINDOW_S = 0.80
 # Navdy evaluates at 5 Hz. Preserve history through short lane-confidence dropouts.
 MAX_SAMPLE_GAP_S = 0.75
 TRACK_STALE_S = 0.85
@@ -54,12 +56,15 @@ class _TrackState:
   radar_y_rel_m: float
   relative_speed_mps: float
   penetration_m: float
-  min_penetration_m: float
   last_seen_s: float
   outside_samples: int
   intrusion_samples: int = 0
   risk_samples: int = 0
+  boundary_inward_speed_mps: float = 0.0
+  radar_inward_speed_mps: float = 0.0
   inward_speed_mps: float = 0.0
+  inward_travel_m: float = 0.0
+  motion_history: deque[tuple[float, float, float]] = field(default_factory=deque)
   alerted: bool = False
 
 
@@ -165,7 +170,7 @@ class RadarLaneIntrusionDetector:
       if state is None or state.outside_samples < REQUIRED_OUTSIDE_SAMPLES or \
          state.risk_samples < REQUIRED_RISK_SAMPLES or \
          state.inward_speed_mps < LANE_RISK_MIN_INWARD_SPEED_MPS or \
-         state.penetration_m - state.min_penetration_m < MIN_INWARD_TRAVEL_M:
+         state.inward_travel_m < MIN_INWARD_TRAVEL_M:
         continue
       proximity = (state.penetration_m + LANE_RISK_START_GAP_M) / \
                   (LANE_RISK_START_GAP_M + INSIDE_MARGIN_M)
@@ -215,17 +220,18 @@ class RadarLaneIntrusionDetector:
 
   def _new_state(self, side: str, distance_m: float, lateral_m: float, radar_y_rel_m: float,
                  relative_speed_mps: float, penetration_m: float, now_s: float) -> _TrackState:
-    return _TrackState(
+    state = _TrackState(
       side=side,
       distance_m=distance_m,
       lateral_m=lateral_m,
       radar_y_rel_m=radar_y_rel_m,
       relative_speed_mps=relative_speed_mps,
       penetration_m=penetration_m,
-      min_penetration_m=penetration_m,
       last_seen_s=now_s,
       outside_samples=1 if penetration_m <= -OUTSIDE_MARGIN_M else 0,
+      motion_history=deque([(now_s, lateral_m, penetration_m)]),
     )
+    return state
 
   def update(self, v_ego: float, radar_points: list[Any], model_v2: Any, now_s: float,
              lane_change_active: bool = False) -> RadarLaneIntrusion | None:
@@ -276,15 +282,28 @@ class RadarLaneIntrusionDetector:
             _penetration_m(current_side, lateral_m, left, right), now_s)
         continue
 
-      raw_inward_speed = (penetration_m - state.penetration_m) / sample_gap_s
-      state.inward_speed_mps = 0.55 * state.inward_speed_mps + 0.45 * raw_inward_speed
+      boundary_inward_speed = (penetration_m - state.penetration_m) / sample_gap_s
+      radar_inward_delta = lateral_m - state.lateral_m if state.side == "left" else state.lateral_m - lateral_m
+      radar_inward_speed = radar_inward_delta / sample_gap_s
+      state.boundary_inward_speed_mps = 0.55 * state.boundary_inward_speed_mps + 0.45 * boundary_inward_speed
+      state.radar_inward_speed_mps = 0.55 * state.radar_inward_speed_mps + 0.45 * radar_inward_speed
+      # A real cut-in moves inward in both radar coordinates and relative to the
+      # model lane boundary. Requiring both rejects lane-line jitter and curved
+      # adjacent lanes without delaying an actual crossing.
+      state.inward_speed_mps = min(state.boundary_inward_speed_mps, state.radar_inward_speed_mps)
       state.distance_m = distance_m
       state.lateral_m = lateral_m
       state.radar_y_rel_m = radar_y_rel_m
       state.relative_speed_mps = relative_speed_mps
       state.penetration_m = penetration_m
-      state.min_penetration_m = min(state.min_penetration_m, penetration_m)
       state.last_seen_s = now_s
+      state.motion_history.append((now_s, lateral_m, penetration_m))
+      while len(state.motion_history) > 1 and now_s - state.motion_history[0][0] > MOTION_WINDOW_S:
+        state.motion_history.popleft()
+      _, start_lateral_m, start_penetration_m = state.motion_history[0]
+      radar_inward_travel = lateral_m - start_lateral_m if state.side == "left" else start_lateral_m - lateral_m
+      boundary_inward_travel = penetration_m - start_penetration_m
+      state.inward_travel_m = max(0.0, min(radar_inward_travel, boundary_inward_travel))
 
       risk_motion_valid = (
         state.outside_samples >= REQUIRED_OUTSIDE_SAMPLES and

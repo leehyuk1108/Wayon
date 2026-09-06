@@ -23,7 +23,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from openpilot.system.wayon_drive_quality import resolve_operating_state
-from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import cutin_predecel_accel
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import radar_track_matches_any_lead
 
 
 KPH_PER_MS = 3.6
@@ -998,10 +998,13 @@ def mark_navdy_cutin_risk(vehicles: list[dict[str, Any]], radar_state: Any,
   if radar_state is None:
     return
   risk = getattr(radar_state, "leadCutInRisk", None)
-  if risk is None or cutin_predecel_accel(risk, max(v_ego, 0.0)) is None:
+  if risk is None or not getattr(risk, "status", False):
     return
 
   track_id = int(getattr(risk, "radarTrackId", -1))
+  if not radar_track_matches_any_lead(
+    track_id, getattr(radar_state, "leadOne", None), getattr(radar_state, "leadTwo", None)):
+    return
   matching_vehicle = next(
     (vehicle for vehicle in vehicles if vehicle["trackId"] == track_id), None)
   if matching_vehicle is None:

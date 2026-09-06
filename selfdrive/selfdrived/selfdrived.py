@@ -31,6 +31,7 @@ from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import cutin_predecel_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.phone_forward_risk import lead_closing_risk
+from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import radar_track_matches_any_lead
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 REPLAY = "REPLAY" in os.environ
@@ -242,8 +243,9 @@ class SelfdriveD(CruiseHelper):
 
     cutin_risk = self.sm['radarState'].leadCutInRisk
     predecel_accel = cutin_predecel_accel(cutin_risk, max(CS.vEgo, 0.0))
-    active = predecel_accel is not None
-    track_id = int(getattr(cutin_risk, 'radarTrackId', -1)) if active else -1
+    track_id = int(getattr(cutin_risk, 'radarTrackId', -1)) if getattr(cutin_risk, 'status', False) else -1
+    active = radar_track_matches_any_lead(
+      track_id, self.sm['radarState'].leadOne, self.sm['radarState'].leadTwo)
     newly_active = active and (
       not self.previous_cutin_warning_active or track_id != self.previous_cutin_warning_track_id
     )
@@ -259,7 +261,7 @@ class SelfdriveD(CruiseHelper):
         relativeSpeed=float(getattr(cutin_risk, 'vRel', 0.0)),
         inwardSpeed=float(getattr(cutin_risk, 'vLat', 0.0)),
         score=float(getattr(cutin_risk, 'score', 0.0)),
-        predecelAccel=float(predecel_accel),
+        predecelAccel=float(predecel_accel) if predecel_accel is not None else 0.0,
       )
 
     self.previous_cutin_warning_active = active

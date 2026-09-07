@@ -59,7 +59,7 @@ def test_lane_worker_yields_to_driving_processes():
   server = (ROOT / "selfdrive/lane_marking/server.py").read_text()
 
   assert "os.nice(10)" in launcher
-  assert "cv2.setNumThreads(1)" in server
+  assert "cv2.setNumThreads(2)" in server
   assert "LANE_INFERENCE_YIELD_SECONDS = 0.03" in server
   assert "time.sleep(LANE_INFERENCE_YIELD_SECONDS)" in server
 

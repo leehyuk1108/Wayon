@@ -32,7 +32,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_safety import targe
 
 try:
   import cv2
-  cv2.setNumThreads(1)
+  cv2.setNumThreads(2)
 except ModuleNotFoundError as error:
   if error.name == "cv2":
     raise SystemExit(
@@ -669,7 +669,7 @@ def create_server(host: str = HOST, port: int = PORT, model_path: Path = DEFAULT
   if sys.platform == "linux":
     from openpilot.common.realtime import set_core_affinity
     set_core_affinity([0, 1, 2, 3])
-  cv2.setNumThreads(1)
+  cv2.setNumThreads(2)
   service = VASMService(model_path)
   Handler.service = service
   server = ThreadingHTTPServer((host, port), Handler)

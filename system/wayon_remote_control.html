@@ -84,7 +84,7 @@
   </dialog>
   <script>
     const state={steering:0,accelerator:0,brake:0,sequence:0,armed:false,available:false,engaged:false,onroad:false,phase:'inactive',speedMps:0};
-    const session=crypto.randomUUID().replaceAll('-','');
+    const session=Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');
     const login=document.querySelector('#login'),statusEl=document.querySelector('#status'),arm=document.querySelector('#arm'),detail=document.querySelector('#detail');
     let key=sessionStorage.getItem('wayon-control-key')||'',sending=false,arming=false,stopped=false;
     const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);

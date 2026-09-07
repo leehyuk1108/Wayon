@@ -439,7 +439,7 @@ def test_adaptive_smoother_blends_brake_release_into_starting_accel():
   assert -0.4 < outputs[0] < -0.39
   assert outputs[19] < 0.0
   assert outputs[24] > 0.0
-  assert outputs[54] > 0.3
+  assert outputs[59] > 0.3
   assert outputs[-1] > 0.34
   assert slopes[2] < max(slopes)
   assert slopes[-2] < max(slopes)

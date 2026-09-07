@@ -2,11 +2,12 @@ from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.mici.layouts.settings.network import WifiNetworkButton
 from openpilot.selfdrive.ui.mici.layouts.settings.network.wifi_ui import WifiUIMici
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigMultiToggle, BigParamControl, BigToggle
-from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog
+from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigInputDialog
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.lib.prime_state import PrimeType
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.wifi_manager import WifiManager, Network, MeteredType
+from openpilot.system.wayon_remote_auth import RemotePasswordStore
 
 
 class NetworkLayoutMici(NavScroller):
@@ -46,6 +47,31 @@ class NetworkLayoutMici(NavScroller):
     self._tethering_password_btn = BigButton("tethering password", "", txt_tethering)
     self._tethering_password_btn.set_click_callback(tethering_password_clicked)
 
+    # ******** Remote control password ********
+    self._remote_password_store = RemotePasswordStore()
+    self._remote_password_btn = BigButton("remote control password", "set" if self._remote_password_store.configured() else "not set")
+
+    def remote_password_clicked():
+      def confirm_password(first_password: str):
+        def save_password(second_password: str):
+          if first_password != second_password:
+            gui_app.push_widget(BigDialog("", "Passwords do not match. The password was not changed."))
+            return
+          try:
+            self._remote_password_store.set_password(first_password)
+            self._remote_password_btn.set_value("set")
+          except (OSError, ValueError) as exc:
+            gui_app.push_widget(BigDialog("", f"Could not save remote control password: {exc}"))
+
+        gui_app.push_widget(BigInputDialog("enter password again...", minimum_length=8,
+                                           confirm_callback=save_password, password_mode=True))
+
+      gui_app.push_widget(BigInputDialog("new remote control password...", minimum_length=8,
+                                         confirm_callback=confirm_password, password_mode=True))
+
+    self._remote_password_btn.set_click_callback(remote_password_clicked)
+    self._remote_password_btn.set_enabled(lambda: not ui_state.started)
+
     # ******** Network Metered ********
     def network_metered_callback(value: str):
       self._network_metered_btn.set_enabled(False)
@@ -81,6 +107,7 @@ class NetworkLayoutMici(NavScroller):
       self._network_metered_btn,
       self._tethering_toggle_btn,
       self._tethering_password_btn,
+      self._remote_password_btn,
       # /* Advanced settings
       self._roaming_btn,
       self._apn_btn,

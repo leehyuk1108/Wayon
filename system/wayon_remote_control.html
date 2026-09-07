@@ -80,9 +80,9 @@
   </main>
   <dialog id="login">
     <form method="dialog" id="loginForm">
-      <h2>Wayon Cloud Key</h2>
-      <p>Wayon Cloud Key로 인증한 뒤 오프로드 상태에서 다음 1회의 원격제어 주행을 활성화할 수 있습니다.</p>
-      <input id="key" type="password" autocomplete="current-password" placeholder="wayon_…" required>
+      <h2>원격제어 비밀번호</h2>
+      <p>콤마의 네트워크 설정에서 지정한 비밀번호를 입력하면 다음 1회의 원격제어 주행이 활성화됩니다. 콤마가 오프로드일 때만 가능합니다.</p>
+      <input id="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="비밀번호" required>
       <div class="error" id="error"></div>
       <button type="submit">인증</button>
     </form>
@@ -92,9 +92,9 @@
     const session=Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');
     const login=document.querySelector('#login'),statusEl=document.querySelector('#status'),arm=document.querySelector('#arm'),detail=document.querySelector('#detail');
     const cameraImg=document.querySelector('#wideCamera'),cameraState=document.querySelector('#cameraState');
-    let key=sessionStorage.getItem('wayon-control-key')||'',sending=false,arming=false,stopped=false,cameraBusy=false,cameraObjectUrl='';
+    let token='',sending=false,arming=false,stopped=false,cameraBusy=false,cameraObjectUrl='';
     const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
-    const headers=()=>({'Authorization':`Bearer ${key}`,'X-Wayon-Control-Session':session});
+    const headers=()=>({'Authorization':`Bearer ${token}`,'X-Wayon-Control-Session':session});
     async function api(path,options={}){const h={...headers(),...(options.headers||{})};return fetch(path,{...options,headers:h,cache:'no-store'});}
     function zero(){state.steering=0;state.accelerator=0;state.brake=0;render();}
     function render(){
@@ -127,8 +127,8 @@
       catch(_){state.armed=false;}finally{arming=false;render();}
     }
     async function status(){
-      if(!key){if(!login.open)login.showModal();return;}
-      try{const r=await api('/api/status'),j=await r.json();if(r.status===401){key='';sessionStorage.removeItem('wayon-control-key');if(!login.open)login.showModal();return;}
+      if(!token){if(!login.open)login.showModal();return;}
+      try{const r=await api('/api/status'),j=await r.json();if(r.status===401){token='';if(!login.open)login.showModal();return;}
         state.available=r.ok&&j.available;state.armed=Boolean(j.state?.ownedBySession);state.engaged=Boolean(j.vehicle?.engaged);state.onroad=Boolean(j.vehicle?.onroad);state.phase=j.mode?.phase||'inactive';state.speedMps=Number(j.vehicle?.speedMps||0);
         if(state.phase!=='active')stopped=false;render();connect();
       }catch(_){state.available=false;state.armed=false;zero();}
@@ -155,7 +155,10 @@
       if(path==='/api/arm'){state.armed=r.ok&&Boolean(j.state?.armed);state.sequence=0;}else if(path==='/api/reset'){state.armed=false;zero();}
       if(!r.ok)detail.textContent=j.error||'요청 실패';await status();
     }catch(_){state.armed=false;zero();}});
-    document.querySelector('#loginForm').addEventListener('submit',async e=>{e.preventDefault();key=document.querySelector('#key').value.trim();try{const r=await api('/api/status');if(!r.ok)throw new Error('키 또는 차량 상태를 확인하세요.');sessionStorage.setItem('wayon-control-key',key);login.close();status();}catch(err){document.querySelector('#error').textContent=err.message;}});
+    document.querySelector('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const password=document.querySelector('#password'),error=document.querySelector('#error');error.textContent='';try{
+      const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Wayon-Control-Session':session},body:JSON.stringify({password:password.value}),cache:'no-store'}),j=await r.json();
+      if(!r.ok)throw new Error(j.error||'비밀번호 또는 차량 상태를 확인하세요.');token=j.token;password.value='';login.close();await status();
+    }catch(err){error.textContent=err.message;}});
     function bindSteering(){const el=document.querySelector('#steering');let pointer=null;const update=e=>{const r=el.getBoundingClientRect();state.steering=clamp(((e.clientX-r.left)/r.width-.5)/.39,-1,1);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.steering=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.steering=0;render();send();});}
     function bindPedals(){const el=document.querySelector('#pedals');let pointer=null;const update=e=>{const r=el.getBoundingClientRect(),axis=clamp((.5-(e.clientY-r.top)/r.height)/.41,-1,1);state.accelerator=Math.max(0,axis);state.brake=Math.max(0,-axis);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.accelerator=0;state.brake=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.accelerator=0;state.brake=0;render();send();});}
     bindSteering();bindPedals();render();status();setInterval(status,500);setInterval(()=>{if(state.armed)send();},50);setInterval(updateCamera,50);

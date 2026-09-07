@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import hmac
 import ipaddress
 import json
 import os
@@ -10,11 +9,12 @@ import time
 from typing import Protocol
 from urllib.parse import urlparse
 
+from openpilot.system.wayon_remote_auth import RemotePasswordAuthorizer
+
 
 HOST = "0.0.0.0"
 PORT = int(os.getenv("WAYON_REMOTE_CONTROL_PORT", "4444"))
 HTML_PATH = Path(__file__).with_name("wayon_remote_control.html")
-CONFIG_PATH = Path("/data/wayon_cloud/config.json")
 REMOTE_CONTROL_SESSION = Path("/data/RemoteControlNextDrive")
 BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
 WATCHDOG_TIMEOUT = 0.25
@@ -40,23 +40,6 @@ def is_allowed_client(host: str) -> bool:
 
 def clamp(value: float, low: float, high: float) -> float:
   return min(max(float(value), low), high)
-
-
-class WayonTokenAuthorizer:
-  def __init__(self, config_path: Path = CONFIG_PATH):
-    self.config_path = config_path
-
-  def expected_token(self) -> str:
-    try:
-      config = json.loads(self.config_path.read_text(encoding="utf-8"))
-      return str(config.get("token") or "")
-    except (OSError, TypeError, ValueError):
-      return ""
-
-  def authorized(self, authorization: str | None) -> bool:
-    expected = self.expected_token()
-    supplied = authorization.removeprefix("Bearer ") if authorization else ""
-    return bool(expected and supplied and hmac.compare_digest(expected, supplied))
 
 
 class RemoteControlMode:
@@ -406,7 +389,7 @@ class RemoteControlBridge:
 
 
 class RemoteControlHandler(BaseHTTPRequestHandler):
-  server_version = "WayonRemoteControl/1"
+  server_version = "WayonRemoteControl/2"
 
   def log_message(self, _format: str, *_args) -> None:
     return
@@ -445,13 +428,22 @@ class RemoteControlHandler(BaseHTTPRequestHandler):
     return False
 
   def _authorized(self) -> bool:
-    if self.server.authorizer.authorized(self.headers.get("Authorization")):
+    if self.server.authorizer.authorized(self.headers.get("Authorization"), self._session(), self.client_address[0]):
       return True
-    self._json(401, {"ok": False, "error": "Wayon Cloud Key required"})
+    self._json(401, {"ok": False, "error": "remote control password login required"})
     return False
 
   def _session(self) -> str:
     return self.headers.get(SESSION_HEADER, "")
+
+  def _read_json(self) -> dict:
+    content_length = int(self.headers.get("Content-Length", "0"))
+    if not 0 < content_length <= MAX_BODY_BYTES:
+      raise ValueError("invalid body")
+    payload = json.loads(self.rfile.read(content_length))
+    if not isinstance(payload, dict):
+      raise ValueError("invalid body")
+    return payload
 
   def do_GET(self) -> None:
     if not self._client_allowed():
@@ -488,7 +480,40 @@ class RemoteControlHandler(BaseHTTPRequestHandler):
       self._json(404, {"ok": False, "error": "not found"})
 
   def do_POST(self) -> None:
-    if not self._client_allowed() or not self._origin_allowed() or not self._authorized():
+    if not self._client_allowed() or not self._origin_allowed():
+      return
+    if self.path == "/api/login":
+      token = ""
+      try:
+        payload = self._read_json()
+        token = self.server.authorizer.login(payload.get("password"), self._session(), self.client_address[0])
+        mode = self.server.bridge.mode_status()
+        if mode["onroad"]:
+          raise PermissionError("remote control can only be activated while comma is offroad")
+        if mode["phase"] != "pending":
+          mode = self.server.bridge.activate()
+      except FileNotFoundError as exc:
+        self._json(409, {"ok": False, "error": str(exc)})
+        return
+      except RuntimeError as exc:
+        self._json(429, {"ok": False, "error": str(exc)})
+        return
+      except PermissionError as exc:
+        if token:
+          self.server.authorizer.revoke(token)
+        self._json(401 if not token else 409, {"ok": False, "error": str(exc)})
+        return
+      except OSError as exc:
+        if token:
+          self.server.authorizer.revoke(token)
+        self._json(500, {"ok": False, "error": f"failed to activate remote mode: {exc}"})
+        return
+      except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        self._json(400, {"ok": False, "error": str(exc) or "invalid login"})
+        return
+      self._json(200, {"ok": True, "token": token, "realVehicleControl": True, "mode": mode})
+      return
+    if not self._authorized():
       return
     if self.path not in ("/api/activate", "/api/deactivate", "/api/arm", "/api/input", "/api/reset"):
       self._json(404, {"ok": False, "error": "not found"})
@@ -529,10 +554,7 @@ class RemoteControlHandler(BaseHTTPRequestHandler):
       if self.path == "/api/arm":
         state = self.server.state.arm(session)
       else:
-        content_length = int(self.headers.get("Content-Length", "0"))
-        if not 0 < content_length <= MAX_BODY_BYTES:
-          raise ValueError("invalid body")
-        payload = json.loads(self.rfile.read(content_length))
+        payload = self._read_json()
         if (not self.server.bridge.status().get("engaged") and
             any(abs(float(payload[name])) > 1e-6 for name in ("steering", "accelerator", "brake"))):
           raise PermissionError("engage openpilot before applying control input")
@@ -552,10 +574,10 @@ class RemoteControlServer(ThreadingHTTPServer):
   allow_reuse_address = True
 
   def __init__(self, address=(HOST, PORT), params: ParamsReader | None = None,
-               state: RemoteControlState | None = None, authorizer: WayonTokenAuthorizer | None = None,
+               state: RemoteControlState | None = None, authorizer: RemotePasswordAuthorizer | None = None,
                bridge: RemoteControlBridge | None = None, camera: RemoteWideCamera | None = None):
     self.state = state or RemoteControlState()
-    self.authorizer = authorizer or WayonTokenAuthorizer()
+    self.authorizer = authorizer or RemotePasswordAuthorizer()
     self.bridge = bridge or RemoteControlBridge(self.state, params)
     self.camera = camera or RemoteWideCamera()
     self.bridge_thread = threading.Thread(target=self.bridge.run, name="wayon-remote-control", daemon=True)

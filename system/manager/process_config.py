@@ -16,7 +16,6 @@ from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnyl
 WEBCAM = os.getenv("USE_WEBCAM") is not None
 WAYON_LIVE_ACTIVE_PATH = "/tmp/wayon_live.active"
 REMOTE_CONTROL_SESSION = "/data/RemoteControlNextDrive"
-WAYON_CONFIG = "/data/wayon_cloud/config.json"
 
 def driverview(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started or params.get_bool("IsDriverViewEnabled")
@@ -77,9 +76,6 @@ def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
 
 def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started
-
-def remote_control_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return os.path.isfile(WAYON_CONFIG)
 
 def wayon_impact_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started and os.path.isfile("/data/wayon_cloud/config.json") \
@@ -211,7 +207,7 @@ procs = [
   DaemonProcess("wayon_remote_installer", "system.wayon_remote_installer", "AthenadPid", enabled=False),
   PythonProcess("gm_button_test_web", "system.gm_button_test_server", always_run,
                 enabled=not PC, restart_if_crash=True),
-  PythonProcess("remote_control_web", "system.wayon_remote_control", remote_control_ready,
+  PythonProcess("remote_control_web", "system.wayon_remote_control", always_run,
                 enabled=not PC, restart_if_crash=True),
   PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", only_offroad, enabled=not PC),
   PythonProcess("statsd", "system.statsd", always_run),

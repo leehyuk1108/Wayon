@@ -71,13 +71,16 @@ relay channels stop as soon as `IsOnroad` changes.
 
 ## Local 4444 vehicle control
 
-Port `4444` is a local-network vehicle-control page. Open it while the comma is
-offroad, authenticate with the matching Wayon Cloud Key, and press **원격제어
-활성화**. This selects remote control for the next onroad cycle only. When the
-comma goes onroad, the same page connects with neutral input; select D/L and
-engage openpilot before applying commands. One browser session owns control at
-a time. Returning offroad clears the selection, zeros the command, and restores
-normal `controlsd` selection for the following drive.
+Port `4444` is a local-network vehicle-control page. First set a separate remote
+control password under the comma's Network settings. This credential is not the
+Wayon Cloud Key; the device stores only a salted PBKDF2 verifier. Open the page
+while the comma is offroad and enter that password. A successful login
+automatically selects remote control for the next onroad cycle only. Subsequent
+requests use a one-hour random token bound to that browser session and client
+IP. When the comma goes onroad, the same page connects with neutral input;
+select D/L and engage openpilot before applying commands. One browser session
+owns control at a time. Returning offroad clears the selection, zeros the
+command, and restores normal `controlsd` selection for the following drive.
 
 During the selected onroad cycle, the page shows an authenticated wide-road
 camera preview at up to 20 fps. It reads the existing `camerad` VisionIPC stream

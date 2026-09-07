@@ -12,10 +12,10 @@ from openpilot.system.wayon_remote_control import (
   RemoteControlState,
   RemoteControlServer,
   RemoteWideCamera,
-  WayonTokenAuthorizer,
   clamp,
   is_allowed_client,
 )
+from openpilot.system.wayon_remote_auth import RemotePasswordAuthorizer, RemotePasswordStore
 
 
 def test_client_network_filter():
@@ -63,13 +63,26 @@ def test_watchdog_zeros_and_disarms():
   assert not state.snapshot(now=10.36)["armed"]
 
 
-def test_wayon_cloud_key_authorization(tmp_path):
-  config = tmp_path / "config.json"
-  config.write_text(json.dumps({"token": "wayon_test_key"}), encoding="utf-8")
-  authorizer = WayonTokenAuthorizer(config)
-  assert authorizer.authorized("Bearer wayon_test_key")
-  assert not authorizer.authorized("Bearer wrong")
-  assert not authorizer.authorized(None)
+def test_remote_password_is_salted_hashed_and_session_bound(tmp_path):
+  password_path = tmp_path / "password.json"
+  store = RemotePasswordStore(password_path, iterations=100_000)
+  store.set_password("test-password")
+  contents = password_path.read_text(encoding="utf-8")
+  assert "test-password" not in contents
+  assert password_path.stat().st_mode & 0o777 == 0o600
+  assert store.verify("test-password")
+  assert not store.verify("wrong-password")
+
+  authorizer = RemotePasswordAuthorizer(store, ttl=60)
+  token = authorizer.login("test-password", "controller-session-1", "127.0.0.1", now=10.0)
+  assert authorizer.authorized(f"Bearer {token}", "controller-session-1", "127.0.0.1", now=11.0)
+  assert not authorizer.authorized(f"Bearer {token}", "controller-session-2", "127.0.0.1", now=11.0)
+  assert not authorizer.authorized(f"Bearer {token}", "controller-session-1", "192.168.1.2", now=11.0)
+
+  store.set_password("changed-password")
+  assert not authorizer.authorized(f"Bearer {token}", "controller-session-1", "127.0.0.1", now=12.0)
+  changed_token = authorizer.login("changed-password", "controller-session-1", "127.0.0.1", now=13.0)
+  assert not authorizer.authorized(f"Bearer {changed_token}", "controller-session-1", "127.0.0.1", now=74.0)
 
 
 def test_remote_control_does_not_import_raw_vehicle_output_modules():
@@ -90,7 +103,7 @@ def test_remote_control_uses_joystickd_without_physical_joystick_producer():
   assert 'PythonProcess("joystickd", "tools.joystick.joystickd", or_(manual_control, notcar))' in source
   assert 'PythonProcess("joystick", "tools.joystick.joystick_control", and_(joystick, iscar))' in source
   assert 'params.get_bool("JoystickDebugMode") and not os.path.isfile(REMOTE_CONTROL_SESSION)' in source
-  assert 'return os.path.isfile(WAYON_CONFIG)' in source
+  assert 'PythonProcess("remote_control_web", "system.wayon_remote_control", always_run' in source
 
 
 class FakeParams:
@@ -191,22 +204,45 @@ class FakeCamera:
     self.stopped = True
 
 
-def test_http_api_requires_key_and_armed_monotonic_session(tmp_path):
-  config = tmp_path / "config.json"
-  config.write_text(json.dumps({"token": "wayon_test_key"}), encoding="utf-8")
+def make_authorizer(tmp_path, password="test-password"):
+  store = RemotePasswordStore(tmp_path / "password.json", iterations=100_000)
+  store.set_password(password)
+  return RemotePasswordAuthorizer(store)
+
+
+def login(connection, password="test-password", session="controller-session-1"):
+  body = json.dumps({"password": password})
+  connection.request("POST", "/api/login", body=body,
+                     headers={"Content-Type": "application/json", "X-Wayon-Control-Session": session})
+  response = connection.getresponse()
+  payload = json.loads(response.read())
+  return response.status, payload
+
+
+def test_http_api_requires_password_session_and_armed_monotonic_control(tmp_path):
   camera = FakeCamera()
+  bridge = FakeBridge(onroad=False, active=False)
   server = RemoteControlServer(("127.0.0.1", 0), state=RemoteControlState(),
-                               authorizer=WayonTokenAuthorizer(config), bridge=FakeBridge(), camera=camera)
+                               authorizer=make_authorizer(tmp_path), bridge=bridge, camera=camera)
   server.start_bridge()
   serving = threading.Thread(target=server.serve_forever, daemon=True)
   serving.start()
   connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
-  auth = {"Authorization": "Bearer wayon_test_key", "X-Wayon-Control-Session": "controller-session-1"}
   try:
     connection.request("GET", "/api/status")
     unauthorized = connection.getresponse()
     assert unauthorized.status == 401
     unauthorized.read()
+
+    login_status, login_payload = login(connection, password="wrong-password")
+    assert login_status == 401
+    assert "incorrect" in login_payload["error"]
+
+    login_status, login_payload = login(connection)
+    assert login_status == 200
+    assert login_payload["mode"]["phase"] == "pending"
+    auth = {"Authorization": f"Bearer {login_payload['token']}", "X-Wayon-Control-Session": "controller-session-1"}
+    bridge.onroad = True
 
     connection.request("GET", "/api/status", headers=auth)
     status_response = connection.getresponse()
@@ -253,21 +289,18 @@ def test_http_api_requires_key_and_armed_monotonic_session(tmp_path):
 
 
 def test_http_activation_is_offroad_only(tmp_path):
-  config = tmp_path / "config.json"
-  config.write_text(json.dumps({"token": "wayon_test_key"}), encoding="utf-8")
   bridge = FakeBridge(onroad=False, active=False)
   server = RemoteControlServer(("127.0.0.1", 0), state=RemoteControlState(),
-                               authorizer=WayonTokenAuthorizer(config), bridge=bridge, camera=FakeCamera())
+                               authorizer=make_authorizer(tmp_path), bridge=bridge, camera=FakeCamera())
   server.start_bridge()
   serving = threading.Thread(target=server.serve_forever, daemon=True)
   serving.start()
   connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
-  auth = {"Authorization": "Bearer wayon_test_key", "X-Wayon-Control-Session": "controller-session-1"}
   try:
-    connection.request("POST", "/api/activate", headers=auth)
-    response = connection.getresponse()
-    assert response.status == 200
-    assert json.loads(response.read())["mode"]["phase"] == "pending"
+    login_status, login_payload = login(connection)
+    assert login_status == 200
+    assert login_payload["mode"]["phase"] == "pending"
+    auth = {"Authorization": f"Bearer {login_payload['token']}", "X-Wayon-Control-Session": "controller-session-1"}
 
     connection.request("GET", "/api/camera.jpg", headers=auth)
     response = connection.getresponse()

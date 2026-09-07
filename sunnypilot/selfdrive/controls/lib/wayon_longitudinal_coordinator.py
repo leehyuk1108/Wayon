@@ -85,9 +85,6 @@ class WayonCoastController:
   LOW_SPEED_ENTER_FRAMES = round(0.3 / DT_CTRL)
   NATURAL_ACCEL_TAU = 0.8
   MAX_DOWNHILL_ALLOWANCE = 0.28
-  HIGH_SPEED_MIN = 40.0 * CV.KPH_TO_MS
-  HIGH_SPEED_ENTER_ACCEL = 0.10
-  HIGH_SPEED_STAY_ACCEL = 0.16
 
   def __init__(self):
     self.state = CoastDecision()
@@ -137,10 +134,8 @@ class WayonCoastController:
                     -0.20 <= requested_accel <= 0.15 + free_roll_allowance)
       enter_frames = self.LOW_SPEED_ENTER_FRAMES
     else:
-      enter_accel_max = self.HIGH_SPEED_ENTER_ACCEL if v_ego >= self.HIGH_SPEED_MIN else 0.05
-      stay_accel_max = self.HIGH_SPEED_STAY_ACCEL if v_ego >= self.HIGH_SPEED_MIN else 0.12
-      enter_valid = base_valid and -0.35 <= speed_error <= 0.75 and -0.30 <= requested_accel <= enter_accel_max
-      stay_valid = base_valid and -0.55 <= speed_error <= 0.95 and -0.45 <= requested_accel <= stay_accel_max
+      enter_valid = base_valid and -0.35 <= speed_error <= 0.75 and -0.30 <= requested_accel <= 0.05
+      stay_valid = base_valid and -0.55 <= speed_error <= 0.95 and -0.45 <= requested_accel <= 0.12
       enter_frames = self.ENTER_FRAMES
 
     if self.state.active:

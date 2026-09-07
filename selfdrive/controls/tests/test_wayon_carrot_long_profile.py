@@ -36,11 +36,11 @@ def test_profile_is_traverse_longitudinal_only():
 @pytest.mark.parametrize(("speed_kph", "expected"), [
   (0, 1.00),
   (10, 0.95),
-  (40, 0.50),
-  (60, 0.45),
-  (80, 0.42),
-  (110, 0.40),
-  (140, 0.40),
+  (40, 0.60),
+  (60, 0.55),
+  (80, 0.55),
+  (110, 0.50),
+  (140, 0.50),
 ])
 def test_carrot_max_accel_curve(speed_kph, expected):
   assert get_max_accel(speed_kph * CV.KPH_TO_MS) == pytest.approx(expected)
@@ -54,4 +54,4 @@ def test_carrot_profile_scalars():
   assert VISION_CURVE_FACTOR == 0.60
   assert CURVE_SPEED_FLOOR == pytest.approx(30 * CV.KPH_TO_MS)
   assert MAP_CURVE_FACTOR == 1.20
-  assert MAX_ACCEL_V == [1.0, 0.95, 0.50, 0.45, 0.42, 0.40, 0.40]
+  assert MAX_ACCEL_V == [1.0, 0.95, 0.60, 0.55, 0.55, 0.50, 0.50]

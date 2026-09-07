@@ -15,7 +15,8 @@ from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnyl
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
 WAYON_LIVE_ACTIVE_PATH = "/tmp/wayon_live.active"
-REMOTE_SIMULATION_FLAG = "/data/RemoteSimulation"
+REMOTE_CONTROL_SESSION = "/data/RemoteControlNextDrive"
+WAYON_CONFIG = "/data/wayon_cloud/config.json"
 
 def driverview(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started or params.get_bool("IsDriverViewEnabled")
@@ -40,10 +41,13 @@ def ublox(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started and use_ublox
 
 def joystick(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return started and params.get_bool("JoystickDebugMode")
+  return started and params.get_bool("JoystickDebugMode") and not os.path.isfile(REMOTE_CONTROL_SESSION)
 
-def not_joystick(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return started and not params.get_bool("JoystickDebugMode")
+def manual_control(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return started and (params.get_bool("JoystickDebugMode") or os.path.isfile(REMOTE_CONTROL_SESSION))
+
+def not_manual_control(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return started and not (params.get_bool("JoystickDebugMode") or os.path.isfile(REMOTE_CONTROL_SESSION))
 
 def long_maneuver(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started and params.get_bool("LongitudinalManeuverMode")
@@ -74,8 +78,8 @@ def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
 def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started
 
-def remote_simulation_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return not started and os.path.isfile(REMOTE_SIMULATION_FLAG)
+def remote_control_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return os.path.isfile(WAYON_CONFIG)
 
 def wayon_impact_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started and os.path.isfile("/data/wayon_cloud/config.json") \
@@ -174,8 +178,8 @@ procs = [
   NativeProcess("_pandad", "selfdrive/pandad", ["./pandad"], always_run, enabled=False),
   PythonProcess("calibrationd", "selfdrive.locationd.calibrationd", only_onroad),
   PythonProcess("torqued", "selfdrive.locationd.torqued", only_onroad),
-  PythonProcess("controlsd", "selfdrive.controls.controlsd", and_(not_joystick, iscar)),
-  PythonProcess("joystickd", "tools.joystick.joystickd", or_(joystick, notcar)),
+  PythonProcess("controlsd", "selfdrive.controls.controlsd", and_(not_manual_control, iscar)),
+  PythonProcess("joystickd", "tools.joystick.joystickd", or_(manual_control, notcar)),
   PythonProcess("selfdrived", "selfdrive.selfdrived.selfdrived", only_onroad),
   PythonProcess("card", "selfdrive.car.card", only_onroad),
   PythonProcess("deleter", "system.loggerd.deleter", always_run),
@@ -207,7 +211,7 @@ procs = [
   DaemonProcess("wayon_remote_installer", "system.wayon_remote_installer", "AthenadPid", enabled=False),
   PythonProcess("gm_button_test_web", "system.gm_button_test_server", always_run,
                 enabled=not PC, restart_if_crash=True),
-  PythonProcess("remote_simulation_web", "system.remote_simulation_server", remote_simulation_ready,
+  PythonProcess("remote_control_web", "system.wayon_remote_control", remote_control_ready,
                 enabled=not PC, restart_if_crash=True),
   PythonProcess("offroad_wake_watcher", "system.offroad_wake_watcher", only_offroad, enabled=not PC),
   PythonProcess("statsd", "system.statsd", always_run),

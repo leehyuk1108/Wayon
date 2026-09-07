@@ -69,6 +69,35 @@ The key can also be viewed and copied on the same LAN at
 `http://COMMA_IP:1108` while the device is offroad. That local page and both
 relay channels stop as soon as `IsOnroad` changes.
 
+## Local 4444 vehicle control
+
+Port `4444` is a local-network vehicle-control page. Open it while the comma is
+offroad, authenticate with the matching Wayon Cloud Key, and press **원격제어
+활성화**. This selects remote control for the next onroad cycle only. When the
+comma goes onroad, the same page connects with neutral input; select D/L and
+engage openpilot before applying commands. One browser session owns control at
+a time. Returning offroad clears the selection, zeros the command, and restores
+normal `controlsd` selection for the following drive.
+
+Commands use the existing `testJoystick -> joystickd -> carControl -> Panda`
+path rather than writing CAN directly. The real-output envelope is:
+
+- 50 km/h maximum commanded speed; overspeed requests deceleration.
+- Steering output is zero below 10 km/h and ramps to its configured maximum by
+  15 km/h.
+- Acceleration is limited to 0.8 m/s², braking to 1.5 m/s², and steering to 25%
+  of the joystick actuator range.
+- Driver gas, brake, parking brake, or leaving D/L cancels remote output.
+- A stale HTTP input, publisher failure, tab closure, or disarm cancels output;
+  the input watchdog is 250 ms and `joystickd` independently rejects messages
+  older than 200 ms.
+
+The legacy `/data/RemoteSimulation` flag and the removed on-device toggle do not
+enable real output. The authenticated page creates the one-shot
+`/data/RemoteControlNextDrive` selection only while offroad. Passing unit/API
+tests establishes request delivery and software gating only; Panda/ECU
+acceptance and physical vehicle motion require a closed-course vehicle test.
+
 ## JSON API
 
 Read requests use the device's Wayon Cloud Key:

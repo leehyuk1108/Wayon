@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <title>Wayon Remote Control</title>
+  <style>
+    :root { color-scheme:dark; --bg:#090a0c; --panel:#15171b; --line:#2a2d32; --text:#f5f5f7; --muted:#8d929a; --blue:#4a9eff; --red:#ff5757; --green:#41d17d; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:none; }
+    body { margin:0; min-height:100svh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Pretendard",sans-serif; overflow:hidden; }
+    main { width:min(100%,720px); min-height:100svh; margin:auto; padding:18px 18px max(18px,env(safe-area-inset-bottom)); display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:14px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .eyebrow { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; }
+    h1 { margin:4px 0 0; font-size:25px; line-height:1; }
+    .status { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-weight:700; }
+    .dot { width:9px; height:9px; border-radius:50%; background:#676b72; box-shadow:0 0 0 4px #676b7220; }
+    .status.online .dot { background:var(--green); box-shadow:0 0 0 4px #41d17d20; }
+    .guard { min-height:46px; display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#111317; }
+    .guard strong { color:var(--red); font-size:12px; }
+    .guard span { color:var(--muted); font-size:10px; }
+    button,input { min-height:40px; border-radius:7px; font:700 13px/1 -apple-system,BlinkMacSystemFont,sans-serif; }
+    button { border:0; padding:0 15px; background:#f5f5f7; color:#111113; }
+    button.danger { background:var(--red); color:white; }
+    button:disabled { opacity:.35; }
+    .controls { min-height:0; display:grid; grid-template-columns:minmax(116px,.7fr) minmax(0,1.3fr); gap:12px; opacity:.28; pointer-events:none; }
+    body.control-enabled .controls { opacity:1; pointer-events:auto; }
+    .steering,.pedals { position:relative; min-height:0; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--panel); user-select:none; }
+    .steering { display:grid; place-items:center; }
+    .steering::before,.steering::after { content:""; position:absolute; background:#2b2e34; }
+    .steering::before { left:18px; right:18px; top:50%; height:1px; }
+    .steering::after { top:18px; bottom:18px; left:50%; width:1px; }
+    .wheel { position:absolute; width:82px; aspect-ratio:1; border:9px solid #e6e8eb; border-radius:50%; filter:drop-shadow(0 8px 18px #0008); transform:translate(-50%,-50%); left:50%; top:50%; }
+    .wheel::before { content:""; position:absolute; left:50%; top:50%; width:10px; height:42px; border-radius:5px; background:#e6e8eb; transform:translate(-50%,-50%); }
+    .value { position:absolute; left:14px; top:13px; color:var(--muted); font:700 11px/1 ui-monospace,SFMono-Regular,monospace; }
+    .pedals::before { content:""; position:absolute; left:14px; right:14px; top:50%; height:1px; background:#34373d; }
+    .pedal-fill { position:absolute; left:0; right:0; height:0; opacity:.85; transition:height 40ms linear; }
+    .pedal-fill.accel { bottom:50%; background:linear-gradient(to top,#246fca,var(--blue)); }
+    .pedal-fill.brake { top:50%; background:linear-gradient(to bottom,#bd3838,var(--red)); }
+    .pedal-knob { position:absolute; left:12px; right:12px; top:50%; height:54px; border-radius:8px; background:#eceef1; box-shadow:0 8px 24px #0009; transform:translateY(-50%); }
+    .pedal-knob::after { content:""; position:absolute; left:50%; top:50%; width:38px; height:4px; border-radius:2px; background:#8c9097; transform:translate(-50%,-50%); }
+    .pedal-label { position:absolute; z-index:1; left:14px; font-size:11px; font-weight:800; letter-spacing:.08em; }
+    .pedal-label.accel { top:14px; } .pedal-label.brake { bottom:14px; }
+    .pedal-value { position:absolute; z-index:1; right:14px; font:700 11px/1 ui-monospace,SFMono-Regular,monospace; }
+    .pedal-value.accel { top:14px; } .pedal-value.brake { bottom:14px; }
+    dialog { width:min(520px,calc(100% - 32px)); border:1px solid var(--line); border-radius:10px; padding:20px; background:#15171b; color:var(--text); }
+    dialog::backdrop { background:#000c; }
+    dialog h2 { margin:0 0 8px; font-size:22px; }
+    dialog p { margin:0 0 16px; color:var(--muted); font-size:13px; line-height:1.5; }
+    dialog form { display:grid; gap:10px; }
+    input { width:100%; border:1px solid var(--line); padding:0 12px; background:#0c0d0f; color:var(--text); touch-action:auto; }
+    .error { min-height:16px; color:var(--red); font-size:12px; }
+    @media (max-height:560px) { main { padding-top:10px; gap:8px; } .guard { min-height:38px; padding:7px 10px; } h1 { font-size:20px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><div class="eyebrow">WAYON / CLOSED COURSE</div><h1>Remote Control</h1></div>
+      <div class="status" id="status"><i class="dot"></i><span>LOCKED</span></div>
+    </header>
+    <div class="guard">
+      <div><strong>REAL VEHICLE OUTPUT</strong><br><span id="detail">오프로드에서 다음 주행을 활성화하세요</span></div>
+      <button class="danger" id="arm" type="button" disabled>확인 중</button>
+    </div>
+    <section class="controls">
+      <div class="pedals" id="pedals">
+        <div class="pedal-fill accel"></div><div class="pedal-fill brake"></div><div class="pedal-knob" id="pedalKnob"></div>
+        <span class="pedal-label accel">ACCEL</span><span class="pedal-value accel" id="accelValue">0%</span>
+        <span class="pedal-label brake">BRAKE</span><span class="pedal-value brake" id="brakeValue">0%</span>
+      </div>
+      <div class="steering" id="steering"><span class="value" id="steerValue">0%</span><div class="wheel" id="wheel"></div></div>
+    </section>
+  </main>
+  <dialog id="login">
+    <form method="dialog" id="loginForm">
+      <h2>Wayon Cloud Key</h2>
+      <p>Wayon Cloud Key로 인증한 뒤 오프로드 상태에서 다음 1회의 원격제어 주행을 활성화할 수 있습니다.</p>
+      <input id="key" type="password" autocomplete="current-password" placeholder="wayon_…" required>
+      <div class="error" id="error"></div>
+      <button type="submit">인증</button>
+    </form>
+  </dialog>
+  <script>
+    const state={steering:0,accelerator:0,brake:0,sequence:0,armed:false,available:false,engaged:false,onroad:false,phase:'inactive',speedMps:0};
+    const session=crypto.randomUUID().replaceAll('-','');
+    const login=document.querySelector('#login'),statusEl=document.querySelector('#status'),arm=document.querySelector('#arm'),detail=document.querySelector('#detail');
+    let key=sessionStorage.getItem('wayon-control-key')||'',sending=false,arming=false,stopped=false;
+    const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
+    const headers=()=>({'Authorization':`Bearer ${key}`,'X-Wayon-Control-Session':session});
+    async function api(path,options={}){const h={...headers(),...(options.headers||{})};return fetch(path,{...options,headers:h,cache:'no-store'});}
+    function zero(){state.steering=0;state.accelerator=0;state.brake=0;render();}
+    function render(){
+      document.body.classList.toggle('control-enabled',state.armed&&state.engaged);
+      statusEl.classList.toggle('online',state.armed||state.phase==='pending');
+      if(!state.onroad){
+        arm.textContent=state.phase==='pending'?'활성화 취소':'원격제어 활성화';arm.disabled=false;
+        statusEl.querySelector('span').textContent=state.phase==='pending'?'NEXT DRIVE':'OFFROAD';
+        detail.textContent=state.phase==='pending'?'다음 온로드 1회에 원격제어가 실행됩니다':'오프로드에서 다음 주행을 활성화하세요';
+      }else if(state.phase!=='active'){
+        arm.textContent='일반 주행';arm.disabled=true;statusEl.querySelector('span').textContent='OPENPILOT';
+        detail.textContent='이번 온로드 세션은 일반 openpilot 모드입니다';
+      }else{
+        arm.textContent=state.armed?'원격제어 중지':(stopped?'다시 연결':'연결 대기');arm.disabled=!state.armed&&!state.available;
+        statusEl.querySelector('span').textContent=state.armed?'ARMED':'REMOTE MODE';
+        detail.textContent=state.engaged?`${state.speedMps.toFixed(1)} m/s · 50 km/h 제한`:'D/L 선택 후 openpilot을 engage 하세요';
+      }
+      document.querySelector('#wheel').style.left=`${50+state.steering*39}%`;
+      document.querySelector('#steerValue').textContent=`${Math.round(state.steering*100)}%`;
+      const accel=Math.round(state.accelerator*100),brake=Math.round(state.brake*100),axis=state.accelerator-state.brake;
+      document.querySelector('.pedal-fill.accel').style.height=`${accel*.5}%`;document.querySelector('.pedal-fill.brake').style.height=`${brake*.5}%`;
+      document.querySelector('#pedalKnob').style.top=`${50-axis*41}%`;
+      document.querySelector('#accelValue').textContent=`${accel}%`;document.querySelector('#brakeValue').textContent=`${brake}%`;
+    }
+    async function connect(){
+      if(arming||state.armed||!state.available||state.phase!=='active'||stopped)return;
+      arming=true;
+      try{const r=await api('/api/arm',{method:'POST'}),j=await r.json();state.armed=r.ok&&Boolean(j.state?.armed);state.sequence=0;if(!r.ok)detail.textContent=j.error||'연결 실패';}
+      catch(_){state.armed=false;}finally{arming=false;render();}
+    }
+    async function status(){
+      if(!key){if(!login.open)login.showModal();return;}
+      try{const r=await api('/api/status'),j=await r.json();if(r.status===401){key='';sessionStorage.removeItem('wayon-control-key');if(!login.open)login.showModal();return;}
+        state.available=r.ok&&j.available;state.armed=Boolean(j.state?.ownedBySession);state.engaged=Boolean(j.vehicle?.engaged);state.onroad=Boolean(j.vehicle?.onroad);state.phase=j.mode?.phase||'inactive';state.speedMps=Number(j.vehicle?.speedMps||0);
+        if(state.phase!=='active')stopped=false;render();connect();
+      }catch(_){state.available=false;state.armed=false;zero();}
+    }
+    async function send(){
+      if(!state.armed||sending)return;sending=true;state.sequence++;const payload=state.engaged?state:{...state,steering:0,accelerator:0,brake:0};
+      try{const r=await api('/api/input',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),j=await r.json();
+        if(!r.ok){state.armed=false;zero();document.querySelector('#detail').textContent=j.error||'CONTROL LOST';}}
+      catch(_){state.armed=false;zero();}finally{sending=false;}
+    }
+    arm.addEventListener('click',async()=>{try{
+      let path;
+      if(!state.onroad)path=state.phase==='pending'?'/api/deactivate':'/api/activate';
+      else if(state.armed){path='/api/reset';stopped=true;}else{path='/api/arm';stopped=false;}
+      const r=await api(path,{method:'POST'}),j=await r.json();
+      if(path==='/api/arm'){state.armed=r.ok&&Boolean(j.state?.armed);state.sequence=0;}else if(path==='/api/reset'){state.armed=false;zero();}
+      if(!r.ok)detail.textContent=j.error||'요청 실패';await status();
+    }catch(_){state.armed=false;zero();}});
+    document.querySelector('#loginForm').addEventListener('submit',async e=>{e.preventDefault();key=document.querySelector('#key').value.trim();try{const r=await api('/api/status');if(!r.ok)throw new Error('키 또는 차량 상태를 확인하세요.');sessionStorage.setItem('wayon-control-key',key);login.close();status();}catch(err){document.querySelector('#error').textContent=err.message;}});
+    function bindSteering(){const el=document.querySelector('#steering');let pointer=null;const update=e=>{const r=el.getBoundingClientRect();state.steering=clamp(((e.clientX-r.left)/r.width-.5)/.39,-1,1);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.steering=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.steering=0;render();send();});}
+    function bindPedals(){const el=document.querySelector('#pedals');let pointer=null;const update=e=>{const r=el.getBoundingClientRect(),axis=clamp((.5-(e.clientY-r.top)/r.height)/.41,-1,1);state.accelerator=Math.max(0,axis);state.brake=Math.max(0,-axis);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.accelerator=0;state.brake=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.accelerator=0;state.brake=0;render();send();});}
+    bindSteering();bindPedals();render();status();setInterval(status,500);setInterval(()=>{if(state.armed)send();},50);
+    window.addEventListener('pagehide',()=>{zero();api('/api/reset',{method:'POST',keepalive:true}).catch(()=>{});});
+  </script>
+</body>
+</html>

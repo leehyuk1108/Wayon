@@ -3,6 +3,7 @@ import cereal.messaging as messaging
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process
 from openpilot.selfdrive.monitoring.policy import DriverMonitoring
+from openpilot.selfdrive.monitoring.remote_control import neutralize_driver_monitoring, remote_control_active
 from openpilot.selfdrive.selfdrived.simulation_mode import get_simulation_ignore_phone_dm
 
 
@@ -27,13 +28,18 @@ def dmonitoringd_thread():
       continue
 
     valid = sm.all_checks()
-    if demo_mode and sm.valid['driverStateV2']:
-      DM.run_step(sm, demo=True)
-    elif valid:
-      DM.run_step(sm, demo=demo_mode)
+    remote_active = remote_control_active(params)
+    if not remote_active:
+      if demo_mode and sm.valid['driverStateV2']:
+        DM.run_step(sm, demo=True)
+      elif valid:
+        DM.run_step(sm, demo=demo_mode)
 
-    # publish
+    # Keep this service live in remote mode: selfdrived and modeld consume the
+    # message even though driver-monitoring enforcement is intentionally muted.
     dat = DM.get_state_packet(valid=valid)
+    if remote_active:
+      neutralize_driver_monitoring(dat)
     pm.send('driverMonitoringState', dat)
 
     # load live always-on toggle

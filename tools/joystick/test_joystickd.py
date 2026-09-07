@@ -7,6 +7,9 @@ from openpilot.tools.joystick.remote_control_limits import (
   REMOTE_MAX_STEER,
   REMOTE_MIN_STEER_SPEED_MPS,
   REMOTE_FULL_STEER_SPEED_MPS,
+  REMOTE_INITIAL_CRUISE_KPH,
+  REMOTE_MAX_SPEED_KPH,
+  remote_hud_set_speed_kph,
   remote_control_limits,
 )
 
@@ -36,3 +39,14 @@ def test_remote_steering_ramps_in_above_ten_kph():
   assert below == 0.0
   assert halfway == pytest.approx(REMOTE_MAX_STEER / 2)
   assert full == REMOTE_MAX_STEER
+
+
+@pytest.mark.parametrize("v_cruise_cluster, expected", [
+  (float("nan"), REMOTE_INITIAL_CRUISE_KPH),
+  (0.0, REMOTE_INITIAL_CRUISE_KPH),
+  (255.0, REMOTE_INITIAL_CRUISE_KPH),
+  (40.0, 40.0),
+  (80.0, REMOTE_MAX_SPEED_KPH),
+])
+def test_remote_hud_set_speed_is_valid_and_capped(v_cruise_cluster, expected):
+  assert remote_hud_set_speed_kph(v_cruise_cluster) == expected

@@ -5,11 +5,12 @@ import os
 import numpy as np
 
 from cereal import messaging, car
+from openpilot.common.constants import CV
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.common.realtime import DT_CTRL, Ratekeeper
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
-from openpilot.tools.joystick.remote_control_limits import remote_control_limits
+from openpilot.tools.joystick.remote_control_limits import remote_control_limits, remote_hud_set_speed_kph
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 MAX_LAT_ACCEL = 3.0
@@ -40,6 +41,12 @@ def joystickd_thread():
     cc_msg = messaging.new_message('carControl')
     cc_msg.valid = True
     CC = cc_msg.carControl
+    if not should_reset_joystick:
+      joystick_axes = sm['testJoystick'].axes
+    else:
+      joystick_axes = [0.0, 0.0]
+
+    remote_accel, remote_torque = remote_control_limits(joystick_axes[0], joystick_axes[1], sm['carState'].vEgo)
     remote_input_active = (not remote_control or
                            (not should_reset_joystick and len(sm['testJoystick'].buttons) > 0 and
                             sm['testJoystick'].buttons[0]))
@@ -49,21 +56,21 @@ def joystickd_thread():
                              not sm['carState'].gasPressed and not sm['carState'].brakePressed and
                              not sm['carState'].parkingBrake))
     CC.enabled = sm['selfdriveState'].enabled and remote_input_active and remote_vehicle_ready
-    CC.latActive = CC.enabled and sm['selfdriveState'].active and not sm['carState'].steerFaultTemporary and not sm['carState'].steerFaultPermanent
+    remote_steering_requested = not remote_control or abs(remote_torque) > 1e-3
+    CC.latActive = (CC.enabled and remote_steering_requested and sm['selfdriveState'].active and
+                    not sm['carState'].steerFaultTemporary and not sm['carState'].steerFaultPermanent)
     CC.longActive = CC.enabled and not any(e.overrideLongitudinal for e in sm['onroadEvents']) and CP.openpilotLongitudinalControl
     CC.cruiseControl.cancel = sm['carState'].cruiseState.enabled and (not CC.enabled or not CP.pcmCruise)
+    CC.hudControl.setSpeed = remote_hud_set_speed_kph(sm['carState'].vCruiseCluster) * CV.KPH_TO_MS
+    CC.hudControl.speedVisible = CC.enabled
+    CC.hudControl.lanesVisible = CC.enabled
     CC.hudControl.leadDistanceBars = 2
 
     actuators = CC.actuators
 
-    if not should_reset_joystick:
-      joystick_axes = sm['testJoystick'].axes
-    else:
-      joystick_axes = [0.0, 0.0]
-
     if CC.longActive:
       if remote_control:
-        actuators.accel, _ = remote_control_limits(joystick_axes[0], joystick_axes[1], sm['carState'].vEgo)
+        actuators.accel = remote_accel
       else:
         actuators.accel = 4.0 * float(np.clip(joystick_axes[0], -1, 1))
       if remote_control and actuators.accel > 0.0 and sm['carState'].vEgo <= CP.vEgoStopping:
@@ -77,7 +84,7 @@ def joystickd_thread():
       max_angle = math.degrees(VM.get_steer_from_curvature(max_curvature, sm['carState'].vEgo, sm['liveParameters'].roll))
 
       if remote_control:
-        _, actuators.torque = remote_control_limits(joystick_axes[0], joystick_axes[1], sm['carState'].vEgo)
+        actuators.torque = remote_torque
       else:
         actuators.torque = float(np.clip(joystick_axes[1], -1, 1))
       actuators.steeringAngleDeg, actuators.curvature = actuators.torque * max_angle, actuators.torque * -max_curvature

@@ -88,13 +88,14 @@ def test_white_solid_line_blocks_and_releases_on_dashed_line(tmp_path):
 
 def test_dashed_centerline_also_blocks_requested_direction(tmp_path):
   state = tmp_path / "markings.json"
-  write_markings(state, right="centerDashed")
+  write_markings(state, left="unknown", right="centerDashed")
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
   assert gate.update(Direction.right, model())
   assert gate.block_reason == "centerline"
   gate.reset()
-  assert not gate.update(Direction.left, model())
+  assert gate.update(Direction.left, model())
+  assert gate.block_reason == "laneTypeUnknown"
 
 
 def test_narrow_target_requires_consecutive_frames_and_latches(tmp_path):
@@ -113,9 +114,14 @@ def test_narrow_target_requires_consecutive_frames_and_latches(tmp_path):
   assert not gate.update(Direction.right, model(right_width=2.0))
 
 
-def test_stale_centerline_state_is_ignored(tmp_path):
+def test_stale_or_missing_onnx_state_fails_closed(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, left="centerSolid", updated_at=time.monotonic() - 10.0)
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
-  assert not gate.update(Direction.left, model())
+  assert gate.update(Direction.left, model())
+  assert gate.block_reason == "laneTypeUnknown"
+
+  missing = LaneChangeSafetyGate(LaneBoundaryStateReader(str(tmp_path / "missing.json")))
+  assert missing.update(Direction.right, model())
+  assert missing.block_reason == "laneTypeUnknown"

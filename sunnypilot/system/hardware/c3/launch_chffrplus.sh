@@ -4,6 +4,7 @@ SP_C3_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 DIR="$( cd "$SP_C3_DIR/../../../.." >/dev/null 2>&1 && pwd )"
 
 source "$SP_C3_DIR/launch_env.sh"
+source "$DIR/selfdrive/lane_marking/onnx_env.sh"
 
 function agnos_init {
   # TODO: move this to agnos
@@ -69,6 +70,7 @@ function launch {
   # handle pythonpath
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$PWD"
+  bootstrap_lane_marking_onnx || true
 
   # hardware specific init
   if [ -f /AGNOS ]; then

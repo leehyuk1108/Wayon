@@ -3,6 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 source "$DIR/launch_env.sh"
+source "$DIR/selfdrive/lane_marking/onnx_env.sh"
 
 function agnos_init {
   # TODO: move this to agnos
@@ -69,6 +70,7 @@ function launch {
   # handle pythonpath
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$PWD"
+  bootstrap_lane_marking_onnx || true
 
   # hardware specific init
   if [ -f /AGNOS ]; then

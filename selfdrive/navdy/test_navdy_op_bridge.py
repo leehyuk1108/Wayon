@@ -75,19 +75,16 @@ def test_live_vehicle_state_overrides_sp_gear_and_door():
   assert result.doorOpen is True
 
 
-def test_navdy_lane_marking_state_is_written_atomically(tmp_path):
-  state_path = tmp_path / "lane_markings.json"
+def test_navdy_reads_independent_lane_marking_state():
+  reader = SimpleNamespace(read=lambda now: SimpleNamespace(
+    left_type="solid", right_type="dashed"))
 
-  navdy_op_bridge.publish_navdy_lane_marking_state({
-    "navLaneLeftType": "centerSolid",
+  assert navdy_op_bridge.navdy_lane_marking_values(reader, 12.5) == {
+    "navLaneFarLeftType": "unknown",
+    "navLaneLeftType": "solid",
     "navLaneRightType": "dashed",
-  }, str(state_path))
-
-  state = json.loads(state_path.read_text())
-  assert state["leftType"] == "centerSolid"
-  assert state["rightType"] == "dashed"
-  assert state["updatedAtMonotonic"] > 0.0
-  assert not (tmp_path / "lane_markings.json.tmp").exists()
+    "navLaneFarRightType": "unknown",
+  }
 
 
 def test_navdy_disengaged_speed_uses_engaged_system_typeface():
@@ -2299,19 +2296,14 @@ def test_default_car_state_keeps_payload_safe_without_vehicle_sample():
 def test_manager_defaults_use_starpilot_socket_transport():
   assert "--socket-transport" in navdy_power_bridge.DEFAULT_ARGS
   assert "--radar-overlay" in navdy_power_bridge.DEFAULT_ARGS
-  assert "--lane-marking-classifier" in navdy_power_bridge.DEFAULT_ARGS
+  assert "--lane-marking-classifier" not in navdy_power_bridge.DEFAULT_ARGS
 
 
 def test_manager_defaults_keep_fast_state_and_throttle_path():
   hz = float(navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--hz") + 1])
   path_update_sec = float(navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--path-update-sec") + 1])
-  marking_update_sec = float(
-    navdy_power_bridge.DEFAULT_ARGS[
-      navdy_power_bridge.DEFAULT_ARGS.index("--lane-marking-interval-sec") + 1])
   assert hz == 5.0
   assert path_update_sec == 0.1
-  assert marking_update_sec == 0.5
-  assert marking_update_sec >= path_update_sec * 5.0
   assert path_update_sec < 1.0 / hz
   assert "--min-emit-sec" not in navdy_power_bridge.DEFAULT_ARGS
   assert navdy_power_bridge.DEFAULT_ARGS[navdy_power_bridge.DEFAULT_ARGS.index("--heartbeat-sec") + 1] == "1"

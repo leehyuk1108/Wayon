@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import math
-import time
-from dataclasses import dataclass
 from statistics import median
 from typing import Any
 
 from cereal import log
 
+from openpilot.selfdrive.lane_marking.state import LaneBoundaryStateReader
+
 
 LaneChangeDirection = log.LaneChangeDirection
 
-LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
-LANE_MARKING_MAX_AGE_SEC = 1.25
-LANE_MARKING_READ_INTERVAL_SEC = 0.1
 LANE_PROB_MIN = 0.55
 ROAD_EDGE_STD_MAX = 0.65
 TARGET_LANE_MIN_WIDTH_M = 2.00
@@ -96,47 +92,6 @@ def target_lane_space_width(model_v2: Any, direction: Any) -> float | None:
   return _space_between(lane_lines[inner_index], road_edges[edge_index])
 
 
-@dataclass(frozen=True)
-class LaneBoundaryState:
-  left_type: str = "unknown"
-  right_type: str = "unknown"
-
-  def type_for_direction(self, direction: Any) -> str:
-    if direction == LaneChangeDirection.left:
-      return self.left_type
-    if direction == LaneChangeDirection.right:
-      return self.right_type
-    return "unknown"
-
-
-class LaneBoundaryStateReader:
-  def __init__(self, path: str = LANE_MARKING_STATE_PATH):
-    self.path = path
-    self.last_read_at = 0.0
-    self.state = LaneBoundaryState()
-
-  def read(self, now: float | None = None) -> LaneBoundaryState:
-    now = time.monotonic() if now is None else now
-    if now - self.last_read_at < LANE_MARKING_READ_INTERVAL_SEC:
-      return self.state
-    self.last_read_at = now
-
-    try:
-      with open(self.path, encoding="utf-8") as state_file:
-        data = json.load(state_file)
-      updated_at = _finite(data.get("updatedAtMonotonic"), -math.inf)
-      if updated_at <= 0.0 or now < updated_at or now - updated_at > LANE_MARKING_MAX_AGE_SEC:
-        self.state = LaneBoundaryState()
-        return self.state
-      self.state = LaneBoundaryState(
-        left_type=str(data.get("leftType", "unknown")),
-        right_type=str(data.get("rightType", "unknown")),
-      )
-    except (OSError, AttributeError, TypeError, ValueError, json.JSONDecodeError):
-      self.state = LaneBoundaryState()
-    return self.state
-
-
 class LaneChangeSafetyGate:
   def __init__(self, boundary_reader: LaneBoundaryStateReader | None = None):
     self.boundary_reader = boundary_reader or LaneBoundaryStateReader()
@@ -167,7 +122,13 @@ class LaneChangeSafetyGate:
       self.reset()
       self.direction = direction
 
-    boundary_type = self.boundary_reader.read().type_for_direction(direction)
+    boundary_state = self.boundary_reader.read()
+    if direction == LaneChangeDirection.left:
+      boundary_type = boundary_state.left_type
+    elif direction == LaneChangeDirection.right:
+      boundary_type = boundary_state.right_type
+    else:
+      boundary_type = "unknown"
     if boundary_type in BLOCKING_BOUNDARY_TYPES:
       self.boundary_blocked = True
       self.boundary_block_reason = "solidLine" if boundary_type == "solid" else "centerline"
@@ -177,6 +138,11 @@ class LaneChangeSafetyGate:
       # or occlusion cannot make a prohibited lane change available.
       self.boundary_blocked = False
       self.boundary_block_reason = ""
+    else:
+      # ONNX is the authority for crossing the requested boundary. Missing,
+      # stale, or low-confidence inference must never be treated as dashed.
+      self.boundary_blocked = True
+      self.boundary_block_reason = "laneTypeUnknown"
 
     self.target_width_m = target_lane_space_width(model_v2, direction)
     narrow_now = self.target_width_m is not None and self.target_width_m < TARGET_LANE_MIN_WIDTH_M

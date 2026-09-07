@@ -672,29 +672,25 @@ Android renderer:
 
 ### 차선 표식 분류
 
-콤마의 `selfdrive/lane_marking`은 기존 밝기·색상 휴리스틱 대신 `models/lane.onnx` YOLOv8-Seg
-모델을 사용한다. VisionIPC road frame의 NV12 Y 평면을 중앙 정사각형으로 자르고 416x416
-그레이스케일 NCHW 입력으로 변환하여 좌우 인접 차선의 실선·점선을 판정한다.
+`lane_marking_classifier.py`는 `modelV2.laneLines`의 기존 좌표를 카메라 영상에 투영한 뒤 각 선
+주변의 가느다란 ROI만 읽는다. 전체 프레임 변환, 별도 신경망, 새 segmentation은 실행하지 않는다.
 
-- VisionIPC의 기존 NV12 road frame을 읽으며 stride padding을 제외
+- VisionIPC의 기존 NV12 road frame을 zero-copy view로 읽음
 - 0.5초 간격, 최대 2 Hz
 - `modelV2.frameId`와 road frame ID 차이가 0에서 2인 영상만 사용
-- 왼쪽·오른쪽 인접 차선만 판정하고 원거리 두 차선은 `unknown`
-- 실선은 빠르게 차단하고 점선은 연속 판정 후 허용하는 비대칭 시간 필터 적용
-- 결과가 2초 이상 오래되거나 추론이 실패하면 `unknown`
-- 노란 중앙선 분류는 포함하지 않음
+- 7에서 42 m 구간만 0.75 m 간격으로 검사
+- ROI별 배경 밝기에 적응하는 국소 대비와 선 위치 연속성으로 실선과 점선 분류
+- 어두운 노란 도색은 주변 조명의 색온도를 뺀 상대 NV12 UV chroma로 분류
+- 넓은 거리 구간에서 이어지는 노란색만 통과시켜 짧은 횡단 표식은 제외
+- 노란색은 확인됐지만 형태가 불명확하면 노란 실선으로 유지
+- 단일 프레임 오검출로 형태나 중앙선 여부가 바뀌지 않도록 EMA와 진입·이탈 hysteresis 적용
+- 결과는 시간 필터를 통과한 뒤 `navLane*Type` 네 문자열로만 전송
+- 결과가 2초 이상 오래되거나 confidence가 낮으면 `unknown`
+- 색상과 형태가 모두 `unknown`이면 기존 점선 표시로 fallback
 
-`lane_markingd`가 Navdy와 독립된 온로드 프로세스로 실행되어 결과를
-`/dev/shm/onnx_lane_marking_state.json`에 발행한다. 차선 변경 안전 게이트와 Navdy 렌더링은
-이 상태를 각각 읽는다. 따라서 Navdy 연결이나 프로세스 상태가 차선 변경 판정에 영향을 주지 않는다.
-차선 변경 안전 게이트는 `solid`에서 시작을 막고, `dashed`가 연속 확인된 경우에만 허용한다.
-모델 미로딩·카메라 오류·오래된 결과 같은 `unknown` 상태도 안전하게 차선 변경을 막는다.
-차선 위치와 조향 경로는 계속 `modelV2`를 사용하며 ONNX는 선 종류만 분류한다.
-
-동일한 콤마 `lane_markingd` 프로세스는 Xiaoge `v_asm_model.onnx`도 실행한다. 광각 카메라의
-좌우 사용자 지정 영역에서 차량을 감지하고, 최신 결과를 순정 BSD와 OR 병합한다. 감지 영역과
-임계값은 `http://<comma-ip>:8082/`에서 설정한다. Navdy는 이 추론을 수행하지 않고 최종
-`carState`의 BSD 결과만 표시한다.
+분류는 `navdy_bridge` 내부의 latest-only daemon thread에서 실행된다. 새 요청은 이전 대기 요청을
+덮어쓰며, 결과는 Navdy JSON에만 추가된다. `modeld`, `controlsd`, planner, panda safety 및
+조향·가감속 값에는 연결하지 않는다.
 
 ### 도로 경계
 

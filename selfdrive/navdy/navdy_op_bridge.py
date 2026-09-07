@@ -42,6 +42,7 @@ NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_HEARTBEAT_INTERVAL_S = 0.5
 NAVDY_AMBIENT_HEARTBEAT_INTERVAL_S = 1.0
 NAVDY_CAMERA_SOURCE = "trafficNotification"
+NAVDY_LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
 DISPLAY_ON_TEXT = "Display Power: state=ON"
 DISPLAY_OFF_TEXT = "Display Power: state=OFF"
 WAKEFULNESS_AWAKE_TEXT = "mWakefulness=Awake"
@@ -250,22 +251,39 @@ def create_navdy_lane_risk_detector() -> Any:
     return None
 
 
-def create_lane_marking_state_reader() -> Any:
+def create_navdy_lane_marking_classifier(args: argparse.Namespace) -> Any:
+  if not args.lane_marking_classifier:
+    return None
   try:
-    from openpilot.selfdrive.lane_marking.state import LaneBoundaryStateReader
-    return LaneBoundaryStateReader()
-  except (ImportError, AttributeError):
+    from openpilot.selfdrive.navdy.lane_marking_classifier import NavdyLaneMarkingClassifier
+    return NavdyLaneMarkingClassifier(
+      interval_sec=args.lane_marking_interval_sec,
+      stale_sec=args.lane_marking_stale_sec,
+      stdout=args.stdout,
+    )
+  except Exception as error:
+    if args.stdout:
+      print(f"navdy lane classifier unavailable: {error}", flush=True)
     return None
 
 
-def navdy_lane_marking_values(reader: Any, now: float | None = None) -> dict[str, str]:
-  state = reader.read(now) if reader is not None else None
-  return {
-    "navLaneFarLeftType": "unknown",
-    "navLaneLeftType": str(getattr(state, "left_type", "unknown")),
-    "navLaneRightType": str(getattr(state, "right_type", "unknown")),
-    "navLaneFarRightType": "unknown",
+def publish_navdy_lane_marking_state(markings: dict[str, str],
+                                     path: str = NAVDY_LANE_MARKING_STATE_PATH) -> None:
+  state = {
+    "leftType": str(markings.get("navLaneLeftType", "unknown")),
+    "rightType": str(markings.get("navLaneRightType", "unknown")),
+    "updatedAtMonotonic": time.monotonic(),
   }
+  temp_path = path + ".tmp"
+  try:
+    with open(temp_path, "w", encoding="utf-8") as state_file:
+      json.dump(state, state_file, separators=(",", ":"))
+    os.replace(temp_path, path)
+  except OSError:
+    try:
+      os.unlink(temp_path)
+    except OSError:
+      pass
 
 
 def navdy_lane_risk_values(detector: Any) -> dict[str, float]:
@@ -2295,7 +2313,7 @@ def run_live(args: argparse.Namespace) -> None:
   radar_reader = create_navdy_radar_reader(messaging, args.stdout) if args.radar_overlay else None
   lane_risk_detector = create_navdy_lane_risk_detector()
   longitudinal_lead_tracker = NavdyLongitudinalLeadTracker()
-  lane_marking_reader = create_lane_marking_state_reader()
+  lane_marking_classifier = create_navdy_lane_marking_classifier(args)
   e2e_alert_reader = NavdyE2EAlertReader(messaging) if "longitudinalPlanSP" in services else None
   last_radar_reader_attempt_at = time.monotonic() if radar_reader is not None else 0.0
   once_deadline = time.monotonic() + max(args.once_timeout_sec, 0.1)
@@ -2322,6 +2340,8 @@ def run_live(args: argparse.Namespace) -> None:
       publish_navdy_power_state(sm, args, started, now)
       update_navdy_power(args, started, now)
     if not started:
+      if lane_marking_classifier is not None:
+        lane_marking_classifier.set_active(False)
       if radar_reader is not None:
         radar_reader.set_active(False)
     if not has_update and not ambient_changed and not ambient_heartbeat_due \
@@ -2339,6 +2359,13 @@ def run_live(args: argparse.Namespace) -> None:
     if live_car_state is not None:
       car_state = apply_live_vehicle_state(car_state, live_car_state)
     active = bool(started and getattr(sm["selfdriveState"], "active", False))
+    if lane_marking_classifier is not None:
+      if not lane_marking_classifier.is_alive():
+        lane_marking_classifier = None
+      else:
+        lane_marking_classifier.set_active(active)
+        if not active:
+          publish_navdy_lane_marking_state({})
     if radar_reader is not None and not radar_reader.is_alive():
       radar_reader = None
     if args.radar_overlay and radar_reader is None and \
@@ -2355,7 +2382,13 @@ def run_live(args: argparse.Namespace) -> None:
         if service_recent(model_sm, NAVDY_MODEL_SERVICE, now):
           model_v2 = model_sm[NAVDY_MODEL_SERVICE]
           path_geometry = navdy_model_geometry(model_v2)
-          path_geometry.update(navdy_lane_marking_values(lane_marking_reader, now))
+          if lane_marking_classifier is not None:
+            if service_recent(model_sm, NAVDY_CALIBRATION_SERVICE, now):
+              lane_marking_classifier.submit(
+                model_v2, model_sm[NAVDY_CALIBRATION_SERVICE], now)
+            lane_markings = lane_marking_classifier.snapshot(now)
+            path_geometry.update(lane_markings)
+            publish_navdy_lane_marking_state(lane_markings)
           radar_points = radar_reader.snapshot(now) if radar_reader is not None else []
           radar_state = sm_optional(sm, services, "radarState") \
             if "radarState" in services and service_recent(sm, "radarState", now) else None
@@ -2435,6 +2468,15 @@ def parse_args() -> argparse.Namespace:
                       help="Fuse passive raw GM radar targets into the Navdy path overlay (default).")
   parser.add_argument("--no-radar-overlay", dest="radar_overlay", action="store_false",
                       help="Disable passive raw radar targets in the Navdy path overlay.")
+  parser.add_argument("--lane-marking-classifier", dest="lane_marking_classifier",
+                      action="store_true", default=False,
+                      help="Classify solid, dashed, and yellow center lane markings for Navdy.")
+  parser.add_argument("--no-lane-marking-classifier", dest="lane_marking_classifier",
+                      action="store_false", help="Disable Navdy lane-marking classification.")
+  parser.add_argument("--lane-marking-interval-sec", type=float, default=0.5,
+                      help="Minimum interval between camera lane-marking samples.")
+  parser.add_argument("--lane-marking-stale-sec", type=float, default=2.0,
+                      help="Age after which a lane-marking result becomes unknown.")
   parser.add_argument("--once", action="store_true", help="Send one payload and exit.")
   parser.add_argument("--synthetic", action="store_true", help="Send fake OP data without cereal imports.")
   parser.add_argument("--synthetic-gear", default="drive", help="Gear text for --synthetic payloads.")

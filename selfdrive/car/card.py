@@ -21,7 +21,6 @@ from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.auto_hold_session import AutoHoldSessionTracker
 from openpilot.selfdrive.car.cruise import VCruiseHelper
 from openpilot.selfdrive.car.helpers import convert_carControlSP, convert_to_capnp
-from openpilot.selfdrive.lane_marking.state import BlindspotStateReader, merge_visual_blindspot
 
 from openpilot.sunnypilot.mads.helpers import set_alternative_experience, set_car_specific_params
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
@@ -88,7 +87,6 @@ class Car:
       0.0, hold_requested=False, epb_closed=False, speed_ms=0.0,
       gas_pressed=False, drivable_gear=False,
     )
-    self.visual_blindspot_reader = BlindspotStateReader()
 
     self.params = Params()
 
@@ -205,8 +203,6 @@ class Car:
     # Update carState from CAN
     CS, CS_SP = self.CI.update(can_list)
     CS_SP = convert_to_capnp(CS_SP)
-    if not REPLAY:
-      merge_visual_blindspot(CS, self.visual_blindspot_reader.read())
 
     # Update radar tracks from CAN
     RD: structs.RadarDataT | None = self.RI.update(can_list)

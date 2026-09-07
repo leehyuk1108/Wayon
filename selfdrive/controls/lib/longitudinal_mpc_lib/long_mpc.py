@@ -102,6 +102,12 @@ def get_safe_obstacle_distance(v_ego, t_follow):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
 
 
+def sanitize_wayon_lead_dynamics(v_rel, a_lead, j_lead):
+  if v_rel < -0.1:
+    a_lead = min(a_lead, 0.0)
+  return a_lead, 0.0
+
+
 def get_wayon_stop_smoothing_buffer(enabled, v_ego, lead_status=False, v_lead=0.0,
                                     traffic_stop_active=False):
   stopping_for_lead = lead_status and v_lead <= WAYON_STOP_SMOOTHING_MAX_LEAD_SPEED
@@ -255,7 +261,8 @@ class LongitudinalMpc:
     self.dt = dt
     self.wayon_carrot_profile = wayon_carrot_profile
     self.dynamic_follow_enabled = wayon_carrot_profile
-    self.cutin_predecel_mode = 2
+    # Selected leads still use the normal MPC path; adjacent tracks are observed only.
+    self.cutin_predecel_mode = 1
     self.cutin_gap_recovery = CutInGapRecoveryController()
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
@@ -345,7 +352,13 @@ class LongitudinalMpc:
       v_lead = lead.vLead
       a_lead = lead.aLeadK
       a_lead_tau = lead.aLeadTau
-      j_lead = float(np.clip(lead.jLead, -2.0, 2.0)) if getattr(lead, "radar", False) else 0.0
+      if self.wayon_carrot_profile:
+        # Do not predict acceleration while ego is still closing. A stale
+        # Kalman acceleration caused the Traverse to accelerate toward a
+        # stopped lead in route 00000063.
+        a_lead, j_lead = sanitize_wayon_lead_dynamics(lead.vRel, a_lead, lead.jLead)
+      else:
+        j_lead = float(np.clip(lead.jLead, -2.0, 2.0)) if getattr(lead, "radar", False) else 0.0
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode
       x_lead = 50.0

@@ -80,7 +80,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.output_v_target_now = 0.0
     self.output_j_target_now = 0.0
     self.output_should_stop = False
-    self.cutin_predecel_mode = 2
+    # Shadow-only until route replay proves adjacent-track braking is reliable.
+    self.cutin_predecel_mode = 1
     self.cutin_shadow_accel = None
     self.traffic_stop_controller = TrafficStopController()
 

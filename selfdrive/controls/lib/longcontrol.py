@@ -14,6 +14,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   PID_KF,
   PID_KI,
   PID_KP,
+  get_max_accel as get_wayon_max_accel,
   is_enabled,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
@@ -42,6 +43,30 @@ SNG_MANUAL_RELEASE_TIMEOUT = 4.0
 SNG_MANUAL_CREEP_MIN_SPEED = 0.1
 SNG_MANUAL_CREEP_MAX_SPEED = 1.0
 SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
+LEAD_SAFETY_STOP_DISTANCE = 6.0
+LEAD_SAFETY_T_FOLLOW = 1.45
+LEAD_SAFETY_MIN_CLOSING_SPEED = 0.3
+LEAD_SAFETY_MAX_TTC = 8.0
+
+
+def get_lead_accel_safety_cap(v_ego, lead):
+  """Return the maximum safe accel for a closing radar lead, if constrained."""
+  if lead is None or not getattr(lead, "status", False) or not getattr(lead, "radar", False):
+    return None
+
+  d_rel = float(getattr(lead, "dRel", 0.0))
+  closing_speed = max(0.0, -float(getattr(lead, "vRel", 0.0)))
+  if d_rel <= 0.0 or closing_speed < LEAD_SAFETY_MIN_CLOSING_SPEED:
+    return None
+
+  desired_gap = LEAD_SAFETY_STOP_DISTANCE + LEAD_SAFETY_T_FOLLOW * max(0.0, v_ego)
+  ttc = d_rel / closing_speed
+  if d_rel > desired_gap and ttc > LEAD_SAFETY_MAX_TTC:
+    return None
+
+  remaining_distance = max(0.5, d_rel - LEAD_SAFETY_STOP_DISTANCE)
+  required_decel = -(closing_speed * closing_speed) / (2.0 * remaining_distance)
+  return min(0.0, required_decel)
 
 
 def use_gm_auto_hold_sng(CP) -> bool:
@@ -370,6 +395,8 @@ class LongControl:
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     a_target = long_plan.aTarget
     should_stop = long_plan.shouldStop
+    if self.wayon_carrot_profile:
+      accel_limits = (accel_limits[0], min(accel_limits[1], get_wayon_max_accel(CS.vEgo)))
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
     self.speed_pid.neg_limit = accel_limits[0]
@@ -459,6 +486,13 @@ class LongControl:
         error = a_target - CS.aEgo
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)
         self.speed_pid.reset()
+
+    if self.wayon_carrot_profile and self.long_control_state == LongCtrlState.pid:
+      lead = radar_state.leadOne if radar_state is not None else None
+      lead_safety_cap = get_lead_accel_safety_cap(CS.vEgo, lead)
+      if lead_safety_cap is not None and output_accel > lead_safety_cap:
+        output_accel = max(accel_limits[0], lead_safety_cap)
+        self.accel_smoother.reset(output_accel)
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     lead = radar_state.leadOne if radar_state is not None else None

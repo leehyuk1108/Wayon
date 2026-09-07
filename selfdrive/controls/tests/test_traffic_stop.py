@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import numpy as np
 from openpilot.selfdrive.controls.lib.traffic_stop import (
+  TRAFFIC_STOP_ENGAGE_ARM_S,
+  TRAFFIC_STOP_SIGNAL_CONFIRM_S,
   TrafficSignalState,
   TrafficStopController,
   TrafficStopDistanceTracker,
@@ -51,7 +53,9 @@ def test_virtual_stop_advance_fades_near_line():
 
 def test_red_stop_prediction_activates_without_lead():
   controller = TrafficStopController()
-  controller.update(True, car_state(), radar_state(), model(), 25.0)
+  required_frames = round(max(TRAFFIC_STOP_ENGAGE_ARM_S, TRAFFIC_STOP_SIGNAL_CONFIRM_S) / 0.05)
+  for _ in range(required_frames):
+    controller.update(True, car_state(), radar_state(), model(), 25.0)
 
   assert controller.signal_state == TrafficSignalState.red
   assert controller.state == TrafficStopState.stopping
@@ -66,9 +70,22 @@ def test_real_lead_prevents_signal_stop_entry():
   assert controller.state == TrafficStopState.inactive
 
 
+def test_signal_stop_does_not_activate_on_engagement_or_brief_lead_dropout():
+  controller = TrafficStopController()
+
+  controller.update(True, car_state(), radar_state(), model(), 25.0)
+  assert controller.signal_state == TrafficSignalState.off
+  assert controller.state == TrafficStopState.inactive
+
+  for _ in range(8):
+    controller.update(True, car_state(), radar_state(), model(), 25.0)
+  assert controller.state == TrafficStopState.inactive
+
+
 def test_green_prediction_releases_active_stop():
   controller = TrafficStopController()
-  controller.update(True, car_state(), radar_state(), model(), 25.0)
+  for _ in range(round(TRAFFIC_STOP_ENGAGE_ARM_S / 0.05)):
+    controller.update(True, car_state(), radar_state(), model(), 25.0)
   assert controller.active
 
   green_model = model(stop_distance=120.0, terminal_speed=20.0)

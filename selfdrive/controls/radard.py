@@ -30,7 +30,22 @@ V_EGO_STATIONARY = 4.   # no stationary object flag below this speed
 
 RADAR_TO_CENTER = 2.7   # (deprecated) RADAR is ~ 2.7m ahead from center of car
 RADAR_TO_CAMERA = 1.52  # RADAR is ~ 1.5m ahead from center of mesh frame
-RADAR_LEAD_HOLD_TIME = 0.25
+RADAR_LEAD_HOLD_TIME = 1.0
+RADAR_LEAD_SWITCH_DISTANCE_M = 8.0
+RADAR_VISION_SAME_LEAD_DISTANCE_M = 8.0
+RADAR_VISION_SAME_LEAD_SPEED_MPS = 3.0
+RADAR_VISION_SAME_LEAD_LATERAL_M = 1.5
+CAR_STATE_EGO_MAX_AGE = 0.15
+
+
+def select_radar_v_ego(car_state_v_ego: float, car_state_age: float,
+                       model_v_ego: float, previous_v_ego: float) -> float:
+  """Use model velocity when radard's non-polled carState subscription stalls."""
+  if math.isfinite(car_state_v_ego) and 0.0 <= car_state_age <= CAR_STATE_EGO_MAX_AGE:
+    return car_state_v_ego
+  if math.isfinite(model_v_ego) and model_v_ego >= 0.0:
+    return model_v_ego
+  return previous_v_ego
 
 
 def cutin_matches_selected_lead(track_id: int, *leads: Any) -> bool:
@@ -230,7 +245,6 @@ class RadarD:
 
     self.v_ego = 0.0
     self.v_ego_hist = deque([0.0], maxlen=int(round(delay / DT_MDL))+1)
-    self.last_v_ego_frame = -1
 
     self.radar_state: capnp._DynamicStructBuilder | None = None
     self.radar_state_valid = False
@@ -240,26 +254,43 @@ class RadarD:
     self.intrusion_detector = RadarLaneIntrusionDetector() if CP.brand == "gm" else None
 
   def hold_radar_lead(self, index: int, lead: dict[str, Any]) -> dict[str, Any]:
+    held = self.lead_holds[index]
+    predicted = None
+    if held is not None:
+      held_lead, held_time = held
+      age = self.current_time - held_time
+      if 0.0 <= age <= RADAR_LEAD_HOLD_TIME:
+        predicted = dict(held_lead)
+        predicted["dRel"] = max(0.0, float(predicted["dRel"]) + float(predicted["vRel"]) * age)
+        predicted["modelProb"] = float(predicted.get("modelProb", 0.0)) * max(0.0, 1.0 - age / RADAR_LEAD_HOLD_TIME)
+        predicted["score"] = max(float(predicted.get("score", 0.0)), 0.01)
+      else:
+        self.lead_holds[index] = None
+
     if lead.get("status", False) and lead.get("radar", False):
+      old_track_id = int(predicted.get("radarTrackId", -1)) if predicted is not None else -1
+      new_track_id = int(lead.get("radarTrackId", -1))
+      farther_switch = predicted is not None and new_track_id != old_track_id and \
+                       float(lead.get("dRel", 1000.0)) > float(predicted.get("dRel", 0.0)) + RADAR_LEAD_SWITCH_DISTANCE_M
+      if farther_switch and float(predicted.get("vRel", 0.0)) < 0.5:
+        return predicted
       self.lead_holds[index] = (dict(lead), self.current_time)
       return lead
+
     if lead.get("status", False):
+      same_radar_object = predicted is not None and \
+                          abs(float(lead.get("dRel", 0.0)) - float(predicted.get("dRel", 0.0))) <= RADAR_VISION_SAME_LEAD_DISTANCE_M and \
+                          abs(float(lead.get("vRel", 0.0)) - float(predicted.get("vRel", 0.0))) <= RADAR_VISION_SAME_LEAD_SPEED_MPS and \
+                          abs(float(lead.get("yRel", 0.0)) - float(predicted.get("yRel", 0.0))) <= RADAR_VISION_SAME_LEAD_LATERAL_M
+      if same_radar_object:
+        return predicted
+      farther_fallback = predicted is not None and \
+                         float(lead.get("dRel", 1000.0)) > float(predicted.get("dRel", 0.0)) + RADAR_LEAD_SWITCH_DISTANCE_M
+      if farther_fallback and float(predicted.get("vRel", 0.0)) < 0.5:
+        return predicted
       return lead
 
-    held = self.lead_holds[index]
-    if held is None:
-      return lead
-    held_lead, held_time = held
-    age = self.current_time - held_time
-    if age < 0.0 or age > RADAR_LEAD_HOLD_TIME:
-      self.lead_holds[index] = None
-      return lead
-
-    predicted = dict(held_lead)
-    predicted["dRel"] = max(0.0, float(predicted["dRel"]) + float(predicted["vRel"]) * age)
-    predicted["modelProb"] = float(predicted.get("modelProb", 0.0)) * max(0.0, 1.0 - age / RADAR_LEAD_HOLD_TIME)
-    predicted["score"] = max(float(predicted.get("score", 0.0)), 0.01)
-    return predicted
+    return predicted if predicted is not None else lead
 
   def get_cutin_risk(self, sm: messaging.SubMaster, rr: car.RadarData) -> dict[str, Any]:
     if self.intrusion_detector is None:
@@ -294,10 +325,15 @@ class RadarD:
     self.ready = sm.seen['modelV2']
     self.current_time = 1e-9*max(sm.logMonoTime.values())
 
-    if sm.recv_frame['carState'] != self.last_v_ego_frame:
-      self.v_ego = sm['carState'].vEgo
-      self.v_ego_hist.append(self.v_ego)
-      self.last_v_ego_frame = sm.recv_frame['carState']
+    if len(sm['modelV2'].velocity.x):
+      model_v_ego = float(sm['modelV2'].velocity.x[0])
+    else:
+      model_v_ego = self.v_ego
+    car_state_age = self.current_time - 1e-9 * sm.logMonoTime['carState']
+    self.v_ego = select_radar_v_ego(
+      float(sm['carState'].vEgo), car_state_age, model_v_ego, self.v_ego)
+    # Keep the radar delay history advancing even if carState IPC is stale.
+    self.v_ego_hist.append(self.v_ego)
 
     ar_pts = {pt.trackId: [pt.dRel, pt.yRel, pt.vRel, pt.measured] for pt in rr.points}
 
@@ -325,10 +361,6 @@ class RadarD:
     self.radar_state.radarErrors = rr.errors
     self.radar_state.carStateMonoTime = sm.logMonoTime['carState']
 
-    if len(sm['modelV2'].velocity.x):
-      model_v_ego = sm['modelV2'].velocity.x[0]
-    else:
-      model_v_ego = self.v_ego
     leads_v3 = sm['modelV2'].leadsV3
     if len(leads_v3) > 1:
       for i in range(2):
@@ -376,7 +408,7 @@ def main() -> None:
 
   # *** setup messaging
   ignore_car_state_freq = ['carState']
-  sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'], poll='modelV2',
+  sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'], poll='carState',
                            ignore_alive=ignore_car_state_freq, ignore_avg_freq=ignore_car_state_freq)
   pm = messaging.PubMaster(['radarState'])
 
@@ -384,6 +416,8 @@ def main() -> None:
 
   while 1:
     sm.update()
+    if not sm.updated['modelV2']:
+      continue
 
     RD.update(sm, sm['liveTracks'])
     RD.publish(pm)

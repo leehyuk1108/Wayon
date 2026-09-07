@@ -1,7 +1,8 @@
 import numpy as np
 
 from cereal import log
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_mpc_source
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (get_mpc_source,
+                                                                           sanitize_wayon_lead_dynamics)
 
 
 LongitudinalPlanSource = log.LongitudinalPlan.LongitudinalPlanSource
@@ -41,3 +42,12 @@ def test_mpc_source_ignores_lead_outside_display_lookahead():
   obstacles[9:, 0] = 40.0
 
   assert get_mpc_source(obstacles, (True, False)) == LongitudinalPlanSource.cruise
+
+
+def test_wayon_does_not_predict_acceleration_while_closing_on_lead():
+  assert sanitize_wayon_lead_dynamics(-1.8, 1.1, 1.2) == (0.0, 0.0)
+  assert sanitize_wayon_lead_dynamics(-2.0, -0.9, -1.1) == (-0.9, 0.0)
+
+
+def test_wayon_preserves_confirmed_lead_acceleration_after_gap_opens():
+  assert sanitize_wayon_lead_dynamics(0.8, 0.7, 0.9) == (0.7, 0.0)

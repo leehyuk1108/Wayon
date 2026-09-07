@@ -6,7 +6,8 @@ from cereal import car, custom
 from openpilot.selfdrive.controls.lib.longcontrol import (LongControl, LongCtrlState,
                                                           SNG_LEAD_CONFIRM_FRAMES, SNG_RESUME_TIMEOUT_FRAMES,
                                                           SNG_PRESTOP_TRACK_SPEED, SNG_STOP_CONFIRM_FRAMES, SNG_STARTED_CONFIRM_FRAMES,
-                                                          long_control_state_trans, use_gm_auto_hold_sng)
+                                                          get_lead_accel_safety_cap, long_control_state_trans,
+                                                          use_gm_auto_hold_sng)
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 
 
@@ -457,3 +458,20 @@ def test_launch_transition_does_not_change_normal_acceleration_curve():
                                   v_ego=0.0, v_target=1.0, launch_transition=True) for _ in range(60)]
 
   assert launch_outputs[-1] > normal_outputs[-1] + 0.2
+
+
+def test_closing_radar_lead_caps_accel_before_gap_is_lost():
+  lead = SimpleNamespace(status=True, radar=True, dRel=10.5, vRel=-2.0)
+  assert get_lead_accel_safety_cap(4.67, lead) == pytest.approx(-0.4444, abs=0.01)
+
+
+def test_fast_closing_radar_lead_requires_strong_decel():
+  lead = SimpleNamespace(status=True, radar=True, dRel=26.5, vRel=-10.0)
+  assert get_lead_accel_safety_cap(9.86, lead) < -2.4
+
+
+def test_nonurgent_or_vision_lead_does_not_override_planner():
+  far_lead = SimpleNamespace(status=True, radar=True, dRel=60.0, vRel=-2.0)
+  vision_lead = SimpleNamespace(status=True, radar=False, dRel=10.0, vRel=-2.0)
+  assert get_lead_accel_safety_cap(10.0, far_lead) is None
+  assert get_lead_accel_safety_cap(4.0, vision_lead) is None

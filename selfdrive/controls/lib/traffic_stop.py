@@ -22,6 +22,9 @@ TRAFFIC_STOP_DECEL_SAFETY_BUFFER_MPS2 = 0.2
 TRAFFIC_STOP_DISTANCE_STABILITY_SAMPLES = 8
 TRAFFIC_STOP_DISTANCE_ADJUST_M = 2.5
 TRAFFIC_STOP_CANCEL_COOLDOWN_S = 10.0
+TRAFFIC_STOP_SIGNAL_CONFIRM_S = 0.6
+TRAFFIC_STOP_NO_LEAD_CONFIRM_S = 0.6
+TRAFFIC_STOP_ENGAGE_ARM_S = 1.0
 
 
 class TrafficStopState(IntEnum):
@@ -139,6 +142,8 @@ class TrafficStopController:
     self._actual_stop_distance = 0.0
     self._stop_count = 0
     self._start_count = 0
+    self._enabled_count = 0
+    self._no_lead_count = 0
     self._cooldown_frames = 0
     self._stop_x_median.reset()
     self._stop_x_average.reset()
@@ -178,7 +183,7 @@ class TrafficStopController:
 
     self._stop_count = self._stop_count + 1 if stop_sign else 0
     self._start_count = self._start_count + 1 if start_sign and not stop_sign else 0
-    if self._stop_count * DT_MDL > 0.0:
+    if self._stop_count * DT_MDL >= TRAFFIC_STOP_SIGNAL_CONFIRM_S:
       self.signal_state = TrafficSignalState.red
     elif self._start_count * DT_MDL > 0.2:
       self.signal_state = TrafficSignalState.green
@@ -206,6 +211,8 @@ class TrafficStopController:
     lead = radar_state.leadOne
     lead_detected = bool(lead.status)
     lead_distance = float(lead.dRel) if lead_detected else 1000.0
+    self._enabled_count += 1
+    self._no_lead_count = 0 if lead_detected else self._no_lead_count + 1
     self._detect_signal_state(
       v_cruise, v_values, v_ego, float(car_state.aEgo),
       float(x_values[-1]), float(y_values[-1]), lead_distance,
@@ -232,7 +239,10 @@ class TrafficStopController:
           self.state = TrafficStopState.stopped
     else:
       self._cooldown_frames = max(0, self._cooldown_frames - 1)
-      if not lead_detected and self.signal_state == TrafficSignalState.red and \
+      controller_armed = self._enabled_count * DT_MDL >= TRAFFIC_STOP_ENGAGE_ARM_S
+      lead_absence_confirmed = self._no_lead_count * DT_MDL >= TRAFFIC_STOP_NO_LEAD_CONFIRM_S
+      if controller_armed and lead_absence_confirmed and \
+         self.signal_state == TrafficSignalState.red and \
          abs(float(car_state.steeringAngleDeg)) < TRAFFIC_STOP_ENTRY_STEERING_LIMIT_DEG and \
          self._cooldown_frames == 0:
         self.state = TrafficStopState.stopping

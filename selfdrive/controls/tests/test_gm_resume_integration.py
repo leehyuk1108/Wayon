@@ -46,11 +46,12 @@ class TraverseControlChain:
     ), 0)
     self.plan = SimpleNamespace(shouldStop=True, aTarget=-0.5, speeds=[0.0] * 33, jTargetNow=0.0)
     self.radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vRel=0.0, vLead=0.0),
-                                 leadCutInRisk=None)
+                                 leadTwo=SimpleNamespace(status=False), leadCutInRisk=None)
     self.custom_control = custom.CarControlSP.new_message().as_reader()
     self.button_signals = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1].sigs
     self.brake_signals = DBC("gm_global_a_chassis").addr_to_msg[0x315].sigs
     self.trace = []
+    self.sensors_valid = True
 
   def step(self, manual_resume=False):
     # A fresh original button frame every 30 ms, observed 5 ms after reception.
@@ -61,7 +62,7 @@ class TraverseControlChain:
     control.enabled = True
     control.longActive = True
     control.actuators.accel = float(self.loc.update(True, self.cs.out, self.plan, (-3.5, 2.0), self.radar,
-                                                   manual_resume=manual_resume))
+                                                   manual_resume=manual_resume, manual_resume_sensors_valid=self.sensors_valid))
     # Match controlsd: publish the state that produced this cycle's acceleration.
     control.actuators.longControlState = self.loc.long_control_state
     control.cruiseControl.resume = self.loc.get_resume_request(True, True, self.cs.out, self.plan)
@@ -189,14 +190,12 @@ def test_screen_request_without_lead_retries_only_after_another_tap(chain):
   assert chain.loc.sng_resume_succeeded
 
 
-@pytest.mark.parametrize("veto", ["planner_stop", "moving", "gas", "brake", "pcm_off", "invalid_can"])
+@pytest.mark.parametrize("veto", ["moving", "gas", "brake", "pcm_off", "invalid_can"])
 def test_screen_request_preserves_control_vetoes(chain, veto):
   chain.radar.leadOne.status = False
   chain.run(110)
   chain.plan.shouldStop = False
-  if veto == "planner_stop":
-    chain.plan.shouldStop = True
-  elif veto == "moving":
+  if veto == "moving":
     chain.cs.out.vEgo = 0.2
     chain.cs.out.standstill = False
   elif veto == "gas":
@@ -255,3 +254,104 @@ def test_manual_hold_only_release_times_out_without_motion(chain):
   assert not chain.loc.sng_resume_succeeded
   assert chain.trace[-1].state == LongCtrlState.stopping
   assert chain.buttons() == []
+
+
+def test_explicit_creep_releases_brake_without_positive_gas_then_sends_res(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  assert chain.plan.shouldStop
+  chain.step(manual_resume=True)
+  entries = chain.run(60)
+  assert chain.loc.sng_ui_creep
+  assert all(entry.accel == 0.0 and entry.state == LongCtrlState.starting for entry in entries)
+  assert chain.ci.CC.apply_gas == 0.0
+  assert chain.ci.CC.apply_brake == 0
+  first_zero = next(t for t, brake in chain.brakes(entries) if brake == 0)
+  res = [b for b in chain.buttons() if b[1] == CanBus.POWERTRAIN and b[2] == CruiseButtons.RES_ACCEL]
+  assert len(res) == 5
+  assert res[0][0] - first_zero >= 190_000_000  # first zero may precede entries by one tick
+  assert not chain.loc.sng_resume_succeeded
+
+
+def test_creep_cannot_claim_success_or_ignore_a_stop_beyond_two_seconds(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.step(manual_resume=True)
+  chain.cs.out.cruiseState.standstill = False
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.2
+  chain.run(210)
+  assert chain.loc.sng_resume_failed and not chain.loc.sng_resume_succeeded
+  assert not chain.loc.sng_ui_creep
+  assert chain.trace[-1].state == LongCtrlState.stopping
+  assert chain.trace[-1].accel < 0
+
+
+@pytest.mark.parametrize('hazard', ['lead_one', 'lead_two', 'closing', 'fcw', 'stale'])
+def test_manual_request_keeps_obstacle_and_sensor_vetoes(chain, hazard):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  if hazard == 'lead_one':
+    chain.radar.leadOne = SimpleNamespace(status=True, dRel=3.9, vRel=0.0)
+  elif hazard == 'lead_two':
+    chain.radar.leadTwo = SimpleNamespace(status=True, dRel=3.9, vRel=0.0)
+  elif hazard == 'closing':
+    chain.radar.leadTwo = SimpleNamespace(status=True, dRel=6.0, vRel=-1.1)
+  elif hazard == 'fcw':
+    chain.plan.fcw = True
+  else:
+    chain.sensors_valid = False
+  chain.step(manual_resume=True)
+  assert not chain.loc.sng_ui_creep
+  assert chain.buttons() == []
+  assert chain.trace[-1].state == LongCtrlState.stopping
+
+
+@pytest.mark.parametrize('speed', [0.5, -0.06, float('nan')])
+def test_creep_aborts_on_speed_limit_rollback_or_invalid_speed(chain, speed):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.step(manual_resume=True)
+  chain.cs.out.vEgoRaw = speed
+  chain.step()
+  assert chain.loc.sng_resume_failed
+  assert chain.trace[-1].state == LongCtrlState.stopping
+  assert not chain.trace[-1].resume
+
+
+def test_creep_aborts_on_distance_and_restores_stopping(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.step(manual_resume=True)
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.4
+  chain.cs.out.standstill = False
+  chain.run(130)
+  assert chain.loc.sng_resume_failed
+  assert chain.trace[-1].state == LongCtrlState.stopping
+
+
+def test_creep_handoff_does_not_override_a_subsequent_stop(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.step(manual_resume=True)
+  chain.run(40)
+  chain.plan.shouldStop = False
+  chain.step()
+  assert not chain.loc.sng_ui_creep
+  assert chain.loc.sng_ui_resume
+  chain.plan.shouldStop = True
+  chain.step()
+  assert chain.loc.sng_resume_failed
+  assert chain.trace[-1].state == LongCtrlState.stopping
+
+
+def test_creep_aborts_immediately_when_perception_becomes_stale(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.step(manual_resume=True)
+  chain.run(25)
+  chain.sensors_valid = False
+  chain.step()
+  assert chain.loc.sng_resume_failed
+  assert chain.trace[-1].state == LongCtrlState.stopping
+  assert not chain.trace[-1].resume

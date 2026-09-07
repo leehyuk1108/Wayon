@@ -21,7 +21,7 @@ from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
-from openpilot.sunnypilot.selfdrive.controls.lib.gm_manual_resume import ManualResumeReceiver, manual_resume_eligible
+from openpilot.sunnypilot.selfdrive.controls.lib.gm_manual_resume import ManualResumeReceiver, manual_resume_eligible, manual_resume_obstacle_clear
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -140,14 +140,16 @@ class Controls(ControlsExt):
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     pitch = float(self.calibrated_pose.orientation.xyz[1]) if self.calibrated_pose is not None else 0.0
     manual_resume = False
+    manual_resume_sensors_valid = self.sm.all_checks(['carState', 'selfdriveState', 'longitudinalPlan', 'radarState', 'modelV2'])
     if self.gm_manual_resume_receiver is not None:
-      eligible = (self.sm.all_checks(['carState', 'selfdriveState', 'longitudinalPlan']) and
+      eligible = (manual_resume_sensors_valid and manual_resume_obstacle_clear(long_plan, self.sm['radarState']) and
                   self.LoC.long_control_state == car.CarControl.Actuators.LongControlState.stopping and
-                  manual_resume_eligible(self.CP, CS, CC.enabled, CC.longActive, long_plan.shouldStop))
+                  manual_resume_eligible(self.CP, CS, CC.enabled, CC.longActive))
       manual_resume = self.gm_manual_resume_receiver.poll(eligible)
     actuators.accel = float(self.LoC.update(
       CC.longActive, CS, long_plan, pid_accel_limits, self.sm['radarState'],
-      self.sm['selfdriveStateSP'].intelligentCruiseButtonManagement, pitch, manual_resume=manual_resume))
+      self.sm['selfdriveStateSP'].intelligentCruiseButtonManagement, pitch, manual_resume=manual_resume,
+      manual_resume_sensors_valid=manual_resume_sensors_valid))
     if self.CP.brand == "gm" and self.CP.autoResumeSng:
       # Brake release and the RES sequencer must use the state that produced
       # this acceleration, rather than the previous control cycle's state.

@@ -3,14 +3,16 @@ from time import monotonic
 import pyray as rl
 
 from cereal import car
-from openpilot.sunnypilot.selfdrive.controls.lib.gm_manual_resume import manual_resume_eligible, manual_resume_stationary, request_manual_resume
+from openpilot.sunnypilot.selfdrive.controls.lib.gm_manual_resume import (
+  manual_resume_eligible, manual_resume_stationary, manual_resume_obstacle_clear, request_manual_resume,
+)
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import gui_label
 
 
 VISIBLE_SERVICES = ("carState",)
-RESUME_SERVICES = ("carState", "carControl", "selfdriveState", "longitudinalPlan")
+RESUME_SERVICES = ("carState", "carControl", "selfdriveState", "longitudinalPlan", "radarState", "modelV2")
 RESUME_CLICK_INTERVAL = 2.5
 RESUME_LABEL = "오토리슘"
 RESUME_SUBTITLE = "앞차 없이 수동 시험"
@@ -50,12 +52,12 @@ def manual_resume_block_reason(state) -> str:
     return "페달 해제 후 시험"
   if cs.parkingBrake:
     return "주차 브레이크 해제"
-  if sm["longitudinalPlan"].shouldStop:
-    return "정차 요구 중"
+  if not manual_resume_obstacle_clear(sm["longitudinalPlan"], sm["radarState"]):
+    return "전방 공간 확인 필요"
   if control.actuators.longControlState != car.CarControl.Actuators.LongControlState.stopping:
     return "재출발 처리 중"
   if not manual_resume_eligible(state.CP, cs, sm["selfdriveState"].enabled,
-                                control.longActive, sm["longitudinalPlan"].shouldStop):
+                                control.longActive):
     return "출발 조건 확인 중"
   return ""
 
@@ -136,7 +138,7 @@ class GMResumeButton(Widget):
     rl.draw_rectangle_rounded(rect, 0.25, 10, background)
     rl.draw_rectangle_rounded_lines_ex(rect, 0.25, 10, 2 * scale, rl.Color(145, 212, 247, 255))
     title = self._status if waiting else RESUME_LABEL
-    subtitle = self._block_reason or RESUME_SUBTITLE
+    subtitle = self._block_reason or ("브레이크 해제 후 재출발" if self._state.sm["longitudinalPlan"].shouldStop else RESUME_SUBTITLE)
     gui_label(rl.Rectangle(rect.x, rect.y + 7 * scale, rect.width, 32 * scale), title,
               font_size=round(26 * scale), font_weight=FontWeight.KOREAN,
               alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)

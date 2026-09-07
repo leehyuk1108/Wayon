@@ -1,6 +1,7 @@
 """Short-lived, local UI requests for the normal GM resume control path."""
 
 import json
+import math
 import os
 import socket
 import stat
@@ -22,9 +23,26 @@ def manual_resume_stationary(CS):
   return CS.standstill and abs(CS.vEgoRaw) < 0.05 and abs(CS.vEgo) < 0.1
 
 
-def manual_resume_eligible(CP, CS, enabled, long_active, should_stop):
+def manual_resume_obstacle_clear(long_plan, radar_state):
+  if radar_state is None or getattr(long_plan, "fcw", False):
+    return False
+  for name in ("leadOne", "leadTwo"):
+    lead = getattr(radar_state, name, None)
+    if lead is None:
+      return False
+    if lead.status:
+      distance, relative_speed = float(lead.dRel), float(lead.vRel)
+      if not math.isfinite(distance) or not math.isfinite(relative_speed):
+        return False
+      # Preserve four metres even after two seconds of observed closing.
+      if distance + min(relative_speed, 0.0) * 2.0 <= 4.0:
+        return False
+  return True
+
+
+def manual_resume_eligible(CP, CS, enabled, long_active):
   return bool(CP.carFingerprint == "CHEVROLET_TRAVERSE" and CP.autoResumeSng and
-              CP.openpilotLongitudinalControl and enabled and long_active and not should_stop and
+              CP.openpilotLongitudinalControl and enabled and long_active and
               CS.canValid and manual_resume_stationary(CS) and
               CS.cruiseState.enabled and not CS.accFaulted and
               not CS.brakePressed and not CS.gasPressed and not CS.regenBraking and not CS.parkingBrake and

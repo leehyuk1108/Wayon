@@ -37,7 +37,8 @@ def state():
   control = car.CarControl.new_message(longActive=True)
   control.actuators.longControlState = car.CarControl.Actuators.LongControlState.stopping
   sm = UIObservations(carState=cs, carControl=control, selfdriveState=SimpleNamespace(enabled=True),
-                       longitudinalPlan=SimpleNamespace(shouldStop=False))
+                       longitudinalPlan=SimpleNamespace(shouldStop=False, fcw=False),
+                       radarState=SimpleNamespace(leadOne=SimpleNamespace(status=False), leadTwo=SimpleNamespace(status=False)))
   return SimpleNamespace(started=True, CP=cp, sm=sm)
 
 
@@ -51,7 +52,8 @@ def test_bitmap_fonts_cover_every_button_label(font):
   font_path = Path(__file__).parents[2] / "assets" / "fonts" / f"{font}.fnt"
   available = {int(codepoint) for codepoint in re.findall(r"char id=(\d+)", font_path.read_text())}
   labels = (RESUME_LABEL + RESUME_SUBTITLE + REQUEST_QUEUED + REQUEST_UNAVAILABLE +
-            "자동재출발 설정 꺼짐차량 신호 확인 중크루즈 활성 필요페달 해제 후 시험주차 브레이크 해제정차 요구 중재출발 처리 중출발 조건 확인 중")
+            "자동재출발 설정 꺼짐차량 신호 확인 중크루즈 활성 필요페달 해제 후 시험주차 브레이크 해제정차 요구 중재출발 처리 중출발 조건 확인 중" +
+            "전방 공간 확인 필요브레이크 해제 후 재출발")
   assert set(map(ord, labels)) <= available
 
 
@@ -152,14 +154,14 @@ def test_blocked_button_stays_visible_and_does_not_send(state, touch_button, fie
   assert requests == []
 
 
-def test_planner_veto_is_explained_without_hiding_button(state, touch_button):
+def test_stop_request_allows_an_explicit_creep_request(state, touch_button):
   _, touch, requests, _ = touch_button
   state.sm["longitudinalPlan"].shouldStop = True
   assert show_manual_resume_button(state)
-  assert manual_resume_block_reason(state) == "정차 요구 중"
+  assert manual_resume_block_reason(state) == ""
   touch(pressed=True, down=True)
   touch(released=True)
-  assert requests == []
+  assert len(requests) == 1
 
 
 def test_active_pcm_hold_and_filter_noise_do_not_hide_button(state, touch_button):
@@ -178,10 +180,10 @@ def test_nonzero_raw_speed_blocks_request_even_with_standstill_flag(state):
   assert not show_manual_resume_button(state)
 
 
-def test_planner_veto_between_press_and_release_cancels_but_consumes_touch(state, touch_button):
+def test_new_obstacle_between_press_and_release_cancels_but_consumes_touch(state, touch_button):
   button, touch, requests, _ = touch_button
   touch(pressed=True, down=True)
-  state.sm["longitudinalPlan"].shouldStop = True
+  state.sm["radarState"].leadOne = SimpleNamespace(status=True, dRel=2.0, vRel=0.0)
   touch(released=True, pos=MousePos(20, 20))
   assert requests == []
   assert button.consumes_touch(MousePos(20, 20))

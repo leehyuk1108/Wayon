@@ -49,8 +49,8 @@ def visible_y_plane(frame: Any) -> np.ndarray:
   return raw[:stride * height].reshape((height, stride))[:, :width]
 
 
-def prepare_lane_image(y_plane: np.ndarray, cv2_module: Any) -> np.ndarray:
-  """Center-crop luma, resize to 416x416, and create normalized NCHW input."""
+def prepare_lane_gray(y_plane: np.ndarray, cv2_module: Any) -> np.ndarray:
+  """Center-crop luma and resize it to the model's 416x416 input."""
   if y_plane.ndim != 2 or min(y_plane.shape) <= 0:
     raise ValueError(f"unsupported lane image shape: {y_plane.shape}")
   height, width = y_plane.shape
@@ -62,6 +62,12 @@ def prepare_lane_image(y_plane: np.ndarray, cv2_module: Any) -> np.ndarray:
   if gray.shape != (INPUT_SIZE, INPUT_SIZE):
     gray = cv2_module.resize(
       gray, (INPUT_SIZE, INPUT_SIZE), interpolation=cv2_module.INTER_LINEAR)
+  return gray
+
+
+def prepare_lane_image(y_plane: np.ndarray, cv2_module: Any) -> np.ndarray:
+  """Create normalized NCHW input from a visible road-camera luma plane."""
+  gray = prepare_lane_gray(y_plane, cv2_module)
   normalized = gray.astype(np.float32) / 255.0
   return np.broadcast_to(
     normalized, (3, INPUT_SIZE, INPUT_SIZE)).copy()[np.newaxis, ...]
@@ -112,7 +118,7 @@ def non_maximum_suppression(
     sorted(kept, key=lambda index: scores[index], reverse=True), dtype=np.intp)
 
 
-def select_lane_results(candidates: list[LaneCandidate]) -> dict[str, float | str]:
+def select_lane_results(candidates: list[LaneCandidate]) -> dict[str, float | int | str]:
   left = [candidate for candidate in candidates if candidate.center_at_bottom < CENTER_X]
   right = [candidate for candidate in candidates if candidate.center_at_bottom >= CENTER_X]
 
@@ -135,6 +141,7 @@ def select_lane_results(candidates: list[LaneCandidate]) -> dict[str, float | st
     "rightType": right_type,
     "leftConf": round(float(left_confidence), 3),
     "rightConf": round(float(right_confidence), 3),
+    "candidatesCount": len(candidates),
   }
 
 
@@ -143,7 +150,7 @@ def decode_outputs(
   prototypes: np.ndarray,
   confidence_threshold: float = CONFIDENCE_THRESHOLD,
   iou_threshold: float = IOU_THRESHOLD,
-) -> dict[str, float | str]:
+) -> dict[str, float | int | str]:
   if predictions.ndim == 3:
     predictions = predictions[0]
   if prototypes.ndim == 4:
@@ -241,7 +248,7 @@ class OnnxLaneInference:
       self.error = str(error)
       return False
 
-  def infer(self, frame: Any) -> dict[str, float | str | bool]:
+  def infer(self, frame: Any, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> dict[str, float | int | str | bool]:
     if self.net is None or self.cv2 is None:
       return {
         **select_lane_results([]), "valid": False,
@@ -252,7 +259,8 @@ class OnnxLaneInference:
       self.net.setInput(blob)
       output_names = self.net.getUnconnectedOutLayersNames()
       outputs = dict(zip(output_names, self.net.forward(output_names), strict=True))
-      result = decode_outputs(outputs["output0"], outputs["output1"])
+      result = decode_outputs(
+        outputs["output0"], outputs["output1"], confidence_threshold=confidence_threshold)
       return {**result, "valid": True, "error": ""}
     except Exception as error:
       return {

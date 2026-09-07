@@ -59,6 +59,7 @@ def test_decoder_selects_nearest_left_solid_and_right_dashed():
     "rightType": "dashed",
     "leftConf": 0.91,
     "rightConf": 0.88,
+    "candidatesCount": 2,
   }
 
 

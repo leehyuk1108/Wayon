@@ -7,6 +7,7 @@ from openpilot.common.basedir import BASEDIR
 
 ROOT = Path(BASEDIR)
 MODEL = ROOT / "selfdrive/lane_marking/models/lane.onnx"
+VASM_MODEL = ROOT / "selfdrive/lane_marking/models/v_asm_model.onnx"
 WHEEL = ROOT / "third_party/wheels/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_aarch64.whl"
 
 
@@ -21,6 +22,8 @@ def sha256(path: Path) -> str:
 def test_bundled_onnx_model_matches_reviewed_source():
   assert MODEL.stat().st_size == 13_194_895
   assert sha256(MODEL) == "d3761c185daf33897ff3ff5edf28115c5dc829c06c538033accb616d6c67528c"
+  assert VASM_MODEL.stat().st_size == 9_625_905
+  assert sha256(VASM_MODEL) == "00247ede5159dff9a0768c171095711d40f1ee109ac7b5e24adce344fe4ba6f9"
 
 
 def test_bundled_opencv_wheel_is_valid_for_c4_arm64():
@@ -46,6 +49,18 @@ def test_lane_marking_service_is_managed_independently_from_navdy():
   process_config = (ROOT / "system/manager/process_config.py").read_text()
   navdy_bridge = (ROOT / "selfdrive/navdy/navdy_op_bridge.py").read_text()
 
-  assert 'PythonProcess("lane_markingd", "selfdrive.lane_markingd", only_onroad' in process_config
+  assert 'PythonProcess("lane_markingd", "selfdrive.lane_markingd", always_run' in process_config
   assert "OnnxLaneMarkingClassifier" not in navdy_bridge
   assert "lane_marking_classifier.submit" not in navdy_bridge
+
+
+def test_xiaoge_web_and_visual_bsd_are_wired_into_comma():
+  server = (ROOT / "selfdrive/lane_marking/server.py").read_text()
+  card = (ROOT / "selfdrive/car/card.py").read_text()
+  web = (ROOT / "selfdrive/lane_marking/web.html").read_text()
+
+  assert "PORT = 8082" in server
+  assert "VISION_STREAM_WIDE_ROAD" in server
+  assert 'BlindspotStateReader()' in card
+  assert "merge_visual_blindspot" in card
+  assert "V-ASM" in web

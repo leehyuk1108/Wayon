@@ -691,6 +691,11 @@ Android renderer:
 모델 미로딩·카메라 오류·오래된 결과 같은 `unknown` 상태도 안전하게 차선 변경을 막는다.
 차선 위치와 조향 경로는 계속 `modelV2`를 사용하며 ONNX는 선 종류만 분류한다.
 
+동일한 콤마 `lane_markingd` 프로세스는 Xiaoge `v_asm_model.onnx`도 실행한다. 광각 카메라의
+좌우 사용자 지정 영역에서 차량을 감지하고, 최신 결과를 순정 BSD와 OR 병합한다. 감지 영역과
+임계값은 `http://<comma-ip>:8082/`에서 설정한다. Navdy는 이 추론을 수행하지 않고 최종
+`carState`의 BSD 결과만 표시한다.
+
 ### 도로 경계
 
 도로 경계 confidence:

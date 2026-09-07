@@ -8,7 +8,7 @@ import pytest
 from cereal import car
 from opendbc.car.gm.values import CAR
 from openpilot.selfdrive.ui.mici.onroad.gm_resume_button import (
-  GMResumeButton, REQUEST_QUEUED, REQUEST_UNAVAILABLE, RESUME_LABEL, RESUME_SERVICES, RESUME_SUBTITLE, show_manual_resume_button,
+  GMResumeButton, REQUEST_QUEUED, REQUEST_UNAVAILABLE, RESUME_LABEL, RESUME_SERVICES, RESUME_SUBTITLE, show_manual_resume_button, manual_resume_block_reason,
 )
 from openpilot.system.ui.lib.application import MouseEvent, MousePos, gui_app
 
@@ -16,9 +16,15 @@ from openpilot.system.ui.lib.application import MouseEvent, MousePos, gui_app
 class UIObservations(dict):
   fresh = True
 
-  def all_checks(self, services):
-    assert tuple(services) == RESUME_SERVICES
+  def all_alive(self, services):
+    assert set(services) <= set(RESUME_SERVICES)
     return self.fresh
+
+  def all_valid(self, services):
+    return self.fresh
+
+  def all_checks(self, services):
+    raise AssertionError("UI visibility must not require control-loop receive frequency")
 
 
 @pytest.fixture
@@ -44,25 +50,17 @@ def test_test_button_does_not_require_a_lead(state):
 def test_bitmap_fonts_cover_every_button_label(font):
   font_path = Path(__file__).parents[2] / "assets" / "fonts" / f"{font}.fnt"
   available = {int(codepoint) for codepoint in re.findall(r"char id=(\d+)", font_path.read_text())}
-  labels = RESUME_LABEL + RESUME_SUBTITLE + REQUEST_QUEUED + REQUEST_UNAVAILABLE
+  labels = (RESUME_LABEL + RESUME_SUBTITLE + REQUEST_QUEUED + REQUEST_UNAVAILABLE +
+            "자동재출발 설정 꺼짐차량 신호 확인 중크루즈 활성 필요페달 해제 후 시험주차 브레이크 해제정차 요구 중재출발 처리 중출발 조건 확인 중")
   assert set(map(ord, labels)) <= available
 
 
 @pytest.mark.parametrize("change", [
   lambda s: setattr(s, "started", False),
   lambda s: setattr(s.sm, "fresh", False),
-  lambda s: setattr(s.CP, "autoResumeSng", False),
   lambda s: setattr(s.CP, "carFingerprint", "OTHER"),
-  lambda s: setattr(s.sm["carState"], "vEgo", 0.06),
+  lambda s: setattr(s.sm["carState"], "vEgo", 0.1),
   lambda s: setattr(s.sm["carState"], "standstill", False),
-  lambda s: setattr(s.sm["carState"], "brakePressed", True),
-  lambda s: setattr(s.sm["carState"], "gasPressed", True),
-  lambda s: setattr(s.sm["carState"], "parkingBrake", True),
-  lambda s: setattr(s.sm["carState"].cruiseState, "standstill", False),
-  lambda s: setattr(s.sm["selfdriveState"], "enabled", False),
-  lambda s: setattr(s.sm["carControl"], "longActive", False),
-  lambda s: setattr(s.sm["carControl"].actuators, "longControlState", "starting"),
-  lambda s: setattr(s.sm["longitudinalPlan"], "shouldStop", True),
 ])
 def test_button_hides_when_ineligible(state, change):
   change(state)
@@ -138,3 +136,52 @@ def test_unavailable_control_connection_does_not_claim_a_sent_request(touch_butt
   touch(released=True)
   assert requests == []
   assert button._status == "제어 연결 대기"
+
+
+@pytest.mark.parametrize("field, reason", [
+  ("brakePressed", "페달 해제 후 시험"), ("gasPressed", "페달 해제 후 시험"),
+  ("parkingBrake", "주차 브레이크 해제"), ("accFaulted", "차량 신호 확인 중"),
+])
+def test_blocked_button_stays_visible_and_does_not_send(state, touch_button, field, reason):
+  _, touch, requests, _ = touch_button
+  setattr(state.sm["carState"], field, True)
+  assert show_manual_resume_button(state)
+  assert manual_resume_block_reason(state) == reason
+  touch(pressed=True, down=True)
+  touch(released=True)
+  assert requests == []
+
+
+def test_planner_veto_is_explained_without_hiding_button(state, touch_button):
+  _, touch, requests, _ = touch_button
+  state.sm["longitudinalPlan"].shouldStop = True
+  assert show_manual_resume_button(state)
+  assert manual_resume_block_reason(state) == "정차 요구 중"
+  touch(pressed=True, down=True)
+  touch(released=True)
+  assert requests == []
+
+
+def test_active_pcm_hold_and_filter_noise_do_not_hide_button(state, touch_button):
+  _, touch, requests, _ = touch_button
+  state.sm["carState"].cruiseState.standstill = False
+  state.sm["carState"].vEgo = -0.051
+  assert show_manual_resume_button(state)
+  assert manual_resume_block_reason(state) == ""
+  touch(pressed=True, down=True)
+  touch(released=True)
+  assert len(requests) == 1
+
+
+def test_nonzero_raw_speed_blocks_request_even_with_standstill_flag(state):
+  state.sm["carState"].vEgoRaw = 0.1
+  assert not show_manual_resume_button(state)
+
+
+def test_planner_veto_between_press_and_release_cancels_but_consumes_touch(state, touch_button):
+  button, touch, requests, _ = touch_button
+  touch(pressed=True, down=True)
+  state.sm["longitudinalPlan"].shouldStop = True
+  touch(released=True, pos=MousePos(20, 20))
+  assert requests == []
+  assert button.consumes_touch(MousePos(20, 20))

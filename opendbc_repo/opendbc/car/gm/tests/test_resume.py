@@ -60,7 +60,7 @@ def resume():
   CC.actuators.accel = 0.35
   # Scheduling unit tests start after a zero brake command. The full-controller
   # test below verifies that this evidence can only be established by output.
-  CI.CC.sng_brake_release_ns = BASE_NS - 1_000_000
+  CI.CC.sng_brake_release_ns = BASE_NS - 200_000_000
   return CI, CS, CC
 
 
@@ -89,7 +89,7 @@ def test_recorded_phase_does_not_reuse_prearm_frame_or_compress_first_res(resume
   fixture = json.loads((Path(__file__).parent / "fixtures/traverse_resume_49_7.json").read_text())
   original = [(x["offset_ms"], x["counter"]) for x in fixture["original_frames"]]
   outputs = collect_trace(resume, original)
-  assert outputs == [(10, 2, 0), (40, 2, 1), (70, 2, 2), (100, 2, 3), (130, 1, 0)]
+  assert outputs == [(10, 2, 0), (40, 2, 1), (70, 2, 2), (100, 2, 3), (130, 2, 0), (160, 1, 1)]
   assert resume[0].CC.sng_resume_attempted
   assert resume[0].CC.sng_resume_frame == -1
 
@@ -99,11 +99,11 @@ def test_original_phase_does_not_change_press_length_or_counter_continuity(resum
   originals = [(30 * i - initial_age_ms, (2 + i) % 4) for i in range(8)]
   outputs = collect_trace(resume, originals)
   presses = [(t, counter) for t, button, counter in outputs if button == CruiseButtons.RES_ACCEL]
-  assert len(presses) == 4
+  assert len(presses) == 5
   assert presses[0][0] > 0
   assert all(b[0] - a[0] >= 25 for a, b in zip(presses, presses[1:], strict=False))
-  assert [counter for _, counter in presses] == [0, 1, 2, 3]
-  assert outputs[-1][1:] == (CruiseButtons.UNPRESS, 0)
+  assert [counter for _, counter in presses] == [0, 1, 2, 3, 0]
+  assert outputs[-1][1:] == (CruiseButtons.UNPRESS, 1)
 
 
 def start_one_press(resume):
@@ -161,17 +161,16 @@ def test_withdrawn_request_at_stop_allows_a_fresh_explicit_retry(resume):
   assert tick(resume, 70) == []
   assert not resume[0].CC.sng_resume_attempted
 
-  # The caller has accepted a new explicit request. Its current original frame
-  # is only an arm snapshot; it cannot bootstrap another RES immediately.
+  # A new request must emit a new zero command and wait the full interval.
   CC.cruiseControl.resume = True
   CC.actuators.longControlState = LongCtrlState.starting
+  resume[0].CC.sng_brake_release_ns = BASE_NS + 80_000_000
   assert tick(resume, 80, 76.824, 1) == []
-  assert tick(resume, 90) == []
-  assert tick(resume, 110, 106.853, 2) == [(CruiseButtons.RES_ACCEL, 3)]
-  assert tick(resume, 140, 136.853, 3) == [(CruiseButtons.RES_ACCEL, 0)]
-  assert tick(resume, 170, 166.853, 0) == [(CruiseButtons.RES_ACCEL, 1)]
-  assert tick(resume, 200, 196.853, 1) == [(CruiseButtons.RES_ACCEL, 2)]
-  assert tick(resume, 230, 226.853, 2) == [(CruiseButtons.UNPRESS, 3)]
+  assert tick(resume, 270, 256.824, 3) == []
+  assert tick(resume, 280, 276.824, 0) == []
+  for now, counter, expected in [(310, 1, 2), (340, 2, 3), (370, 3, 0), (400, 0, 1), (430, 1, 2)]:
+    assert tick(resume, now, now-3.176, counter) == [(CruiseButtons.RES_ACCEL, expected)]
+  assert tick(resume, 460, 456.824, 2) == [(CruiseButtons.UNPRESS, 3)]
   assert resume[0].CC.sng_resume_attempted
 
 
@@ -282,9 +281,18 @@ def test_full_controller_emits_brake_release_before_arming_then_waits_for_origin
   assert get_raw_value(brakes[0][1], BRAKE_DBC.sigs["FrictionBrakeCmd"]) == 0
   assert CI.CC.sng_brake_release_ns == BASE_NS
   assert CI.CC.sng_resume_frame == -1
-  assert tick(resume, 10, 6.879, 3) == []  # Arm after release; this original is the snapshot.
-  assert tick(resume, 20) == []
-  assert tick(resume, 40, 36.824, 0) == [(CruiseButtons.RES_ACCEL, 1)]
+  presses = []
+  for now in range(10, 261, 10):
+    # Exercise the full 25 Hz brake output repeatedly, not just the sequencer.
+    source_index = max(0, int((now-6.879)//30))
+    CS.buttons_ts_nanos = BASE_NS + round((6.879 + source_index*30)*1e6)
+    CS.buttons_counter = (3+source_index) % 4
+    _, sends = CI.CC.update(CC.as_reader(), CC_SP.as_reader(), CS, BASE_NS+now*1_000_000)
+    presses.extend(now for button, _ in decode_buttons(sends) if button == CruiseButtons.RES_ACCEL)
+    assert CI.CC.sng_brake_release_ns == BASE_NS
+    if now < 200:
+      assert not presses
+  assert presses and 200 <= presses[0] <= 250
 
 
 def test_acknowledged_low_speed_motion_allows_the_next_stop_attempt(resume):
@@ -296,8 +304,10 @@ def test_acknowledged_low_speed_motion_allows_the_next_stop_attempt(resume):
   assert not resume[0].CC.sng_resume_attempted
   CS.out.vEgo = 0.0
   CS.out.cruiseState.standstill = True
+  resume[0].CC.sng_brake_release_ns = BASE_NS + 40_000_000
   assert tick(resume, 40, 36.824, 0) == []
-  assert tick(resume, 70, 66.853, 1) == [(CruiseButtons.RES_ACCEL, 2)]
+  assert tick(resume, 240, 236.824, 1) == []
+  assert tick(resume, 270, 266.853, 2) == [(CruiseButtons.RES_ACCEL, 3)]
 
 
 def test_creep_alone_does_not_reset_attempt_even_above_the_resume_limit(resume):

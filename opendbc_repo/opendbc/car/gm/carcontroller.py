@@ -38,7 +38,10 @@ GM_STOPPING_BRAKE_TAPER_MAX = 12
 # smoothing cannot consume meaningful stopping distance.
 GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 20
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
-GM_SNG_BUTTON_FRAMES = 4  # physical Traverse press: four frames over about 0.12 seconds
+GM_SNG_BUTTON_FRAMES = 5  # stationary physical RES in Traverse route 45/23
+# That press followed the zero brake command by 216 ms. Leave a bounded
+# settling interval, then synchronize to a fresh OEM frame (not a wire ACK).
+GM_SNG_BRAKE_RELEASE_DELAY_NS = 200_000_000
 # Original buttons arrive at about 33 Hz. Allow 20-40 ms receive/control
 # quantization plus 2 ms of jitter, but never compress missed frames into a burst.
 GM_SNG_BUTTON_MIN_SOURCE_INTERVAL_NS = 18_000_000
@@ -240,7 +243,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     resume_request = (
       resume_eligible and CC.cruiseControl.resume and
       abs(CS.out.vEgo) < GM_SNG_MAX_RESUME_SPEED and CS.out.cruiseState.standstill and
-      0 < self.sng_brake_release_ns < now_nanos and self.apply_brake == 0
+      0 < self.sng_brake_release_ns <= now_nanos - GM_SNG_BRAKE_RELEASE_DELAY_NS and self.apply_brake == 0
     )
     stock_counter = int(CS.buttons_counter) & 0x3
     stock_ts = int(CS.buttons_ts_nanos)
@@ -264,13 +267,14 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       return False
 
     if not resume_eligible or not CC.cruiseControl.resume or not CS.out.cruiseState.standstill:
+      self.sng_brake_release_ns = 0
       if self.sng_resume_frame >= 0:
         self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
       self.reset_sng_resume()
       return False
 
     # LongControl supplies a request originating from a confirmed full stop.
-    # First emit a zero brake command, then arm on a later control tick. This
+    # First emit a zero brake command and wait for the settling interval. This
     # records a command, not proof of actual hydraulic pressure release.
     # Snapshot the original frame on arm; an unset counter is not a new frame.
     if request_rising and not self.sng_resume_attempted and self.sng_resume_frame < 0:
@@ -446,7 +450,12 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
         # SNG runs before this 25 Hz output block, so a later control tick must
         # observe this emitted release before it can arm a RES sequence.
-        self.sng_brake_release_ns = now_nanos if self.apply_brake == 0 else 0
+        # Latch the FIRST zero command of this request, not each 25 Hz resend.
+        if self.apply_brake == 0 and CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.starting:
+          if self.sng_brake_release_ns == 0:
+            self.sng_brake_release_ns = now_nanos
+        else:
+          self.sng_brake_release_ns = 0
 
         # Send dashboard UI commands (ACC status)
         # SASCM blocks the stock 0x370 message while openpilot longitudinal is

@@ -106,7 +106,7 @@ def chain(monkeypatch, tmp_path):
   return TraverseControlChain(monkeypatch, tmp_path)
 
 
-def test_hold_releases_before_four_fresh_resume_frames(chain):
+def test_hold_releases_before_five_fresh_resume_frames(chain):
   chain.run(110)
   assert chain.loc.long_control_state == LongCtrlState.stopping
   assert any(brake == GM_AUTO_HOLD_BRAKE for _, brake in chain.brakes())
@@ -114,15 +114,16 @@ def test_hold_releases_before_four_fresh_resume_frames(chain):
 
   departure_time = chain.now_ns
   chain.depart()
-  chain.run(80)
+  chain.run(170)
   buttons = chain.buttons()
   first_resume = next(time for time, _, button, _ in buttons if button == CruiseButtons.RES_ACCEL)
-  assert any(departure_time <= time < first_resume and brake == 0 for time, brake in chain.brakes())
+  first_zero = next(time for time, brake in chain.brakes() if departure_time <= time and brake == 0)
+  assert 200_000_000 <= first_resume-first_zero <= 250_000_000
   assert all(brake == 0 for time, brake in chain.brakes() if first_resume <= time)
   for bus in (CanBus.POWERTRAIN, CanBus.CAMERA):
     bus_buttons = [(time, button, payload) for time, msg_bus, button, payload in buttons if msg_bus == bus]
-    assert [button for _, button, _ in bus_buttons] == [CruiseButtons.RES_ACCEL] * 4 + [CruiseButtons.UNPRESS]
-    assert [b[0] - a[0] for a, b in zip(bus_buttons[:-1], bus_buttons[1:], strict=True)] == [30_000_000] * 4
+    assert [button for _, button, _ in bus_buttons] == [CruiseButtons.RES_ACCEL] * 5 + [CruiseButtons.UNPRESS]
+    assert [b[0] - a[0] for a, b in zip(bus_buttons[:-1], bus_buttons[1:], strict=True)] == [30_000_000] * 5
   assert [(t, payload) for t, bus, _, payload in buttons if bus == CanBus.POWERTRAIN] == \
          [(t, payload) for t, bus, _, payload in buttons if bus == CanBus.CAMERA]
   # Sending correctly packed requests is not vehicle acceptance.
@@ -148,7 +149,7 @@ def test_creep_without_pcm_ack_times_out_into_regular_stopping(chain):
   failed_brakes = chain.brakes(failed_frames)
   assert failed_brakes
   assert all(0 < brake < GM_AUTO_HOLD_BRAKE for _, brake in failed_brakes)
-  assert len([b for b in chain.buttons() if b[1] == CanBus.POWERTRAIN and b[2] == CruiseButtons.RES_ACCEL]) == 4
+  assert len([b for b in chain.buttons() if b[1] == CanBus.POWERTRAIN and b[2] == CruiseButtons.RES_ACCEL]) == 5
 
 
 def test_valid_pcm_ack_at_zero_prevents_timeout_failure(chain):
@@ -168,21 +169,21 @@ def test_screen_request_without_lead_retries_only_after_another_tap(chain):
   chain.radar.leadOne.status = False
   chain.run(110)
   chain.plan.shouldStop = False
-  chain.run(80)
+  chain.run(170)
   assert chain.buttons() == []
   assert chain.trace[-1].hold
   chain.step(manual_resume=True)
-  chain.run(80)
+  chain.run(170)
   assert chain.loc.sng_ui_resume and chain.loc.sng_resume_ready
-  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 4
+  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 5
   chain.run(300)
   assert chain.loc.sng_resume_failed
   assert chain.trace[-1].hold
-  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 4
+  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 5
   chain.step(manual_resume=True)
-  chain.run(80)
+  chain.run(170)
   assert not chain.loc.sng_resume_failed
-  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 8
+  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 10
   chain.cs.out.cruiseState.standstill = False
   chain.run(30)
   assert chain.loc.sng_resume_succeeded
@@ -223,3 +224,34 @@ def test_screen_resume_stops_if_planner_demands_a_stop(chain):
   assert chain.loc.sng_resume_failed
   assert entry.state == LongCtrlState.stopping
   assert not entry.resume
+
+
+def test_manual_hold_only_release_needs_motion_not_an_existing_active_pcm(chain):
+  chain.cs.out.cruiseState.standstill = False
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.plan.shouldStop = False
+  chain.step(manual_resume=True)
+  chain.run(150)
+  assert chain.loc.sng_ui_hold_release
+  assert not chain.loc.sng_resume_succeeded
+  assert chain.buttons() == []
+  assert any(brake == 0 for _, brake in chain.brakes(chain.trace[-20:]))
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.3
+  chain.run(25)
+  assert chain.loc.sng_resume_succeeded
+  assert not chain.loc.sng_resume_failed
+
+
+def test_manual_hold_only_release_times_out_without_motion(chain):
+  chain.cs.out.cruiseState.standstill = False
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.plan.shouldStop = False
+  chain.step(manual_resume=True)
+  chain.run(240)
+  assert chain.loc.sng_resume_failed
+  assert not chain.loc.sng_resume_succeeded
+  assert chain.trace[-1].state == LongCtrlState.stopping
+  assert chain.buttons() == []

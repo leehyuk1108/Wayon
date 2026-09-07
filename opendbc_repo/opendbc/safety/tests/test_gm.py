@@ -394,10 +394,14 @@ class TestGmSdgmLongitudinalSafety(TestGmCameraLongitudinalSafety):
                                                     {"ACCButtons": Buttons.UNPRESS, "RollingCounter": 2})
 
     self.assertEqual(2, self.safety.safety_fwd_hook(0, 0x1E1))
-    self.assertTrue(self._tx(resume))
-    self.assertEqual(-1, self.safety.safety_fwd_hook(0, 0x1E1))
+    # The stationary Traverse sequence holds RES for five fresh 30 ms frames.
+    for index in range(5):
+      self.safety.set_timer(100 + index * 30_000)
+      self.assertTrue(self._tx(resume))
+      self.assertEqual(-1, self.safety.safety_fwd_hook(0, 0x1E1))
     self.assertEqual(2, self.safety.safety_fwd_hook(0, 0x123))
 
+    self.safety.set_timer(150_100)
     self.assertTrue(self._tx(release))
     self.assertEqual(-1, self.safety.safety_fwd_hook(0, 0x1E1))
     self._rx(wrong_stock_release)

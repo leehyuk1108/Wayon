@@ -16,11 +16,17 @@ REQUEST_INTERVAL_NS = 2_500_000_000
 SCHEMA = "gm-manual-resume-v1"
 
 
+def manual_resume_stationary(CS):
+  # Filtered vEgo can briefly cross -0.05 at a real stop. Require zero raw
+  # wheel speed as well as the standstill flag, with a small filter tolerance.
+  return CS.standstill and abs(CS.vEgoRaw) < 0.05 and abs(CS.vEgo) < 0.1
+
+
 def manual_resume_eligible(CP, CS, enabled, long_active, should_stop):
   return bool(CP.carFingerprint == "CHEVROLET_TRAVERSE" and CP.autoResumeSng and
               CP.openpilotLongitudinalControl and enabled and long_active and not should_stop and
-              CS.canValid and CS.standstill and abs(CS.vEgo) < 0.05 and
-              CS.cruiseState.enabled and CS.cruiseState.standstill and not CS.accFaulted and
+              CS.canValid and manual_resume_stationary(CS) and
+              CS.cruiseState.enabled and not CS.accFaulted and
               not CS.brakePressed and not CS.gasPressed and not CS.regenBraking and not CS.parkingBrake and
               CS.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low))
 

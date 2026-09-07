@@ -126,6 +126,7 @@ class LongControl:
     self.sng_started_frames = 0
     self.sng_manual_resume = False
     self.sng_ui_resume = False
+    self.sng_ui_hold_release = False
 
   def reset(self):
     self.pid.reset()
@@ -140,6 +141,7 @@ class LongControl:
     self.sng_resume_started_at = None
     self.sng_started_frames = 0
     self.sng_ui_resume = False
+    self.sng_ui_hold_release = False
     if clear_attempt:
       self.sng_resume_attempted = False
       self.sng_resume_failed = False
@@ -234,6 +236,7 @@ class LongControl:
       # request already passed the local socket expiry and freshness checks.
       self.reset_sng_resume()
       self.sng_ui_resume = True
+      self.sng_ui_hold_release = not CS.cruiseState.standstill
       self.sng_resume_attempted = True
       self.sng_resume_ready = True
       self.sng_resume_started_at = now
@@ -241,6 +244,7 @@ class LongControl:
         (CS.standstill or self.sng_resume_ready or self.sng_resume_failed):
       self.sng_manual_resume = True
       self.sng_ui_resume = False
+      self.sng_ui_hold_release = False
       self.sng_resume_failed = False
       self.sng_resume_succeeded = False
       self.sng_resume_moved = False
@@ -264,7 +268,11 @@ class LongControl:
         self.fail_sng_resume()
         return False
       self.sng_resume_frames += 1
-      started = gm_cruise_active(CS)
+      # An already ACTIVE PCM cannot acknowledge a new hold-only request.
+      # Require observed motion for that path; wheel creep alone still cannot
+      # acknowledge a request that began with PCM standstill latched.
+      started = gm_cruise_active(CS) and (not self.sng_ui_hold_release or
+                                         (not CS.standstill and CS.vEgo > self.CP.vEgoStarting))
       self.sng_started_frames = self.sng_started_frames + 1 if started else 0
       if self.sng_started_frames >= SNG_STARTED_CONFIRM_FRAMES:
         self.reset_sng_resume(clear_attempt=False)

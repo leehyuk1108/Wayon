@@ -48,12 +48,13 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
     """Maintain manual GM Hold and the engaged stop-and-go hold state."""
     was_long_auto_hold_active = getattr(self.CS, "longAutoHoldActive", False)
     self.CS.autoHoldActivated = False
-    self.CS.longAutoHoldActive = False
     strong_brake = self.CS.out.brakePressed and self.CS.brake_pedal_position >= GM_AUTO_HOLD_ARM_BRAKE
     hold_allowed = (
       not self.CS.out.parkingBrake and
       self.CS.out.gearShifter in (structs.CarState.GearShifter.drive, structs.CarState.GearShifter.low)
     )
+    if not hold_allowed or self.CS.out.gasPressed or self.CS.out.regenBraking:
+      self.CS.longAutoHoldActive = False
 
     if not self.CS.autoHold or not hold_allowed:
       self.CS.autoHoldActive = False
@@ -96,16 +97,21 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
         self.CS.autoHoldActivated = True
 
     if control is not None:
+      confirmed_stop = self.CS.out.standstill and abs(self.CS.out.vEgoRaw) < 0.05 and abs(self.CS.out.vEgo) < 0.1
       stopping_requested = bool(
         control.longActive and control.actuators.longControlState == structs.CarControl.Actuators.LongControlState.stopping
       )
       self.CS.longAutoHoldActive = bool(
-        stopping_requested and (self.CS.out.standstill or (was_long_auto_hold_active and self.CS.out.vEgo < 0.5)) and
+        stopping_requested and (confirmed_stop or was_long_auto_hold_active) and
         not self.CS.out.gasPressed and not self.CS.out.regenBraking and
         hold_allowed
       )
       self.CS.autoHoldActivated |= self.CS.longAutoHoldActive
     else:
+      # update() runs before apply() on every card tick. Preserve the stopped
+      # latch across that read-only phase, including wheel creep, until the
+      # next control command explicitly leaves stopping or a driver cancels.
+      self.CS.autoHoldActivated |= self.CS.longAutoHoldActive
       self.CS.out.brakeHoldActive = bool(
         self.CS.autoHoldActive and hold_allowed and not self.CS.out.cruiseState.enabled
       )

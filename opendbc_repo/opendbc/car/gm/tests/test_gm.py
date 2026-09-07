@@ -240,7 +240,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
       longAutoHoldActive=False,
       brake_pedal_position=8,
       out=SimpleNamespace(
-        vEgo=0.0, standstill=True, brakePressed=True, gasPressed=False, regenBraking=False,
+        vEgo=0.0, vEgoRaw=0.0, standstill=True, brakePressed=True, gasPressed=False, regenBraking=False,
         parkingBrake=False, gearShifter=GearShifter.drive,
         cruiseState=SimpleNamespace(enabled=False),
       ),
@@ -388,8 +388,8 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CS.out.vEgo = 0.12
     self.assertTrue(gm_long_auto_hold_command(CP, CC, CS, actuators))
 
-    CS.out.vEgo = 0.5
-    self.assertFalse(gm_long_auto_hold_command(CP, CC, CS, actuators))
+    CS.out.vEgo = 0.8
+    self.assertTrue(gm_long_auto_hold_command(CP, CC, CS, actuators))
 
     CS.out.standstill = True
     CS.out.vEgo = 0.0
@@ -418,9 +418,10 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     self.CI.update_auto_hold(control)
     self.assertTrue(self.CI.CS.longAutoHoldActive)
 
-    self.CI.CS.out.vEgo = 0.5
+    self.CI.CS.out.vEgo = 0.8
+    self.CI.update_auto_hold()
     self.CI.update_auto_hold(control)
-    self.assertFalse(self.CI.CS.longAutoHoldActive)
+    self.assertTrue(self.CI.CS.longAutoHoldActive)
 
     self.CI.CS.out.standstill = True
     self.CI.CS.out.vEgo = 0.0

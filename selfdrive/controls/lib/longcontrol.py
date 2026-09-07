@@ -39,6 +39,10 @@ SNG_LEAD_MIN_DISTANCE_DELTA = 0.4
 SNG_RESUME_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 SNG_PRESTOP_TRACK_SPEED = 1.5
 SNG_STARTED_CONFIRM_FRAMES = round(0.2 / DT_CTRL)
+SNG_MANUAL_RELEASE_TIMEOUT = 4.0
+SNG_MANUAL_CREEP_MIN_SPEED = 0.1
+SNG_MANUAL_CREEP_MAX_SPEED = 1.0
+SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
 
 
 def use_gm_auto_hold_sng(CP) -> bool:
@@ -132,6 +136,8 @@ class LongControl:
     self.sng_ui_creep = False
     self.sng_ui_creep_distance = 0.0
     self.sng_ui_creep_last_time = None
+    self.sng_ui_phase = None
+    self.sng_ui_motion_frames = 0
 
   def reset(self):
     self.pid.reset()
@@ -150,6 +156,8 @@ class LongControl:
     self.sng_ui_creep = False
     self.sng_ui_creep_distance = 0.0
     self.sng_ui_creep_last_time = None
+    self.sng_ui_phase = None
+    self.sng_ui_motion_frames = 0
     if clear_attempt:
       self.sng_resume_attempted = False
       self.sng_resume_failed = False
@@ -166,6 +174,8 @@ class LongControl:
     self.sng_resume_moved = False
 
   def get_resume_request(self, enabled, long_active, CS, long_plan):
+    if self.sng_ui_phase == "release":
+      return False
     requested = enabled and CS.cruiseState.standstill and (not long_plan.shouldStop or self.sng_ui_creep)
     if use_gm_auto_hold_sng(self.CP):
       return bool(requested and long_active and self.sng_resume_ready and not self.sng_manual_resume and
@@ -251,10 +261,11 @@ class LongControl:
       self.sng_ui_hold_release = not CS.cruiseState.standstill
       self.sng_ui_creep = bool(long_plan.shouldStop)
       self.sng_ui_creep_last_time = now
+      self.sng_ui_phase = "release"
       self.sng_resume_attempted = True
       self.sng_resume_ready = True
       self.sng_resume_started_at = now
-      cloudlog.event("gm_manual_resume", stage="creep" if self.sng_ui_creep else "resume",
+      cloudlog.event("gm_manual_resume", stage="brake_release",
                      pcm_standstill=bool(CS.cruiseState.standstill))
     if manual_resume and cruise_valid and valid_lead and not long_plan.shouldStop and \
         (CS.standstill or self.sng_resume_ready or self.sng_resume_failed):
@@ -262,6 +273,7 @@ class LongControl:
       self.sng_ui_resume = False
       self.sng_ui_hold_release = False
       self.sng_ui_creep = False
+      self.sng_ui_phase = None
       self.sng_resume_failed = False
       self.sng_resume_succeeded = False
       self.sng_resume_moved = False
@@ -284,20 +296,29 @@ class LongControl:
       if self.sng_ui_resume and (not sensors_valid or not manual_resume_obstacle_clear(long_plan, radar_state)):
         self.fail_sng_resume("perception_or_obstacle")
         return False
-      if self.sng_ui_creep:
+      if self.sng_ui_phase is not None:
         elapsed = now - self.sng_ui_creep_last_time
         self.sng_ui_creep_last_time = now
         self.sng_ui_creep_distance += abs(CS.vEgoRaw) * max(elapsed, 0.0)
         if (not all(math.isfinite(v) for v in (CS.vEgoRaw, CS.vEgo)) or
             not 0.0 <= elapsed <= 0.1 or CS.vEgoRaw < -0.05 or
-            max(abs(CS.vEgoRaw), abs(CS.vEgo)) >= 0.5 or self.sng_ui_creep_distance >= 0.5):
+            max(abs(CS.vEgoRaw), abs(CS.vEgo)) >= SNG_MANUAL_CREEP_MAX_SPEED or
+            self.sng_ui_creep_distance >= SNG_MANUAL_CREEP_MAX_DISTANCE):
           self.fail_sng_resume("creep_limit")
           return False
         # Once the planner permits departure, hand control back permanently.
         # A later stop request cannot reopen this manual exception.
-        if not long_plan.shouldStop:
+        if self.sng_ui_creep and not long_plan.shouldStop:
           self.sng_ui_creep = False
           cloudlog.event("gm_manual_resume", stage="planner_allows_start")
+        if self.sng_ui_phase == "release":
+          moving = not CS.standstill and CS.vEgoRaw >= SNG_MANUAL_CREEP_MIN_SPEED
+          self.sng_ui_motion_frames = self.sng_ui_motion_frames + 1 if moving else 0
+          if self.sng_ui_motion_frames >= 3:
+            self.sng_ui_phase = "resuming"
+            # Brake release/creep must not consume the PCM response window.
+            self.sng_resume_started_at = now
+            cloudlog.event("gm_manual_resume", stage="creep_confirmed_res_requested", speed=float(CS.vEgoRaw))
       if not cruise_valid or (long_plan.shouldStop and not self.sng_ui_creep) or (not valid_lead and not self.sng_ui_resume):
         self.fail_sng_resume()
         return False
@@ -305,7 +326,7 @@ class LongControl:
       # An already ACTIVE PCM cannot acknowledge a new hold-only request.
       # Require observed motion for that path; wheel creep alone still cannot
       # acknowledge a request that began with PCM standstill latched.
-      started = not self.sng_ui_creep and gm_cruise_active(CS) and (not self.sng_ui_hold_release or
+      started = self.sng_ui_phase != "release" and not self.sng_ui_creep and gm_cruise_active(CS) and (not self.sng_ui_hold_release or
                                          (not CS.standstill and CS.vEgo > self.CP.vEgoStarting))
       self.sng_started_frames = self.sng_started_frames + 1 if started else 0
       if self.sng_started_frames >= SNG_STARTED_CONFIRM_FRAMES:
@@ -314,8 +335,9 @@ class LongControl:
         self.reset_sng_resume(clear_attempt=False)
         self.sng_resume_succeeded = True
         return False
-      if self.sng_resume_started_at is None or now - self.sng_resume_started_at >= SNG_RESUME_TIMEOUT_FRAMES * DT_CTRL:
-        self.fail_sng_resume("timeout")
+      timeout = SNG_MANUAL_RELEASE_TIMEOUT if self.sng_ui_phase == "release" else SNG_RESUME_TIMEOUT_FRAMES * DT_CTRL
+      if self.sng_resume_started_at is None or now - self.sng_resume_started_at >= timeout:
+        self.fail_sng_resume("brake_release_timeout" if self.sng_ui_phase == "release" else "resume_ack_timeout")
         return False
       return True
 
@@ -366,7 +388,7 @@ class LongControl:
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop or sng_launch_failed, CS.brakePressed,
                                                        CS.cruiseState.standstill, sng_resume)
-    if self.sng_ui_creep:
+    if self.sng_ui_phase is not None:
       self.long_control_state = LongCtrlState.starting
     if self.long_control_state == LongCtrlState.off:
       self.reset()
@@ -384,7 +406,7 @@ class LongControl:
         output_accel = min(output_accel, 0.0)
         output_accel -= self.get_stopping_decel_rate(CS.standstill) * DT_CTRL
       lead = radar_state.leadOne if radar_state is not None else None
-      if self.wayon_carrot_profile:
+      if self.wayon_carrot_profile and not self.sng_resume_failed:
         output_accel = self.stop_controller.update(output_accel, CS.vEgo, CS.aEgo, CS.standstill,
                                                    should_stop or sng_launch_failed, lead)
       self.reset()
@@ -395,9 +417,9 @@ class LongControl:
       self.lead_trend_anticipator.reset()
       self.stop_controller.reset()
       self.reset()
-      if self.sng_ui_creep:
+      if self.sng_ui_phase is not None:
         # Explicit, bounded brake release: zero gas and zero friction brake.
-        # Do not apply startAccel while the planner still requests a stop.
+        # Do not apply startAccel before creep and PCM acceptance.
         output_accel = 0.0
         self.accel_smoother.reset(output_accel)
       elif self.wayon_carrot_profile:

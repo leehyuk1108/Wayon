@@ -54,6 +54,8 @@ class TraverseControlChain:
     self.sensors_valid = True
 
   def step(self, manual_resume=False):
+    # card calls update() before apply(); the read phase must not erase hold.
+    self.ci.update_auto_hold()
     # A fresh original button frame every 30 ms, observed 5 ms after reception.
     if self.ci.CC.frame % 3 == 0:
       self.cs.buttons_counter = (self.cs.buttons_counter + 1) % 4
@@ -173,21 +175,24 @@ def test_screen_request_without_lead_retries_only_after_another_tap(chain):
   chain.run(170)
   assert chain.buttons() == []
   assert chain.trace[-1].hold
-  chain.step(manual_resume=True)
-  chain.run(170)
-  assert chain.loc.sng_ui_resume and chain.loc.sng_resume_ready
-  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 5
-  chain.run(300)
-  assert chain.loc.sng_resume_failed
-  assert chain.trace[-1].hold
-  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 5
-  chain.step(manual_resume=True)
-  chain.run(170)
-  assert not chain.loc.sng_resume_failed
-  assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == 10
-  chain.cs.out.cruiseState.standstill = False
-  chain.run(30)
-  assert chain.loc.sng_resume_succeeded
+  for attempt in range(2):
+    chain.step(manual_resume=True)
+    chain.run(140)
+    assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == attempt * 5
+    chain.cs.out.standstill = False
+    chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.2
+    chain.run(60)
+    assert chain.loc.sng_ui_resume and chain.loc.sng_resume_ready
+    assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == (attempt + 1) * 5
+    if attempt == 0:
+      chain.cs.out.standstill = True
+      chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.0
+      chain.run(250)
+      assert chain.loc.sng_resume_failed and chain.trace[-1].hold
+    else:
+      chain.cs.out.cruiseState.standstill = False
+      chain.run(30)
+      assert chain.loc.sng_resume_succeeded
 
 
 @pytest.mark.parametrize("veto", ["moving", "gas", "brake", "pcm_off", "invalid_can"])
@@ -249,7 +254,7 @@ def test_manual_hold_only_release_times_out_without_motion(chain):
   chain.run(110)
   chain.plan.shouldStop = False
   chain.step(manual_resume=True)
-  chain.run(240)
+  chain.run(410)
   assert chain.loc.sng_resume_failed
   assert not chain.loc.sng_resume_succeeded
   assert chain.trace[-1].state == LongCtrlState.stopping
@@ -261,16 +266,20 @@ def test_explicit_creep_releases_brake_without_positive_gas_then_sends_res(chain
   chain.run(110)
   assert chain.plan.shouldStop
   chain.step(manual_resume=True)
-  entries = chain.run(60)
+  entries = chain.run(180)
   assert chain.loc.sng_ui_creep
+  assert chain.buttons() == []
   assert all(entry.accel == 0.0 and entry.state == LongCtrlState.starting for entry in entries)
-  assert chain.ci.CC.apply_gas == 0.0
-  assert chain.ci.CC.apply_brake == 0
-  first_zero = next(t for t, brake in chain.brakes(entries) if brake == 0)
+  assert chain.ci.CC.apply_gas == 0.0 and chain.ci.CC.apply_brake == 0
+  moving_at = chain.now_ns
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.2
+  chain.run(60)
   res = [b for b in chain.buttons() if b[1] == CanBus.POWERTRAIN and b[2] == CruiseButtons.RES_ACCEL]
   assert len(res) == 5
-  assert res[0][0] - first_zero >= 190_000_000  # first zero may precede entries by one tick
-  assert not chain.loc.sng_resume_succeeded
+  assert res[0][0] - moving_at >= 200_000_000
+  assert chain.ci.CC.apply_gas == 0.0 and chain.ci.CC.apply_brake == 0
+  assert not chain.loc.sng_resume_succeeded and not chain.loc.sng_resume_failed
 
 
 def test_creep_cannot_claim_success_or_ignore_a_stop_beyond_two_seconds(chain):
@@ -307,7 +316,7 @@ def test_manual_request_keeps_obstacle_and_sensor_vetoes(chain, hazard):
   assert chain.trace[-1].state == LongCtrlState.stopping
 
 
-@pytest.mark.parametrize('speed', [0.5, -0.06, float('nan')])
+@pytest.mark.parametrize('speed', [1.0, -0.06, float('nan')])
 def test_creep_aborts_on_speed_limit_rollback_or_invalid_speed(chain, speed):
   chain.radar.leadOne.status = False
   chain.run(110)
@@ -323,9 +332,9 @@ def test_creep_aborts_on_distance_and_restores_stopping(chain):
   chain.radar.leadOne.status = False
   chain.run(110)
   chain.step(manual_resume=True)
-  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.4
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.8
   chain.cs.out.standstill = False
-  chain.run(130)
+  chain.run(195)
   assert chain.loc.sng_resume_failed
   assert chain.trace[-1].state == LongCtrlState.stopping
 
@@ -355,3 +364,66 @@ def test_creep_aborts_immediately_when_perception_becomes_stale(chain):
   assert chain.loc.sng_resume_failed
   assert chain.trace[-1].state == LongCtrlState.stopping
   assert not chain.trace[-1].resume
+
+
+@pytest.mark.parametrize('rolling_speed', [0.02, 0.12, 0.8])
+def test_latched_hold_survives_real_read_apply_order_and_rolling(chain, rolling_speed):
+  chain.run(110)
+  assert chain.cs.longAutoHoldActive
+  assert chain.ci.CC.apply_brake == GM_AUTO_HOLD_BRAKE
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = rolling_speed
+  entries = chain.run(50)
+  assert chain.cs.longAutoHoldActive
+  assert chain.buttons() == []
+  assert all(brake == GM_AUTO_HOLD_BRAKE for _, brake in chain.brakes(entries))
+
+
+def test_failed_launch_recovery_does_not_taper_brakes_away_while_rolling(chain):
+  chain.run(110)
+  chain.depart()
+  chain.run(180)
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.3
+  chain.run(100)
+  assert chain.loc.sng_resume_failed
+  assert chain.trace[-1].accel <= -0.4
+  assert chain.ci.CC.apply_brake > 20
+
+
+def test_late_creep_and_planner_release_receive_a_fresh_pcm_response_window(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.step(manual_resume=True)
+  chain.run(180)
+  chain.plan.shouldStop = False
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.2
+  chain.run(60)
+  assert chain.loc.sng_resume_ready and not chain.loc.sng_resume_failed
+  assert chain.loc.sng_ui_phase == 'resuming'
+  chain.cs.out.cruiseState.standstill = False
+  chain.run(25)
+  assert chain.loc.sng_resume_succeeded
+
+
+def test_two_to_three_kph_creep_does_not_hit_old_one_point_eight_kph_cutoff(chain):
+  chain.radar.leadOne.status = False
+  chain.run(110)
+  chain.step(manual_resume=True)
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 2.5 / 3.6
+  chain.run(100)
+  assert chain.loc.sng_resume_ready and not chain.loc.sng_resume_failed
+  assert chain.ci.CC.apply_brake == 0
+  assert chain.ci.CC.apply_gas == 0.0
+
+
+@pytest.mark.parametrize('standstill_flag', [False, True])
+def test_a_moving_vehicle_cannot_enter_a_new_hold_latch(chain, standstill_flag):
+  chain.cs.out.standstill = standstill_flag
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.8
+  chain.run(30)
+  assert not chain.cs.longAutoHoldActive
+  assert not chain.ci.CC.gm_auto_hold_confirmed
+  assert chain.ci.CC.apply_brake < GM_AUTO_HOLD_BRAKE

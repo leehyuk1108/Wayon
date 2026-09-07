@@ -157,6 +157,18 @@ def test_wide_camera_nv12_preview_encodes_jpeg():
   assert jpeg.startswith(b"\xff\xd8") and jpeg.endswith(b"\xff\xd9")
 
 
+def test_web_ui_has_orientation_specific_controls_and_vehicle_info():
+  html = Path(__file__).with_name("wayon_remote_control.html").read_text(encoding="utf-8")
+  assert "@media (orientation:portrait)" in html
+  assert "@media (orientation:landscape)" in html
+  assert 'data-control="combined"' in html
+  assert 'data-control="pedal"' in html
+  assert 'data-control="steer"' in html
+  assert 'id="speedValue"' in html
+  assert 'id="gearValue"' in html
+  assert "setInterval(updateCamera,50)" in html
+
+
 class FakeBridge:
   def __init__(self, onroad=True, active=True):
     self.stopped = threading.Event()
@@ -168,7 +180,7 @@ class FakeBridge:
     return self.onroad and self.active
 
   def status(self):
-    return {"onroad": self.onroad, "engaged": self.engaged, "armReady": self.onroad, "speedMps": 3.0}
+    return {"onroad": self.onroad, "engaged": self.engaged, "armReady": self.onroad, "speedMps": 3.0, "gear": "D"}
 
   def mode_status(self):
     phase = "active" if self.active and self.onroad else "pending" if self.active else "inactive"
@@ -249,6 +261,7 @@ def test_http_api_requires_password_session_and_armed_monotonic_control(tmp_path
     assert status_response.status == 200
     status_payload = json.loads(status_response.read())
     assert status_payload["realVehicleControl"]
+    assert status_payload["vehicle"]["gear"] == "D"
     assert not status_payload["state"]["ownedBySession"]
 
     connection.request("GET", "/api/camera.jpg", headers=auth)

@@ -2,82 +2,157 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="data:,">
   <title>Wayon Remote Control</title>
   <style>
-    :root { color-scheme:dark; --bg:#090a0c; --panel:#15171b; --line:#2a2d32; --text:#f5f5f7; --muted:#8d929a; --blue:#4a9eff; --red:#ff5757; --green:#41d17d; }
+    :root { color-scheme:dark; --bg:#090a0c; --panel:#15171b; --line:#343840; --text:#f5f5f7; --muted:#9298a1; --red:#ff6262; --green:#4add83; }
     * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:none; }
-    body { margin:0; min-height:100svh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Pretendard",sans-serif; overflow:hidden; }
-    main { width:min(100%,720px); min-height:100svh; margin:auto; padding:18px 18px max(18px,env(safe-area-inset-bottom)); display:grid; grid-template-rows:auto auto auto minmax(0,1fr); gap:14px; }
-    header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-    .eyebrow { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; }
-    h1 { margin:4px 0 0; font-size:25px; line-height:1; }
-    .status { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-weight:700; }
-    .dot { width:9px; height:9px; border-radius:50%; background:#676b72; box-shadow:0 0 0 4px #676b7220; }
-    .status.online .dot { background:var(--green); box-shadow:0 0 0 4px #41d17d20; }
-    .guard { min-height:46px; display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#111317; }
-    .guard strong { color:var(--red); font-size:12px; }
-    .guard span { color:var(--muted); font-size:10px; }
+    html,body { margin:0; width:100%; min-height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Pretendard",sans-serif; }
     button,input { min-height:40px; border-radius:7px; font:700 13px/1 -apple-system,BlinkMacSystemFont,sans-serif; }
-    button { border:0; padding:0 15px; background:#f5f5f7; color:#111113; }
+    button { border:0; padding:0 14px; background:#f5f5f7; color:#111113; }
     button.danger { background:var(--red); color:white; }
     button:disabled { opacity:.35; }
-    .camera { display:none; position:relative; width:100%; max-height:34svh; aspect-ratio:16/9; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#050607; }
-    body.remote-active .camera { display:block; }
-    .camera img { width:100%; height:100%; object-fit:contain; }
-    .camera-state { position:absolute; left:10px; top:9px; padding:5px 7px; border-radius:5px; background:#000a; color:#d8dbe0; font:700 10px/1 ui-monospace,SFMono-Regular,monospace; }
-    .controls { min-height:0; display:grid; grid-template-columns:minmax(116px,.7fr) minmax(0,1.3fr); gap:12px; opacity:.28; pointer-events:none; }
+    main { width:100%; height:100svh; padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left)); }
+    .vehicle-ui { width:100%; height:100%; margin:auto; display:grid; overflow:hidden; background:#090a0c; }
+    .camera { position:relative; min-height:0; overflow:hidden; background:radial-gradient(circle at 50% 45%,#20242a,#050607 72%); }
+    .camera img { display:none; width:100%; height:100%; object-fit:cover; }
+    body.remote-active .camera img { display:block; }
+    .camera::after { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(180deg,rgba(0,0,0,.52),transparent 28%,transparent 64%,rgba(0,0,0,.72)); }
+    .hud { position:absolute; z-index:3; inset:0; pointer-events:none; }
+    .hud-top { position:absolute; left:12px; right:12px; top:11px; display:grid; grid-template-columns:1fr auto 1fr; align-items:start; gap:8px; }
+    .hud-group { display:flex; align-items:center; gap:9px; width:max-content; min-height:30px; padding:7px 9px; border-radius:7px; background:rgba(4,6,8,.6); backdrop-filter:blur(7px); color:#d7dbe0; font-size:11px; font-weight:700; }
+    .hud-group.right { justify-self:end; }
+    .hud-group strong { color:var(--green); }
+    .live-dot { width:6px; height:6px; border-radius:50%; background:#697078; box-shadow:0 0 0 3px rgba(105,112,120,.15); }
+    body.remote-active .live-dot { background:var(--green); box-shadow:0 0 7px var(--green); }
+    .speed { display:flex; align-items:baseline; gap:5px; text-shadow:0 2px 10px #000; }
+    .speed strong { font-size:44px; line-height:1; font-weight:500; }
+    .speed small { font-size:11px; font-weight:700; }
+    #arm { min-height:31px; padding:0 10px; pointer-events:auto; font-size:11px; }
+    .hud-bottom { position:absolute; left:12px; right:12px; bottom:10px; display:flex; justify-content:space-between; align-items:end; gap:10px; color:#e1e4e7; font-size:11px; text-shadow:0 2px 6px #000; }
+    #detail { max-width:72%; }
+    .mode-label { color:var(--green); font-weight:800; letter-spacing:.05em; }
+    .standby { position:absolute; z-index:2; left:50%; top:52%; transform:translate(-50%,-50%); width:min(84%,420px); text-align:center; pointer-events:none; }
+    .standby strong { display:block; margin-bottom:8px; color:#d9dde1; font-size:18px; }
+    .standby span { color:var(--muted); font-size:12px; line-height:1.45; }
+    body.remote-active .standby { display:none; }
+    .camera-state { color:#d7dbe0; }
+    .controls { position:relative; min-height:0; opacity:.28; pointer-events:none; transition:opacity 120ms linear; }
     body.control-enabled .controls { opacity:1; pointer-events:auto; }
-    .steering,.pedals { position:relative; min-height:0; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--panel); user-select:none; }
-    .steering { display:grid; place-items:center; }
-    .steering::before,.steering::after { content:""; position:absolute; background:#2b2e34; }
-    .steering::before { left:18px; right:18px; top:50%; height:1px; }
-    .steering::after { top:18px; bottom:18px; left:50%; width:1px; }
-    .wheel { position:absolute; width:82px; aspect-ratio:1; border:9px solid #e6e8eb; border-radius:50%; filter:drop-shadow(0 8px 18px #0008); transform:translate(-50%,-50%); left:50%; top:50%; }
-    .wheel::before { content:""; position:absolute; left:50%; top:50%; width:10px; height:42px; border-radius:5px; background:#e6e8eb; transform:translate(-50%,-50%); }
-    .value { position:absolute; left:14px; top:13px; color:var(--muted); font:700 11px/1 ui-monospace,SFMono-Regular,monospace; }
-    .pedals::before { content:""; position:absolute; left:14px; right:14px; top:50%; height:1px; background:#34373d; }
-    .pedal-fill { position:absolute; left:0; right:0; height:0; opacity:.85; transition:height 40ms linear; }
-    .pedal-fill.accel { bottom:50%; background:linear-gradient(to top,#246fca,var(--blue)); }
-    .pedal-fill.brake { top:50%; background:linear-gradient(to bottom,#bd3838,var(--red)); }
-    .pedal-knob { position:absolute; left:12px; right:12px; top:50%; height:54px; border-radius:8px; background:#eceef1; box-shadow:0 8px 24px #0009; transform:translateY(-50%); }
-    .pedal-knob::after { content:""; position:absolute; left:50%; top:50%; width:38px; height:4px; border-radius:2px; background:#8c9097; transform:translate(-50%,-50%); }
-    .pedal-label { position:absolute; z-index:1; left:14px; font-size:11px; font-weight:800; letter-spacing:.08em; }
-    .pedal-label.accel { top:14px; } .pedal-label.brake { bottom:14px; }
-    .pedal-value { position:absolute; z-index:1; right:14px; font:700 11px/1 ui-monospace,SFMono-Regular,monospace; }
-    .pedal-value.accel { top:14px; } .pedal-value.brake { bottom:14px; }
+    .values { display:grid; grid-template-columns:repeat(3,1fr); color:var(--muted); font-size:11px; text-align:center; letter-spacing:.05em; }
+    .values b { display:block; margin-top:4px; color:var(--text); font-size:14px; }
+    .pad { position:relative; border-radius:50%; background:radial-gradient(circle at 50% 45%,#30343a 0 32%,#22252a 33% 68%,#17191d 69%); box-shadow:inset 0 0 0 1px var(--line),0 14px 30px rgba(0,0,0,.38); user-select:none; }
+    .pad::before,.pad::after { content:""; position:absolute; background:rgba(255,255,255,.09); pointer-events:none; }
+    .pad::before { left:12%; right:12%; top:50%; height:1px; }
+    .pad::after { top:12%; bottom:12%; left:50%; width:1px; }
+    .axis { position:absolute; z-index:2; color:#858b94; font-size:11px; font-weight:700; letter-spacing:.06em; pointer-events:none; }
+    .axis.top { top:9px; left:50%; transform:translateX(-50%); color:var(--green); }
+    .axis.bottom { bottom:9px; left:50%; transform:translateX(-50%); color:var(--red); }
+    .axis.left { left:12px; top:50%; transform:translateY(-50%); }
+    .axis.right { right:12px; top:50%; transform:translateY(-50%); }
+    .knob { position:absolute; z-index:3; left:50%; top:50%; width:31%; aspect-ratio:1; display:grid; place-items:center; transform:translate(-50%,-50%); border-radius:50%; background:linear-gradient(145deg,#f7f8f9,#b6bbc2); color:#343941; box-shadow:0 8px 24px rgba(0,0,0,.52); pointer-events:none; }
+    .knob::before { content:""; width:26%; height:26%; border:2px solid currentColor; border-left:0; border-top:0; transform:rotate(45deg); opacity:.72; }
+    .combined-knob::after { content:""; position:absolute; width:26%; height:26%; border:2px solid currentColor; border-right:0; border-bottom:0; transform:rotate(45deg); opacity:.72; }
+    .info-row { display:flex; justify-content:space-between; gap:8px; color:#858b94; font-size:11px; white-space:nowrap; }
+    .info-row .active { color:var(--green); }
+    .portrait-controls { display:grid; grid-template-rows:auto 1fr auto; justify-items:center; min-height:0; padding:13px 9px 7px; background:linear-gradient(180deg,#15171b,#0c0e11); }
+    .portrait-controls .values,.portrait-controls .info-row { width:100%; }
+    .combined-pad { align-self:center; height:min(52vw,31svh); max-height:230px; aspect-ratio:1; }
+    .landscape-controls { display:none; }
     dialog { width:min(520px,calc(100% - 32px)); border:1px solid var(--line); border-radius:10px; padding:20px; background:#15171b; color:var(--text); }
-    dialog::backdrop { background:#000c; }
+    dialog::backdrop { background:#000d; }
     dialog h2 { margin:0 0 8px; font-size:22px; }
     dialog p { margin:0 0 16px; color:var(--muted); font-size:13px; line-height:1.5; }
     dialog form { display:grid; gap:10px; }
     input { width:100%; border:1px solid var(--line); padding:0 12px; background:#0c0d0f; color:var(--text); touch-action:auto; }
     .error { min-height:16px; color:var(--red); font-size:12px; }
-    @media (max-height:560px) { main { padding-top:10px; gap:8px; } .guard { min-height:38px; padding:7px 10px; } h1 { font-size:20px; } }
+    @media (orientation:portrait) {
+      .vehicle-ui { max-width:540px; grid-template-rows:44% 56%; border-radius:20px; }
+      .camera { border-radius:20px 20px 8px 8px; }
+      .portrait-controls { border-radius:8px 8px 20px 20px; }
+    }
+    @media (orientation:portrait) and (max-width:350px) {
+      .hud-top { left:7px; right:7px; gap:4px; }
+      .hud-group { gap:5px; padding:5px 6px; font-size:10px; }
+      .hud-group:first-child .camera-state { display:none; }
+      .speed strong { font-size:36px; }
+      #arm { min-height:28px; padding:0 6px; font-size:10px; }
+      .hud-bottom { left:8px; right:8px; }
+      .hud-bottom > span:last-child { display:none; }
+      #detail { max-width:100%; }
+    }
+    @media (orientation:landscape) {
+      main { padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left)); }
+      .vehicle-ui { display:block; max-width:1280px; border-radius:20px; }
+      .camera { width:100%; height:100%; border-radius:16px; }
+      .portrait-controls { display:none; }
+      .landscape-controls { display:block; position:absolute; z-index:4; inset:0; pointer-events:none; }
+      .landscape-controls .control-cluster { position:absolute; top:50%; width:min(22vw,190px); transform:translateY(-45%); display:grid; justify-items:center; gap:7px; pointer-events:auto; }
+      .landscape-controls .control-cluster.left { left:4%; }
+      .landscape-controls .control-cluster.right { right:4%; }
+      .single-pad { width:min(17vw,164px); aspect-ratio:1; background:radial-gradient(circle,rgba(48,52,58,.86) 0 34%,rgba(19,22,26,.76) 35% 70%,rgba(5,7,9,.68) 71%); backdrop-filter:blur(8px); }
+      .pedal-pad::before { display:none; }
+      .steer-pad::after { display:none; }
+      .cluster-value { width:82%; display:flex; justify-content:space-between; padding:6px 8px; border-radius:6px; background:rgba(4,6,8,.58); color:#d3d7dc; font-size:11px; }
+      .landscape-info { position:absolute; z-index:4; left:50%; bottom:10px; transform:translateX(-50%); display:flex; gap:16px; padding:7px 10px; border-radius:7px; background:rgba(4,6,8,.6); color:#d0d4d8; font-size:11px; white-space:nowrap; }
+      .landscape-info .active { color:var(--green); }
+      .hud-bottom { bottom:9px; }
+      #detail { max-width:34%; }
+    }
+    @media (orientation:landscape) and (max-height:430px) {
+      .hud-top { top:7px; left:8px; right:8px; }
+      .hud-group { min-height:26px; padding:5px 7px; }
+      .speed strong { font-size:34px; }
+      .landscape-controls .control-cluster { gap:3px; }
+      .cluster-value { padding:4px 6px; }
+      .landscape-info { bottom:6px; padding:5px 7px; }
+      .hud-bottom { bottom:6px; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <header>
-      <div><div class="eyebrow">WAYON / CLOSED COURSE</div><h1>Remote Control</h1></div>
-      <div class="status" id="status"><i class="dot"></i><span>LOCKED</span></div>
-    </header>
-    <div class="guard">
-      <div><strong>REAL VEHICLE OUTPUT</strong><br><span id="detail">오프로드에서 다음 주행을 활성화하세요</span></div>
-      <button class="danger" id="arm" type="button" disabled>확인 중</button>
+    <div class="vehicle-ui">
+      <section class="camera" id="camera">
+        <img id="wideCamera" alt="전방 광각 카메라">
+        <div class="standby"><strong id="standbyTitle">REMOTE CONTROL</strong><span id="standbyText">콤마가 오프로드인지 확인하세요</span></div>
+        <div class="hud">
+          <div class="hud-top">
+            <div class="hud-group"><i class="live-dot"></i><span class="camera-state" id="cameraState">WIDE CAMERA</span><strong id="modeValue">LOCKED</strong></div>
+            <div class="speed"><strong id="speedValue">0</strong><small>km/h</small></div>
+            <div class="hud-group right"><span id="gearValue">—</span><span id="latencyValue">— ms</span><button class="danger" id="arm" type="button" disabled>확인 중</button></div>
+          </div>
+          <div class="hud-bottom"><span id="detail">오프로드에서 다음 주행을 활성화하세요</span><span><b class="mode-label">REAL VEHICLE OUTPUT</b> · 50 km/h MAX</span></div>
+        </div>
+      </section>
+
+      <section class="controls portrait-controls" aria-label="통합 원격제어 조이스틱">
+        <div class="values"><span>ACCEL<b data-value="accelerator">0%</b></span><span>STEER<b data-value="steering">0%</b></span><span>BRAKE<b data-value="brake">0%</b></span></div>
+        <div class="pad combined-pad" data-control="combined">
+          <span class="axis top">ACCEL</span><span class="axis bottom">BRAKE</span><span class="axis left">L</span><span class="axis right">R</span>
+          <div class="knob combined-knob" data-knob="combined"></div>
+        </div>
+        <div class="info-row"><span id="portraitConnection">연결 확인 중</span><span class="active" id="portraitControlState">원격 대기</span><span>WATCHDOG 250 ms</span></div>
+      </section>
+
+      <section class="controls landscape-controls" aria-label="분리형 원격제어 조이스틱">
+        <div class="control-cluster left">
+          <div class="cluster-value"><b>ACCEL</b><span data-value="accelerator">0%</span></div>
+          <div class="pad single-pad pedal-pad" data-control="pedal"><span class="axis top">ACCEL</span><span class="axis bottom">BRAKE</span><div class="knob" data-knob="pedal"></div></div>
+          <div class="cluster-value"><b>BRAKE</b><span data-value="brake">0%</span></div>
+        </div>
+        <div class="control-cluster right">
+          <div class="cluster-value"><b>STEER</b><span data-value="steering">0%</span></div>
+          <div class="pad single-pad steer-pad" data-control="steer"><span class="axis left">L</span><span class="axis right">R</span><div class="knob" data-knob="steer"></div></div>
+          <div class="cluster-value"><b>ANGLE</b><span id="steerAngle">0.0°</span></div>
+        </div>
+        <div class="landscape-info"><span id="landscapeConnection">연결 확인 중</span><span class="active" id="landscapeControlState">원격 대기</span><span>WATCHDOG 250 ms</span></div>
+      </section>
     </div>
-    <div class="camera" id="camera"><img id="wideCamera" alt="전방 광각 카메라"><span class="camera-state" id="cameraState">WIDE CAMERA</span></div>
-    <section class="controls">
-      <div class="pedals" id="pedals">
-        <div class="pedal-fill accel"></div><div class="pedal-fill brake"></div><div class="pedal-knob" id="pedalKnob"></div>
-        <span class="pedal-label accel">ACCEL</span><span class="pedal-value accel" id="accelValue">0%</span>
-        <span class="pedal-label brake">BRAKE</span><span class="pedal-value brake" id="brakeValue">0%</span>
-      </div>
-      <div class="steering" id="steering"><span class="value" id="steerValue">0%</span><div class="wheel" id="wheel"></div></div>
-    </section>
   </main>
+
   <dialog id="login">
     <form method="dialog" id="loginForm">
       <h2>원격제어 비밀번호</h2>
@@ -87,38 +162,51 @@
       <button type="submit">인증</button>
     </form>
   </dialog>
+
   <script>
-    const state={steering:0,accelerator:0,brake:0,sequence:0,armed:false,available:false,engaged:false,onroad:false,phase:'inactive',speedMps:0};
+    const state={steering:0,accelerator:0,brake:0,sequence:0,armed:false,available:false,engaged:false,onroad:false,phase:'inactive',speedMps:0,gear:'—',latencyMs:null};
     const session=Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');
-    const login=document.querySelector('#login'),statusEl=document.querySelector('#status'),arm=document.querySelector('#arm'),detail=document.querySelector('#detail');
+    const login=document.querySelector('#login'),arm=document.querySelector('#arm'),detail=document.querySelector('#detail');
     const cameraImg=document.querySelector('#wideCamera'),cameraState=document.querySelector('#cameraState');
     let token='',sending=false,arming=false,stopped=false,cameraBusy=false,cameraObjectUrl='';
     const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
+    const deadzone=v=>Math.abs(v)<.04?0:v;
     const headers=()=>({'Authorization':`Bearer ${token}`,'X-Wayon-Control-Session':session});
     async function api(path,options={}){const h={...headers(),...(options.headers||{})};return fetch(path,{...options,headers:h,cache:'no-store'});}
+    function setText(selector,value){document.querySelectorAll(selector).forEach(el=>el.textContent=value);}
     function zero(){state.steering=0;state.accelerator=0;state.brake=0;render();}
     function render(){
       document.body.classList.toggle('control-enabled',state.armed&&state.engaged);
       document.body.classList.toggle('remote-active',state.onroad&&state.phase==='active');
-      statusEl.classList.toggle('online',state.armed||state.phase==='pending');
+      const connected=Boolean(token&&state.latencyMs!==null),speedKph=Math.round(state.speedMps*3.6);
+      document.querySelector('#speedValue').textContent=String(speedKph);
+      document.querySelector('#gearValue').textContent=state.gear||'—';
+      document.querySelector('#latencyValue').textContent=connected?`${state.latencyMs} ms`:'— ms';
+      document.querySelector('#portraitConnection').textContent=connected?'연결됨':'연결 끊김';
+      document.querySelector('#landscapeConnection').textContent=connected?'연결됨':'연결 끊김';
       if(!state.onroad){
         arm.textContent=state.phase==='pending'?'활성화 취소':'원격제어 활성화';arm.disabled=false;
-        statusEl.querySelector('span').textContent=state.phase==='pending'?'NEXT DRIVE':'OFFROAD';
-        detail.textContent=state.phase==='pending'?'다음 온로드 1회에 원격제어가 실행됩니다':'오프로드에서 다음 주행을 활성화하세요';
+        document.querySelector('#modeValue').textContent=state.phase==='pending'?'NEXT DRIVE':'OFFROAD';
+        document.querySelector('#standbyTitle').textContent=state.phase==='pending'?'NEXT DRIVE':'OFFROAD';
+        document.querySelector('#standbyText').textContent=state.phase==='pending'?'다음 온로드 1회에 원격제어가 실행됩니다':'원격제어 활성화를 먼저 선택하세요';
+        detail.textContent=state.phase==='pending'?'다음 온로드 1회 원격제어 예약됨':'오프로드에서 다음 주행을 활성화하세요';
       }else if(state.phase!=='active'){
-        arm.textContent='일반 주행';arm.disabled=true;statusEl.querySelector('span').textContent='OPENPILOT';
+        arm.textContent='일반 주행';arm.disabled=true;document.querySelector('#modeValue').textContent='OPENPILOT';
+        document.querySelector('#standbyTitle').textContent='OPENPILOT';document.querySelector('#standbyText').textContent='이번 온로드 세션은 일반 주행 모드입니다';
         detail.textContent='이번 온로드 세션은 일반 openpilot 모드입니다';
       }else{
         arm.textContent=state.armed?'원격제어 중지':(stopped?'다시 연결':'연결 대기');arm.disabled=!state.armed&&!state.available;
-        statusEl.querySelector('span').textContent=state.armed?'ARMED':'REMOTE MODE';
-        detail.textContent=state.engaged?`${state.speedMps.toFixed(1)} m/s · 50 km/h 제한`:'D/L 선택 후 openpilot을 engage 하세요';
+        document.querySelector('#modeValue').textContent=state.armed?'ARMED':'REMOTE';
+        detail.textContent=state.engaged?'원격 입력 활성 · 50 km/h 제한':'D/L 선택 후 openpilot을 engage 하세요';
       }
-      document.querySelector('#wheel').style.left=`${50+state.steering*39}%`;
-      document.querySelector('#steerValue').textContent=`${Math.round(state.steering*100)}%`;
-      const accel=Math.round(state.accelerator*100),brake=Math.round(state.brake*100),axis=state.accelerator-state.brake;
-      document.querySelector('.pedal-fill.accel').style.height=`${accel*.5}%`;document.querySelector('.pedal-fill.brake').style.height=`${brake*.5}%`;
-      document.querySelector('#pedalKnob').style.top=`${50-axis*41}%`;
-      document.querySelector('#accelValue').textContent=`${accel}%`;document.querySelector('#brakeValue').textContent=`${brake}%`;
+      const controlText=state.armed?(state.engaged?'원격제어 활성':'ENGAGE 대기'):'원격 대기';
+      document.querySelector('#portraitControlState').textContent=controlText;document.querySelector('#landscapeControlState').textContent=controlText;
+      const accel=Math.round(state.accelerator*100),brake=Math.round(state.brake*100),steer=Math.round(state.steering*100),pedalAxis=state.brake-state.accelerator;
+      setText('[data-value="accelerator"]',`${accel}%`);setText('[data-value="brake"]',`${brake}%`);setText('[data-value="steering"]',`${steer}%`);
+      document.querySelector('#steerAngle').textContent=`${(state.steering*24).toFixed(1)}°`;
+      const combined=document.querySelector('[data-knob="combined"]'),pedal=document.querySelector('[data-knob="pedal"]'),steering=document.querySelector('[data-knob="steer"]');
+      combined.style.left=`${50+state.steering*28}%`;combined.style.top=`${50+pedalAxis*28}%`;
+      pedal.style.top=`${50+pedalAxis*28}%`;steering.style.left=`${50+state.steering*28}%`;
     }
     async function connect(){
       if(arming||state.armed||!state.available||state.phase!=='active'||stopped)return;
@@ -128,15 +216,16 @@
     }
     async function status(){
       if(!token){if(!login.open)login.showModal();return;}
-      try{const r=await api('/api/status'),j=await r.json();if(r.status===401){token='';if(!login.open)login.showModal();return;}
-        state.available=r.ok&&j.available;state.armed=Boolean(j.state?.ownedBySession);state.engaged=Boolean(j.vehicle?.engaged);state.onroad=Boolean(j.vehicle?.onroad);state.phase=j.mode?.phase||'inactive';state.speedMps=Number(j.vehicle?.speedMps||0);
+      const started=performance.now();
+      try{const r=await api('/api/status'),j=await r.json();state.latencyMs=Math.max(0,Math.round(performance.now()-started));if(r.status===401){token='';state.latencyMs=null;if(!login.open)login.showModal();return;}
+        state.available=r.ok&&j.available;state.armed=Boolean(j.state?.ownedBySession);state.engaged=Boolean(j.vehicle?.engaged);state.onroad=Boolean(j.vehicle?.onroad);state.phase=j.mode?.phase||'inactive';state.speedMps=Number(j.vehicle?.speedMps||0);state.gear=String(j.vehicle?.gear||'—');
         if(state.phase!=='active')stopped=false;render();connect();
-      }catch(_){state.available=false;state.armed=false;zero();}
+      }catch(_){state.available=false;state.armed=false;state.latencyMs=null;zero();}
     }
     async function send(){
       if(!state.armed||sending)return;sending=true;state.sequence++;const payload=state.engaged?state:{...state,steering:0,accelerator:0,brake:0};
       try{const r=await api('/api/input',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),j=await r.json();
-        if(!r.ok){state.armed=false;zero();document.querySelector('#detail').textContent=j.error||'CONTROL LOST';}}
+        if(!r.ok){state.armed=false;zero();detail.textContent=j.error||'CONTROL LOST';}}
       catch(_){state.armed=false;zero();}finally{sending=false;}
     }
     async function updateCamera(){
@@ -148,20 +237,26 @@
       }catch(_){cameraState.textContent='CAMERA OFFLINE';}finally{cameraBusy=false;}
     }
     arm.addEventListener('click',async()=>{try{
-      let path;
-      if(!state.onroad)path=state.phase==='pending'?'/api/deactivate':'/api/activate';
-      else if(state.armed){path='/api/reset';stopped=true;}else{path='/api/arm';stopped=false;}
-      const r=await api(path,{method:'POST'}),j=await r.json();
-      if(path==='/api/arm'){state.armed=r.ok&&Boolean(j.state?.armed);state.sequence=0;}else if(path==='/api/reset'){state.armed=false;zero();}
+      let path;if(!state.onroad)path=state.phase==='pending'?'/api/deactivate':'/api/activate';else if(state.armed){path='/api/reset';stopped=true;}else{path='/api/arm';stopped=false;}
+      const r=await api(path,{method:'POST'}),j=await r.json();if(path==='/api/arm'){state.armed=r.ok&&Boolean(j.state?.armed);state.sequence=0;}else if(path==='/api/reset'){state.armed=false;zero();}
       if(!r.ok)detail.textContent=j.error||'요청 실패';await status();
     }catch(_){state.armed=false;zero();}});
     document.querySelector('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const password=document.querySelector('#password'),error=document.querySelector('#error');error.textContent='';try{
       const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Wayon-Control-Session':session},body:JSON.stringify({password:password.value}),cache:'no-store'}),j=await r.json();
       if(!r.ok)throw new Error(j.error||'비밀번호 또는 차량 상태를 확인하세요.');token=j.token;password.value='';login.close();await status();
     }catch(err){error.textContent=err.message;}});
-    function bindSteering(){const el=document.querySelector('#steering');let pointer=null;const update=e=>{const r=el.getBoundingClientRect();state.steering=clamp(((e.clientX-r.left)/r.width-.5)/.39,-1,1);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.steering=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.steering=0;render();send();});}
-    function bindPedals(){const el=document.querySelector('#pedals');let pointer=null;const update=e=>{const r=el.getBoundingClientRect(),axis=clamp((.5-(e.clientY-r.top)/r.height)/.41,-1,1);state.accelerator=Math.max(0,axis);state.brake=Math.max(0,-axis);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.accelerator=0;state.brake=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.accelerator=0;state.brake=0;render();send();});}
-    bindSteering();bindPedals();render();status();setInterval(status,500);setInterval(()=>{if(state.armed)send();},50);setInterval(updateCamera,50);
+    function bindPad(el){
+      let pointer=null;
+      const reset=()=>{if(el.dataset.control!=='pedal')state.steering=0;if(el.dataset.control!=='steer'){state.accelerator=0;state.brake=0;}render();send();};
+      const update=e=>{const r=el.getBoundingClientRect(),x=deadzone(clamp(((e.clientX-r.left)/r.width-.5)/.34,-1,1)),y=deadzone(clamp(((e.clientY-r.top)/r.height-.5)/.34,-1,1));
+        if(el.dataset.control!=='pedal')state.steering=x;if(el.dataset.control!=='steer'){state.accelerator=Math.max(0,-y);state.brake=Math.max(0,y);}render();};
+      el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});
+      el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});
+      const release=e=>{if(e.pointerId!==pointer)return;pointer=null;reset();};
+      el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{if(pointer!==null){pointer=null;reset();}});
+    }
+    document.querySelectorAll('[data-control]').forEach(bindPad);
+    render();status();setInterval(status,500);setInterval(()=>{if(state.armed)send();},50);setInterval(updateCamera,50);
     window.addEventListener('pagehide',()=>{zero();api('/api/reset',{method:'POST',keepalive:true}).catch(()=>{});});
   </script>
 </body>

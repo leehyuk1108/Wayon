@@ -314,7 +314,7 @@ class RemoteControlBridge:
     self.state = state
     self.mode = mode or RemoteControlMode(params=params)
     self.lock = threading.Lock()
-    self.vehicle = {"onroad": False, "engaged": False, "armReady": False, "speedMps": 0.0}
+    self.vehicle = {"onroad": False, "engaged": False, "armReady": False, "speedMps": 0.0, "gear": "—"}
     self.stopping = threading.Event()
 
   def available(self) -> bool:
@@ -356,6 +356,13 @@ class RemoteControlBridge:
     pm = messaging.PubMaster(["testJoystick"])
     sm = messaging.SubMaster(["carState", "selfdriveState"])
     drivable_gears = (car.CarState.GearShifter.drive, car.CarState.GearShifter.low)
+    gear_labels = {
+      car.CarState.GearShifter.park: "P",
+      car.CarState.GearShifter.reverse: "R",
+      car.CarState.GearShifter.neutral: "N",
+      car.CarState.GearShifter.drive: "D",
+      car.CarState.GearShifter.low: "L",
+    }
     rk = Ratekeeper(100, print_delay_threshold=None)
     while not self.stopping.is_set():
       sm.update(0)
@@ -370,7 +377,8 @@ class RemoteControlBridge:
                        not car_state.gasPressed and not car_state.brakePressed and not car_state.parkingBrake)
       with self.lock:
         self.vehicle = {"onroad": onroad, "engaged": engaged,
-                        "armReady": arm_ready, "speedMps": round(speed, 3)}
+                        "armReady": arm_ready, "speedMps": round(speed, 3),
+                        "gear": gear_labels.get(car_state.gearShifter, "—")}
 
       axes, active = self.state.axes()
       active = active and arm_ready and mode_enabled

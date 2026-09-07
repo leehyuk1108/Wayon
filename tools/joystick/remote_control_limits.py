@@ -5,9 +5,9 @@ REMOTE_MAX_SPEED_MPS = 50.0 / 3.6
 REMOTE_MAX_SPEED_KPH = 50.0
 REMOTE_MIN_STEER_SPEED_MPS = 10.0 / 3.6
 REMOTE_FULL_STEER_SPEED_MPS = 15.0 / 3.6
-REMOTE_MAX_ACCEL = 0.8
-REMOTE_MAX_BRAKE = 1.5
-REMOTE_MAX_STEER = 0.25
+REMOTE_MAX_ACCEL = 1.5
+REMOTE_MAX_BRAKE = 3.0
+REMOTE_MAX_STEER = 0.55
 REMOTE_INITIAL_CRUISE_KPH = 40.0
 V_CRUISE_UNSET = 255.0
 
@@ -21,7 +21,9 @@ def remote_control_limits(long_axis: float, steer_axis: float, v_ego: float) -> 
   steer_speed_scale = float(np.interp(max(v_ego, 0.0),
                                       [REMOTE_MIN_STEER_SPEED_MPS, REMOTE_FULL_STEER_SPEED_MPS],
                                       [0.0, 1.0]))
-  return min(requested_accel, speed_governor), steer_axis * REMOTE_MAX_STEER * steer_speed_scale
+  # Browser x is positive to the right; GM's positive torque convention turns
+  # left, so invert the web axis at the vehicle-control boundary.
+  return min(requested_accel, speed_governor), -steer_axis * REMOTE_MAX_STEER * steer_speed_scale
 
 
 def remote_hud_set_speed_kph(v_cruise_cluster: float) -> float:

@@ -18,11 +18,11 @@ from openpilot.tools.joystick.remote_control_limits import (
 def test_remote_control_limits_bound_actuation():
   accel, steer = remote_control_limits(1.0, 1.0, REMOTE_FULL_STEER_SPEED_MPS)
   assert accel == REMOTE_MAX_ACCEL
-  assert steer == REMOTE_MAX_STEER
+  assert steer == -REMOTE_MAX_STEER
 
   brake, steer = remote_control_limits(-1.0, -1.0, REMOTE_FULL_STEER_SPEED_MPS)
   assert brake == -REMOTE_MAX_BRAKE
-  assert steer == -REMOTE_MAX_STEER
+  assert steer == REMOTE_MAX_STEER
 
 
 def test_remote_speed_governor_removes_accel_at_limit():
@@ -38,8 +38,8 @@ def test_remote_steering_ramps_in_above_ten_kph():
   _, halfway = remote_control_limits(0.0, 1.0, (REMOTE_MIN_STEER_SPEED_MPS + REMOTE_FULL_STEER_SPEED_MPS) / 2)
   _, full = remote_control_limits(0.0, 1.0, REMOTE_FULL_STEER_SPEED_MPS)
   assert below == 0.0
-  assert halfway == pytest.approx(REMOTE_MAX_STEER / 2)
-  assert full == REMOTE_MAX_STEER
+  assert halfway == pytest.approx(-REMOTE_MAX_STEER / 2)
+  assert full == -REMOTE_MAX_STEER
 
 
 @pytest.mark.parametrize("v_cruise_cluster, expected", [

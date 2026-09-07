@@ -115,7 +115,6 @@ def update_gm_long_auto_hold_brake(hold_requested, confirmed, zero_frames, settl
     hold_brake = min(GM_AUTO_HOLD_BRAKE, max(hold_brake, regular_brake) + GM_AUTO_HOLD_RAMP_STEP)
     return hold_brake, True, zero_frames, settled_frames, hold_brake
 
-  was_zero = zero_frames > 0
   if raw_speed <= GM_AUTO_HOLD_SETTLED_SPEED:
     zero_frames += 1
     settled_frames = settled_frames + 1 if abs(a_ego) <= GM_AUTO_HOLD_SETTLED_ACCEL else 0
@@ -124,8 +123,9 @@ def update_gm_long_auto_hold_brake(hold_requested, confirmed, zero_frames, settl
     settled_frames = 0
 
   # A rolling vehicle takes priority over the comfort ramp. This path is only
-  # reachable after CarState has already requested hold at a standstill.
-  if was_zero and raw_speed > GM_AUTO_HOLD_ROLL_SPEED:
+  # reachable after the interface has latched a confirmed standstill. Do not
+  # require consecutive zero-speed samples: gradual creep resets that counter.
+  if raw_speed > GM_AUTO_HOLD_ROLL_SPEED:
     return GM_AUTO_HOLD_BRAKE, True, zero_frames, settled_frames, GM_AUTO_HOLD_BRAKE
 
   if settled_frames < GM_AUTO_HOLD_SETTLED_FRAMES and zero_frames < GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES:

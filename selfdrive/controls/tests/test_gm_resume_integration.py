@@ -379,6 +379,21 @@ def test_latched_hold_survives_real_read_apply_order_and_rolling(chain, rolling_
   assert all(brake == GM_AUTO_HOLD_BRAKE for _, brake in chain.brakes(entries))
 
 
+def test_gradual_roll_before_hold_pressure_settles_is_arrested(chain):
+  chain.cs.out.aEgo = 0.3
+  chain.run(4)
+  assert chain.cs.longAutoHoldActive
+  assert not chain.ci.CC.gm_auto_hold_confirmed
+  chain.cs.out.standstill = False
+  for speed in (0.02, 0.05, 0.09):
+    chain.cs.out.vEgo = chain.cs.out.vEgoRaw = speed
+    chain.run(4)
+  assert chain.cs.longAutoHoldActive
+  assert chain.ci.CC.gm_auto_hold_confirmed
+  assert chain.ci.CC.apply_brake == GM_AUTO_HOLD_BRAKE
+  assert chain.buttons() == []
+
+
 def test_failed_launch_recovery_does_not_taper_brakes_away_while_rolling(chain):
   chain.run(110)
   chain.depart()

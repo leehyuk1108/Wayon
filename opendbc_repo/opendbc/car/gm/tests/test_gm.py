@@ -218,8 +218,18 @@ class TestGMLongAutoHoldBrake(unittest.TestCase):
     self.assertEqual(brake, 400)
     self.assertTrue(confirmed)
 
-  def test_initial_low_speed_hold_request_does_not_jump_to_full_pressure(self):
-    brake, confirmed, zero, settled, hold_brake = self.step((False, 0, 0, 0), v_ego_raw=0.085, a_ego=-0.5)
+  def test_gradual_roll_before_settle_applies_full_pressure(self):
+    state = (False, 0, 0, 0)
+    for speed in (0.0, 0.02, 0.05):
+      brake, confirmed, zero, settled, hold_brake = self.step(state, v_ego_raw=speed, a_ego=0.3)
+      self.assertFalse(confirmed)
+      state = (confirmed, zero, settled, hold_brake)
+    brake, confirmed, *_ = self.step(state, v_ego_raw=0.09, a_ego=0.3)
+    self.assertEqual(brake, 400)
+    self.assertTrue(confirmed)
+
+  def test_rolling_without_latched_hold_keeps_regular_brakes(self):
+    brake, confirmed, zero, settled, hold_brake = self.step((False, 0, 0, 0), requested=False, v_ego_raw=0.085, a_ego=-0.5)
     self.assertEqual((brake, confirmed, zero, settled, hold_brake), (14, False, 0, 0, 0))
 
   def test_release_resets_state(self):

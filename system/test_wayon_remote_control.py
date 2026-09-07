@@ -2,6 +2,7 @@ import ast
 import http.client
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import threading
 
 import pytest
@@ -10,6 +11,7 @@ from openpilot.system.wayon_remote_control import (
   RemoteControlMode,
   RemoteControlState,
   RemoteControlServer,
+  RemoteWideCamera,
   WayonTokenAuthorizer,
   clamp,
   is_allowed_client,
@@ -131,6 +133,16 @@ def test_remote_mode_rejects_onroad_change_and_previous_boot(tmp_path):
     mode.activate(onroad=True)
 
 
+def test_wide_camera_nv12_preview_encodes_jpeg():
+  width, height, stride = 8, 4, 8
+  uv_offset = stride * height
+  uv_height = 16
+  data = bytes([96] * uv_offset + [128] * (stride * uv_height))
+  jpeg = RemoteWideCamera._jpeg(SimpleNamespace(width=width, height=height, stride=stride,
+                                                uv_offset=uv_offset, data=data))
+  assert jpeg.startswith(b"\xff\xd8") and jpeg.endswith(b"\xff\xd9")
+
+
 class FakeBridge:
   def __init__(self, onroad=True, active=True):
     self.stopped = threading.Event()
@@ -167,11 +179,23 @@ class FakeBridge:
     self.stopped.set()
 
 
+class FakeCamera:
+  def __init__(self):
+    self.stopped = False
+
+  def frame(self):
+    return b"\xff\xd8wide-camera\xff\xd9"
+
+  def stop(self):
+    self.stopped = True
+
+
 def test_http_api_requires_key_and_armed_monotonic_session(tmp_path):
   config = tmp_path / "config.json"
   config.write_text(json.dumps({"token": "wayon_test_key"}), encoding="utf-8")
+  camera = FakeCamera()
   server = RemoteControlServer(("127.0.0.1", 0), state=RemoteControlState(),
-                               authorizer=WayonTokenAuthorizer(config), bridge=FakeBridge())
+                               authorizer=WayonTokenAuthorizer(config), bridge=FakeBridge(), camera=camera)
   server.start_bridge()
   serving = threading.Thread(target=server.serve_forever, daemon=True)
   serving.start()
@@ -189,6 +213,12 @@ def test_http_api_requires_key_and_armed_monotonic_session(tmp_path):
     status_payload = json.loads(status_response.read())
     assert status_payload["realVehicleControl"]
     assert not status_payload["state"]["ownedBySession"]
+
+    connection.request("GET", "/api/camera.jpg", headers=auth)
+    camera_response = connection.getresponse()
+    assert camera_response.status == 200
+    assert camera_response.getheader("Content-Type") == "image/jpeg"
+    assert camera_response.read().startswith(b"\xff\xd8")
 
     connection.request("POST", "/api/arm", headers=auth)
     arm_response = connection.getresponse()
@@ -218,6 +248,7 @@ def test_http_api_requires_key_and_armed_monotonic_session(tmp_path):
     server.shutdown()
     serving.join(timeout=1)
     server.server_close()
+    assert camera.stopped
 
 
 def test_http_activation_is_offroad_only(tmp_path):
@@ -225,7 +256,7 @@ def test_http_activation_is_offroad_only(tmp_path):
   config.write_text(json.dumps({"token": "wayon_test_key"}), encoding="utf-8")
   bridge = FakeBridge(onroad=False, active=False)
   server = RemoteControlServer(("127.0.0.1", 0), state=RemoteControlState(),
-                               authorizer=WayonTokenAuthorizer(config), bridge=bridge)
+                               authorizer=WayonTokenAuthorizer(config), bridge=bridge, camera=FakeCamera())
   server.start_bridge()
   serving = threading.Thread(target=server.serve_forever, daemon=True)
   serving.start()
@@ -236,6 +267,11 @@ def test_http_activation_is_offroad_only(tmp_path):
     response = connection.getresponse()
     assert response.status == 200
     assert json.loads(response.read())["mode"]["phase"] == "pending"
+
+    connection.request("GET", "/api/camera.jpg", headers=auth)
+    response = connection.getresponse()
+    assert response.status == 409
+    response.read()
 
     bridge.onroad = True
     connection.request("POST", "/api/deactivate", headers=auth)

@@ -125,6 +125,98 @@ class RemoteControlMode:
     return {"phase": phase, "enabled": enabled, "onroad": onroad}
 
 
+class RemoteWideCamera:
+  """Latest-frame wide camera preview, isolated from the control watchdog."""
+
+  def __init__(self, fps: float = 8.0, stale_after: float = 1.5):
+    self.frame_interval = 1.0 / fps
+    self.stale_after = stale_after
+    self.lock = threading.Lock()
+    self.start_lock = threading.Lock()
+    self.latest = b""
+    self.latest_at = 0.0
+    self.requested_at = 0.0
+    self.stopping = threading.Event()
+    self.thread = threading.Thread(target=self._run, name="wayon-remote-wide-camera", daemon=True)
+
+  def frame(self, now: float | None = None) -> bytes | None:
+    now = time.monotonic() if now is None else now
+    with self.lock:
+      self.requested_at = now
+      frame = self.latest if self.latest and now - self.latest_at <= self.stale_after else None
+    with self.start_lock:
+      if not self.thread.is_alive():
+        self.thread.start()
+    return frame
+
+  def stop(self) -> None:
+    self.stopping.set()
+    if self.thread.is_alive():
+      self.thread.join(timeout=1.0)
+
+  @staticmethod
+  def _jpeg(buffer) -> bytes:
+    from io import BytesIO
+
+    import numpy as np
+    from PIL import Image
+
+    # Downsample the NV12 planes before RGB conversion. This keeps the preview
+    # below roughly 1,000 px wide and avoids loading the control CPU with a
+    # full-resolution color conversion for every camera frame.
+    uv_height = ((buffer.height // 2) + 15) // 16 * 16
+    uv_size = buffer.stride * uv_height
+    raw = np.frombuffer(buffer.data, dtype=np.uint8)
+    y = raw[:buffer.uv_offset].reshape((-1, buffer.stride))[:buffer.height, :buffer.width]
+    uv = raw[buffer.uv_offset:buffer.uv_offset + uv_size]
+    u = uv[::2].reshape((-1, buffer.stride // 2))[:buffer.height // 2, :buffer.width // 2]
+    v = uv[1::2].reshape((-1, buffer.stride // 2))[:buffer.height // 2, :buffer.width // 2]
+    scale = 2 if buffer.width > 960 else 1
+    y = y[::scale, ::scale]
+    u = u[::scale, ::scale]
+    v = v[::scale, ::scale]
+    u = np.repeat(np.repeat(u, 2, axis=0), 2, axis=1)[:y.shape[0], :y.shape[1]].astype(np.float32) - 128.0
+    v = np.repeat(np.repeat(v, 2, axis=0), 2, axis=1)[:y.shape[0], :y.shape[1]].astype(np.float32) - 128.0
+    y = y.astype(np.float32)
+    rgb = np.stack((y + 1.13983 * v,
+                    y - 0.39465 * u - 0.58060 * v,
+                    y + 2.03211 * u), axis=-1).clip(0, 255).astype(np.uint8)
+    output = BytesIO()
+    Image.fromarray(rgb).save(output, "JPEG", quality=62)
+    return output.getvalue()
+
+  def _run(self) -> None:
+    from msgq.visionipc import VisionIpcClient, VisionStreamType
+
+    client = None
+    last_encoded_at = 0.0
+    while not self.stopping.is_set():
+      with self.lock:
+        requested_recently = time.monotonic() - self.requested_at <= 2.0
+      if not requested_recently:
+        time.sleep(0.1)
+        continue
+      try:
+        if client is None:
+          candidate = VisionIpcClient("camerad", VisionStreamType.VISION_STREAM_WIDE_ROAD, True)
+          if not candidate.connect(False):
+            time.sleep(0.1)
+            continue
+          client = candidate
+        buffer = client.recv(timeout_ms=250)
+        now = time.monotonic()
+        if buffer is None or now - last_encoded_at < self.frame_interval:
+          continue
+        jpeg = self._jpeg(buffer)
+        with self.lock:
+          self.latest = jpeg
+          self.latest_at = now
+        last_encoded_at = now
+      except Exception:
+        client = None
+        time.sleep(0.1)
+
+
 class RemoteControlState:
   def __init__(self, watchdog_timeout: float = WATCHDOG_TIMEOUT):
     self.watchdog_timeout = watchdog_timeout
@@ -324,7 +416,13 @@ class RemoteControlHandler(BaseHTTPRequestHandler):
     self.send_header("Content-Type", content_type)
     self.send_header("Content-Length", str(len(body)))
     self.send_header("Cache-Control", "no-store")
-    self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+    content_security_policy = "; ".join((
+      "default-src 'self'",
+      "img-src 'self' data: blob:",
+      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline'",
+    ))
+    self.send_header("Content-Security-Policy", content_security_policy)
     self.send_header("X-Content-Type-Options", "nosniff")
     self.send_header("X-Frame-Options", "DENY")
     self.end_headers()
@@ -360,6 +458,17 @@ class RemoteControlHandler(BaseHTTPRequestHandler):
       return
     if self.path == "/":
       self._write(200, "text/html; charset=utf-8", self.server.html)
+    elif self.path == "/api/camera.jpg":
+      if not self._authorized():
+        return
+      if self.server.bridge.mode_status()["phase"] != "active":
+        self._json(409, {"ok": False, "error": "wide camera is available during remote onroad mode only"})
+        return
+      frame = self.server.camera.frame()
+      if frame is None:
+        self._json(503, {"ok": False, "error": "wide camera is starting"})
+        return
+      self._write(200, "image/jpeg", frame)
     elif self.path == "/api/status":
       if not self._authorized():
         return
@@ -444,10 +553,11 @@ class RemoteControlServer(ThreadingHTTPServer):
 
   def __init__(self, address=(HOST, PORT), params: ParamsReader | None = None,
                state: RemoteControlState | None = None, authorizer: WayonTokenAuthorizer | None = None,
-               bridge: RemoteControlBridge | None = None):
+               bridge: RemoteControlBridge | None = None, camera: RemoteWideCamera | None = None):
     self.state = state or RemoteControlState()
     self.authorizer = authorizer or WayonTokenAuthorizer()
     self.bridge = bridge or RemoteControlBridge(self.state, params)
+    self.camera = camera or RemoteWideCamera()
     self.bridge_thread = threading.Thread(target=self.bridge.run, name="wayon-remote-control", daemon=True)
     super().__init__(address, RemoteControlHandler)
     self.html = HTML_PATH.read_bytes()
@@ -458,6 +568,7 @@ class RemoteControlServer(ThreadingHTTPServer):
 
   def server_close(self) -> None:
     self.bridge.stop()
+    self.camera.stop()
     if self.bridge_thread.is_alive():
       self.bridge_thread.join(timeout=1)
     super().server_close()

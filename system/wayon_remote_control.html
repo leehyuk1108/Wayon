@@ -10,7 +10,7 @@
     :root { color-scheme:dark; --bg:#090a0c; --panel:#15171b; --line:#2a2d32; --text:#f5f5f7; --muted:#8d929a; --blue:#4a9eff; --red:#ff5757; --green:#41d17d; }
     * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:none; }
     body { margin:0; min-height:100svh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Pretendard",sans-serif; overflow:hidden; }
-    main { width:min(100%,720px); min-height:100svh; margin:auto; padding:18px 18px max(18px,env(safe-area-inset-bottom)); display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:14px; }
+    main { width:min(100%,720px); min-height:100svh; margin:auto; padding:18px 18px max(18px,env(safe-area-inset-bottom)); display:grid; grid-template-rows:auto auto auto minmax(0,1fr); gap:14px; }
     header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
     .eyebrow { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; }
     h1 { margin:4px 0 0; font-size:25px; line-height:1; }
@@ -24,6 +24,10 @@
     button { border:0; padding:0 15px; background:#f5f5f7; color:#111113; }
     button.danger { background:var(--red); color:white; }
     button:disabled { opacity:.35; }
+    .camera { display:none; position:relative; width:100%; max-height:34svh; aspect-ratio:16/9; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#050607; }
+    body.remote-active .camera { display:block; }
+    .camera img { width:100%; height:100%; object-fit:contain; }
+    .camera-state { position:absolute; left:10px; top:9px; padding:5px 7px; border-radius:5px; background:#000a; color:#d8dbe0; font:700 10px/1 ui-monospace,SFMono-Regular,monospace; }
     .controls { min-height:0; display:grid; grid-template-columns:minmax(116px,.7fr) minmax(0,1.3fr); gap:12px; opacity:.28; pointer-events:none; }
     body.control-enabled .controls { opacity:1; pointer-events:auto; }
     .steering,.pedals { position:relative; min-height:0; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--panel); user-select:none; }
@@ -64,6 +68,7 @@
       <div><strong>REAL VEHICLE OUTPUT</strong><br><span id="detail">오프로드에서 다음 주행을 활성화하세요</span></div>
       <button class="danger" id="arm" type="button" disabled>확인 중</button>
     </div>
+    <div class="camera" id="camera"><img id="wideCamera" alt="전방 광각 카메라"><span class="camera-state" id="cameraState">WIDE CAMERA</span></div>
     <section class="controls">
       <div class="pedals" id="pedals">
         <div class="pedal-fill accel"></div><div class="pedal-fill brake"></div><div class="pedal-knob" id="pedalKnob"></div>
@@ -86,13 +91,15 @@
     const state={steering:0,accelerator:0,brake:0,sequence:0,armed:false,available:false,engaged:false,onroad:false,phase:'inactive',speedMps:0};
     const session=Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');
     const login=document.querySelector('#login'),statusEl=document.querySelector('#status'),arm=document.querySelector('#arm'),detail=document.querySelector('#detail');
-    let key=sessionStorage.getItem('wayon-control-key')||'',sending=false,arming=false,stopped=false;
+    const cameraImg=document.querySelector('#wideCamera'),cameraState=document.querySelector('#cameraState');
+    let key=sessionStorage.getItem('wayon-control-key')||'',sending=false,arming=false,stopped=false,cameraBusy=false,cameraObjectUrl='';
     const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
     const headers=()=>({'Authorization':`Bearer ${key}`,'X-Wayon-Control-Session':session});
     async function api(path,options={}){const h={...headers(),...(options.headers||{})};return fetch(path,{...options,headers:h,cache:'no-store'});}
     function zero(){state.steering=0;state.accelerator=0;state.brake=0;render();}
     function render(){
       document.body.classList.toggle('control-enabled',state.armed&&state.engaged);
+      document.body.classList.toggle('remote-active',state.onroad&&state.phase==='active');
       statusEl.classList.toggle('online',state.armed||state.phase==='pending');
       if(!state.onroad){
         arm.textContent=state.phase==='pending'?'활성화 취소':'원격제어 활성화';arm.disabled=false;
@@ -132,6 +139,14 @@
         if(!r.ok){state.armed=false;zero();document.querySelector('#detail').textContent=j.error||'CONTROL LOST';}}
       catch(_){state.armed=false;zero();}finally{sending=false;}
     }
+    async function updateCamera(){
+      const active=state.onroad&&state.phase==='active'&&!document.hidden;
+      if(!active){cameraState.textContent='WIDE CAMERA';if(cameraObjectUrl){URL.revokeObjectURL(cameraObjectUrl);cameraObjectUrl='';cameraImg.removeAttribute('src');}return;}
+      if(cameraBusy)return;cameraBusy=true;
+      try{const r=await api('/api/camera.jpg');if(!r.ok){cameraState.textContent=r.status===503?'CAMERA STARTING':'CAMERA LOCKED';return;}
+        const next=URL.createObjectURL(await r.blob()),previous=cameraObjectUrl;cameraObjectUrl=next;cameraImg.onload=()=>{if(previous)URL.revokeObjectURL(previous);};cameraImg.src=next;cameraState.textContent='WIDE · LIVE';
+      }catch(_){cameraState.textContent='CAMERA OFFLINE';}finally{cameraBusy=false;}
+    }
     arm.addEventListener('click',async()=>{try{
       let path;
       if(!state.onroad)path=state.phase==='pending'?'/api/deactivate':'/api/activate';
@@ -143,7 +158,7 @@
     document.querySelector('#loginForm').addEventListener('submit',async e=>{e.preventDefault();key=document.querySelector('#key').value.trim();try{const r=await api('/api/status');if(!r.ok)throw new Error('키 또는 차량 상태를 확인하세요.');sessionStorage.setItem('wayon-control-key',key);login.close();status();}catch(err){document.querySelector('#error').textContent=err.message;}});
     function bindSteering(){const el=document.querySelector('#steering');let pointer=null;const update=e=>{const r=el.getBoundingClientRect();state.steering=clamp(((e.clientX-r.left)/r.width-.5)/.39,-1,1);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.steering=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.steering=0;render();send();});}
     function bindPedals(){const el=document.querySelector('#pedals');let pointer=null;const update=e=>{const r=el.getBoundingClientRect(),axis=clamp((.5-(e.clientY-r.top)/r.height)/.41,-1,1);state.accelerator=Math.max(0,axis);state.brake=Math.max(0,-axis);render();};el.addEventListener('pointerdown',e=>{pointer=e.pointerId;el.setPointerCapture(pointer);update(e);});el.addEventListener('pointermove',e=>{if(e.pointerId===pointer)update(e);});const release=e=>{if(e.pointerId!==pointer)return;pointer=null;state.accelerator=0;state.brake=0;render();send();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{pointer=null;state.accelerator=0;state.brake=0;render();send();});}
-    bindSteering();bindPedals();render();status();setInterval(status,500);setInterval(()=>{if(state.armed)send();},50);
+    bindSteering();bindPedals();render();status();setInterval(status,500);setInterval(()=>{if(state.armed)send();},50);setInterval(updateCamera,125);
     window.addEventListener('pagehide',()=>{zero();api('/api/reset',{method:'POST',keepalive:true}).catch(()=>{});});
   </script>
 </body>

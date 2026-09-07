@@ -79,6 +79,13 @@ engage openpilot before applying commands. One browser session owns control at
 a time. Returning offroad clears the selection, zeros the command, and restores
 normal `controlsd` selection for the following drive.
 
+During the selected onroad cycle, the page shows an authenticated wide-road
+camera preview at up to 8 fps. It reads the existing `camerad` VisionIPC stream
+and performs downsampled JPEG conversion in a separate thread so image work
+cannot block the 250 ms control watchdog. The camera endpoint rejects requests
+outside the remote onroad phase and stops producing frames when the viewer is
+inactive.
+
 Commands use the existing `testJoystick -> joystickd -> carControl -> Panda`
 path rather than writing CAN directly. The real-output envelope is:
 

@@ -54,6 +54,15 @@ def test_lane_marking_service_is_managed_independently_from_navdy():
   assert "lane_marking_classifier.submit" not in navdy_bridge
 
 
+def test_lane_worker_yields_to_driving_processes():
+  launcher = (ROOT / "selfdrive/lane_markingd.py").read_text()
+  server = (ROOT / "selfdrive/lane_marking/server.py").read_text()
+
+  assert "os.nice(10)" in launcher
+  assert "cv2.setNumThreads(1)" in server
+  assert "self.last_lane_inference_at = t1" in server
+
+
 def test_xiaoge_web_and_visual_bsd_are_wired_into_comma():
   server = (ROOT / "selfdrive/lane_marking/server.py").read_text()
   card = (ROOT / "selfdrive/car/card.py").read_text()

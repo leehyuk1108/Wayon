@@ -89,3 +89,27 @@ def test_bundled_model_loads_with_opencv_when_available():
   assert result["valid"], result["error"]
   assert result["leftType"] in ("solid", "dashed", "unknown")
   assert result["rightType"] in ("solid", "dashed", "unknown")
+
+
+def test_lane_inference_limits_opencv_to_one_c4_worker(tmp_path):
+  class FakeNet:
+    pass
+
+  class FakeCv2:
+    def __init__(self):
+      self.threads = None
+      self.dnn = self
+
+    def setNumThreads(self, threads):
+      self.threads = threads
+
+    def readNetFromONNX(self, _path):
+      return FakeNet()
+
+  model = tmp_path / "lane.onnx"
+  model.write_bytes(b"onnx")
+  cv2 = FakeCv2()
+  inference = lane.OnnxLaneInference(model_path=model, cv2_module=cv2)
+
+  assert inference.load()
+  assert cv2.threads == 1

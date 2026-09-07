@@ -52,6 +52,9 @@ MAX_SMOOTHING_SECONDS = 0.5
 MIN_BASE_INTERVAL_SECONDS = 0.05
 MAX_BASE_INTERVAL_SECONDS = 1.0
 BASE_INTERVAL_SECONDS = 0.25
+MIN_LANE_INTERVAL_SECONDS = 0.40
+MAX_LANE_INTERVAL_SECONDS = 2.0
+LANE_INTERVAL_SECONDS = 0.40
 FOLLOWUP_INTERVAL_SECONDS = 0.15
 FOLLOWUP_WINDOW_SECONDS = 1.5
 VASM_MIN_SPEED_MPS = 30.0 / 3.6
@@ -161,7 +164,9 @@ class VASMService:
     self.lane_inference = OnnxLaneInference()
     self.lane_inference.load()
     self.lane_threshold = 0.25
-    self.lane_interval_seconds = 0.40
+    # This is a cooldown after an inference completes, not a start-to-start
+    # period. The ONNX pass itself is relatively expensive on C4.
+    self.lane_interval_seconds = LANE_INTERVAL_SECONDS
     self.lane_camera_error = "waiting for road camera"
     self.last_road_jpeg: bytes | None = None
     self.last_road_frame_at = 0.0
@@ -234,8 +239,9 @@ class VASMService:
       raise ValueError(f"baseIntervalSeconds must be {MIN_BASE_INTERVAL_SECONDS:.2f} to {MAX_BASE_INTERVAL_SECONDS:.2f}")
     if not 0.05 <= lane_threshold <= 1.0:
       raise ValueError("laneThreshold must be 0.05 to 1.0")
-    if not 0.05 <= lane_interval_seconds <= 2.0:
-      raise ValueError("laneIntervalSeconds must be 0.05 to 2.0")
+    if not MIN_LANE_INTERVAL_SECONDS <= lane_interval_seconds <= MAX_LANE_INTERVAL_SECONDS:
+      raise ValueError(
+        f"laneIntervalSeconds must be {MIN_LANE_INTERVAL_SECONDS:.2f} to {MAX_LANE_INTERVAL_SECONDS:.1f}")
 
     with self.lock:
       self.threshold = threshold
@@ -525,7 +531,10 @@ class VASMService:
             self._lane_fps_window_start = t1
             self._lane_fps_window_count = 0
 
-          self.last_lane_inference_at = now
+          # Measure the cooldown from completion. Previously this used the
+          # frame timestamp captured before inference, so an inference slower
+          # than the configured interval immediately started another pass.
+          self.last_lane_inference_at = t1
           if res["valid"]:
             for side in ("Left", "Right"):
               raw_type = str(res.get(f"{side.lower()}Type", "unknown"))
@@ -661,7 +670,7 @@ def create_server(host: str = HOST, port: int = PORT, model_path: Path = DEFAULT
   if sys.platform == "linux":
     from openpilot.common.realtime import set_core_affinity
     set_core_affinity([0, 1, 2, 3])
-  cv2.setNumThreads(2)
+  cv2.setNumThreads(1)
   service = VASMService(model_path)
   Handler.service = service
   server = ThreadingHTTPServer((host, port), Handler)

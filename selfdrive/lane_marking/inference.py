@@ -239,7 +239,9 @@ class OnnxLaneInference:
         self.cv2 = cv2
       if not self.model_path.is_file():
         raise FileNotFoundError(f"ONNX model not found: {self.model_path}")
-      self.cv2.setNumThreads(2)
+      # C4 only has four CPU cores. A two-thread lane inference can starve
+      # plannerd/selfdrived and turn delayed plans into a commIssue event.
+      self.cv2.setNumThreads(1)
       self.net = self.cv2.dnn.readNetFromONNX(str(self.model_path))
       self.error = ""
       return True

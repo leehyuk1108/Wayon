@@ -10,7 +10,7 @@ from opendbc.car.vehicle_model import VehicleModel
 from openpilot.common.realtime import DT_CTRL, Ratekeeper
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
-from openpilot.tools.joystick.remote_control_limits import remote_control_limits, remote_hud_set_speed_kph
+from openpilot.tools.joystick.remote_control_limits import joystick_cc_enabled, remote_control_limits, remote_hud_set_speed_kph
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 MAX_LAT_ACCEL = 3.0
@@ -46,7 +46,6 @@ def joystickd_thread():
     else:
       joystick_axes = [0.0, 0.0]
 
-    remote_accel, remote_torque = remote_control_limits(joystick_axes[0], joystick_axes[1], sm['carState'].vEgo)
     remote_input_active = (not remote_control or
                            (not should_reset_joystick and len(sm['testJoystick'].buttons) > 0 and
                             sm['testJoystick'].buttons[0]))
@@ -55,7 +54,15 @@ def joystickd_thread():
                                                             car.CarState.GearShifter.low) and
                              not sm['carState'].gasPressed and not sm['carState'].brakePressed and
                              not sm['carState'].parkingBrake))
-    CC.enabled = sm['selfdriveState'].enabled and remote_input_active and remote_vehicle_ready
+    # Losing the web heartbeat immediately zeros actuation, but it must not
+    # toggle GM's ACC command-active state. A delayed active edge without a
+    # fresh physical SET/RES edge makes the Traverse ACC enter FAULTED after
+    # roughly 500 ms. Keep enabled synchronized with selfdrived/Panda instead.
+    if remote_control and (not remote_input_active or not remote_vehicle_ready):
+      joystick_axes = [0.0, 0.0]
+    remote_accel, remote_torque = remote_control_limits(joystick_axes[0], joystick_axes[1], sm['carState'].vEgo)
+    CC.enabled = joystick_cc_enabled(sm['selfdriveState'].enabled, remote_control,
+                                     remote_input_active, remote_vehicle_ready)
     remote_steering_requested = not remote_control or abs(remote_torque) > 1e-3
     CC.latActive = (CC.enabled and remote_steering_requested and sm['selfdriveState'].active and
                     not sm['carState'].steerFaultTemporary and not sm['carState'].steerFaultPermanent)

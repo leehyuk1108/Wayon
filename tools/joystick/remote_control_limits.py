@@ -29,3 +29,9 @@ def remote_hud_set_speed_kph(v_cruise_cluster: float) -> float:
   if not np.isfinite(v_cruise_cluster) or not 0.0 < v_cruise_cluster < V_CRUISE_UNSET:
     return REMOTE_INITIAL_CRUISE_KPH
   return float(np.clip(v_cruise_cluster, 1.0, REMOTE_MAX_SPEED_KPH))
+
+
+def joystick_cc_enabled(selfdrive_enabled: bool, remote_control: bool,
+                        input_active: bool, vehicle_ready: bool) -> bool:
+  """Keep a selected remote drive synchronized with the physical SET/CANCEL state."""
+  return bool(selfdrive_enabled and (remote_control or (input_active and vehicle_ready)))

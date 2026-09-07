@@ -55,6 +55,7 @@ BASE_INTERVAL_SECONDS = 0.25
 MIN_LANE_INTERVAL_SECONDS = 0.40
 MAX_LANE_INTERVAL_SECONDS = 2.0
 LANE_INTERVAL_SECONDS = 0.40
+LANE_INFERENCE_YIELD_SECONDS = 0.03
 FOLLOWUP_INTERVAL_SECONDS = 0.15
 FOLLOWUP_WINDOW_SECONDS = 1.5
 VASM_MIN_SPEED_MPS = 30.0 / 3.6
@@ -164,8 +165,6 @@ class VASMService:
     self.lane_inference = OnnxLaneInference()
     self.lane_inference.load()
     self.lane_threshold = 0.25
-    # This is a cooldown after an inference completes, not a start-to-start
-    # period. The ONNX pass itself is relatively expensive on C4.
     self.lane_interval_seconds = LANE_INTERVAL_SECONDS
     self.lane_camera_error = "waiting for road camera"
     self.last_road_jpeg: bytes | None = None
@@ -531,10 +530,7 @@ class VASMService:
             self._lane_fps_window_start = t1
             self._lane_fps_window_count = 0
 
-          # Measure the cooldown from completion. Previously this used the
-          # frame timestamp captured before inference, so an inference slower
-          # than the configured interval immediately started another pass.
-          self.last_lane_inference_at = t1
+          self.last_lane_inference_at = now
           if res["valid"]:
             for side in ("Left", "Right"):
               raw_type = str(res.get(f"{side.lower()}Type", "unknown"))
@@ -559,6 +555,9 @@ class VASMService:
           else:
             self.lane_result["error"] = str(res.get("error", "lane inference failed"))
         self.publish_vision_result()
+        # Let realtime planning work run between consecutive ONNX passes when
+        # inference itself takes longer than the configured start interval.
+        time.sleep(LANE_INFERENCE_YIELD_SECONDS)
       except (OSError, ValueError, cv2.error) as error:
         with self.lock:
           self.lane_camera_error = str(error)

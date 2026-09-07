@@ -60,7 +60,8 @@ def test_lane_worker_yields_to_driving_processes():
 
   assert "os.nice(10)" in launcher
   assert "cv2.setNumThreads(1)" in server
-  assert "self.last_lane_inference_at = t1" in server
+  assert "LANE_INFERENCE_YIELD_SECONDS = 0.03" in server
+  assert "time.sleep(LANE_INFERENCE_YIELD_SECONDS)" in server
 
 
 def test_xiaoge_web_and_visual_bsd_are_wired_into_comma():

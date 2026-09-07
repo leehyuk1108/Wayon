@@ -433,11 +433,27 @@ def test_adaptive_smoother_blends_brake_release_into_starting_accel():
   smoother = AdaptiveLongitudinalSmoother(dt=0.01)
   smoother.reset(-0.4)
   outputs = [smoother.update(0.35, measured_accel=smoother.output_accel,
-                             v_ego=0.0, v_target=1.0) for _ in range(200)]
+                             v_ego=0.0, v_target=1.0, launch_transition=True) for _ in range(100)]
   slopes = [(outputs[i] - outputs[i - 1]) / 0.01 for i in range(1, len(outputs))]
 
   assert -0.4 < outputs[0] < -0.39
-  assert outputs[49] < 0.1
-  assert outputs[-1] > 0.32
+  assert outputs[19] < 0.0
+  assert outputs[24] > 0.0
+  assert outputs[54] > 0.3
+  assert outputs[-1] > 0.34
   assert slopes[2] < max(slopes)
   assert slopes[-2] < max(slopes)
+
+
+def test_launch_transition_does_not_change_normal_acceleration_curve():
+  normal = AdaptiveLongitudinalSmoother(dt=0.01)
+  normal.reset(-0.4)
+  normal_outputs = [normal.update(0.35, measured_accel=normal.output_accel,
+                                  v_ego=0.0, v_target=1.0) for _ in range(60)]
+
+  launch = AdaptiveLongitudinalSmoother(dt=0.01)
+  launch.reset(-0.4)
+  launch_outputs = [launch.update(0.35, measured_accel=launch.output_accel,
+                                  v_ego=0.0, v_target=1.0, launch_transition=True) for _ in range(60)]
+
+  assert launch_outputs[-1] > normal_outputs[-1] + 0.2

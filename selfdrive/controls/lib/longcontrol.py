@@ -429,7 +429,8 @@ class LongControl:
         output_accel = self.accel_smoother.update(
           self.CP.startAccel, CS.aEgo, CS.vEgo, v_target_now,
           planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
-          lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]))
+          lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]),
+          launch_transition=True)
       else:
         output_accel = self.CP.startAccel
         self.accel_smoother.reset(output_accel)

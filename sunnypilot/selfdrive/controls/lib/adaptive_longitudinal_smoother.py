@@ -81,7 +81,7 @@ class AdaptiveLongitudinalSmoother:
   def update(self, target_accel: float, measured_accel: float, v_ego: float,
              v_target: float, planned_jerk: float = 0.0, lead: Any | None = None,
              cutin_risk: Any | None = None, accel_limits: tuple[float, float] | None = None,
-             throttle_release: bool = False) -> float:
+             throttle_release: bool = False, launch_transition: bool = False) -> float:
     if not math.isfinite(target_accel):
       target_accel = 0.0
     if not math.isfinite(measured_accel):
@@ -108,7 +108,13 @@ class AdaptiveLongitudinalSmoother:
     emergency_braking = error < 0.0 and (
       target_accel <= -2.0 or self._lead_urgency(lead) >= 0.9 or self._cutin_urgency(cutin_risk) >= 0.9)
 
-    if throttle_release and error < 0.0 and self.output_accel > 0.0:
+    if launch_transition and error > 0.0:
+      # Starting needs a short S-curve: release hold pressure promptly, then
+      # taper into startAccel without restoring the old command step.
+      natural_frequency = 8.0
+      jerk_limit = 5.0
+      snap_limit = 40.0
+    elif throttle_release and error < 0.0 and self.output_accel > 0.0:
       # A release-only response may drop positive acceleration promptly, but
       # cannot cross through zero and turn into an unplanned brake request.
       natural_frequency = 8.0

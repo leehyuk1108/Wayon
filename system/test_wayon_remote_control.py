@@ -166,6 +166,9 @@ def test_web_ui_has_orientation_specific_controls_and_vehicle_info():
   assert 'data-control="steer"' in html
   assert 'id="speedValue"' in html
   assert 'id="gearValue"' in html
+  assert ".vehicle-ui { position:relative; isolation:isolate;" in html
+  assert ".camera img { display:none; position:absolute; z-index:0; inset:0;" in html
+  assert "이미 원격제어 주행이 활성화된 상태라면 온로드 중 연결이 끊겨도" in html
   assert "setInterval(updateCamera,50)" in html
 
 
@@ -325,6 +328,39 @@ def test_http_activation_is_offroad_only(tmp_path):
     response = connection.getresponse()
     assert response.status == 409
     response.read()
+  finally:
+    connection.close()
+    server.shutdown()
+    serving.join(timeout=1)
+    server.server_close()
+
+
+def test_http_onroad_login_reconnects_only_active_remote_drive(tmp_path):
+  bridge = FakeBridge(onroad=True, active=True)
+  authorizer = make_authorizer(tmp_path)
+  server = RemoteControlServer(("127.0.0.1", 0), state=RemoteControlState(),
+                               authorizer=authorizer, bridge=bridge, camera=FakeCamera())
+  server.start_bridge()
+  serving = threading.Thread(target=server.serve_forever, daemon=True)
+  serving.start()
+  connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+  try:
+    login_status, login_payload = login(connection, session="reconnected-session-1")
+    assert login_status == 200
+    assert login_payload["reconnected"] is True
+    assert login_payload["mode"]["phase"] == "active"
+
+    auth = {"Authorization": f"Bearer {login_payload['token']}",
+            "X-Wayon-Control-Session": "reconnected-session-1"}
+    connection.request("POST", "/api/arm", headers=auth)
+    response = connection.getresponse()
+    assert response.status == 200
+    assert json.loads(response.read())["state"]["armed"]
+
+    bridge.active = False
+    login_status, login_payload = login(connection, session="new-onroad-session-2")
+    assert login_status == 409
+    assert "offroad" in login_payload["error"]
   finally:
     connection.close()
     server.shutdown()

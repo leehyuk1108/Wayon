@@ -496,9 +496,13 @@ class RemoteControlHandler(BaseHTTPRequestHandler):
         payload = self._read_json()
         token = self.server.authorizer.login(payload.get("password"), self._session(), self.client_address[0])
         mode = self.server.bridge.mode_status()
-        if mode["onroad"]:
-          raise PermissionError("remote control can only be activated while comma is offroad")
-        if mode["phase"] != "pending":
+        # A fresh remote-control drive must still be selected offroad. Once that
+        # selection is active onroad, however, a browser that lost Wi-Fi or was
+        # reloaded must be able to authenticate again. The control watchdog
+        # still neutralizes lost input, and ownership is reacquired via /api/arm.
+        if mode["onroad"] and mode["phase"] != "active":
+          raise PermissionError("new remote control activation is only available while comma is offroad")
+        if not mode["onroad"] and mode["phase"] != "pending":
           mode = self.server.bridge.activate()
       except FileNotFoundError as exc:
         self._json(409, {"ok": False, "error": str(exc)})
@@ -519,7 +523,8 @@ class RemoteControlHandler(BaseHTTPRequestHandler):
       except (TypeError, ValueError, json.JSONDecodeError) as exc:
         self._json(400, {"ok": False, "error": str(exc) or "invalid login"})
         return
-      self._json(200, {"ok": True, "token": token, "realVehicleControl": True, "mode": mode})
+      self._json(200, {"ok": True, "token": token, "realVehicleControl": True,
+                       "reconnected": mode["onroad"] and mode["phase"] == "active", "mode": mode})
       return
     if not self._authorized():
       return

@@ -15,11 +15,11 @@
     button.danger { background:var(--red); color:white; }
     button:disabled { opacity:.35; }
     main { width:100%; height:100svh; padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left)); }
-    .vehicle-ui { width:100%; height:100%; margin:auto; display:grid; overflow:hidden; background:#090a0c; }
+    .vehicle-ui { position:relative; isolation:isolate; width:100%; height:100%; margin:auto; display:grid; overflow:hidden; background:#090a0c; }
     .camera { position:relative; min-height:0; overflow:hidden; background:radial-gradient(circle at 50% 45%,#20242a,#050607 72%); }
-    .camera img { display:none; width:100%; height:100%; object-fit:cover; }
+    .camera img { display:none; position:absolute; z-index:0; inset:0; width:100%; height:100%; object-fit:cover; }
     body.remote-active .camera img { display:block; }
-    .camera::after { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(180deg,rgba(0,0,0,.52),transparent 28%,transparent 64%,rgba(0,0,0,.72)); }
+    .camera::after { content:""; position:absolute; z-index:1; inset:0; pointer-events:none; background:linear-gradient(180deg,rgba(0,0,0,.52),transparent 28%,transparent 64%,rgba(0,0,0,.72)); }
     .hud { position:absolute; z-index:3; inset:0; pointer-events:none; }
     .hud-top { position:absolute; left:12px; right:12px; top:11px; display:grid; grid-template-columns:1fr auto 1fr; align-items:start; gap:8px; }
     .hud-group { display:flex; align-items:center; gap:9px; width:max-content; min-height:30px; padding:7px 9px; border-radius:7px; background:rgba(4,6,8,.6); backdrop-filter:blur(7px); color:#d7dbe0; font-size:11px; font-weight:700; }
@@ -88,7 +88,7 @@
       .vehicle-ui { display:block; max-width:1280px; border-radius:20px; }
       .camera { width:100%; height:100%; border-radius:16px; }
       .portrait-controls { display:none; }
-      .landscape-controls { display:block; position:absolute; z-index:4; inset:0; pointer-events:none; }
+      .landscape-controls { display:block; position:absolute; z-index:4; inset:0; width:100%; height:100%; pointer-events:none; }
       .landscape-controls .control-cluster { position:absolute; top:50%; width:min(22vw,190px); transform:translateY(-45%); display:grid; justify-items:center; gap:7px; pointer-events:auto; }
       .landscape-controls .control-cluster.left { left:4%; }
       .landscape-controls .control-cluster.right { right:4%; }
@@ -156,7 +156,7 @@
   <dialog id="login">
     <form method="dialog" id="loginForm">
       <h2>원격제어 비밀번호</h2>
-      <p>콤마의 네트워크 설정에서 지정한 비밀번호를 입력하면 다음 1회의 원격제어 주행이 활성화됩니다. 콤마가 오프로드일 때만 가능합니다.</p>
+      <p>최초 활성화는 콤마가 오프로드일 때만 가능합니다. 이미 원격제어 주행이 활성화된 상태라면 온로드 중 연결이 끊겨도 같은 비밀번호로 다시 연결할 수 있습니다.</p>
       <input id="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="비밀번호" required>
       <div class="error" id="error"></div>
       <button type="submit">인증</button>

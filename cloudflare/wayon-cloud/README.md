@@ -80,7 +80,7 @@ a time. Returning offroad clears the selection, zeros the command, and restores
 normal `controlsd` selection for the following drive.
 
 During the selected onroad cycle, the page shows an authenticated wide-road
-camera preview at up to 8 fps. It reads the existing `camerad` VisionIPC stream
+camera preview at up to 20 fps. It reads the existing `camerad` VisionIPC stream
 and performs downsampled JPEG conversion in a separate thread so image work
 cannot block the 250 ms control watchdog. The camera endpoint rejects requests
 outside the remote onroad phase and stops producing frames when the viewer is

@@ -134,6 +134,7 @@ def test_remote_mode_rejects_onroad_change_and_previous_boot(tmp_path):
 
 
 def test_wide_camera_nv12_preview_encodes_jpeg():
+  assert RemoteWideCamera().frame_interval == pytest.approx(0.05)
   width, height, stride = 8, 4, 8
   uv_offset = stride * height
   uv_height = 16

@@ -128,7 +128,7 @@ class RemoteControlMode:
 class RemoteWideCamera:
   """Latest-frame wide camera preview, isolated from the control watchdog."""
 
-  def __init__(self, fps: float = 8.0, stale_after: float = 1.5):
+  def __init__(self, fps: float = 20.0, stale_after: float = 1.5):
     self.frame_interval = 1.0 / fps
     self.stale_after = stale_after
     self.lock = threading.Lock()

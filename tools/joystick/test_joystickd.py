@@ -24,6 +24,10 @@ def test_remote_control_limits_bound_actuation():
   assert brake == -REMOTE_MAX_BRAKE
   assert steer == REMOTE_MAX_STEER
 
+  # Match the Traverse controller/Panda command bounds used by engaged OP.
+  assert REMOTE_MAX_ACCEL == 2.0
+  assert REMOTE_MAX_STEER == 1.0
+
 
 def test_remote_speed_governor_removes_accel_at_limit():
   accel, _ = remote_control_limits(1.0, 0.0, REMOTE_MAX_SPEED_MPS)

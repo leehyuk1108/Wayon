@@ -2300,6 +2300,49 @@ def test_manager_defaults_use_starpilot_socket_transport():
   assert "--socket-transport" in navdy_power_bridge.DEFAULT_ARGS
   assert "--radar-overlay" in navdy_power_bridge.DEFAULT_ARGS
   assert "--lane-marking-classifier" in navdy_power_bridge.DEFAULT_ARGS
+  assert "--disable-navdy-auto-shutdown" in navdy_power_bridge.DEFAULT_ARGS
+
+
+def test_disable_navdy_auto_shutdown_sets_and_verifies_property(monkeypatch):
+  calls = []
+  values = iter(["", "1\n"])
+
+  def fake_adb_shell(_args, command, capture=False):
+    calls.append((command, capture))
+    stdout = next(values) if command[0] == "getprop" else ""
+    return SimpleNamespace(returncode=0, stdout=stdout)
+
+  monkeypatch.setattr(navdy_op_bridge, "adb_shell", fake_adb_shell)
+
+  assert navdy_op_bridge.disable_navdy_auto_shutdown(SimpleNamespace())
+  assert calls == [
+    (["getprop", "persist.sys.noautoshutdown"], True),
+    (["setprop", "persist.sys.noautoshutdown", "1"], False),
+    (["getprop", "persist.sys.noautoshutdown"], True),
+  ]
+
+
+def test_navdy_power_periodically_ensures_auto_shutdown_guard(monkeypatch):
+  calls = []
+  args = SimpleNamespace(
+    manage_navdy_power=True,
+    disable_navdy_auto_shutdown=True,
+    auto_shutdown_ensure_sec=60.0,
+    power_off_delay_sec=30.0,
+    power_off_ensure_sec=5.0,
+    power_on_ensure_sec=60.0,
+    _last_auto_shutdown_ensure_at=0.0,
+    _last_power_on_ensure_at=0.0,
+  )
+  monkeypatch.setattr(navdy_op_bridge, "disable_navdy_auto_shutdown", lambda _args: calls.append(True) or True)
+  monkeypatch.setattr(navdy_op_bridge, "set_navdy_display", lambda *_args: True)
+  monkeypatch.setattr(navdy_op_bridge, "set_navdy_runtime", lambda *_args: True)
+
+  _, target_on = navdy_op_bridge.manage_navdy_power(args, True, 61.0, None, None)
+  navdy_op_bridge.manage_navdy_power(args, True, 90.0, None, target_on)
+  navdy_op_bridge.manage_navdy_power(args, True, 122.0, None, target_on)
+
+  assert calls == [True, True]
 
 
 def test_manager_defaults_keep_fast_state_and_throttle_path():

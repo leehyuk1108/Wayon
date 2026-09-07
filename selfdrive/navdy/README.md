@@ -198,6 +198,8 @@ Manager가 child process를 시작하면 [`navdy_power_bridge.py`](navdy_power_b
 --adb-server-port 5038
 --no-stdout
 --manage-navdy-power
+--disable-navdy-auto-shutdown
+--auto-shutdown-ensure-sec 60
 --socket-transport
 --heartbeat-sec 1
 --power-on-ensure-sec 60
@@ -1339,6 +1341,8 @@ mHalInteractiveModeEnabled=false
 ```
 
 `shutdown`, `reboot`, Android system poweroff는 이 로직에서 실행하지 않는다.
+Navdy 순정 `ShutdownMonitor`의 RPM 0/USB 상태 오판 재부팅은
+`persist.sys.noautoshutdown=1`로 막고, bridge가 60초마다 이 보호 속성을 확인한다.
 
 ## APK source of truth와 버전 주의
 

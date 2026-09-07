@@ -21,6 +21,8 @@ DEFAULT_ARGS = [
   "--adb-server-port", "5038",
   "--no-stdout",
   "--manage-navdy-power",
+  "--disable-navdy-auto-shutdown",
+  "--auto-shutdown-ensure-sec", "60",
   "--socket-transport",
   "--heartbeat-sec", "1",
   "--power-on-ensure-sec", "60",

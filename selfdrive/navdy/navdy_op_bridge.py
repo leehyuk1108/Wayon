@@ -32,6 +32,7 @@ DEFAULT_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateReceiver"
 DEFAULT_SERVICE_COMPONENT = "com.navdy.hud.app/.openpilot.OpenpilotStateService"
 DEFAULT_ACTIVITY_COMPONENT = "com.navdy.hud.app/.ui.activity.MainActivity"
 DEFAULT_PACKAGE_NAME = "com.navdy.hud.app"
+NAVDY_AUTO_SHUTDOWN_PROPERTY = "persist.sys.noautoshutdown"
 NAVDY_IR_BRIGHTNESS_PATH = "/sys/class/leds/ir-control/brightness"
 NAVDY_IR_ON_BRIGHTNESS = 127
 NAVDY_POWER_STATE_PATH = "/dev/shm/navdy_power_state.json"
@@ -1868,6 +1869,18 @@ def set_stay_on_while_plugged_in(args: argparse.Namespace, stay_on: bool) -> Non
     adb_shell(args, ["settings", "put", "global", "stay_on_while_plugged_in", value])
 
 
+def navdy_auto_shutdown_disabled(args: argparse.Namespace) -> bool:
+  proc = adb_shell(args, ["getprop", NAVDY_AUTO_SHUTDOWN_PROPERTY], capture=True)
+  return proc.returncode == 0 and (proc.stdout or "").strip().lower() in ("1", "true")
+
+
+def disable_navdy_auto_shutdown(args: argparse.Namespace) -> bool:
+  if navdy_auto_shutdown_disabled(args):
+    return True
+  proc = adb_shell(args, ["setprop", NAVDY_AUTO_SHUTDOWN_PROPERTY, "1"])
+  return proc.returncode == 0 and navdy_auto_shutdown_disabled(args)
+
+
 def clear_navdy_transport(args: argparse.Namespace) -> None:
   close_socket(args)
   for pending_name, cond_name in (
@@ -2230,10 +2243,22 @@ def due_for_power_off_ensure(args: argparse.Namespace, now: float) -> bool:
   return True
 
 
+def due_for_auto_shutdown_ensure(args: argparse.Namespace, now: float) -> bool:
+  last = float(getattr(args, "_last_auto_shutdown_ensure_at", 0.0))
+  interval = max(float(getattr(args, "auto_shutdown_ensure_sec", 60.0)), 0.1)
+  if now - last < interval:
+    return False
+  setattr(args, "_last_auto_shutdown_ensure_at", now)
+  return True
+
+
 def manage_navdy_power(args: argparse.Namespace, started: bool, now: float, offroad_since: float | None,
                        last_target_on: bool | None) -> tuple[float | None, bool | None]:
   if not args.manage_navdy_power:
     return offroad_since, last_target_on
+
+  if getattr(args, "disable_navdy_auto_shutdown", False) and due_for_auto_shutdown_ensure(args, now):
+    disable_navdy_auto_shutdown(args)
 
   if started:
     transitioning_onroad = last_target_on is not True
@@ -2510,6 +2535,10 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--min-emit-sec", type=float, default=0.0, help="Minimum interval between live payload sends.")
   parser.add_argument("--once-timeout-sec", type=float, default=3.0, help="For --once, emit cached state after this wait.")
   parser.add_argument("--manage-navdy-power", action="store_true", help="Wake Navdy on onroad and sleep it on offroad.")
+  parser.add_argument("--disable-navdy-auto-shutdown", action="store_true",
+                      help="Disable Navdy's RPM/USB-driven quiet reboot; let this bridge manage its display.")
+  parser.add_argument("--auto-shutdown-ensure-sec", type=float, default=60.0,
+                      help="Interval for verifying the Navdy auto-shutdown guard.")
   parser.add_argument("--power-off-delay-sec", type=float, default=30.0, help="Offroad duration before Navdy display sleep.")
   parser.add_argument("--power-on-ensure-sec", type=float, default=1.0,
                       help="Re-check Navdy display state at this interval while onroad.")
@@ -2531,6 +2560,7 @@ def main() -> int:
   args._adb_recover_lock = threading.Lock()
   setattr(args, "_last_power_on_ensure_at", 0.0)
   setattr(args, "_last_power_off_ensure_at", 0.0)
+  setattr(args, "_last_auto_shutdown_ensure_at", 0.0)
   setattr(args, "_last_onroad_process_check_at", 0.0)
   setattr(args, "_last_onroad_process_started", False)
   setattr(args, "_last_set_speed_kph", 0.0)

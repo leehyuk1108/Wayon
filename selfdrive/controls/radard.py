@@ -408,8 +408,10 @@ def main() -> None:
 
   # *** setup messaging
   ignore_car_state_freq = ['carState']
+  # GM radar targets arrive at 14 Hz, below the generic liveTracks 20 Hz metadata.
+  ignore_avg_freq = ignore_car_state_freq + ['liveTracks']
   sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'], poll='carState',
-                           ignore_alive=ignore_car_state_freq, ignore_avg_freq=ignore_car_state_freq)
+                           ignore_alive=ignore_car_state_freq, ignore_avg_freq=ignore_avg_freq)
   pm = messaging.PubMaster(['radarState'])
 
   RD = RadarD(CP, CP_SP, CP.radarDelay)

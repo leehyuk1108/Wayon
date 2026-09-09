@@ -8,6 +8,23 @@ from websocket import ABNF, WebSocketTimeoutException
 from openpilot.system import wayon_remote_relay as relay
 
 
+@pytest.fixture(autouse=True)
+def ambient_wake_file(monkeypatch, tmp_path):
+  from openpilot.system.wayon_ambient_delivery import notify_ambient_command
+  monkeypatch.setattr(relay, "notify_ambient_command", lambda: notify_ambient_command(tmp_path / "wake"))
+
+
+def test_ambient_notification_and_reconnect_wake_uploader(monkeypatch):
+  wakes = []
+  monkeypatch.setattr(relay, "notify_ambient_command", lambda: wakes.append(True))
+  websocket = FakeWebSocket([
+    (ABNF.OPCODE_TEXT, relay.AMBIENT_NOTIFY_MESSAGE),
+    (ABNF.OPCODE_CLOSE, b""),
+  ])
+  relay.RelayChannel("ssh", "https://wayon.test", "token").relay_connected(websocket)
+  assert len(wakes) == 2
+
+
 class FakeWebSocket:
   def __init__(self, events):
     self.events = deque(events)

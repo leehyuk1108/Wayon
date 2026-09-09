@@ -82,3 +82,18 @@ relay.webSocketMessage(replacementClient, binary);
 assert.equal(authorizationDevice.messages.at(-1), binary);
 
 console.log("device relay lifecycle tests passed");
+
+const notifyRequest = () => new Request("https://wayon.internal/notify-ambient", { method: "POST" });
+assert.equal((await relay.fetch(notifyRequest())).status, 204);
+assert.equal(authorizationDevice.messages.at(-1), "wayon-ambient-command-v1");
+const notifyCount = authorizationDevice.messages.length;
+relay.webSocketMessage(replacementClient, "wayon-ambient-command-v1");
+assert.equal(authorizationDevice.messages.length, notifyCount);
+state.devices = [];
+assert.equal((await relay.fetch(notifyRequest())).status, 409);
+const broken = new FakeSocket("device");
+broken.send = () => { throw new Error("disconnected"); };
+state.devices = [broken];
+assert.equal((await relay.fetch(notifyRequest())).status, 503);
+assert.equal(broken.closes[0][0], 1012);
+console.log("ambient relay notification tests passed");

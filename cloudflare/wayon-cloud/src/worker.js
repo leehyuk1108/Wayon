@@ -421,6 +421,17 @@ export class WayonDeviceRelay {
 
   async fetch(request) {
     const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/notify-ambient") {
+      const device = this.state.getWebSockets("device")[0];
+      if (!device) return new Response("device offline", { status: 409 });
+      try {
+        device.send("wayon-ambient-command-v1");
+      } catch {
+        try { device.close(1012, "notification failed; reconnect"); } catch {}
+        return new Response("device unavailable", { status: 503 });
+      }
+      return new Response(null, { status: 204 });
+    }
     if (request.method === "POST" && url.pathname === "/authorize-ssh-key") {
       const payload = await request.json().catch(() => ({}));
       const publicKey = String(payload.publicKey || "").trim();
@@ -2177,7 +2188,18 @@ async function handleAmbientCommandCreate(request, env) {
       ) VALUES (?, ?, ?, ?, 'pending', ?)
     `).bind(id, deviceId, createdAt, expiresAt, JSON.stringify(command)),
   ]);
-  return json({ ok: true, id, deviceId, status: "pending", expiresAt, command });
+  // Persist first: offline devices recover the pending command on reconnect.
+  let notified = false;
+  try {
+    if (env.DEVICE_RELAY) {
+      const relay = env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(`${deviceId}:ssh`));
+      const response = await relay.fetch(new Request("https://wayon.internal/notify-ambient", { method: "POST" }));
+      notified = response.ok;
+    }
+  } catch (error) {
+    console.warn("Ambient notification failed", error?.name || "Error");
+  }
+  return json({ ok: true, id, deviceId, status: "pending", expiresAt, command, notified });
 }
 
 async function handleAmbientCommandPoll(request, env) {
@@ -2185,10 +2207,6 @@ async function handleAmbientCommandPoll(request, env) {
   const deviceId = authenticatedDeviceId(request);
   if (!deviceId) return json({ command: null });
   const now = nowIso();
-  await env.DB.prepare(`
-    UPDATE ambient_commands SET status = 'expired'
-    WHERE device_id = ? AND status IN ('pending', 'delivered') AND expires_at <= ?
-  `).bind(deviceId, now).run();
   const row = await env.DB.prepare(`
     SELECT id, device_id, created_at, expires_at, status, payload_json
     FROM ambient_commands
@@ -2201,7 +2219,7 @@ async function handleAmbientCommandPoll(request, env) {
     deviceId: row.device_id,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
-    status: row.status,
+    status: ["pending", "delivered"].includes(row.status) && row.expires_at <= nowIso() ? "expired" : row.status,
     payload: JSON.parse(row.payload_json),
   } });
 }

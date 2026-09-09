@@ -26,6 +26,7 @@ from openpilot.system.wayon_vehicle_events import (
   remove_vehicle_events,
 )
 from openpilot.system.wayon_identity import ensure_wayon_identity
+from openpilot.system.wayon_ambient_delivery import AmbientCommandDelivery
 from openpilot.system.wayon_drive_quality import (
   StopQualityTracker,
   cutin_risk_stage,
@@ -72,7 +73,6 @@ DEFAULT_ROUTE_POINT_INTERVAL = 10.0
 DEFAULT_ROUTE_POINT_MIN_DISTANCE_M = 15.0
 DEFAULT_ROUTE_POINT_LIMIT = 720
 DEFAULT_SNAPSHOT_INTERVAL_OFFROAD = 3600.0
-DEFAULT_AMBIENT_COMMAND_POLL_INTERVAL = 5.0
 AMBIENT_OVERRIDE_PATH = Path(os.getenv("WAYON_AMBIENT_OVERRIDE_PATH", "/data/params/d/WayonAmbientOverride"))
 CONFIG_RELOAD_INTERVAL = 60.0
 LOOP_SLEEP_ONROAD = 1.0
@@ -1525,7 +1525,7 @@ def main():
   next_snapshot = 0.0
   next_impact_upload = 0.0
   next_vehicle_event_upload = 0.0
-  next_ambient_command_poll = 0.0
+  ambient_delivery = AmbientCommandDelivery()
   previous_started = False
   last_telemetry_signature = None
   last_telemetry_upload_at = 0.0
@@ -1543,14 +1543,10 @@ def main():
         continue
 
     device_id = str(config.get("device_id") or get_param_str(params, "DongleId") or "unknown")
-    if now >= next_ambient_command_poll:
-      try:
-        poll_ambient_command(config, params, device_id)
-        next_ambient_command_poll = now + max(1.0, float(config.get(
-          "ambient_command_poll_interval", DEFAULT_AMBIENT_COMMAND_POLL_INTERVAL)))
-      except Exception as exc:
-        print(f"Wayon cloud: ambient command poll failed: {exc}")
-        next_ambient_command_poll = now + 60.0
+    try:
+      ambient_delivery.run(now, lambda: poll_ambient_command(config, params, device_id))
+    except Exception as exc:
+      print(f"Wayon cloud: ambient command delivery failed: {exc}")
 
     if not sm.seen["deviceState"]:
       time.sleep(LOOP_SLEEP_OFFROAD)

@@ -12,6 +12,7 @@ from websocket import ABNF, WebSocketException, WebSocketTimeoutException, creat
 
 from openpilot.common.params import Params
 from openpilot.system.wayon_identity import DEFAULT_CONFIG_PATH, ensure_wayon_identity
+from openpilot.system.wayon_ambient_delivery import AMBIENT_NOTIFY_MESSAGE, notify_ambient_command
 
 
 USER_AGENT = "wayon-device-relay/1.0"
@@ -143,6 +144,8 @@ class RelayChannel:
 
   def relay_connected(self, websocket) -> None:
     websocket.settimeout(HEARTBEAT_INTERVAL_SECONDS)
+    if self.kind == "ssh":
+      notify_ambient_command()
 
     while True:
       try:
@@ -161,6 +164,8 @@ class RelayChannel:
             self.ssh_authorizer = TemporarySshAuthorizer()
           if not self.ssh_authorizer.authorize(command):
             raise WebSocketException("invalid Wayon SSH authorization")
+        elif self.kind == "ssh" and command == AMBIENT_NOTIFY_MESSAGE:
+          notify_ambient_command()
         elif command == "wayon-peer-open":
           self.open_local(websocket)
         elif command == "wayon-peer-close":

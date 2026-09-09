@@ -200,3 +200,7 @@ CREATE TABLE IF NOT EXISTS ambient_commands (
 
 CREATE INDEX IF NOT EXISTS ambient_commands_device_created_idx
   ON ambient_commands(device_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS ambient_commands_pending_idx
+  ON ambient_commands(device_id, expires_at, created_at DESC)
+  WHERE status IN ('pending', 'delivered');

@@ -2219,7 +2219,7 @@ async function handleAmbientCommandPoll(request, env) {
     deviceId: row.device_id,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
-    status: ["pending", "delivered"].includes(row.status) && row.expires_at <= nowIso() ? "expired" : row.status,
+    status: row.status,
     payload: JSON.parse(row.payload_json),
   } });
 }
@@ -2254,7 +2254,7 @@ async function handleAmbientCommandStatus(request, env) {
     deviceId: row.device_id,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
-    status: row.status,
+    status: ["pending", "delivered"].includes(row.status) && row.expires_at <= nowIso() ? "expired" : row.status,
     acknowledgedAt: row.acknowledged_at,
     payload: JSON.parse(row.payload_json),
     ack: row.ack_json ? JSON.parse(row.ack_json) : null,

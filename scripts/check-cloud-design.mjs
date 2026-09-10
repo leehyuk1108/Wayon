@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-const require=createRequire(import.meta.url),{derive,number}=require('../design/cloud-overview/model.js');
+const require=createRequire(import.meta.url),{derive,number}=require(process.argv[2]||'../design/cloud-overview/model.js');
 const now=Date.parse('2026-09-10T07:00:00Z');
 const make=(state={},raw={})=>({feed:{state:{updated_at:new Date(now-15000).toISOString(),onroad:0,ignition:0,...state,raw_json:raw}}});
 const checks=[

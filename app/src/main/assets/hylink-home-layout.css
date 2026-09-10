@@ -1,0 +1,104 @@
+/* Map-led home. The map absorbs spare height; content never stretches or clips. */
+.app-shell{
+  display:flex;
+  flex-direction:column;
+  min-height:max(860px,calc(100dvh - 60px));
+}
+.preview-toolbar{flex:none}
+#main-content{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+}
+#page-now{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  padding-bottom:0;
+}
+#page-now .overview-heading,#page-now .attention{flex:none}
+#page-now .overview-heading{padding-bottom:20px}
+#page-now .map-section{
+  flex:1 0 280px;
+  min-height:280px;
+  height:auto;
+}
+.map-section #map{position:absolute;inset:0}
+#page-now .map-context{top:18px}
+#page-now .map-open{padding-bottom:52px}
+#page-now .map-credits{bottom:42px}
+#page-now .home-content{
+  flex:none;
+  margin-top:-28px;
+  padding:18px 24px 4px;
+  background:var(--surface);
+  border-radius:30px 30px 0 0;
+  box-shadow:0 -8px 30px #263c5710;
+}
+#page-now .section-heading{margin-bottom:0}
+#page-now .section-heading h2{font-size:1.1rem}
+#page-now .journey-card{
+  background:transparent;
+  border:0;
+  box-shadow:none;
+  border-radius:14px;
+  padding:0 0 18px;
+}
+#page-now .journey-top{font-size:.72rem}
+#page-now .journey-top>svg{display:none}
+#page-now .journey-main{margin-top:3px}
+#page-now .journey-main strong{font-size:2.6rem}
+#page-now .journey-meta{margin-top:5px;font-size:.8rem}
+#page-now .quick-actions{
+  border-top:1px solid var(--line);
+  padding-top:16px;
+  margin-top:0;
+  gap:10px;
+}
+#page-now .quick-actions button{
+  flex-wrap:nowrap;
+  align-items:center;
+  padding:13px 12px;
+  gap:10px;
+  border:0;
+  border-radius:17px;
+  background:var(--muted);
+  min-height:72px;
+}
+#page-now .action-icon{width:auto;display:flex}
+#page-now .action-icon svg{width:23px;height:23px}
+#page-now .quick-actions b{font-size:.84rem}
+#page-now .quick-actions small{font-size:.69rem;margin-top:3px}
+#page-now .quiet-note{
+  min-height:44px;
+  margin:4px 0 0;
+  align-items:center;
+  font-size:.7rem;
+}
+#page-now .quiet-note svg{margin:0}
+#page-now:has(.map-section[hidden]) .home-content{margin-top:auto}
+.tab-bar{
+  position:sticky;
+  flex:none;
+  left:auto;
+  transform:none;
+  width:100%;
+  max-width:none;
+}
+@media(max-width:999px){
+  .app-shell{min-height:100dvh}
+}
+@media(max-width:350px){
+  #page-now .home-content{padding-left:20px;padding-right:20px}
+  #page-now .quick-actions button{padding:12px 9px;gap:7px}
+  #page-now .quick-actions small{font-size:.7rem}
+}
+/* Preserve readable content when fonts or alerts need more space. */
+body.large-text #page-now .quick-actions{grid-template-columns:1fr}
+body.large-text #page-now .quick-actions b{font-size:.9rem}
+body.large-text #page-now .quick-actions small{font-size:.75rem}
+body.large-text #page-now .quiet-note{font-size:.7rem;padding:10px 0}
+@media(max-height:650px){
+  #page-now .map-section{flex-basis:260px;min-height:260px}
+}

@@ -1,0 +1,211 @@
+/* Hylink public-app refinement. Existing navigation, services and brand stay intact.
+ * Kept separate from legacy skins so presentation changes are reviewable. */
+html { font-size: 16px; }
+body.my-traverse-skin {
+  --bg: #101113; --surface: #191b1e; --surface2: #222529; --surface3: #2b2e33;
+  --text: #f3f4f6; --muted: #b2b7bf; --faint: #a1a7b0;
+  --line: #363a40; --mint: #ff9b54; --mint2: #ffb884; --red: #ff938c;
+  --positive: #80dfaa; --warning: #ffd080;
+  color: var(--text); background: var(--bg); font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+/* Let small screens and large text scroll instead of clipping the dashboard. */
+body.home-active { height: auto; overflow: auto; }
+body.home-active .app-shell, .my-traverse-skin .app-shell {
+  height: auto; min-height: 100dvh; display: block;
+  padding-bottom: calc(84px + var(--safe-bottom)); background: var(--bg);
+}
+body.home-active main, .my-traverse-skin main { width: 100%; max-width: 760px; margin: auto; padding: 0 16px 24px; }
+body.home-active #page-overview, body.home-active #page-overview .home-dashboard {
+  height: auto; display: block; background: transparent; overflow: visible; border: 0; box-shadow: none;
+}
+.my-traverse-skin .traverse-topbar { width: 100%; max-width: 760px; margin: auto; padding: calc(12px + env(safe-area-inset-top,0px)) 16px 14px; background: var(--bg); }
+.my-traverse-skin .brand { min-width: 0; gap: 10px; }
+.my-traverse-skin .brand-logo { width: 36px; height: 36px; }
+.my-traverse-skin .brand strong { font-size: 1.25rem; letter-spacing: -.5px; }
+.my-traverse-skin .brand span { font: 500 .75rem/1.4 system-ui; letter-spacing: 0; color: var(--muted); text-transform: none; }
+.my-traverse-skin button { touch-action: manipulation; }
+.my-traverse-skin button:focus-visible, .my-traverse-skin summary:focus-visible, .my-traverse-skin input:focus-visible, a:focus-visible { outline: 3px solid var(--mint); outline-offset: 3px; }
+.my-traverse-skin .icon-button { width: 48px; height: 48px; flex: none; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.my-traverse-skin .icon-button svg { width: 21px; height: 21px; }
+.my-traverse-skin .eyebrow { color: var(--muted); font: 600 .75rem/1.5 system-ui; letter-spacing: .04em; }
+
+/* A calm, bounded map: no decorative grid, no radar animation, no vignette. */
+.my-traverse-skin #page-overview .home-map-hero { height: 320px; min-height: 0; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); }
+.my-traverse-skin .home-map-hero::before, .my-traverse-skin .map-shade, .my-traverse-skin .leaflet-vehicle-ripple { display: none; }
+.my-traverse-skin #home-map { inset: 0 0 82px; pointer-events: auto; transition: none; }
+.my-traverse-skin #home-map .leaflet-tile, body.map-fullscreen #home-map .leaflet-tile, .my-traverse-skin #trip-map .leaflet-tile { filter: saturate(.22) brightness(.94); }
+.my-traverse-skin .map-topline { top: 12px; left: 12px; right: 12px; gap: 8px; pointer-events: none; }
+.my-traverse-skin .signal-pill { min-height: 32px; padding: 6px 10px; border: 1px solid #52575e; background: #202327; box-shadow: 0 2px 8px #0002; }
+.my-traverse-skin .signal-pill b { font: 600 .75rem/1.4 system-ui; letter-spacing: 0; }
+.my-traverse-skin .signal-pill.online i { background: var(--positive); box-shadow: none; }
+.my-traverse-skin .signal-pill[data-condition="stale"] i, .my-traverse-skin .signal-pill[data-condition="error"] i { background: var(--warning); }
+.my-traverse-skin .freshness { font: 500 .75rem/1.4 system-ui; color: #f3f4f6; background: #202327; padding: 7px 10px; }
+.my-traverse-skin .map-copy { left: 0; right: 0; bottom: 0; height: 82px; padding: 10px 14px; background: var(--surface); border-top: 1px solid var(--line); }
+.my-traverse-skin .map-copy .eyebrow { display: none; }
+.my-traverse-skin .map-copy h1 { margin: 0 0 3px; font-size: 1.125rem; line-height: 1.4; letter-spacing: -.4px; }
+.my-traverse-skin .map-copy p { max-width: none; margin: 0; font: 400 .75rem/1.5 system-ui; color: var(--muted); }
+.my-traverse-skin .map-live-button { display: none; } /* The labelled Live shortcut remains directly below. */
+.my-traverse-skin .map-expand-button { bottom: 114px; right: 12px; width: 48px; height: 48px; border-radius: 15px; background: #202327; color: #fff; border: 1px solid #52575e; box-shadow: 0 2px 8px #0002; }
+.my-traverse-skin .leaflet-vehicle-marker { width: 44px; height: 44px; }
+.my-traverse-skin .leaflet-vehicle-dot { width: 30px; height: 30px; border: 3px solid white; background: #d75800; box-shadow: 0 2px 8px #0005,0 0 0 7px #d7580020; animation: none; }
+.my-traverse-skin .leaflet-vehicle-dot::after { width: 8px; height: 8px; background: white; border-radius: 2px; }
+.map-empty { position: absolute; z-index: 450; inset: 0 0 82px; display: grid; place-content: center; justify-items: center; gap: 12px; background: var(--surface2); color: var(--muted); font-size: .875rem; padding: 48px 20px 20px; text-align: center; }
+.map-empty svg { width: 32px; height: 32px; color: var(--mint); }
+#home-map .leaflet-bottom { bottom: 0; right: 0; }
+.leaflet-control-attribution { display: block!important; padding: 2px 6px!important; background: #fafafaeF!important; color: #272b31!important; font: 10px/1.5 system-ui!important; }
+.leaflet-control-attribution a { color: #273d57!important; }
+body.map-fullscreen { overflow: hidden; }
+body.map-fullscreen .home-map-hero { height: 100%!important; border: 0!important; border-radius: 0!important; }
+body.map-fullscreen #home-map { inset: 0; }
+body.map-fullscreen .finder-map-close, body.map-fullscreen .finder-map-control { width: 48px; height: 48px; background: #202327; border-color: #52575e; border-radius: 16px; }
+body.map-fullscreen .finder-map-control.active { background: #ff9b54; color: #21150c; }
+
+/* State, age and measurements stay together, without claiming live connectivity. */
+.home-connection-notice { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px; border: 1px solid #736142; border-radius: 16px; background: #30291e; color: #ffe0ae; font-size: .8125rem; }
+.home-connection-notice span { flex: 1; }
+.home-connection-notice button { min-width: 64px; min-height: 48px; padding: 8px; border: 1px solid #927b53; border-radius: 12px; background: transparent; color: #ffe0ae; font-size: .8125rem; }
+.my-traverse-skin #page-overview .home-status-button { position: relative; margin-top: 14px; padding: 14px 38px 14px 14px; min-height: 88px; grid-template-columns: 1fr auto; gap: 4px 8px; border: 1px solid var(--line); border-radius: 18px 18px 0 0; background: var(--surface); }
+.my-traverse-skin .home-status-kicker { color: var(--muted); font: 500 .8125rem/1.5 system-ui; letter-spacing: 0; }
+.my-traverse-skin .vehicle-report-icon { width: 26px; height: 26px; background: var(--surface3); color: var(--text); }
+.my-traverse-skin .vehicle-report-icon svg { width: 16px; height: 16px; }
+.my-traverse-skin .home-status-button>strong { grid-row: 1; align-self: center; color: var(--text); font-size: 1.375rem; line-height: 1.3; letter-spacing: -.6px; }
+.my-traverse-skin .home-status-button>small { grid-column: 1/-1; font: 400 .75rem/1.5 system-ui; color: var(--muted); }
+.status-chevron { position: absolute; width: 18px; right: 12px; top: 20px; color: var(--muted); }
+.my-traverse-skin #page-overview .home-vehicle-summary { padding: 0 14px 14px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 18px 18px; background: var(--surface); }
+.my-traverse-skin .home-updated-row { display: none; } /* Age is already beside the map status. */
+.my-traverse-skin #page-overview .home-metric-row { margin-top: 0; gap: 8px; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.my-traverse-skin #page-overview .home-metric-row>div { padding: 12px 10px; background: var(--surface2); border-radius: 12px; }
+.my-traverse-skin .home-metric-row span { font: 500 .75rem/1.5 system-ui; color: var(--muted); }
+.my-traverse-skin .home-metric-row strong { margin: 5px 0 4px; font: 500 .75rem/1.5 system-ui; white-space: normal; font-variant-numeric: tabular-nums; }
+.my-traverse-skin .home-metric-row strong b { font-size: 1.25rem; font-weight: 650; letter-spacing: -.7px; }
+.my-traverse-skin .home-metric-row small { font: 400 .6875rem/1.5 system-ui; color: var(--muted); white-space: normal; overflow: visible; }
+.my-traverse-skin #page-overview .home-command-bar { padding: 16px 0 4px; gap: 4px; grid-template-columns: repeat(4,minmax(0,1fr)); background: transparent; }
+.my-traverse-skin .home-command-slot { min-height: 92px; padding: 4px 0; }
+.my-traverse-skin .home-quick-icon { width: 46px; height: 46px; margin-bottom: 7px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.my-traverse-skin .home-quick-icon svg { width: 21px; height: 21px; }
+.my-traverse-skin .home-command-slot strong { font: 600 .75rem/1.5 system-ui; }
+.my-traverse-skin .home-command-slot small { margin-top: 2px; color: var(--muted); font: 400 .6875rem/1.5 system-ui; }
+.my-traverse-skin .home-command-slot:disabled { opacity: .65; }
+.recent-drive { width: 100%; display: grid; grid-template-columns: 38px minmax(0,1fr) 18px; gap: 10px; align-items: center; margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; }
+.recent-drive-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--surface2); color: var(--mint); }
+.recent-drive svg { width: 20px; }
+.recent-drive small, .recent-drive strong, .recent-drive span>span { display: block; }
+.recent-drive small { color: var(--muted); font-size: .75rem; }
+.recent-drive strong { margin-top: 3px; font-size: .9375rem; }
+.recent-drive span>span { margin-top: 2px; color: var(--muted); font-size: .75rem; }
+.my-traverse-skin .footer-nav { height: calc(72px + var(--safe-bottom)); padding: 6px 12px var(--safe-bottom); border-color: var(--line); background: #151719; box-shadow: none; }
+.my-traverse-skin .nav-button { min-height: 54px; color: var(--muted); gap: 5px; }
+.my-traverse-skin .nav-button.active { color: var(--mint); }
+.my-traverse-skin .nav-button.active svg { box-shadow: 0 0 0 7px #ff9b5418; border-radius: 8px; }
+.my-traverse-skin .nav-button span { font: 600 .75rem/1.4 system-ui; }
+.my-traverse-skin .nav-button svg { width: 22px; height: 22px; }
+
+/* Readable secondary pages. Diagnostics remain under Information, not on Home. */
+.my-traverse-skin .info-overview-header, .my-traverse-skin .traverse-page-head { padding: 10px 0 18px; gap: 10px; }
+.my-traverse-skin .info-overview-header h1, .my-traverse-skin .page-head h1 { margin: 4px 0 0; font-size: 1.75rem; line-height: 1.3; }
+.my-traverse-skin .info-overview-eyebrow, .my-traverse-skin .info-updated-at { font: 500 .75rem/1.5 system-ui; color: var(--muted); }
+.my-traverse-skin .vehicle-hero-container { height: 220px; }
+.my-traverse-skin .hero-car-img { max-height: 190px; }
+.my-traverse-skin .tire-float { min-width: 74px; background: var(--surface); border-color: var(--line); border-radius: 12px; }
+.my-traverse-skin .tire-float span { font: 500 .75rem/1.5 system-ui; color: var(--muted); }
+.my-traverse-skin .tire-float strong { font-size: .875rem; }
+.my-traverse-skin .tire-float.fl, .my-traverse-skin .tire-float.fr { top: 24px; }
+.my-traverse-skin .tire-float.rl, .my-traverse-skin .tire-float.rr { bottom: 24px; }
+.my-traverse-skin .health-hero { border-radius: 18px; background: var(--surface); }
+.my-traverse-skin .health-copy h2 { font-size: 1.125rem; overflow-wrap: anywhere; }
+.my-traverse-skin .health-copy p, .my-traverse-skin .health-status { font: 500 .75rem/1.5 system-ui; }
+.my-traverse-skin .health-status { color: var(--text); }
+.my-traverse-skin .health-ring span { font-size: .625rem; color: var(--muted); letter-spacing: 0; }
+.my-traverse-skin .info-card { border-radius: 16px; background: var(--surface); border-color: var(--line); }
+.my-traverse-skin .card-title, .my-traverse-skin .info-card>small { font-size: .8125rem; color: var(--muted); }
+.my-traverse-skin .info-card>strong { font-size: 1.5rem; }
+.my-traverse-skin .telemetry-panel { border-radius: 16px; border-color: var(--line); background: var(--surface); }
+.my-traverse-skin .telemetry-panel summary>span:nth-child(2) small { font: 500 .6875rem/1.5 system-ui; letter-spacing: .03em; color: var(--muted); }
+.my-traverse-skin .telemetry-panel summary>span:nth-child(2) strong { font-size: .9375rem; }
+.my-traverse-skin .section-badge { font: 500 .75rem/1.4 system-ui; color: var(--muted); }
+.my-traverse-skin .detail-copy strong { font-size: .875rem; }
+.my-traverse-skin .detail-copy span, .my-traverse-skin .detail-value { font: 400 .75rem/1.5 system-ui; color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+.my-traverse-skin .detail-copy { min-width: 0; }
+.my-traverse-skin .detail-value { max-width: 40%; }
+.my-traverse-skin .data-cell span, .my-traverse-skin .data-cell small, .my-traverse-skin .bar-row span, .my-traverse-skin .bar-row strong { font: 400 .75rem/1.5 system-ui; color: var(--muted); }
+.my-traverse-skin .bar-row { grid-template-columns: 76px 1fr 48px; }
+.my-traverse-skin .temperature-hero>div:first-child span { font-size: .8125rem; }
+.my-traverse-skin .page-head p, .my-traverse-skin .live-hero p { font: 400 .875rem/1.6 system-ui; color: var(--muted); }
+.my-traverse-skin .terminal-launch-card, .my-traverse-skin .live-hero, .my-traverse-skin .media-stats>div, .my-traverse-skin .trip-summary article, .my-traverse-skin .period-card, .my-traverse-skin .trip-card, .my-traverse-skin .impact-card { border-radius: 16px; background: var(--surface); border-color: var(--line); }
+.my-traverse-skin .terminal-launch-copy>strong { font-size: 1rem; }
+.my-traverse-skin .terminal-launch-copy>span, .my-traverse-skin .live-kicker, .my-traverse-skin .live-visual>span { font: 500 .75rem/1.5 system-ui; color: var(--muted); letter-spacing: 0; }
+.my-traverse-skin .primary-button, .my-traverse-skin .secondary-button, .my-traverse-skin .danger-button, .my-traverse-skin .more-button { min-height: 48px; padding: 10px 14px; border-radius: 12px; font: 600 .875rem/1.5 system-ui; }
+.my-traverse-skin .primary-button { background: var(--mint); color: #21150c; }
+.my-traverse-skin .trip-summary span, .my-traverse-skin .trip-summary small, .my-traverse-skin .media-stats span, .my-traverse-skin .media-stats small, .my-traverse-skin .period-card small { font: 400 .75rem/1.5 system-ui; color: var(--muted); }
+.my-traverse-skin .trip-summary { grid-template-columns: 1fr 1fr; }
+.my-traverse-skin .trip-summary .summary-primary { grid-column: 1/-1; grid-row: auto; min-height: 100px; }
+.my-traverse-skin .trip-summary .summary-primary strong { font-size: 2rem; }
+.my-traverse-skin .trip-top { align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.my-traverse-skin .trip-top strong { font-size: .9375rem; }
+.my-traverse-skin .trip-top time, .my-traverse-skin .trip-route { font: 400 .75rem/1.5 system-ui; color: var(--muted); }
+.my-traverse-skin .trip-route { white-space: normal; }
+.my-traverse-skin .trip-stats { grid-template-columns: 1fr 1fr; gap: 6px; }
+.my-traverse-skin .trip-stats span { font: 500 .8125rem/1.5 system-ui; background: var(--surface2); }
+.my-traverse-skin .section-heading h2 { font-size: 1.25rem; }
+.my-traverse-skin .extras-trip-section { scroll-margin-top: 16px; }
+.my-traverse-skin .capture-card { border-radius: 16px; }
+.my-traverse-skin .capture-meta strong { font-size: .875rem; }
+.my-traverse-skin .capture-meta span, .my-traverse-skin .impact-meta { font: 400 .75rem/1.5 system-ui; }
+.my-traverse-skin .impact-severity, .my-traverse-skin .impact-measures span, .my-traverse-skin .impact-measures strong { font: 500 .75rem/1.5 system-ui; }
+.my-traverse-skin .empty-state, .my-traverse-skin .inline-error { font: 400 .875rem/1.6 system-ui; color: var(--muted); }
+.my-traverse-skin .inline-error button { min-width: 64px; min-height: 48px; font-size: .8125rem; }
+.my-traverse-skin .settings-sheet { max-height: 90dvh; overflow-y: auto; border-radius: 24px 24px 0 0; background: var(--surface); }
+.settings-sheet:not(.visible) { visibility: hidden; pointer-events: none; }
+.my-traverse-skin .settings-card { border-radius: 16px; background: var(--surface2); }
+.my-traverse-skin .settings-card label, .my-traverse-skin .setting-label { font-size: .9375rem; }
+.my-traverse-skin .settings-card p, .my-traverse-skin .read-only-note { font: 400 .875rem/1.6 system-ui; color: var(--muted); overflow-wrap: anywhere; }
+.my-traverse-skin .settings-card input { min-height: 48px; font-size: 1rem; border-color: var(--line); }
+.my-traverse-skin .toast { bottom: calc(86px + var(--safe-bottom)); max-width: calc(100% - 32px); white-space: normal; font: 500 .875rem/1.5 system-ui; }
+.my-traverse-skin .trip-detail-stats { grid-template-columns: 1fr 1fr; }
+.my-traverse-skin .trip-detail-stats span, .my-traverse-skin .overlay-head small { font-size: .8125rem; color: var(--muted); }
+.my-traverse-skin .trip-detail-stats strong { font-size: 1.125rem; }
+.my-traverse-skin .terminal-toolbar-button, .my-traverse-skin .terminal-command-form button, .my-traverse-skin .wayon-live-icon-button, .my-traverse-skin .wayon-live-playback-toggle { min-width: 48px; min-height: 48px; }
+.my-traverse-skin .terminal-command-form { grid-template-columns: auto minmax(0,1fr) 48px; }
+.my-traverse-skin .terminal-quick-actions button { min-height: 48px; font-size: .8125rem; }
+.my-traverse-skin .terminal-screen, .my-traverse-skin .terminal-command-form input { font-size: .875rem; }
+.my-traverse-skin .terminal-state, .my-traverse-skin .wayon-live-status, .my-traverse-skin .wayon-live-playback-time { font-size: .75rem; }
+
+@media (max-width: 359px) {
+  .my-traverse-skin main, body.home-active main { padding-left: 12px; padding-right: 12px; }
+  .my-traverse-skin .top-actions { gap: 4px; }
+  .my-traverse-skin .brand-logo { display: none; }
+  .my-traverse-skin .home-command-slot small { display: none; }
+  .my-traverse-skin #page-overview .home-metric-row>div { padding: 10px 6px; }
+  .my-traverse-skin .home-metric-row strong b { font-size: 1.0625rem; }
+  .my-traverse-skin .featured-terminal { grid-template-columns: 1fr auto; }
+  .my-traverse-skin .featured-terminal .terminal-launch-icon { display: none; }
+  .my-traverse-skin .live-hero { grid-template-columns: 1fr; }
+  .my-traverse-skin .live-visual { display: none; }
+}
+@media (min-width: 600px) {
+  .my-traverse-skin #page-overview .home-map-hero { height: 370px; }
+  .my-traverse-skin .home-metric-row strong b { font-size: 1.5rem; }
+  .my-traverse-skin .home-command-slot strong { font-size: .9375rem; }
+}
+/* Native fontScale also sets this class: large-text layouts reflow, never clip. */
+body.large-text .home-map-hero { min-height: 400px!important; }
+body.large-text #home-map, body.large-text .map-empty { bottom: 145px; }
+body.large-text .map-copy { height: 145px; }
+body.large-text .map-expand-button { bottom: 175px; }
+body.large-text .home-metric-row { grid-template-columns: 1fr!important; }
+body.large-text .home-command-bar { grid-template-columns: 1fr 1fr!important; }
+body.large-text .home-status-button { grid-template-columns: 1fr!important; }
+body.large-text .home-status-button>strong { grid-column: 1; grid-row: 2; }
+body.large-text .home-status-button>small { grid-row: 3; }
+body.large-text .footer-nav { height: calc(96px + var(--safe-bottom)); }
+body.large-text .app-shell { padding-bottom: calc(112px + var(--safe-bottom)); }
+body.large-text .health-hero, body.large-text .live-hero, body.large-text .featured-terminal { grid-template-columns: 1fr; }
+body.large-text .real-data-grid, body.large-text .data-grid, body.large-text .trip-summary, body.large-text .media-stats { grid-template-columns: 1fr; }
+body.large-text .tire-float { position: static; }
+body.large-text .vehicle-hero-container { height: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+body.large-text .hero-car-img { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none!important; transition: none!important; scroll-behavior: auto!important; }
+}
+@media (prefers-contrast: more) { body.my-traverse-skin { --muted: #e0e3e7; --faint: #d4d8df; --line: #868e9a; } }

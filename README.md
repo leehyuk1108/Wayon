@@ -4,16 +4,24 @@ Hylink is an Android companion for a vehicle connected to Wayon Cloud.
 It is a separate application from My Traverse and uses a distinct package ID:
 `app.hylink.mobile`.
 
+## Approved dashboard (1.5.0)
+
+The production entry point is `app/src/main/assets/main.html`, using
+`hylink-app.js`, `hylink-model.js` and the three `hylink-*.css` dashboard styles.
+The older `hylink.js`/refinement assets are not loaded. The standalone
+`design/cloud-overview/` remains a synthetic design reference, not app data.
+See [implementation and verification notes](docs/APP_UI_20260910.md).
+
 ## Implemented features
 
 - Current vehicle location and Wayon telemetry
 - Onroad/offroad, ignition, speed, bearing, GPS quality, voltage, current, and power
 - openpilot state, availability, engageability, personality, mode, and current alert
-- Cloud trip history with distance/time/speed insights and route playback on a map
+- Cloud trip history with distance/time/speed insights and a saved route map
 - Parking and impact snapshots with camera, size, capture, and sensor metadata
 - Recorded 360-degree photos and 10/30-second clips with layout and storage data
 - Offroad 360-degree Live view and capture
-- Impact force, jerk, gyro, duration, sample, and capture status
+- Impact force and jerk, with detected time and severity
 - Device CPU/GPU/memory/storage usage and detailed thermal sensors
 - Network quality, screen state, electrical flow, and estimated offroad energy
 - Panda connection, harness, safety model, counters, fault health, and uptime

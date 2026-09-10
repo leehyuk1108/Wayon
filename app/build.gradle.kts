@@ -34,8 +34,8 @@ android {
         applicationId = "app.hylink.mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.3.1-cloud-budget"
+        versionCode = 7
+        versionName = "1.5.0-cloud-ui"
 
         buildConfigField(
             "String",

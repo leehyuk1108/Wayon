@@ -24,6 +24,12 @@
     return value === true || value === 1;
   }
 
+  function confirmedOffroad() {
+    const s = window.hylink?.data?.feed?.state;
+    const age = Date.now() - Date.parse(s?.updated_at);
+    return !window.hylink?.data?.error && (s?.onroad === false || s?.onroad === 0) && Number.isFinite(age) && age >= -60000 && age <= 900000;
+  }
+
   function setState(next, message) {
     terminal.connected = next === "connected";
     terminal.connecting = next === "connecting";
@@ -68,7 +74,7 @@
       window.toast?.("Wayon Cloud 키를 먼저 저장해 주세요.");
       return;
     }
-    if (vehicleOnroad()) {
+    if (!confirmedOffroad()) {
       window.toast?.("원격 터미널은 Offroad에서만 사용할 수 있습니다.");
       return;
     }
@@ -85,6 +91,7 @@
     overlay.setAttribute("aria-hidden", "true");
     setState("closed", "연결 종료");
   }
+  window.closeWayonTerminal = closeTerminal;
 
   function writeCommand(command) {
     if (!terminal.connected || !command) return;
@@ -115,12 +122,12 @@
     const caption = byId("terminal-launch-caption");
     const hasFeed = Boolean(window.hylink?.data?.feed?.state);
     const onroad = vehicleOnroad();
-    available.textContent = !hasFeed ? "상태 확인 중" : onroad ? "ONROAD 차단" : "OFFROAD 사용 가능";
-    openButtons.forEach(button => { button.disabled = !window.hylink?.token || !hasFeed || onroad; });
+    available.textContent = onroad ? "주행 중에는 사용할 수 없어요" : confirmedOffroad() ? "비주행 상태 확인됨" : "최신 비주행 상태 확인 필요";
+    openButtons.forEach(button => { button.disabled = !window.hylink?.token || !confirmedOffroad(); });
     caption.textContent = onroad
       ? "주행 중에는 Wayon 릴레이가 터미널을 차단합니다."
       : "Wayon 키로 해당 동글의 SSH 세션에 연결합니다.";
-    if (onroad && overlay.classList.contains("visible")) closeTerminal();
+    if (!confirmedOffroad() && overlay.classList.contains("visible")) closeTerminal();
   };
 
   const previousBack = window.handleHylinkBack;

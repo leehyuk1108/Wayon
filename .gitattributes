@@ -1,2 +1,7 @@
 app/src/main/assets/** binary
+# First-party UI source must remain reviewable; image/font/vendor treatment stays unchanged.
+app/src/main/assets/main.html !binary text diff merge
+app/src/main/assets/hylink*.js !binary text diff merge
+app/src/main/assets/hylink*.css !binary text diff merge
+app/src/main/assets/wayon_terminal.js !binary text diff merge
 gradlew.bat text eol=crlf

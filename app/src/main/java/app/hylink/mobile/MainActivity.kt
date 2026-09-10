@@ -1,6 +1,11 @@
 package app.hylink.mobile
 
 import android.annotation.SuppressLint
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +20,12 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
+import androidx.core.os.CancellationSignal
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -36,6 +47,11 @@ class MainActivity : AppCompatActivity() {
     private var liveActive = false
     @Volatile private var terminalActive = false
     private lateinit var terminalClient: WayonTerminalClient
+    private var locationRequestId: Int? = null
+    private var locationCancellation: CancellationSignal? = null
+    private var locationPermissionPending = false
+    private var locationTimeout: Runnable? = null
+    @Volatile private var tripSequence = 0
 
     private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
 
@@ -68,6 +84,16 @@ class MainActivity : AppCompatActivity() {
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         webView = findViewById(R.id.webview)
+        // Android 15/16 edge-to-edge: preserve status, navigation and keyboard safe areas.
+        WindowCompat.getInsetsController(window, webView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.app_root)) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -88,6 +114,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 pageReady = true
+                // CSS rem sizes follow Android's accessible text setting; layout reflows at large sizes.
+                runJs("window.onHylinkFontScale?.(${resources.configuration.fontScale})")
                 sendNativeConfiguration()
                 if (loadWayonCloudKey().isNotBlank()) refreshWayonData()
             }
@@ -111,6 +139,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        if (!locationPermissionPending && locationRequestId != null) finishLocation(locationRequestId!!, JSONObject().put("error", true).put("code", 2))
         activityVisible = false
         mainHandler.removeCallbacks(autoRefresh)
         terminalClient.disconnect()
@@ -119,6 +148,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        cancelLocationInternal()
         mainHandler.removeCallbacksAndMessages(null)
         terminalClient.shutdown()
         networkExecutor.shutdownNow()
@@ -135,6 +165,9 @@ class MainActivity : AppCompatActivity() {
 
     @JavascriptInterface
     fun saveWayonCloudKey(value: String) {
+        terminalClient.disconnect()
+        terminalActive = false
+        tripSequence++
         val normalized = value.trim()
         preferences.edit().putString(PREFERENCE_WAYON_KEY, normalized).apply()
         runJs("window.onHylinkKeySaved?.(${JSONObject.quote(normalized)})")
@@ -143,6 +176,7 @@ class MainActivity : AppCompatActivity() {
 
     @JavascriptInterface
     fun clearWayonCloudKey() {
+        tripSequence++
         terminalClient.disconnect()
         terminalActive = false
         preferences.edit().remove(PREFERENCE_WAYON_KEY).apply()
@@ -214,11 +248,14 @@ class MainActivity : AppCompatActivity() {
         val safeId = id.trim()
         val key = loadWayonCloudKey()
         if (safeId.isBlank() || key.isBlank()) return
+        val sequence = ++tripSequence
         networkExecutor.execute {
             try {
                 val detail = fetchJson("/api/trips/${encodePathSegment(safeId)}", key)
+                if (key != loadWayonCloudKey() || sequence != tripSequence) return@execute
                 runJs("window.onHylinkTripDetail?.(JSON.parse(${JSONObject.quote(detail.toString())}))")
             } catch (error: Exception) {
+                if (key != loadWayonCloudKey() || sequence != tripSequence) return@execute
                 runJs("window.onHylinkTripError?.(${JSONObject.quote(safeMessage(error))})")
             }
         }
@@ -236,6 +273,7 @@ class MainActivity : AppCompatActivity() {
                 val response = postJson(HylinkApiContract.LIVE_SESSION_ENDPOINT, key, JSONObject())
                 val websocketUrl = response.getString("websocketUrl")
                 val protocol = response.getString("protocol")
+                if (key != loadWayonCloudKey()) return@execute
                 runJs(
                     "window.onWayonLiveSession?.(" +
                         "${JSONObject.quote(websocketUrl)},${JSONObject.quote(protocol)})",
@@ -303,6 +341,72 @@ class MainActivity : AppCompatActivity() {
             "window.onHylinkNativeReady?.(" +
                 "${JSONObject.quote(loadWayonCloudKey())},${JSONObject.quote(BuildConfig.WAYON_CLOUD_URL)})",
         )
+    }
+
+    /** One foreground fix, requested only by the expanded map. Never persisted or uploaded. */
+    @JavascriptInterface
+    fun requestCurrentLocation(requestId: Int) = runOnUiThread {
+        cancelLocationInternal()
+        locationRequestId = requestId
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            locationPermissionPending = true
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 710)
+        } else startLocation(requestId)
+    }
+
+    @JavascriptInterface
+    fun cancelCurrentLocation() = runOnUiThread { cancelLocationInternal() }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 710) return
+        locationPermissionPending = false
+        val id = locationRequestId ?: return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation(id)
+        else finishLocation(id, JSONObject().put("error", true).put("code", 1))
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startLocation(id: Int) {
+        val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+        val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val provider = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER).firstOrNull {
+            manager.isProviderEnabled(it) && (it != LocationManager.GPS_PROVIDER || precise)
+        }
+        if (provider == null) { finishLocation(id, JSONObject().put("error", true).put("code", 2)); return }
+        val cancellation = CancellationSignal()
+        locationCancellation = cancellation
+        locationTimeout = Runnable { finishLocation(id, JSONObject().put("error", true).put("code", 3)) }.also { mainHandler.postDelayed(it, 15_000) }
+        try {
+            LocationManagerCompat.getCurrentLocation(manager, provider, cancellation, ContextCompat.getMainExecutor(this)) { location ->
+                if (locationRequestId != id) return@getCurrentLocation
+                if (location == null || SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos > 30_000_000_000L) {
+                    finishLocation(id, JSONObject().put("error", true).put("code", 2))
+                } else finishLocation(id, JSONObject().put("latitude", location.latitude).put("longitude", location.longitude).put("accuracy", location.accuracy))
+            }
+        } catch (_: Exception) { finishLocation(id, JSONObject().put("error", true).put("code", 2)) }
+    }
+
+    private fun finishLocation(id: Int, result: JSONObject) {
+        if (locationRequestId != id) return
+        cancelLocationInternal()
+        runJs("window.onHylinkLocation?.($id,${result})")
+    }
+
+    private fun cancelLocationInternal() {
+        locationRequestId = null
+        locationCancellation?.cancel()
+        locationCancellation = null
+        locationTimeout?.let { mainHandler.removeCallbacks(it) }
+        locationTimeout = null
+    }
+
+    @JavascriptInterface
+    fun openMapAttribution(value: String) = runOnUiThread {
+        val uri = Uri.parse(value)
+        if (uri.scheme == "https" && uri.host in setOf("www.openmaptiles.org", "www.openstreetmap.org", "openfreemap.org")) {
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+        }
     }
 
     private fun loadWayonCloudKey(): String =

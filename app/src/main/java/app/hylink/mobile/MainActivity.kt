@@ -88,6 +88,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 pageReady = true
+                // CSS rem sizes follow Android's accessible text setting; layout reflows at large sizes.
+                runJs("window.onHylinkFontScale?.(${resources.configuration.fontScale})")
                 sendNativeConfiguration()
                 if (loadWayonCloudKey().isNotBlank()) refreshWayonData()
             }

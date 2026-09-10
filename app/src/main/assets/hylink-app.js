@@ -10,6 +10,7 @@ const date=v=>Number.isFinite(Date.parse(v))?new Intl.DateTimeFormat('ko-KR',{mo
 const scaled=(v,f=1,d=0)=>fixed(num(v)===null?null:num(v)*f,d);
 const duration=v=>num(v)===null?'—':Math.round(num(v)/60)+'분';
 const clipDuration=v=>num(v)===null?'길이 미수신':Math.round(num(v))+'초';
+const isVideoCapture=v=>v.kind==='clip'||v.kind==='video';
 const point=v=>{const lat=num(v?.latitude??v?.lat),lon=num(v?.longitude??v?.lon??v?.lng);return lat!==null&&lon!==null&&Math.abs(lat)<=90&&Math.abs(lon)<=180?[lon,lat]:null};
 const hylink={token:'',baseUrl:'',data:null};window.hylink=hylink;
 let data={},model,map,marker,recordFilter='trips',lastFocus,currentPage='now';
@@ -104,7 +105,7 @@ function renderRecords(force=false){
     html+=items.slice(0,recordLimit).map((v,i)=>{
       if(recordFilter==='trips')return '<button class="list-row record-button" data-record="'+i+'">'+icon('route')+'<span><b>'+scaled(v.distance_m,.001,1)+' km의 주행</b><small>'+esc(date(v.started_at))+' · '+duration(v.duration_s)+'</small></span>'+icon('chevron-right')+'</button>';
       if(recordFilter==='impacts')return '<button class="list-row record-button" data-record="'+i+'">'+icon('activity')+'<span><b>충격 감지 · '+esc(({light:'가벼움',medium:'보통',heavy:'강함',severe:'심함'})[v.severity]||v.severity||'분류 없음')+'</b><small>'+esc(date(v.detected_at))+'</small></span>'+icon('chevron-right')+'</button>';
-      const video=recordFilter==='captures'&&v.kind==='video';
+      const video=recordFilter==='captures'&&isVideoCapture(v);
       return '<button class="media-card" data-record="'+i+'"><span class="media-image">'+icon(video?'play':'image')+(!video?'<img data-thumbnail="'+i+'" alt="'+(recordFilter==='photos'?(v.camera==='driver'?'실내':'전방'):'저장된')+' 카메라 사진" loading="lazy">':'')+'</span><b>'+ (video?clipDuration(v.duration_s)+' 영상':v.camera==='driver'?'실내 사진':recordFilter==='photos'?'전방 사진':'저장한 사진')+'</b><small>'+esc(date(v.captured_at||v.created_at))+'</small><small>'+scaled(v.size_bytes,1/1048576,1)+' MB'+(v.impact_id?' · 충격 시점':'')+'</small><small data-media-status="'+i+'">'+(video?'눌러서 재생':'사진 불러오는 중')+'</small></button>';
     }).join('');
     html+='</div>';
@@ -143,7 +144,7 @@ async function openRecord(v,type){
   if(type==='trips')return showTrip(v);
   if(type==='impacts')return showSheet('충격 감지 기록','<p class="sheet-copy">'+esc(date(v.detected_at))+'</p><div class="sheet-facts"><div><small>동적 가속도 피크</small><b>'+scaled(v.peak_dynamic_g,1,2)+' g</b></div><div><small>전체 가속도 피크</small><b>'+scaled(v.peak_total_g,1,2)+' g</b></div><div><small>저크 피크</small><b>'+scaled(v.peak_jerk_g_per_s,1,2)+' g/s</b></div></div><p class="detail-note">센서 감지값이며 충돌 여부를 확정하지 않아요. 촬영 기록에서 같은 시각의 사진을 함께 확인해 주세요.</p>');
   const path=mediaPath(v,type);
-  if(type==='captures'&&v.kind==='video')return window.startWayonSavedClip?.({url:hylink.baseUrl+path,token:hylink.token,capture:{durationS:v.duration_s}});
+  if(type==='captures'&&isVideoCapture(v))return window.startWayonSavedClip?.({url:hylink.baseUrl+path,token:hylink.token,capture:{durationS:v.duration_s}});
   const epoch=mediaEpoch;
   try{const url=await fetchMedia(path);if(epoch!==mediaEpoch)return;
     lastFocus=document.activeElement;$('full-image').src=url;

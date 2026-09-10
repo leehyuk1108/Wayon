@@ -1,5 +1,36 @@
 @font-face{font-family:Pretendard;src:url('../../app/src/main/assets/Pretendard-SemiBold.otf');font-weight:600;font-display:swap}
 #main-content{padding-top:20px}
+.map-open{position:absolute;inset:0;z-index:3;width:100%;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 18px 22px;cursor:zoom-in;border-radius:0}
+.map-expand{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:#fff;color:#2458cf;box-shadow:0 4px 16px #223a6318}
+.map-context{pointer-events:none}
+.map-credits{position:absolute;left:12px;bottom:12px;z-index:5;font-size:.75rem;color:#4c5c6c}
+.map-credits summary{list-style:none;width:48px;height:48px;display:grid;place-items:center;cursor:pointer;border-radius:50%}
+.map-credits summary::-webkit-details-marker{display:none}
+.map-credits summary svg{width:19px;height:19px;border-radius:50%;background:#ffffffe6}
+.map-credits summary:focus-visible{outline:3px solid var(--blue)}
+.map-credits>div{position:absolute;bottom:48px;left:0;padding:8px 14px;background:#fff;border:1px solid #e9edf2;border-radius:15px;box-shadow:0 4px 24px #18233318;white-space:nowrap}
+.map-credits a{display:flex;align-items:center;min-height:44px;color:#455462;text-decoration:none}
+#map-dialog{position:fixed;inset:0;margin:0;padding:0;border:0;border-radius:0;width:100%;max-width:none;height:100dvh;max-height:none;overflow:hidden;background:var(--bg)}
+#full-map-host{position:absolute;inset:0}
+.full-map-top{position:absolute;top:max(16px,env(safe-area-inset-top));left:16px;right:16px;display:flex;align-items:center;gap:10px;pointer-events:none}
+.full-map-top button,.full-map-top h2{background:var(--surface);box-shadow:0 4px 20px #18233313;pointer-events:auto}
+.full-map-top h2{padding:14px 18px;border-radius:25px;font-size:.94rem}
+.full-map-card{position:absolute;bottom:max(16px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:calc(100% - 32px);max-width:430px;padding:18px;border:1px solid var(--line);border-radius:24px;background:var(--surface);box-shadow:0 8px 30px #18233318}
+.map-legend{display:flex;gap:24px;align-items:center;font-size:.88rem}
+.map-legend>span{display:flex;align-items:center;gap:7px}
+.map-legend svg{color:#2458cf;width:21px;height:21px}
+.map-legend small{font-size:.68rem;padding:3px 6px;background:var(--muted);border-radius:6px}
+.my-location-key{display:block;width:11px;height:11px;border-radius:50%;background:#1687e8}
+#my-location-status{font-size:.76rem;line-height:1.5;color:var(--secondary);margin:12px 0}
+.map-actions{display:flex;gap:8px}
+.map-actions button{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;background:var(--muted);border-radius:13px;font-size:.76rem;min-height:48px}
+.map-actions svg{width:17px;height:17px}
+.map-actions #center-me{color:var(--blue);background:var(--soft-blue)}
+#map-dialog .map-credits{bottom:calc(var(--map-card-height,185px) + max(24px,env(safe-area-inset-bottom)))}
+.my-location-marker{width:22px;height:22px;border-radius:50%;background:#1687e8;border:4px solid #fff;box-shadow:0 0 0 10px #1687e828,0 3px 12px #13395540}
+body.map-opened{overflow:hidden}
+@media(max-width:350px){.full-map-card{padding:15px}.map-actions{gap:5px}.map-actions button{font-size:.7rem;gap:3px}}
+body.large-text .map-actions{flex-direction:column}
 .preview-toolbar{padding-top:env(safe-area-inset-top)}
 :root{color-scheme:light;--bg:#f7f8fa;--surface:#fff;--ink:#182333;--secondary:#626e7b;--line:#e9edf2;--blue:#2458cf;--soft-blue:#edf2ff;--muted:#eff2f6;--warning:#8e3e0b;--warning-bg:#fff1e5;--shadow:0 12px 40px #24375a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:16px;color:var(--ink);background:#e9edf2}
 *{box-sizing:border-box}body{margin:0}button,a{-webkit-tap-highlight-color:transparent}button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;min-height:48px}button:focus-visible,a:focus-visible{outline:3px solid var(--blue);outline-offset:3px}button:hover{filter:brightness(.97)}button:active{transform:translateY(1px)}button:disabled{opacity:.5;cursor:default}svg{width:22px;height:22px;stroke-width:1.7;flex-shrink:0}h1,h2,h3,p{margin:0}h1,h2,h3,b,strong{font-family:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-weight:600}h1{font-size:2.25rem;letter-spacing:-1.3px;line-height:1.25}h2{font-size:1.06rem;letter-spacing:-.3px}p{line-height:1.55}small{font-size:.78rem;color:var(--secondary);line-height:1.5}a{color:var(--blue)}[hidden]{display:none!important}

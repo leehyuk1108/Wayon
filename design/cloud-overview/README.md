@@ -8,7 +8,17 @@ Run from repository root:
 python3 -m http.server 4198 --bind 127.0.0.1 --directory .
 ```
 
-Open `http://127.0.0.1:4198/design/cloud-overview/index.html`. Top controls select parked, driving, warning, impact, stale, and first-connection fixtures. Per user feedback, the Hylink wordmark header and settings button, including its theme/text-size menu, have been removed. Responsive text/theme styles remain available for development checks, not as settings UI. No Wayon credentials, cloud polling, real media, or vehicle commands are used. Public Seoul City Hall coordinates are synthetic demonstration data, not the user's location.
+Open `http://127.0.0.1:4198/design/cloud-overview/index.html`. Top controls select parked, driving, warning, impact, stale, and first-connection fixtures. Per user feedback, the Hylink wordmark header and settings button, including its theme/text-size menu, have been removed. Responsive text/theme styles remain available for development checks, not as settings UI. No Wayon credentials, cloud polling, real media, or vehicle commands are used. The vehicle marker uses synthetic public Seoul City Hall coordinates, not a real vehicle.
+
+### Map interaction (latest user requirements)
+
+- **Now tab:** vehicle marker only. Tap anywhere on the map (or its expand affordance) to open a full-viewport map.
+- **Full map:** vehicle car icon and the user's blue location dot are separate. Vehicle / My location / Show both buttons recenter the map. Pan, zoom, keyboard and touch interaction are enabled.
+- Opening the full map requests one browser geolocation fix, subject to browser/OS permission. My location explicitly retries/refreshes. No continuous/background tracking or durable coordinate storage is used.
+- Closing removes the user dot before returning the same map canvas to Now, restores vehicle framing and keyboard focus, and ignores any late geolocation callback. Permission denial/timeouts never manufacture a current position.
+- Vehicle location stays marked as an example until production cloud integration. Real browser location can be shown only for the user dot, never substituted for the vehicle.
+- Location does not go to Wayon in this preview. Moving the map requests viewport tiles from the map provider, which can reveal the viewed area. Browser geolocation may also use the browser/OS location service.
+- Long map credits were replaced with a fixed, accessible 48px information disclosure. OpenMapTiles and OpenStreetMap attribution links remain. OpenFreeMap branding is optional per the [provider attribution instructions](https://openfreemap.org/#attribution).
 
 ## Information hierarchy
 
@@ -38,7 +48,7 @@ Guidelines consulted through the installed `apple-design` skill: `accessibility.
 
 Pinned [MapLibre GL JS 5.12.0](https://maplibre.org/maplibre-gl-js/docs/) UMD is loaded from unpkg in this preview. Map style/tiles are [OpenFreeMap Positron](https://openfreemap.org/quick_start/), with label adjustments after style load. OpenFreeMap/OpenMapTiles/OpenStreetMap attribution is retained.
 
-This changes the map provider **only for the synthetic preview**. Before production: bundle and license-audit pinned assets, verify Android WebView/WebGL on the physical phone, review provider capacity/privacy/availability (public instance has no SLA), decide failure fallback, and preserve production API caching/backoff. No extra reverse-geocoding or real location transmission is introduced here.
+This changes the map provider **only in the design preview**. Before production: bundle and license-audit pinned assets, verify Android WebView/WebGL and native location permission callbacks on the physical phone, review provider capacity/privacy/availability (public instance has no SLA), decide failure fallback, and preserve production API caching/backoff. No reverse-geocoding is introduced. Real browser location may affect viewport tile requests after the user opens the full map and grants location permission.
 
 ## Verification
 
@@ -46,7 +56,7 @@ This changes the map provider **only for the synthetic preview**. Before product
 
 `node scripts/capture-cloud-design.mjs`: dedicated local Chrome CDP on port 9338; checks vector features, captures screenshots and tests 320/390/768 CSS px × default/200% text × three tabs. Output is ignored at `output/cloud-design/`. Do not attach to the user's normal Chrome profile.
 
-Real interaction checks use the visible local preview: scenario dialog, warning detail, tab/record navigation, modal close, settings, and keyboard focus. These are not device/vehicle validation.
+Real interaction checks use the visible local preview: scenario dialog, warning detail, tab/record navigation, modal close and keyboard focus. The capture script also tests full-map dimensions, two distinct markers, fit-both bounds, home vehicle-only behavior, denied geolocation and late callback handling using synthetic geolocation, followed by a reload to discard the override. These are not physical GPS/device/vehicle validation.
 
 ## Next integration work after design approval
 

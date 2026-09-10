@@ -5,6 +5,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const icon=name=>`<i data-lucide="${name}"></i>`;
 const fixed=(v,d=0)=>v===null?'—':v.toFixed(d);
 let scenario='parked',model,map,marker,recordFilter='trips',lastFocus;
+let myMarker,myPosition,locationRequest=0,locationPending=false,mapReturnFocus,mapTouched=false;
 let data;
 function fixture(kind){
   const now=Date.now(),iso=seconds=>new Date(now-seconds*1000).toISOString();
@@ -88,11 +89,88 @@ $('photos-button').onclick=()=>{recordFilter='photos';document.querySelector('[d
 $('live-button').onclick=()=>showSheet('차량 카메라 라이브',`<p class="sheet-copy">실제 앱에서는 차량 연결과 카메라 이용 가능 여부를 확인한 다음 라이브를 시작해요.</p><p class="inline-note">라이브는 데이터와 차량 전력을 사용할 수 있어요. 이 미리보기에서는 세션을 시작하지 않아요.</p><button class="primary-button" id="demo-close">미리보기 확인</button>`);
 $('sheet-content').addEventListener('click',e=>{if(e.target.id==='demo-close')$('sheet').close()});
 $('location-detail').onclick=()=>showSheet('마지막 위치 정보',`<p class="sheet-copy">${esc(model.received)}<br>${esc($('coordinate-label').textContent)}</p><p class="inline-note">차량 위치와 앱 새로고침 시각은 다를 수 있어요. GPS가 오래된 경우 이전 위치로 안내해요. 예시 지도는 서울시청 주변의 공개 좌표를 사용해요.</p>`);
-$('locate-button').onclick=()=>{if(model.point)map?.jumpTo({center:model.point,zoom:15.3})};
+$('locate-button').onclick=openFullMap;
+function mapPadding(){
+  const height=document.querySelector('.full-map-card').getBoundingClientRect().height;
+  return {top:100,bottom:Math.min(height+44,innerHeight*.55),left:48,right:48};
+}
+function updateMapCard(){
+  $('map-dialog').style.setProperty('--map-card-height',document.querySelector('.full-map-card').getBoundingClientRect().height+'px');
+}
+function setLocationStatus(text){$('my-location-status').textContent=text;updateMapCard()}
+function centerVehicle(){if(model.point)map.jumpTo({center:model.point,zoom:15.3,padding:mapPadding()})}
+function fitLocations(){
+  if(!model.point||!myPosition){centerVehicle();return;}
+  const bounds=new maplibregl.LngLatBounds(model.point,model.point).extend(myPosition.point);
+  map.fitBounds(bounds,{padding:mapPadding(),maxZoom:16,duration:0});
+}
+function toggleMapInteraction(enabled){
+  for(const name of ['dragPan','scrollZoom','doubleClickZoom','touchZoomRotate','keyboard'])map[name]?.[enabled?'enable':'disable']();
+  map.touchZoomRotate?.disableRotation();
+  $('map').inert=!enabled;
+}
+function openFullMap(){
+  if(!map||$('map-dialog').open)return;
+  mapReturnFocus=document.activeElement;mapTouched=false;
+  $('full-map-host').append($('map'));
+  $('map-dialog').append($('map-credits'));
+  $('map-credits').open=false;
+  document.body.classList.add('map-opened');
+  $('map-dialog').showModal();
+  toggleMapInteraction(true);
+  requestAnimationFrame(()=>{if(!$('map-dialog').open)return;map.resize();updateMapCard();centerVehicle();$('close-map').focus();requestMyLocation(false)});
+}
+function closeFullMap(){
+  locationRequest++;locationPending=false;myPosition=undefined;
+  $('center-me').removeAttribute('aria-busy');
+  myMarker?.remove(); // Phone position never appears on the Now tab.
+  document.querySelector('.map-section').prepend($('map'));
+  document.querySelector('.map-section').append($('map-credits'));
+  $('map-credits').open=false;
+  document.body.classList.remove('map-opened');
+  toggleMapInteraction(false);
+  requestAnimationFrame(()=>{map.resize();if(model.point)map.jumpTo({center:model.point,zoom:15.3,padding:{top:0,bottom:0,left:0,right:0}});mapReturnFocus?.focus()});
+}
+function requestMyLocation(centerOnly=false){
+  if(!$('map-dialog').open||locationPending)return;
+  if(!navigator.geolocation){setLocationStatus('이 브라우저는 현재 위치를 지원하지 않아요. 차량 위치만 표시해요.');return;}
+  const request=++locationRequest;locationPending=true;
+  setLocationStatus('내 위치를 확인하고 있어요. 위치 권한을 허용해 주세요.');
+  $('center-me').setAttribute('aria-busy','true');
+  navigator.geolocation.getCurrentPosition(position=>{
+    if(request!==locationRequest||!$('map-dialog').open)return;
+    locationPending=false;$('center-me').removeAttribute('aria-busy');
+    const {longitude,latitude,accuracy}=position.coords;
+    if(!Number.isFinite(longitude)||!Number.isFinite(latitude)||Math.abs(longitude)>180||Math.abs(latitude)>90){setLocationStatus('위치를 확인하지 못했어요. 내 위치 버튼으로 다시 시도해 주세요.');return;}
+    myPosition={point:[longitude,latitude],accuracy,receivedAt:Date.now()};
+    if(!myMarker){
+      const dot=document.createElement('div');dot.className='my-location-marker';dot.setAttribute('role','img');dot.setAttribute('aria-label','내 현재 위치');
+      myMarker=new maplibregl.Marker({element:dot});
+    }
+    myMarker.setLngLat(myPosition.point).addTo(map);
+    setLocationStatus('내 위치 확인됨'+(Number.isFinite(accuracy)?' · 오차 약 '+Math.round(accuracy)+'m':'')+' · 차량은 예시 위치예요.');
+    if(centerOnly)map.jumpTo({center:myPosition.point,zoom:16,padding:mapPadding()});
+    else if(!mapTouched)fitLocations();
+  },error=>{
+    if(request!==locationRequest||!$('map-dialog').open)return;
+    locationPending=false;$('center-me').removeAttribute('aria-busy');
+    myMarker?.remove();myPosition=undefined;
+    setLocationStatus(error.code===1?'위치 권한이 꺼져 있어요. 브라우저에서 허용 후 내 위치를 눌러 주세요.':error.code===3?'현재 위치 확인이 지연돼요. 내 위치를 눌러 다시 시도해 주세요.':'현재 위치를 받지 못했어요. 차량 위치만 표시해요.');
+  },{enableHighAccuracy:true,timeout:12000,maximumAge:15000});
+}
+$('close-map').onclick=()=>$('map-dialog').close();
+$('map-dialog').addEventListener('close',closeFullMap);
+$('center-vehicle').onclick=centerVehicle;
+$('center-me').onclick=()=>requestMyLocation(true);
+$('fit-locations').onclick=fitLocations;
+new ResizeObserver(()=>{if($('map-dialog').open){updateMapCard();map?.resize()}}).observe(document.querySelector('.full-map-card'));
 data=fixture(scenario);render();
 if(window.maplibregl){
-  map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/positron',center:model.point,zoom:15.3,attributionControl:{compact:true},dragRotate:false,pitchWithRotate:false,scrollZoom:false});
-  const pin=document.createElement('button');pin.className='car-pin';pin.setAttribute('aria-label','마지막 차량 위치');pin.innerHTML=icon('car-front');pin.onclick=()=>$('location-detail').click();marker=new maplibregl.Marker({element:pin}).setLngLat(model.point).addTo(map);icons();
+  map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/positron',center:model.point,zoom:15.3,attributionControl:false,interactive:false,dragRotate:false,pitchWithRotate:false,scrollZoom:false});
+  const pin=document.createElement('button');pin.className='car-pin';pin.setAttribute('aria-label','마지막 차량 위치');pin.innerHTML=icon('car-front');pin.onclick=()=>{$('map-dialog').open?centerVehicle():openFullMap()};marker=new maplibregl.Marker({element:pin}).setLngLat(model.point).addTo(map);icons();
+  $('map').inert=true;
+  map.on('dragstart',e=>{if(e.originalEvent)mapTouched=true});
+  map.on('zoomstart',e=>{if(e.originalEvent)mapTouched=true});
   map.on('style.load',()=>{
     for(const layer of map.getStyle().layers){
       if(layer.type!=='symbol')continue;

@@ -38,6 +38,27 @@ for(const width of [320,390,768]){
 await evaluate('document.body.classList.remove("large-text");document.documentElement.style.fontSize="16px";navigate("now")');
 await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
 await evaluate('map.resize(); void 0');await pause(300);await shot('home-390');
+// Geolocation tests use public synthetic points, never the operator's real location.
+await evaluate("Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:(ok)=>ok({coords:{longitude:126.981,latitude:37.568,accuracy:10}})}});void 0");
+await evaluate("document.getElementById('locate-button').click()");await pause(500);
+assert.equal(await evaluate("document.querySelectorAll('#map-dialog .car-pin').length"),1);
+assert.equal(await evaluate("document.querySelectorAll('#map-dialog .my-location-marker').length"),1);
+assert.equal(await evaluate("map.getBounds().contains(model.point)&&map.getBounds().contains(myPosition.point)"),true);
+assert.equal(await evaluate("document.getElementById('map-dialog').getBoundingClientRect().height"),844);
+await shot('full-map-390');
+await evaluate("document.getElementById('close-map').click()");await pause(100);
+assert.equal(await evaluate("document.querySelectorAll('.map-section .my-location-marker').length"),0);
+assert.equal(await evaluate("document.querySelectorAll('.map-section .car-pin').length"),1);
+await evaluate("Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:(_ok,fail)=>fail({code:1})}});document.getElementById('locate-button').click()");await pause(100);
+assert.ok((await evaluate("document.getElementById('my-location-status').textContent")).includes('권한'));
+assert.equal(await evaluate("document.querySelectorAll('#map-dialog .my-location-marker').length"),0);
+await evaluate("document.getElementById('close-map').click()");await pause(100);
+await evaluate("Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:(ok)=>{window.__testGeoSuccess=ok}}});document.getElementById('locate-button').click()");await pause(100);
+await evaluate("document.getElementById('close-map').click()");await pause(100);
+await evaluate("window.__testGeoSuccess({coords:{longitude:126.981,latitude:37.568,accuracy:10}})");
+assert.equal(await evaluate("document.querySelectorAll('.my-location-marker').length"),0);
+console.log('PASS fullscreen, two markers, fit bounds, home-only vehicle, denied location, late callback');
+await send('Page.reload'); // Remove the synthetic geolocation override.
 await fs.writeFile(new URL('layout-checks.json',output),JSON.stringify(result,null,2));
-console.log(JSON.stringify({mapFeatures:await evaluate('map.queryRenderedFeatures().length'),layoutChecks:result.length,output:output.pathname}));
+console.log(JSON.stringify({layoutChecks:result.length,output:output.pathname}));
 ws.close();

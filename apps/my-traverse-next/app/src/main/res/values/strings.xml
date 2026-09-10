@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">My Traverse Next</string>
+    <string name="widget_mini_home_map">Vehicle location map</string>
+    <string name="widget_mini_home_4x2_description">Vehicle status, location, fuel and driving range</string>
+    <string name="widget_mini_home_2x2_description">Compact vehicle status, location and driving range</string>
 </resources>

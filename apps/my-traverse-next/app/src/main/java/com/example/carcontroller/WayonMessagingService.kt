@@ -14,7 +14,9 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 import org.json.JSONObject
 
 class WayonMessagingService : FirebaseMessagingService() {
@@ -29,7 +31,12 @@ class WayonMessagingService : FirebaseMessagingService() {
                     Log.i("WayonImpact", "Suppressed remote-start vibration impact")
                     return
                 }
+                if (!WayonImpactDeliveryGuard.shouldDeliver(this, message.data)) {
+                    Log.i("WayonImpact", "Suppressed stale, duplicate, or burst impact notification")
+                    return
+                }
                 WayonImpactStateStore.record(this, message.data)
+                com.example.carcontroller.widget.MiniHomeWidgetUpdater.notifyDataChanged(this)
                 LocalBroadcastManager.getInstance(this)
                     .sendBroadcast(Intent(WayonImpactStateStore.ACTION_UPDATED))
                 WayonImpactNotifications.show(this, message.data)
@@ -37,6 +44,76 @@ class WayonMessagingService : FirebaseMessagingService() {
             "wayon_door_lock" -> WayonDoorLockNotifications.show(this, message.data)
             "wayon_parking_unlocked" -> WayonParkingNotifications.show(this, message.data)
         }
+    }
+}
+
+object WayonImpactDeliveryGuard {
+    private const val PREFS = "wayon_impact_delivery_guard"
+    private const val KEY_RECENT_IDS = "recent_ids_json"
+    private const val KEY_LAST_LIGHT_AT_MS = "last_light_at_ms"
+    internal const val MAX_EVENT_AGE_MS = 10 * 60 * 1000L
+    internal const val MAX_FUTURE_SKEW_MS = 2 * 60 * 1000L
+    internal const val LIGHT_BURST_WINDOW_MS = 2 * 60 * 1000L
+    private const val RECENT_ID_RETENTION_MS = 24 * 60 * 60 * 1000L
+    private const val MAX_RECENT_IDS = 128
+
+    @Synchronized
+    fun shouldDeliver(
+        context: Context,
+        data: Map<String, String>,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Boolean {
+        if (data["test"] == "true") return true
+        val impactId = data["impactId"].orEmpty().trim()
+        val detectedAtMs = parseDetectedAt(data["detectedAt"]) ?: return false
+        if (!isTimestampEligible(detectedAtMs, nowMs)) return false
+        if (impactId.isBlank()) return false
+
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val recent = runCatching { JSONObject(prefs.getString(KEY_RECENT_IDS, "{}") ?: "{}") }
+            .getOrElse { JSONObject() }
+        val retained = recent.keys().asSequence()
+            .mapNotNull { id -> recent.optLong(id, 0L).takeIf { it > nowMs - RECENT_ID_RETENTION_MS }?.let { id to it } }
+            .sortedByDescending { it.second }
+            .take(MAX_RECENT_IDS - 1)
+            .toList()
+        if (retained.any { it.first == impactId }) return false
+
+        val nextRecent = JSONObject()
+        retained.forEach { (id, receivedAt) -> nextRecent.put(id, receivedAt) }
+        nextRecent.put(impactId, nowMs)
+
+        val isLight = data["severity"].isNullOrBlank() || data["severity"] == "light"
+        val lastLightAtMs = prefs.getLong(KEY_LAST_LIGHT_AT_MS, 0L)
+        val burstAllowed = !isLight || isLightBurstAllowed(lastLightAtMs, nowMs)
+        prefs.edit()
+            .putString(KEY_RECENT_IDS, nextRecent.toString())
+            .apply {
+                if (isLight && burstAllowed) putLong(KEY_LAST_LIGHT_AT_MS, nowMs)
+            }
+            .apply()
+        return burstAllowed
+    }
+
+    internal fun isTimestampEligible(detectedAtMs: Long, nowMs: Long): Boolean =
+        detectedAtMs >= nowMs - MAX_EVENT_AGE_MS && detectedAtMs <= nowMs + MAX_FUTURE_SKEW_MS
+
+    internal fun isLightBurstAllowed(lastLightAtMs: Long, nowMs: Long): Boolean =
+        lastLightAtMs <= 0L || nowMs - lastLightAtMs >= LIGHT_BURST_WINDOW_MS
+
+    private fun parseDetectedAt(value: String?): Long? {
+        if (value.isNullOrBlank()) return null
+        val formats = listOf("yyyy-MM-dd'T'HH:mm:ss.SSSX", "yyyy-MM-dd'T'HH:mm:ssX")
+        for (pattern in formats) {
+            val parsed = runCatching {
+                SimpleDateFormat(pattern, Locale.US).apply {
+                    isLenient = false
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }.parse(value)?.time
+            }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        return null
     }
 }
 

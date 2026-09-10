@@ -25,3 +25,22 @@ The inspected phone has package `com.example.carcontroller.next`, version
 including their primary DEX. Preserve the installed app and private settings;
 reconcile the source/signing baseline before building an update. Do not install
 the older `MyTraverse-App` branch over this app merely because its name matches.
+
+## Device rollout, 2026-09-10
+
+The installed preview.13 contained the previously uncommitted Mini Home widgets.
+Its main.html SHA-256 matched that working source exactly. This device branch
+preserves those existing assets, widgets and notification changes, then applies
+the passive polling patch. The original working checkout was not modified.
+
+Release build and 23 unit tests passed with Firebase configuration enabled.
+The existing signing key was recovered from the user's Time Machine backup and
+its certificate matched both installed apps. No signing key or private Firebase
+configuration is committed. A new unrelated debug key cannot update this app.
+
+Installed via data-preserving `adb install -r`: versionCode 23,
+`2.0-preview.14-cloud-budget`. Pulled-back installed APK SHA-256:
+`f679a89bd2e56447a6faf9f665a6e55311d1af4be1cc71840ff4f13a9988d8d7`.
+Cold launch, existing account/cloud data display and filtered crash logs were
+checked on the phone. Vehicle actuation, live streaming and push delivery after
+an actual parking event were not physically exercised.

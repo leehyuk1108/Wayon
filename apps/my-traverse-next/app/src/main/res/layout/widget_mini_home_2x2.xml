@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mini_home_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_mini_home_background">
+
+    <ImageView
+        android:id="@+id/mini_home_map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/widget_mini_home_map"
+        android:scaleType="centerCrop"
+        android:src="@drawable/widget_mini_home_map_placeholder" />
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_mini_home_scrim"
+        android:contentDescription="@null" />
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/widget_mini_home_bottom_scrim"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="vertical"
+        android:paddingStart="13dp"
+        android:paddingTop="13dp"
+        android:paddingEnd="10dp">
+
+        <TextView
+            android:id="@+id/mini_home_kicker"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_status_secure"
+            android:fontFamily="@font/pretendard_semibold"
+            android:includeFontPadding="false"
+            android:letterSpacing="0"
+            android:text="CHECK STATUS"
+            android:textColor="#151619"
+            android:textFontWeight="800"
+            android:textSize="9sp" />
+
+        <TextView
+            android:id="@+id/mini_home_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:fontFamily="@font/pretendard_semibold"
+            android:includeFontPadding="false"
+            android:letterSpacing="0"
+            android:lineSpacingExtra="-3dp"
+            android:maxLines="2"
+            android:text="ALL\nGOOD"
+            android:textColor="#FFFFFF"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="6"
+            android:textFontWeight="900"
+            android:textSize="34sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/mini_home_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/pretendard_semibold"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text=""
+            android:textColor="#D9FFFFFF"
+            android:textSize="9sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:gravity="bottom"
+        android:orientation="horizontal"
+        android:paddingStart="13dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="11dp">
+
+        <TextView
+            android:id="@+id/mini_home_range"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/pretendard_semibold"
+            android:includeFontPadding="false"
+            android:text="--"
+            android:textColor="#FFFFFF"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="5"
+            android:textFontWeight="850"
+            android:textSize="32sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="3dp"
+            android:layout_marginBottom="2dp"
+            android:fontFamily="@font/pretendard_semibold"
+            android:includeFontPadding="false"
+            android:text="km"
+            android:textColor="#A6FFFFFF"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:layout_width="58dp"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/mini_home_fuel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/pretendard_semibold"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="--"
+                android:textColor="#D9FFFFFF"
+                android:textFontWeight="850"
+                android:textSize="16sp" />
+
+            <ProgressBar
+                android:id="@+id/mini_home_fuel_bar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:max="100"
+                android:progress="0"
+                android:progressBackgroundTint="#40FFFFFF"
+                android:progressTint="#EEF0F3" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/mini_home_updated"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:text="--"
+        android:visibility="gone" />
+</FrameLayout>

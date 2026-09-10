@@ -5835,6 +5835,51 @@
             font-weight: 600;
         }
 
+        .drive-report-condition-heading {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 0 6px;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 12px;
+            font-weight: 720;
+        }
+
+        .drive-report-condition-heading small {
+            color: rgba(255, 255, 255, 0.38);
+            font-size: 9px;
+            font-weight: 600;
+        }
+
+        .drive-report-component-copy span {
+            display: block;
+            color: rgba(255, 255, 255, 0.72);
+            font-size: 12px;
+            font-weight: 670;
+        }
+
+        .drive-report-component-copy small {
+            display: block;
+            margin-top: 3px;
+            overflow: hidden;
+            color: rgba(255, 255, 255, 0.38);
+            font-size: 8px;
+            font-weight: 580;
+            line-height: 1.3;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .drive-report-signal-row.condition-score {
+            grid-template-columns: minmax(108px, 0.95fr) minmax(76px, 1fr) auto;
+            min-height: 59px;
+        }
+
+        .drive-report-signal-row.condition-good .drive-report-signal-track i { background: #72d99a; }
+        .drive-report-signal-row.condition-fair .drive-report-signal-track i { background: #f0bb5a; }
+        .drive-report-signal-row.condition-poor .drive-report-signal-track i { background: #ff746c; }
+
         .drive-report-sensor-note {
             display: flex;
             align-items: flex-start;
@@ -11803,8 +11848,8 @@
             };
 
             const configure = {
-                driving: () => Object.assign(state, { engineRunning: true, onroad: true, openpilotActive: true, controlsDisabled: true }),
-                'manual-driving': () => Object.assign(state, { engineRunning: true, onroad: true, controlsDisabled: true }),
+                driving: () => Object.assign(state, { engineRunning: true, onroad: true, openpilotActive: true }),
+                'manual-driving': () => Object.assign(state, { engineRunning: true, onroad: true }),
                 'engine-on': () => Object.assign(state, { engineRunning: true }),
                 running: () => Object.assign(state, { engineRunning: true, remoteRunning: true }),
                 door: () => { state.doorOpen = true; },
@@ -11825,7 +11870,7 @@
                 'low-fuel': () => Object.assign(state, { fuelLiters: 5.8, fuelRange: 42 }),
                 stale: () => { state.updatedAt = now - 11 * 60 * 1000; },
                 offline: () => Object.assign(state, { unavailable: true, controlsDisabled: true }),
-                'location-missing': () => Object.assign(state, { onroad: true, locationMissing: true, controlsDisabled: true }),
+                'location-missing': () => Object.assign(state, { onroad: true, locationMissing: true }),
                 'start-blocked': () => { state.hoodOpen = true; },
                 'no-starts': () => { state.remainingStarts = 0; },
                 sending: () => { state.feedback = 'sending'; },
@@ -13190,7 +13235,7 @@
             const controlsUnavailable = !details || wayonLiveStateCurrent?.unavailable === true;
             document.querySelector('.home-command-bar')?.classList.toggle(
                 'controls-disabled',
-                drivingActive || controlsUnavailable,
+                controlsUnavailable,
             );
 
             btnEngineStart.hidden = remoteRunning;
@@ -14258,6 +14303,46 @@
             </div>`;
         }
 
+        function reportConditionComponentRow(label, component, detail = "") {
+            if (!component?.available) return "";
+            const score = Math.max(0, Math.min(100, reportNumber(component.score, 0)));
+            const grade = score >= 80 ? "good" : score >= 60 ? "fair" : "poor";
+            const weight = Math.max(0, reportNumber(component.appliedWeightPercent, 0));
+            return `<div class="drive-report-signal-row condition-score condition-${grade}">
+                <div class="drive-report-component-copy"><span>${escapeHtml(label)}</span>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</div>
+                <div class="drive-report-signal-track"><i style="width:${score.toFixed(0)}%"></i></div>
+                <strong class="drive-report-signal-result">${Math.round(score)}점<small>반영 ${Math.round(weight)}%</small></strong>
+            </div>`;
+        }
+
+        function driveReportConditionMarkup(health) {
+            const components = health?.load?.components || {};
+            if (!Object.values(components).some(component => component?.available)) return "";
+            const hrv = health?.hrv || {};
+            const driving = components.drivingSmoothness || {};
+            const counts = driving.eventCounts || {};
+            const trip = components.tripDemand || {};
+            const metrics = trip.metrics || {};
+            const drivingDetail = `급출발 ${Math.round(reportNumber(counts.hardAccelerationCount, 0))} · 급제동 ${Math.round(reportNumber(counts.hardBrakingCount, 0))} · 정지충격 ${Math.round(reportNumber(counts.harshStopCount, 0))}`;
+            const tripParts = [
+                reportNumber(metrics.distanceKm) === null ? "" : `${reportNumber(metrics.distanceKm).toFixed(1)}km`,
+                reportNumber(metrics.durationMinutes) === null ? "" : `${Math.round(reportNumber(metrics.durationMinutes))}분`,
+                reportNumber(metrics.averageSpeedKmh) === null ? "" : `평균 ${Math.round(reportNumber(metrics.averageSpeedKmh))}`,
+                reportNumber(metrics.maximumSpeedKmh) === null ? "" : `최고 ${Math.round(reportNumber(metrics.maximumSpeedKmh))}`,
+            ].filter(Boolean).join(" · ");
+            const rows = [
+                reportConditionComponentRow("심박 안정도", components.heartRateStability, "기준 심박 대비 변화"),
+                reportConditionComponentRow("긴장 반응", components.stressResponse, "피부전도 EDA"),
+                reportConditionComponentRow("심박변이 회복", components.hrvRecovery, reportNumber(hrv.averageRmssdMs) === null ? "HRV" : `HRV ${Math.round(reportNumber(hrv.averageRmssdMs))}ms`),
+                reportConditionComponentRow("수면 상태", components.sleep, "운전 전 수면 점수"),
+                reportConditionComponentRow("에너지", components.energy, "운전 전 에너지 점수"),
+                reportConditionComponentRow("운전 부드러움", driving, drivingDetail),
+                reportConditionComponentRow("운전 강도", trip, tripParts || "거리·시간·속도"),
+            ].filter(Boolean).join("");
+            if (!rows) return "";
+            return `<div class="drive-report-condition-heading"><span>종합점수 구성</span><small>수집된 항목만 가중 반영</small></div><div class="drive-report-signal-list">${rows}</div>`;
+        }
+
         function reportClock(value) {
             const date = new Date(value || 0);
             if (!Number.isFinite(date.getTime())) return "--:--";
@@ -14303,6 +14388,57 @@
             const comfort = reportNumber(analysis?.scores?.comfort);
             const harshStops = reportNumber(analysis?.comfort?.harshStopCount, 0);
             const oscillations = reportNumber(analysis?.comfort?.lowSpeedOscillationCount, 0);
+            const components = health?.load?.components || {};
+            const componentDefinitions = [
+                ["heartRateStability", "심박 안정도"],
+                ["stressResponse", "긴장 반응"],
+                ["hrvRecovery", "HRV 회복"],
+                ["sleep", "수면 상태"],
+                ["energy", "에너지 상태"],
+                ["drivingSmoothness", "주행 부드러움"],
+                ["tripDemand", "운전 강도"],
+            ];
+            const availableComponents = componentDefinitions.map(([key, label]) => {
+                const component = components[key] || {};
+                const score = component.available ? reportNumber(component.score) : null;
+                const weight = reportNumber(component.appliedWeightPercent, 0);
+                return score === null ? null : { key, label, score, loss: (100 - score) * weight };
+            }).filter(Boolean);
+            if (availableComponents.length) {
+                const drivingIssueText = () => {
+                    const counts = components.drivingSmoothness?.eventCounts || {};
+                    const issues = [
+                        ["급출발", counts.hardAccelerationCount],
+                        ["급제동", counts.hardBrakingCount],
+                        ["정지 충격", counts.harshStopCount],
+                        ["저속 출렁임", counts.lowSpeedOscillationCount],
+                    ].map(([label, value]) => [label, Math.max(0, Math.round(reportNumber(value, 0)))])
+                        .filter(([, value]) => value > 0)
+                        .map(([label, value]) => `${label} ${value}회`);
+                    return issues.length ? issues.slice(0, 3).join("·") : "주행 부드러움 저하";
+                };
+                const negativeText = (component) => {
+                    if (component.key === "drivingSmoothness") return drivingIssueText();
+                    if (component.key === "tripDemand") return "장거리·장시간 또는 고속 주행 부담";
+                    return `${component.label} ${Math.round(component.score)}점`;
+                };
+                const negatives = availableComponents.filter(component => component.score < 70)
+                    .sort((a, b) => b.loss - a.loss);
+                const positives = availableComponents.filter(component => component.score >= 80)
+                    .sort((a, b) => b.score - a.score);
+                if (negatives.length) {
+                    const reason = negatives.slice(0, 2).map(negativeText).join(", ");
+                    const positive = positives.find(component => !negatives.some(item => item.key === component.key));
+                    return `주요 감점 요인은 ${reason}입니다.${positive ? ` ${positive.label} 항목은 양호해 점수를 보완했습니다.` : ""}`;
+                }
+                if (positives.length >= 2) {
+                    return `${positives.slice(0, 3).map(component => component.label).join("·")} 항목이 양호했고, 뚜렷한 감점 요인이 없어 높은 점수입니다.`;
+                }
+                if (positives.length === 1) {
+                    return `${positives[0].label}은 양호했고 나머지 항목은 대체로 보통 범위여서 현재 점수가 산정됐습니다.`;
+                }
+                return "수집된 생체 상태와 차량 움직임이 전반적으로 보통 범위여서 현재 점수가 산정됐습니다.";
+            }
             const topMoment = Array.isArray(health?.topStressMoments) ? health.topStressMoments[0] : null;
             if (health?.available && topMoment) {
                 const hasEda = reportNumber(topMoment.edaAboveBaselineMicrosiemens) !== null;
@@ -14312,7 +14448,7 @@
                 return `심박은 수집되지 않았지만 피부전도 반응으로 추정한 운전자 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 낮은 신뢰도의 보조 지표로 확인해 주세요.`;
             }
             if (health?.available) {
-                return `주행 중 추정 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 심박 변화와 차량 움직임을 함께 분석했습니다.`;
+                return `주행 중 추정 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 심박·HRV·수면·에너지와 급가감속, 주행 거리·시간·속도를 함께 반영했습니다.`;
             }
             if (harshStops > 0) return `${harshStops}회의 정지에서 마지막 저속 구간의 충격이 크게 측정됐습니다. 심박 데이터가 연결되면 운전자 반응도 함께 비교됩니다.`;
             if (oscillations >= 4) return `저속 구간에서 가속과 감속 전환이 ${oscillations}회 측정됐습니다. 정체 주행의 승차감을 중점적으로 확인해 보세요.`;
@@ -14373,6 +14509,7 @@
             const meta = document.getElementById("drive-report-health-meta");
             if (!container || !meta) return;
             const sensorMarkup = driveReportSensorMarkup(health);
+            const conditionMarkup = driveReportConditionMarkup(health);
             if (!health?.available) {
                 meta.textContent = sensorMarkup ? "워치 보조 분석" : (health?.status === "not_configured" ? "연결 필요" : "측정 데이터 없음");
                 container.innerHTML = `<div class="drive-report-empty">이 주행 시간대의 워치 심박 데이터가 없습니다. 차량 분석은 정상적으로 표시되며, Health Bridge가 동기화되면 심박 기반 부담도가 추가됩니다.</div>${sensorMarkup}`;
@@ -14399,6 +14536,7 @@
                         <div class="drive-report-context-item"><i class="fas fa-heartbeat" aria-hidden="true"></i><div class="drive-report-context-copy"><span>심박</span><strong>미수집</strong></div><em>--</em></div>
                         <div class="drive-report-context-item"><i class="fas fa-shield-alt" aria-hidden="true"></i><div class="drive-report-context-copy"><span>분석 신뢰도</span><strong>${reportConfidenceLabel(health.confidence).replace("신뢰도 ", "")}</strong></div><em>EDA</em></div>
                     </div>
+                    ${conditionMarkup}
                     ${sensorMarkup}`;
                 return;
             }
@@ -14424,6 +14562,7 @@
                     <div class="drive-report-feature-side"><strong>${maximum === null ? "--" : Math.round(maximum)} bpm</strong><span>최고 심박</span></div>
                 </div>
                 ${contextItems ? `<div class="drive-report-context-row">${contextItems}</div>` : ""}
+                ${conditionMarkup}
                 ${heartRateChart(health)}
                 ${sensorMarkup}`;
         }
@@ -14574,12 +14713,12 @@
             const unit = document.getElementById("drive-report-score-unit");
             const state = document.getElementById("drive-report-score-state");
             const opUsage = reportNumber(analysis?.automation?.opUsagePercent);
-            const loadBand = healthReady ? health?.load?.band : comfortScore !== null ? (comfortScore >= 85 ? "low" : comfortScore >= 65 ? "moderate" : "high") : "";
+            const scoreBand = score === null ? "" : score >= 80 ? "low" : score >= 60 ? "moderate" : "high";
 
             kicker.textContent = healthReady ? "DRIVER CONDITION" : "DRIVE QUALITY";
             confidence.textContent = reportConfidenceLabel(healthReady ? health.confidence : analysis?.dataQuality?.confidence);
             scoreElement.textContent = score === null ? "--" : Math.round(score);
-            scoreElement.className = `drive-report-score ${loadBand || ""}`;
+            scoreElement.className = `drive-report-score ${scoreBand}`;
             unit.textContent = "점";
             state.textContent = healthReady ? reportConditionLabel(score) : (score === null ? "분석 중" : score >= 85 ? "주행 안정적" : score >= 65 ? "개선 여지" : "주의 필요");
             document.getElementById("drive-report-summary-text").textContent = driveReportSummaryText(analysis, health);

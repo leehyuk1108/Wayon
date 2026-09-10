@@ -5,6 +5,9 @@ import org.json.JSONObject
 import org.junit.Test
 
 import org.junit.Assert.*
+import com.example.carcontroller.widget.MiniHomeMapRenderer
+import com.example.carcontroller.widget.MiniHomeWidgetPolicy
+import java.time.Instant
 
 /**
  * Example local unit test, which will execute on the development machine (host).
@@ -12,6 +15,89 @@ import org.junit.Assert.*
  * See [testing documentation](http://d.android.com/tools/testing).
  */
 class ExampleUnitTest {
+    @Test
+    fun miniHomeWidget_usesVehicleStatusMapAndRangeData() {
+        val feed = WayonCloudFeedParser.parse(
+            JSONObject()
+                .put("state", JSONObject()
+                    .put("updated_at", "2026-09-06T01:00:00Z")
+                    .put("onroad", false)
+                    .put("latitude", 37.5)
+                    .put("longitude", 127.0))
+                .put("vehicleStatus", JSONObject()
+                    .put("ok", true)
+                    .put("updatedAt", "2026-09-06T01:00:00Z")
+                    .put("stale", false)
+                    .put("data", JSONObject()
+                        .put("last_update", "2026-09-06 10:00:00")
+                        .put("range", "418 km")
+                        .put("gmone_details", JSONObject()
+                            .put("fuel", JSONObject()
+                                .put("rangeKm", 418)
+                                .put("levelPercent", 67)))))
+                .put("trips", JSONArray())
+                .put("snapshots", JSONArray())
+                .toString(),
+        )
+
+        val snapshot = MiniHomeWidgetPolicy.snapshot(feed, nowMs = 1_788_656_420_000L)
+        assertEquals("ALL\nGOOD", snapshot.status.title)
+        assertEquals(418, snapshot.rangeKm)
+        assertEquals(67, snapshot.fuelPercent)
+        assertEquals(37.5, snapshot.latitude!!, 0.0)
+        assertEquals("2026/09/06, 10:00", snapshot.updatedAt)
+    }
+
+    @Test
+    fun miniHomeWidget_reportsDrivingAndMapMovement() {
+        val feed = WayonCloudFeedParser.parse(
+            JSONObject()
+                .put("state", JSONObject()
+                    .put("updated_at", "2026-09-06T01:00:00Z")
+                    .put("onroad", true)
+                    .put("ignition", true)
+                    .put("latitude", 37.5)
+                    .put("longitude", 127.0)
+                    .put("speed_mps", 20.0))
+                .put("trips", JSONArray())
+                .put("snapshots", JSONArray())
+                .toString(),
+        )
+
+        assertEquals("DRIVING", MiniHomeWidgetPolicy.status(feed, 1_788_656_420_000L).title)
+        assertEquals(0.0, MiniHomeMapRenderer.distanceMeters(37.5, 127.0, 37.5, 127.0), 0.001)
+        assertTrue(MiniHomeMapRenderer.distanceMeters(37.5, 127.0, 37.501, 127.0) > 100.0)
+    }
+
+    @Test
+    fun miniHomeWidget_doesNotTreatParkedUnchangedStateAsDelayed() {
+        val now = Instant.parse("2026-09-06T03:00:00Z").toEpochMilli()
+        val parked = WayonCloudFeedParser.parse(
+            JSONObject()
+                .put("state", JSONObject()
+                    .put("updated_at", "2026-09-06T01:00:00Z")
+                    .put("onroad", false))
+                .put("vehicleStatus", JSONObject()
+                    .put("ok", true)
+                    .put("updatedAt", "2026-09-06T01:00:00Z")
+                    .put("stale", false)
+                    .put("data", JSONObject()
+                        .put("gmone_details", JSONObject()
+                            .put("meta", JSONObject()
+                                .put("source", "gmone-direct")
+                                .put("collectedAt", "2026-09-06T02:59:00Z")
+                                .put("updatedAt", "2026-09-06T01:00:00Z")
+                                .put("stale", false)))))
+                .toString(),
+        )
+        assertEquals("ALL\nGOOD", MiniHomeWidgetPolicy.status(parked, now).title)
+
+        val staleOnroad = parked.copy(
+            state = parked.state?.copy(onroad = true, updatedAt = "2026-09-06T02:58:00Z"),
+        )
+        assertEquals("UPDATE\nDELAYED", MiniHomeWidgetPolicy.status(staleOnroad, now).title)
+    }
+
     @Test
     fun wayonTransitionRefresh_onlyRunsAfterRealStateChanges() {
         assertNull(WayonDriveTransitionPolicy.refreshDelayMs(null, false))
@@ -33,6 +119,30 @@ class ExampleUnitTest {
         assertTrue(RemoteStartImpactGuard.isWithinSuppressionWindow(requestedAt, 100_000L))
         assertTrue(RemoteStartImpactGuard.isWithinSuppressionWindow(requestedAt, 145_000L))
         assertFalse(RemoteStartImpactGuard.isWithinSuppressionWindow(requestedAt, 145_001L))
+    }
+
+    @Test
+    fun impactDeliveryGuard_rejectsStaleFutureAndBurstEvents() {
+        val now = 1_000_000L
+        assertTrue(WayonImpactDeliveryGuard.isTimestampEligible(now - 30_000L, now))
+        assertTrue(WayonImpactDeliveryGuard.isTimestampEligible(
+            now - WayonImpactDeliveryGuard.MAX_EVENT_AGE_MS,
+            now,
+        ))
+        assertFalse(WayonImpactDeliveryGuard.isTimestampEligible(
+            now - WayonImpactDeliveryGuard.MAX_EVENT_AGE_MS - 1L,
+            now,
+        ))
+        assertFalse(WayonImpactDeliveryGuard.isTimestampEligible(
+            now + WayonImpactDeliveryGuard.MAX_FUTURE_SKEW_MS + 1L,
+            now,
+        ))
+        assertTrue(WayonImpactDeliveryGuard.isLightBurstAllowed(0L, now))
+        assertFalse(WayonImpactDeliveryGuard.isLightBurstAllowed(now - 30_000L, now))
+        assertTrue(WayonImpactDeliveryGuard.isLightBurstAllowed(
+            now - WayonImpactDeliveryGuard.LIGHT_BURST_WINDOW_MS,
+            now,
+        ))
     }
 
     @Test

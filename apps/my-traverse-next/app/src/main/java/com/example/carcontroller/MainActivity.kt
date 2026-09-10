@@ -1458,6 +1458,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         runJs("updateWayonCloudSnapshots(${jsQuote(feed.snapshotsJson)})")
         applyStoredWayonImpact()
         applyWayonVehicleStatus(feed.vehicleStatus)
+        com.example.carcontroller.widget.MiniHomeWidgetStore.updateFromFeed(this, feed)
 
         val state = feed.state
         if (state == null) {

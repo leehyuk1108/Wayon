@@ -10,7 +10,7 @@
     const FUEL_WARNING_PERCENT = 10;
     const BATTERY_TEMPERATURE_WARNING_C = 55;
     const BATTERY_TEMPERATURE_CRITICAL_C = 65;
-    const VEHICLE_DETAILS_STALE_AFTER_SECONDS = 10 * 60;
+    const VEHICLE_DETAILS_STALE_AFTER_SECONDS = 24 * 60 * 60;
 
     function number(value) {
         if (value === null || value === undefined || value === "") return null;
@@ -44,7 +44,11 @@
     }
 
     function detailsAgeSeconds(details, nowMs) {
-        const value = details?.meta?.updatedAt;
+        const meta = details?.meta || {};
+        const source = String(meta.source || "").toLowerCase();
+        const value = source.includes("gmone")
+            ? (meta.collectedAt || meta.updatedAt)
+            : meta.updatedAt;
         if (typeof value !== "string" || !value.trim()) return null;
         const text = value.trim();
         const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)
@@ -196,8 +200,7 @@
 
         if (hasLive) {
             const ageSeconds = liveAgeSeconds(live, nowMs);
-            const staleAfterSeconds = live.onroad === true ? 45 : 600;
-            if (ageSeconds !== null && ageSeconds > staleAfterSeconds) {
+            if (live.onroad === true && ageSeconds !== null && ageSeconds > 45) {
                 return report("warning", "UPDATE\nDELAYED", "Vehicle data may be outdated", "clock-alert");
             }
             if (live.onroad === true && (live.latitude == null || live.longitude == null || live.gpsFresh === false)) {

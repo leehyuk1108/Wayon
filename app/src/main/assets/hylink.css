@@ -73,7 +73,7 @@ main{padding:0 12px 28px}.page-head{padding:14px 4px 18px}.page-head h1{font-siz
 .my-traverse-skin .home-map-hero{height:clamp(350px,47vh,430px);background:#080808}
 .my-traverse-skin .home-map-hero::before{content:"";position:absolute;z-index:401;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:34px 34px;mask-image:radial-gradient(circle at center,#000 34%,transparent 76%);opacity:.7}
 .my-traverse-skin #home-map{inset:-28px;pointer-events:none;transition:inset .38s cubic-bezier(.22,1,.36,1)}
-.my-traverse-skin #home-map .leaflet-tile{filter:grayscale(1) brightness(2.9) contrast(1.02)}
+.my-traverse-skin #home-map .leaflet-tile{filter:grayscale(1) invert(1) brightness(.75) contrast(1.05)}
 .my-traverse-skin .map-shade{z-index:402;background:radial-gradient(ellipse at center,transparent 0 44%,rgba(11,11,11,.08) 64%,rgba(11,11,11,.5) 86%,rgba(11,11,11,.96) 100%),linear-gradient(90deg,#0b0b0b 0%,rgba(11,11,11,.86) 8%,rgba(11,11,11,.38) 20%,transparent 36%,transparent 64%,rgba(11,11,11,.38) 80%,rgba(11,11,11,.86) 92%,#0b0b0b 100%),linear-gradient(180deg,#0b0b0b 0%,rgba(11,11,11,.76) 9%,rgba(11,11,11,.28) 24%,transparent 39%,transparent 62%,rgba(11,11,11,.34) 82%,rgba(11,11,11,.88) 95%,#0b0b0b 100%)}
 .my-traverse-skin .leaflet-vehicle-marker{position:relative;width:84px;height:84px}
 .my-traverse-skin .leaflet-vehicle-dot{position:absolute;left:50%;top:50%;width:15px;height:15px;border-radius:50%;background:#f0f0f0;box-shadow:0 0 0 7px rgba(255,255,255,.12),0 0 26px rgba(255,255,255,.2),0 8px 20px rgba(0,0,0,.65);transform:translate(-50%,-50%);animation:vehicleLocationBreath 1.8s ease-in-out infinite}
@@ -93,7 +93,7 @@ body.map-fullscreen #page-overview .home-dashboard{position:absolute;inset:0;wid
 body.map-fullscreen #page-overview .home-dashboard> :not(.home-map-hero){display:none}
 body.map-fullscreen .home-map-hero{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
 body.map-fullscreen #home-map{inset:0;pointer-events:auto}
-body.map-fullscreen #home-map .leaflet-tile{filter:grayscale(1) brightness(3.25) contrast(1)}
+body.map-fullscreen #home-map .leaflet-tile{filter:grayscale(1) invert(1) brightness(.85) contrast(1.05)}
 body.map-fullscreen .home-map-hero::before{opacity:.34}
 body.map-fullscreen .map-shade{background:radial-gradient(ellipse at center,transparent 0 64%,rgba(11,11,11,.03) 82%,rgba(11,11,11,.22) 100%),linear-gradient(180deg,rgba(11,11,11,.24) 0%,transparent 15%,transparent 86%,rgba(11,11,11,.28) 100%)}
 body.map-fullscreen .map-topline,body.map-fullscreen .hero-location-label,body.map-fullscreen .map-live-button,body.map-fullscreen .map-expand-button{display:none}
@@ -121,3 +121,7 @@ body.home-active #page-overview .home-dashboard{height:100%;min-height:0;display
 .my-traverse-skin #page-overview .home-metric-row>div{padding:11px 10px;border:0;border-radius:12px;background:#1b1b1b}
 .my-traverse-skin #page-overview .home-command-bar{gap:0;padding:1px 8px 0;border:0;background:#121212}
 .my-traverse-skin #page-overview .home-command-slot{background:transparent}
+.leaflet-control-attribution{display:block!important;background:rgba(12,12,12,.88)!important;color:#ddd!important;font:10px/1.5 system-ui!important}
+.leaflet-control-attribution a{color:#ddd!important}
+#home-map .leaflet-bottom{bottom:28px;right:28px}
+body.map-fullscreen #home-map .leaflet-bottom{bottom:0;right:0}

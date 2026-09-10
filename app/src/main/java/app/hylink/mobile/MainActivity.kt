@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.util.Base64
 import android.webkit.JavascriptInterface
@@ -27,6 +28,9 @@ class MainActivity : AppCompatActivity() {
     private val networkExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val refreshInFlight = AtomicBoolean(false)
+    private val cloudRefreshPolicy = CloudRefreshPolicy()
+    // Only the single network executor reads/writes these cached JSON objects.
+    private val historyCache = mutableMapOf<String, Any>()
     private var pageReady = false
     private var activityVisible = false
     private var liveActive = false
@@ -37,7 +41,7 @@ class MainActivity : AppCompatActivity() {
 
     private val autoRefresh = object : Runnable {
         override fun run() {
-            if (activityVisible && pageReady && !liveActive && !terminalActive) refreshWayonData()
+            if (activityVisible && pageReady && !liveActive && !terminalActive) refreshWayonDataInternal(force = false)
             mainHandler.postDelayed(this, AUTO_REFRESH_INTERVAL_MS)
         }
     }
@@ -147,32 +151,57 @@ class MainActivity : AppCompatActivity() {
 
     @JavascriptInterface
     fun refreshWayonData() {
+        refreshWayonDataInternal(force = true)
+    }
+
+    private fun refreshWayonDataInternal(force: Boolean) {
         val key = loadWayonCloudKey()
         if (key.isBlank()) {
             runJs("window.onHylinkError?.('Wayon Cloud 키를 입력해 주세요.')")
             return
         }
         if (!refreshInFlight.compareAndSet(false, true)) return
-        runJs("window.onHylinkLoading?.()")
 
         networkExecutor.execute {
             val result = JSONObject()
             val errors = JSONArray()
             try {
+                if (cloudRefreshPolicy.selectScope(key)) historyCache.clear()
+                if (!cloudRefreshPolicy.canRefresh(SystemClock.elapsedRealtime(), force)) {
+                    return@execute
+                }
+                runJs("window.onHylinkLoading?.()")
                 HylinkApiContract.READ_ENDPOINTS.forEach { endpoint ->
                     try {
-                        result.put(endpoint.name, HylinkApiContract.sanitize(endpoint.name, fetchJson(endpoint.path, key)))
+                        val now = SystemClock.elapsedRealtime()
+                        val cached = historyCache[endpoint.name]
+                        if (cached != null && !cloudRefreshPolicy.due(endpoint.name, now, force)) {
+                            result.put(endpoint.name, cached)
+                        } else {
+                            val payload = HylinkApiContract.sanitize(endpoint.name, fetchJson(endpoint.path, key))
+                            result.put(endpoint.name, payload)
+                            if (endpoint.name != "feed") historyCache[endpoint.name] = payload
+                            cloudRefreshPolicy.completed(endpoint.name, SystemClock.elapsedRealtime())
+                        }
                     } catch (error: Exception) {
+                        if (endpoint.name == "feed") throw error
                         Log.w(TAG, "Wayon endpoint failed: ${endpoint.path}", error)
+                        historyCache[endpoint.name]?.let { result.put(endpoint.name, it) }
                         errors.put(JSONObject().put("name", endpoint.name).put("message", safeMessage(error)))
                     }
                 }
                 result.put("receivedAt", System.currentTimeMillis())
                 result.put("errors", errors)
                 if (!result.has("feed")) throw IOException("현재 차량 상태를 불러오지 못했습니다.")
+                cloudRefreshPolicy.result(errors.length() == 0, SystemClock.elapsedRealtime())
+                // A response started with a former vehicle key must not replace
+                // the newly selected vehicle's dashboard.
+                if (key != loadWayonCloudKey()) return@execute
                 runJs("window.onHylinkData?.(JSON.parse(${JSONObject.quote(result.toString())}))")
             } catch (error: Exception) {
                 Log.w(TAG, "Wayon refresh failed", error)
+                cloudRefreshPolicy.result(false, SystemClock.elapsedRealtime())
+                if (key != loadWayonCloudKey()) return@execute
                 runJs("window.onHylinkError?.(${JSONObject.quote(safeMessage(error))})")
             } finally {
                 refreshInFlight.set(false)

@@ -5,6 +5,7 @@
   <meta name="theme-color" content="#f7f8fa"><title>Hylink · 새로운 차량 경험</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.12.0/dist/maplibre-gl.css">
   <link rel="stylesheet" href="design.css">
+  <link rel="stylesheet" href="home-layout.css">
   <script defer src="https://unpkg.com/maplibre-gl@5.12.0/dist/maplibre-gl.js"></script>
   <script defer src="../../app/src/main/assets/vendor/lucide.min.js"></script>
   <script defer src="model.js"></script><script defer src="preview.js"></script>
@@ -19,11 +20,9 @@
         <div id="attention" class="attention" role="status" hidden></div>
         <section class="map-section" aria-label="마지막 수신 차량 위치"><div id="map"></div><div id="map-error" hidden>지도를 불러오지 못했어요.<br>마지막 좌표는 아래에서 확인할 수 있어요.</div><div class="map-context"><i data-lucide="locate-fixed"></i><span id="location-caption">마지막 수신 위치 · GPS 오차 약 6m</span></div><button class="map-open" id="locate-button" aria-label="전체화면 지도 열기"><span class="map-expand"><i data-lucide="expand"></i></span></button><details id="map-credits" class="map-credits"><summary aria-label="지도 출처"><i data-lucide="info"></i></summary><div><a href="https://www.openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></div></details></section>
         <div class="home-content">
-          <div class="location-row"><div class="location-mark"><i data-lucide="map-pin"></i></div><div><h2>마지막 차량 위치</h2><p id="coordinate-label">37.56650, 126.97800</p></div><button class="icon-button" id="location-detail" aria-label="위치 수신 정보 보기"><i data-lucide="chevron-right"></i></button></div>
           <div class="section-heading"><h2>최근 주행</h2><button data-navigate="records">기록 보기 <i data-lucide="arrow-up-right"></i></button></div>
           <button class="journey-card" id="recent-trip" aria-label="최근 주행 상세 보기"><div class="journey-top"><span class="journey-date">오늘 · 14:08 — 14:40</span><i data-lucide="chevron-right"></i></div><div class="journey-main"><span><strong id="trip-distance">18.4</strong><span class="unit">km</span></span><svg class="route-flourish" viewBox="0 0 140 56" aria-hidden="true"><path d="M8 42H42Q55 42 55 28V20Q55 8 70 8H89Q104 8 104 23V28Q104 42 119 42H132"/><circle cx="8" cy="42" r="4"/><circle cx="132" cy="42" r="5"/></svg></div><div class="journey-meta"><span><i data-lucide="clock-3"></i><b id="trip-duration">32분</b> 주행</span><span>평균 <b id="trip-average">34</b> km/h</span></div></button>
           <div class="quick-actions"><button id="live-button"><span class="action-icon"><i data-lucide="video"></i></span><span><b>라이브 보기</b><small>차량 카메라 확인</small></span><i data-lucide="chevron-right"></i></button><button id="photos-button"><span class="action-icon"><i data-lucide="images"></i></span><span><b>주차 사진</b><small id="photo-count">최근 사진 4장</small></span><i data-lucide="chevron-right"></i></button></div>
-          <button class="device-summary" data-navigate="vehicle"><span class="device-icon"><i data-lucide="cpu"></i></span><span><b>연결 장치</b><small id="device-summary-text">12.5V · 42°C · 저장공간 78% 남음</small></span><i data-lucide="chevron-right"></i></button>
           <p class="quiet-note"><i data-lucide="cloud"></i>수신된 정보 기준이에요. 실시간 상태와 다를 수 있어요.</p>
         </div>
       </section>

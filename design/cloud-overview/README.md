@@ -22,6 +22,12 @@ Open `http://127.0.0.1:4198/design/cloud-overview/index.html`. Top controls sele
 
 ## Information hierarchy
 
+### Map-led home layout
+
+The user rejected adding parking-photo and activity cards just to fill the bottom. The accepted direction is a larger map plus one overlapping summary panel, with no new information sections. `home-layout.css` makes the map absorb spare viewport height; the panel contains the existing latest drive, live/photo shortcuts and received-data disclaimer, ending directly above the tabs. Redundant home coordinate/device rows were removed; device diagnosis remains on the Vehicle tab and vehicle position remains on the map. At smaller heights or larger text, the layout scrolls instead of clipping content. A ResizeObserver keeps the map canvas aligned when its container changes size.
+
+Verified at 390px width and viewport heights 844/1100/1400: panel bottom equals tab top, tab bottom equals viewport bottom, and map height increases with available height. Existing 320/390/768 width and 200% text tests, plus full-map/location isolation tests, remain passing. This is preview-only; APK and cloud services were not changed.
+
 | Priority | Surface | Existing source |
 | --- | --- | --- |
 | 1 | Conditional attention notice above map | Feed freshness/error; `vehicle.can`, `vehicle.steeringFault`, `openpilot.alert`, `panda.faults/heartbeatLost`, reported critical thermal status; recent impacts |

@@ -38,6 +38,19 @@ for(const width of [320,390,768]){
 await evaluate('document.body.classList.remove("large-text");document.documentElement.style.fontSize="16px";navigate("now")');
 await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
 await evaluate('map.resize(); void 0');await pause(300);await shot('home-390');
+const heightChecks=[];
+for(const height of [844,1100,1400]){
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height,deviceScaleFactor:1,mobile:true});
+  await pause(100);
+  const geometry=await evaluate("({height:innerHeight,panelBottom:document.querySelector('.home-content').getBoundingClientRect().bottom,tabTop:document.querySelector('.tab-bar').getBoundingClientRect().top,tabBottom:document.querySelector('.tab-bar').getBoundingClientRect().bottom,mapHeight:document.querySelector('.map-section').getBoundingClientRect().height})");
+  assert.ok(Math.abs(geometry.panelBottom-geometry.tabTop)<2,'No gap between home panel and tabs');
+  assert.ok(Math.abs(geometry.tabBottom-height)<2,'Layout fills viewport');
+  heightChecks.push(geometry);
+  if(height===1100)await shot('home-tall-390');
+}
+assert.ok(heightChecks[2].mapHeight>heightChecks[0].mapHeight,'Extra height is used by the map');
+await fs.writeFile(new URL('height-checks.json',output),JSON.stringify(heightChecks,null,2));
+await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await pause(100);
 // Geolocation tests use public synthetic points, never the operator's real location.
 await evaluate("Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:(ok)=>ok({coords:{longitude:126.981,latitude:37.568,accuracy:10}})}});void 0");
 await evaluate("document.getElementById('locate-button').click()");await pause(500);

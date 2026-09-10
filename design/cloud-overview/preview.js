@@ -35,7 +35,6 @@ function render(){
   $('all-alerts')?.addEventListener('click',showAlerts);
   const accuracy=CloudOverview.number(model.raw.gps?.accuracyM);
   $('location-caption').textContent=model.point?`마지막 수신 위치${model.raw.gps?.fresh===false?' · 이전 GPS 기록':accuracy!==null?' · GPS 오차 약 '+accuracy+'m':''}`:'위치 수신 대기';
-  $('coordinate-label').textContent=model.point?`${model.point[1].toFixed(5)}, ${model.point[0].toFixed(5)}`:'수신된 위치가 없어요';
   const t=model.trip;
   $('recent-trip').disabled=!t;
   $('trip-distance').textContent=t?fixed(CloudOverview.number(t.distance_m)/1000,1):'—';
@@ -43,7 +42,6 @@ function render(){
   $('trip-average').textContent=t?Math.round(t.avg_speed_mps*3.6):'—';
   document.querySelector('.journey-date').textContent=t?'최근 수신된 주행 기록':'주행 기록이 아직 없어요';
   $('photo-count').textContent=`수신된 사진 ${model.photos.length}장`;
-  $('device-summary-text').textContent=`${fixed(model.voltage,1)}V · ${fixed(model.temperature)}°C · 저장공간 ${fixed(model.freeSpace)}% 남음`;
   $('vehicle-age').textContent=model.received+' 기준이에요.';
   $('locate-button').disabled=!model.point;
   document.querySelector('.map-section').hidden=!model.point;
@@ -88,7 +86,6 @@ $('recent-trip').onclick=showTrip;
 $('photos-button').onclick=()=>{recordFilter='photos';document.querySelector('[data-filter="photos"]').click();navigate('records')};
 $('live-button').onclick=()=>showSheet('차량 카메라 라이브',`<p class="sheet-copy">실제 앱에서는 차량 연결과 카메라 이용 가능 여부를 확인한 다음 라이브를 시작해요.</p><p class="inline-note">라이브는 데이터와 차량 전력을 사용할 수 있어요. 이 미리보기에서는 세션을 시작하지 않아요.</p><button class="primary-button" id="demo-close">미리보기 확인</button>`);
 $('sheet-content').addEventListener('click',e=>{if(e.target.id==='demo-close')$('sheet').close()});
-$('location-detail').onclick=()=>showSheet('마지막 위치 정보',`<p class="sheet-copy">${esc(model.received)}<br>${esc($('coordinate-label').textContent)}</p><p class="inline-note">차량 위치와 앱 새로고침 시각은 다를 수 있어요. GPS가 오래된 경우 이전 위치로 안내해요. 예시 지도는 서울시청 주변의 공개 좌표를 사용해요.</p>`);
 $('locate-button').onclick=openFullMap;
 function mapPadding(){
   const height=document.querySelector('.full-map-card').getBoundingClientRect().height;
@@ -164,6 +161,7 @@ $('center-vehicle').onclick=centerVehicle;
 $('center-me').onclick=()=>requestMyLocation(true);
 $('fit-locations').onclick=fitLocations;
 new ResizeObserver(()=>{if($('map-dialog').open){updateMapCard();map?.resize()}}).observe(document.querySelector('.full-map-card'));
+new ResizeObserver(()=>{if(map&&!$('map-dialog').open)map.resize()}).observe(document.querySelector('.map-section'));
 data=fixture(scenario);render();
 if(window.maplibregl){
   map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/positron',center:model.point,zoom:15.3,attributionControl:false,interactive:false,dragRotate:false,pitchWithRotate:false,scrollZoom:false});

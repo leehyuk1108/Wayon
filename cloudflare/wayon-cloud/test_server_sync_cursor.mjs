@@ -17,11 +17,10 @@ const env = {
   SNAPSHOTS: {},
   DB: {
     prepare(query) {
-      assert.match(query, /WHERE created_at > \?/);
+      assert.match(query, /WHERE \(created_at, id\) > \(\?, \?\)/);
       return {
-        bind(createdAt, sameCreatedAt, id, queryLimit) {
+        bind(createdAt, id, queryLimit) {
           assert.equal(createdAt, "2026-07-29T00:00:00.000Z");
-          assert.equal(sameCreatedAt, createdAt);
           assert.equal(id, "last-trip");
           assert.equal(queryLimit, 101);
           return {
@@ -62,11 +61,10 @@ for (const [resource, timestampColumn, schemaVersion, collection] of [
     SNAPSHOTS: {},
     DB: {
       prepare(query) {
-        assert.match(query, new RegExp(`WHERE ${timestampColumn} > \\?`));
+        assert.ok(query.includes(`WHERE (${timestampColumn}, id) > (?, ?)`));
         return {
-          bind(createdAt, sameCreatedAt, id, queryLimit) {
+          bind(createdAt, id, queryLimit) {
             assert.equal(createdAt, "2026-07-29T00:00:00.000Z");
-            assert.equal(sameCreatedAt, createdAt);
             assert.equal(id, "last-trip");
             assert.equal(queryLimit, 101);
             return { async all() { return { results: [] }; } };

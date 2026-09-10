@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS trips (
 CREATE INDEX IF NOT EXISTS trips_device_ended_idx
   ON trips(device_id, ended_at DESC);
 
+CREATE INDEX IF NOT EXISTS trips_sync_cursor_idx ON trips(created_at, id);
+
 CREATE TABLE IF NOT EXISTS snapshots (
   id TEXT PRIMARY KEY,
   device_id TEXT NOT NULL,
@@ -71,6 +73,8 @@ CREATE INDEX IF NOT EXISTS snapshots_captured_idx
 
 CREATE INDEX IF NOT EXISTS snapshots_kv_key_device_idx
   ON snapshots(kv_key, device_id);
+
+CREATE INDEX IF NOT EXISTS snapshots_sync_cursor_idx ON snapshots(created_at, id);
 
 CREATE TABLE IF NOT EXISTS live_captures (
   id TEXT PRIMARY KEY,
@@ -115,6 +119,8 @@ CREATE TABLE IF NOT EXISTS impact_events (
 
 CREATE INDEX IF NOT EXISTS impact_events_device_detected_idx
   ON impact_events(device_id, detected_at DESC);
+
+CREATE INDEX IF NOT EXISTS impact_events_sync_cursor_idx ON impact_events(received_at, id);
 
 CREATE INDEX IF NOT EXISTS impact_events_wide_snapshot_idx
   ON impact_events(wide_snapshot_id);

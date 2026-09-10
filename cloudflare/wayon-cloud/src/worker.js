@@ -2474,10 +2474,9 @@ async function handleServerSyncTrips(request, env) {
   const result = parsedCursor.cursor
     ? await env.DB.prepare(`
         ${select}
-        WHERE created_at > ? OR (created_at = ? AND id > ?)
+        WHERE (created_at, id) > (?, ?)
         ORDER BY created_at ASC, id ASC LIMIT ?
       `).bind(
-        parsedCursor.cursor.createdAt,
         parsedCursor.cursor.createdAt,
         parsedCursor.cursor.id,
         queryLimit,
@@ -2520,10 +2519,9 @@ async function handleServerSyncImpacts(request, env) {
   const result = parsedCursor.cursor
     ? await env.DB.prepare(`
         ${select}
-        WHERE received_at > ? OR (received_at = ? AND id > ?)
+        WHERE (received_at, id) > (?, ?)
         ORDER BY received_at ASC, id ASC LIMIT ?
       `).bind(
-        parsedCursor.cursor.createdAt,
         parsedCursor.cursor.createdAt,
         parsedCursor.cursor.id,
         queryLimit,
@@ -2562,10 +2560,9 @@ async function handleServerSyncSnapshots(request, env) {
   const result = parsedCursor.cursor
     ? await env.DB.prepare(`
         ${select}
-        WHERE created_at > ? OR (created_at = ? AND id > ?)
+        WHERE (created_at, id) > (?, ?)
         ORDER BY created_at ASC, id ASC LIMIT ?
       `).bind(
-        parsedCursor.cursor.createdAt,
         parsedCursor.cursor.createdAt,
         parsedCursor.cursor.id,
         queryLimit,

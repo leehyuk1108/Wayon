@@ -26,6 +26,7 @@ from openpilot.system.wayon_vehicle_events import (
   remove_vehicle_events,
 )
 from openpilot.system.wayon_identity import ensure_wayon_identity
+from openpilot.system.wayon_cloud_policy import UploadBackoff, bounded_interval
 from openpilot.system.wayon_ambient_delivery import AmbientCommandDelivery
 from openpilot.system.wayon_drive_quality import (
   StopQualityTracker,
@@ -1530,6 +1531,8 @@ def main():
   last_telemetry_signature = None
   last_telemetry_upload_at = 0.0
   last_connection_signature = None
+  telemetry_backoff = UploadBackoff()
+  route_backoff = UploadBackoff(base=60.0, maximum=900.0)
 
   while True:
     sm.update(1000)
@@ -1570,13 +1573,17 @@ def main():
         print(f"Wayon cloud: vehicle event upload failed: {exc}")
         next_vehicle_event_upload = now + 15.0
 
-    telemetry_interval = float(config.get(
+    telemetry_default = DEFAULT_TELEMETRY_INTERVAL_ONROAD if started else DEFAULT_TELEMETRY_INTERVAL_OFFROAD
+    telemetry_interval = bounded_interval(config.get(
       "telemetry_interval_onroad" if started else "telemetry_interval_offroad",
-      DEFAULT_TELEMETRY_INTERVAL_ONROAD if started else DEFAULT_TELEMETRY_INTERVAL_OFFROAD,
-    ))
-    route_summary_interval = float(config.get("route_summary_interval_offroad", DEFAULT_ROUTE_SUMMARY_INTERVAL_OFFROAD))
-    route_summary_grace_period = float(config.get("route_summary_grace_period_s", DEFAULT_ROUTE_SUMMARY_GRACE_PERIOD))
-    snapshot_interval = float(config.get("snapshot_interval_offroad", DEFAULT_SNAPSHOT_INTERVAL_OFFROAD))
+      telemetry_default,
+    ), telemetry_default, 5.0 if started else 15.0, 3600.0)
+    route_summary_interval = bounded_interval(config.get("route_summary_interval_offroad"),
+                                              DEFAULT_ROUTE_SUMMARY_INTERVAL_OFFROAD, 30.0, 3600.0)
+    route_summary_grace_period = bounded_interval(config.get("route_summary_grace_period_s"),
+                                                  DEFAULT_ROUTE_SUMMARY_GRACE_PERIOD, 0.0, 3600.0)
+    snapshot_interval = bounded_interval(config.get("snapshot_interval_offroad"),
+                                         DEFAULT_SNAPSHOT_INTERVAL_OFFROAD, 300.0, 86400.0)
 
     if started and not previous_started:
       print(f"Wayon cloud: using {telemetry_interval:.0f}s lightweight onroad telemetry")
@@ -1605,6 +1612,7 @@ def main():
             payload, last_connection_signature)
           if health_event is not None:
             post_json(config, "/api/health-event", health_event)
+        telemetry_backoff.success()
         next_telemetry = now + (5.0 if started else 15.0)
       except Exception as exc:
         print(f"Wayon cloud: telemetry upload failed: {exc}")
@@ -1613,14 +1621,16 @@ def main():
           "lastFailureAt": utc_now(),
           "lastError": str(exc)[:240],
         })
-        next_telemetry = now + 30.0
+        next_telemetry = time.monotonic() + telemetry_backoff.failure_delay()
 
     if not started and now >= next_route_summary:
       try:
         upload_recent_route_summary(config, device_id)
+        route_backoff.success()
+        next_route_summary = now + route_summary_interval
       except Exception as exc:
         print(f"Wayon cloud: route summary upload failed: {exc}")
-      next_route_summary = now + max(30.0, route_summary_interval)
+        next_route_summary = time.monotonic() + max(route_summary_interval, route_backoff.failure_delay())
 
     if not started and now >= next_snapshot:
       upload_offroad_snapshot(config, device_id)

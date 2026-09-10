@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         private val WAYON_CLOUD_GMONE_REFRESH_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/gmone/refresh"
         private val WAYON_CLOUD_AMBIENT_COMMAND_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/ambient/command"
         private val WAYON_CLOUD_AMBIENT_STATUS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/ambient/status"
-        private const val WAYON_CLOUD_AUTO_REFRESH_INTERVAL_MS = 5_000L
+        private const val WAYON_CLOUD_AUTO_REFRESH_INTERVAL_MS = CloudRefreshPolicy.INTERVAL_MS
         private const val WAYON_GMONE_REFRESH_POLL_INTERVAL_MS = 2_500L
         private const val WAYON_GMONE_REFRESH_TIMEOUT_MS = 90_000L
 
@@ -242,6 +242,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     private var wayonCloudRefreshJob: Job? = null
     private var wayonCloudTripsRefreshJob: Job? = null
     private var wayonCloudAutoRefreshJob: Job? = null
+    private val cloudRefreshPolicy = CloudRefreshPolicy()
     private var wayonGmoneRefreshJob: Job? = null
     private var wayonTransitionRefreshJob: Job? = null
     private var gmoneCommandRefreshJob: Job? = null
@@ -1216,7 +1217,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
         wayonCloudAutoRefreshJob = launch {
             while (isActivityVisible && isPageLoaded && !loadWayonCloudKeyFromPrefs().isNullOrBlank()) {
-                refreshWayonCloudFeed(showResult = false)
+                refreshWayonCloudFeed(showResult = false, automatic = true)
                 delay(WAYON_CLOUD_AUTO_REFRESH_INTERVAL_MS)
             }
         }
@@ -1227,9 +1228,10 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         wayonCloudAutoRefreshJob = null
     }
 
-    private fun refreshWayonCloudFeed(showResult: Boolean) {
+    private fun refreshWayonCloudFeed(showResult: Boolean, automatic: Boolean = false) {
         val key = loadWayonCloudKeyFromPrefs()?.takeIf { it.isNotBlank() } ?: return
         if (wayonCloudRefreshJob?.isActive == true) return
+        if (!cloudRefreshPolicy.begin(SystemClock.elapsedRealtime(), automatic)) return
 
         wayonCloudRefreshJob = launch(Dispatchers.IO) {
             try {
@@ -1242,12 +1244,14 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                     "위치 정보 없음",
                 )
                 val feed = withResolvedWayonAddresses(parsed)
+                cloudRefreshPolicy.success()
                 launch(Dispatchers.Main) {
                     applyWayonCloudFeed(feed, stateLocation)
                     if (showResult) showJsStatus("Wayon Cloud 데이터를 불러왔습니다.", "success")
                 }
             } catch (error: Exception) {
                 Log.w("MainActivity", "Wayon Cloud refresh failed", error)
+                cloudRefreshPolicy.failure(SystemClock.elapsedRealtime())
                 launch(Dispatchers.Main) {
                     runJs("markWayonCloudUnavailable(${jsQuote("Wayon Cloud 정보 수신 실패")})")
                     if (showResult) {

@@ -20,6 +20,11 @@ await evaluate(`window.Android={refreshWayonData(){},requestTripDetail(id){windo
 for(let i=0;i<80;i++){if(await evaluate('!!map?.loaded()'))break;await pause(250)}
 assert.equal(await evaluate("document.querySelector('#trip-distance').textContent"),'12.7');
 assert.ok(await evaluate('map.queryRenderedFeatures().length')>0,'Vendored vector renderer loads');
+await evaluate("data.liveCaptures={captures:[{id:'test-clip',kind:'clip',duration_s:10}]};window.startWayonSavedClip=request=>{window.__testClipRequested=request.capture.durationS};document.querySelector('[data-filter=captures]').click();navigate('records')");
+assert.ok((await evaluate("document.getElementById('record-content').textContent")).includes('10초 영상'),'Cloud kind=clip is video, not a photo');
+assert.equal(await evaluate("document.querySelectorAll('[data-thumbnail]').length"),0,'Clip is not fetched as an image');
+await evaluate("document.querySelector('[data-record]').click()");assert.equal(await evaluate('window.__testClipRequested'),10);
+await evaluate("navigate('now')");
 await evaluate("document.getElementById('locate-button').click()");await pause(100);
 await evaluate("onHylinkLocation(window.__locationId,{latitude:37.568,longitude:126.981,accuracy:10})");
 assert.equal(await evaluate("document.querySelectorAll('#map-dialog .my-location-marker').length"),1);

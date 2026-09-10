@@ -8,7 +8,7 @@ Run from repository root:
 python3 -m http.server 4198 --bind 127.0.0.1 --directory .
 ```
 
-Open `http://127.0.0.1:4198/design/cloud-overview/index.html`. Top controls select parked, driving, warning, impact, stale, and first-connection fixtures. Settings switch light/dark appearance and 200% text. No Wayon credentials, cloud polling, real media, or vehicle commands are used. Public Seoul City Hall coordinates are synthetic demonstration data, not the user's location.
+Open `http://127.0.0.1:4198/design/cloud-overview/index.html`. Top controls select parked, driving, warning, impact, stale, and first-connection fixtures. Per user feedback, the Hylink wordmark header and settings button, including its theme/text-size menu, have been removed. Responsive text/theme styles remain available for development checks, not as settings UI. No Wayon credentials, cloud polling, real media, or vehicle commands are used. Public Seoul City Hall coordinates are synthetic demonstration data, not the user's location.
 
 ## Information hierarchy
 

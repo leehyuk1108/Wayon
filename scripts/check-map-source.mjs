@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source = fs.readFileSync(new URL('../app/src/main/assets/hylink.js', import.meta.url), 'utf8');
+const css = fs.readFileSync(new URL('../app/src/main/assets/hylink.css', import.meta.url), 'utf8');
+const definition = source.slice(source.indexOf('function initMap('), source.indexOf('function vehicleIcon('));
+let tile;
+const map = {setView(){return this}, attributionControl:{setPrefix(){}}};
+const context = {L:{map(_target, options){assert.equal(options.attributionControl,true);return map},tileLayer(url,options){tile={url,options};return{addTo(){}}}}};
+vm.createContext(context);
+vm.runInContext(definition + '\ninitMap("test");',context);
+assert.equal(tile.url,'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
+assert.match(tile.options.attribution,/OpenStreetMap contributors/);
+assert.ok(!source.includes('cartocdn.com'));
+assert.match(css,/leaflet-control-attribution\{display:block!important/);
+console.log('Map source and attribution policy: PASS');

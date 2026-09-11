@@ -145,14 +145,14 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
   def test_keeps_minimum_brake_through_final_stop(self):
     for speed_kph in (0.8 - 1e-3, 0.5, 0.3, 0.15, 0.0):
       with self.subTest(speed_kph=speed_kph):
-        self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, speed_kph / 3.6, 12))
+        self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, speed_kph / 3.6, 12))
 
   def test_raises_small_requests_to_minimum_brake(self):
-    self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 10))
-    self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 1))
+    self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 10))
+    self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 1))
 
   def test_preserves_requested_brake_when_stopping_reserve_is_small(self):
-    self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 20))
+    self.assertEqual(40, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 20))
     self.assertEqual(60, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 60))
 
   def test_only_changes_traverse_final_stopping_phase(self):
@@ -180,23 +180,23 @@ class TestGMLongAutoHoldBrake(unittest.TestCase):
     state = (False, 0, 0, 0)
     for _ in range(4):
       brake, confirmed, zero, settled, hold_brake = self.step(state)
-      self.assertEqual(brake, 20)
+      self.assertEqual(brake, 40)
       self.assertFalse(confirmed)
       state = (confirmed, zero, settled, hold_brake)
 
     brake, confirmed, zero, settled, hold_brake = self.step(state)
-    self.assertEqual(brake, 51)
+    self.assertEqual(brake, 71)
     self.assertTrue(confirmed)
 
     state = (confirmed, zero, settled, hold_brake)
     brake, confirmed, zero, settled, hold_brake = self.step(state)
-    self.assertEqual(brake, 82)
+    self.assertEqual(brake, 102)
 
   def test_deceleration_does_not_count_as_settled(self):
     state = (False, 0, 0, 0)
     for _ in range(8):
       brake, confirmed, zero, settled, hold_brake = self.step(state, a_ego=-1.0)
-      self.assertEqual(brake, 20)
+      self.assertEqual(brake, 40)
       self.assertFalse(confirmed)
       state = (confirmed, zero, settled, hold_brake)
 
@@ -207,20 +207,20 @@ class TestGMLongAutoHoldBrake(unittest.TestCase):
       self.assertFalse(confirmed)
       state = (confirmed, zero, settled, hold_brake)
     brake, confirmed, *_ = self.step(state, a_ego=0.3)
-    self.assertEqual(brake, 51)
+    self.assertEqual(brake, 71)
     self.assertTrue(confirmed)
 
   def test_reaches_full_hold_in_half_second_after_confirmation(self):
-    state = (True, 5, 5, 20)
+    state = (True, 5, 5, 40)
     commands = []
     for _ in range(13):
-      brake, confirmed, zero, settled, hold_brake = self.step(state, regular_brake=20)
+      brake, confirmed, zero, settled, hold_brake = self.step(state, regular_brake=40)
       commands.append(brake)
       state = (confirmed, zero, settled, hold_brake)
 
-    self.assertEqual(commands[0], 51)
+    self.assertEqual(commands[0], 71)
     self.assertEqual(commands[-1], 400)
-    self.assertTrue(all(b >= 20 for b in commands))
+    self.assertTrue(all(b >= 40 for b in commands))
     self.assertTrue(all(a <= b for a, b in zip(commands, commands[1:])))
 
   def test_recorded_handoff_pattern_has_no_brake_gap(self):
@@ -234,8 +234,8 @@ class TestGMLongAutoHoldBrake(unittest.TestCase):
       state = (confirmed, zero, settled, hold_brake)
 
     self.assertTrue(state[0])
-    self.assertTrue(all(b >= 20 for b in commands))
-    self.assertEqual(commands[-1], 51)
+    self.assertTrue(all(b >= 40 for b in commands))
+    self.assertEqual(commands[-1], 71)
 
     # If the wheels move again during the ramp, restoring hold takes priority.
     brake, confirmed, *_ = self.step(state, regular_brake=0, v_ego_raw=0.09, a_ego=0.5)

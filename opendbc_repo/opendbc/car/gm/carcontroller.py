@@ -26,17 +26,10 @@ GM_AUTO_HOLD_SETTLED_ACCEL = 0.15
 GM_AUTO_HOLD_SETTLED_SPEED = 0.01
 GM_AUTO_HOLD_SETTLED_FRAMES = 5  # 0.20 seconds at the 25 Hz brake command rate
 GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES = 20  # Ensure hold engages even when aEgo remains noisy
-GM_AUTO_HOLD_RAMP_STEP = 32
+GM_AUTO_HOLD_RAMP_STEP = 31  # 20 -> 400 in about 0.5 seconds at the 25 Hz brake command rate
 GM_AUTO_HOLD_ROLL_SPEED = 0.08
-GM_STOPPING_BRAKE_TAPER_ZERO = 0
-GM_STOPPING_BRAKE_TAPER_THREE_TENTHS_KPH = 1
-GM_STOPPING_BRAKE_TAPER_HALF_KPH = 3
+GM_STOPPING_BRAKE_MIN = 20
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 0.8 * CV.KPH_TO_MS
-GM_STOPPING_BRAKE_TAPER_MAX = 12
-# Keep the comfort taper limited to residual brake pressure. If longitudinal
-# control asks for more than a very light stop, preserve the full command so
-# smoothing cannot consume meaningful stopping distance.
-GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS = 20
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 GM_SNG_BUTTON_FRAMES = 5  # stationary physical RES in Traverse route 45/23
 # That press followed the zero brake command by 216 ms. Leave a bounded
@@ -73,16 +66,9 @@ def update_traverse_coasting(CP, coasting, long_active, stopping, v_ego, accel):
 
 def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
   if (CP.carFingerprint != CAR.CHEVROLET_TRAVERSE or not stopping or
-      v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED or
-      apply_brake >= GM_STOPPING_BRAKE_TAPER_LOW_SPEED_BYPASS):
+      v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED):
     return apply_brake
-  brake_limit = round(np.interp(max(v_ego, 0.0),
-                                [0.0, 0.15 * CV.KPH_TO_MS, 0.3 * CV.KPH_TO_MS,
-                                 0.5 * CV.KPH_TO_MS, GM_STOPPING_BRAKE_TAPER_START_SPEED],
-                                [GM_STOPPING_BRAKE_TAPER_ZERO, GM_STOPPING_BRAKE_TAPER_ZERO,
-                                 GM_STOPPING_BRAKE_TAPER_THREE_TENTHS_KPH,
-                                 GM_STOPPING_BRAKE_TAPER_HALF_KPH, GM_STOPPING_BRAKE_TAPER_MAX]))
-  return min(apply_brake, brake_limit)
+  return max(apply_brake, GM_STOPPING_BRAKE_MIN)
 
 
 def gm_auto_hold_command(CP, CC, CS):
@@ -111,6 +97,14 @@ def update_gm_long_auto_hold_brake(hold_requested, confirmed, zero_frames, settl
     return regular_brake, False, 0, 0, 0
 
   raw_speed = abs(v_ego_raw)
+  regular_brake = max(regular_brake, GM_STOPPING_BRAKE_MIN)
+
+  # Restoring stationary control takes priority over the comfort ramp. This
+  # also applies after hold confirmation, when the previous branch ordering
+  # could continue the slow ramp while the vehicle was already moving.
+  if raw_speed > GM_AUTO_HOLD_ROLL_SPEED:
+    return GM_AUTO_HOLD_BRAKE, True, zero_frames, settled_frames, GM_AUTO_HOLD_BRAKE
+
   if confirmed:
     hold_brake = min(GM_AUTO_HOLD_BRAKE, max(hold_brake, regular_brake) + GM_AUTO_HOLD_RAMP_STEP)
     return hold_brake, True, zero_frames, settled_frames, hold_brake
@@ -121,12 +115,6 @@ def update_gm_long_auto_hold_brake(hold_requested, confirmed, zero_frames, settl
   else:
     zero_frames = 0
     settled_frames = 0
-
-  # A rolling vehicle takes priority over the comfort ramp. This path is only
-  # reachable after the interface has latched a confirmed standstill. Do not
-  # require consecutive zero-speed samples: gradual creep resets that counter.
-  if raw_speed > GM_AUTO_HOLD_ROLL_SPEED:
-    return GM_AUTO_HOLD_BRAKE, True, zero_frames, settled_frames, GM_AUTO_HOLD_BRAKE
 
   if settled_frames < GM_AUTO_HOLD_SETTLED_FRAMES and zero_frames < GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES:
     return regular_brake, False, zero_frames, settled_frames, 0

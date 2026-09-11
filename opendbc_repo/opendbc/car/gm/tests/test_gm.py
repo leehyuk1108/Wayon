@@ -142,16 +142,14 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
   def setUp(self):
     self.CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
 
-  def test_tapers_to_soft_release_near_stop(self):
-    self.assertEqual(12, limit_traverse_stopping_brake(self.CP, True, 0.8 / 3.6 - 1e-3, 12))
-    self.assertEqual(3, limit_traverse_stopping_brake(self.CP, True, 0.5 / 3.6, 12))
-    self.assertEqual(1, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 12))
-    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.15 / 3.6, 12))
-    self.assertEqual(0, limit_traverse_stopping_brake(self.CP, True, 0.0, 12))
+  def test_keeps_minimum_brake_through_final_stop(self):
+    for speed_kph in (0.8 - 1e-3, 0.5, 0.3, 0.15, 0.0):
+      with self.subTest(speed_kph=speed_kph):
+        self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, speed_kph / 3.6, 12))
 
-  def test_does_not_increase_requested_brake(self):
-    self.assertEqual(1, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 10))
-    self.assertEqual(1, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 1))
+  def test_raises_small_requests_to_minimum_brake(self):
+    self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 10))
+    self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 1))
 
   def test_preserves_requested_brake_when_stopping_reserve_is_small(self):
     self.assertEqual(20, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 20))
@@ -182,23 +180,23 @@ class TestGMLongAutoHoldBrake(unittest.TestCase):
     state = (False, 0, 0, 0)
     for _ in range(4):
       brake, confirmed, zero, settled, hold_brake = self.step(state)
-      self.assertEqual(brake, 14)
+      self.assertEqual(brake, 20)
       self.assertFalse(confirmed)
       state = (confirmed, zero, settled, hold_brake)
 
     brake, confirmed, zero, settled, hold_brake = self.step(state)
-    self.assertEqual(brake, 46)
+    self.assertEqual(brake, 51)
     self.assertTrue(confirmed)
 
     state = (confirmed, zero, settled, hold_brake)
     brake, confirmed, zero, settled, hold_brake = self.step(state)
-    self.assertEqual(brake, 78)
+    self.assertEqual(brake, 82)
 
   def test_deceleration_does_not_count_as_settled(self):
     state = (False, 0, 0, 0)
     for _ in range(8):
       brake, confirmed, zero, settled, hold_brake = self.step(state, a_ego=-1.0)
-      self.assertEqual(brake, 14)
+      self.assertEqual(brake, 20)
       self.assertFalse(confirmed)
       state = (confirmed, zero, settled, hold_brake)
 
@@ -209,7 +207,39 @@ class TestGMLongAutoHoldBrake(unittest.TestCase):
       self.assertFalse(confirmed)
       state = (confirmed, zero, settled, hold_brake)
     brake, confirmed, *_ = self.step(state, a_ego=0.3)
-    self.assertEqual(brake, 46)
+    self.assertEqual(brake, 51)
+    self.assertTrue(confirmed)
+
+  def test_reaches_full_hold_in_half_second_after_confirmation(self):
+    state = (True, 5, 5, 20)
+    commands = []
+    for _ in range(13):
+      brake, confirmed, zero, settled, hold_brake = self.step(state, regular_brake=20)
+      commands.append(brake)
+      state = (confirmed, zero, settled, hold_brake)
+
+    self.assertEqual(commands[0], 51)
+    self.assertEqual(commands[-1], 400)
+    self.assertTrue(all(b >= 20 for b in commands))
+    self.assertTrue(all(a <= b for a, b in zip(commands, commands[1:])))
+
+  def test_recorded_handoff_pattern_has_no_brake_gap(self):
+    state = (False, 0, 0, 0)
+    commands = []
+    # The failing route tapered through 3, 1, and 0 before the stationary
+    # samples. Hold takeover must retain the minimum through confirmation.
+    for regular_brake in (3, 1, 0, 0, 0):
+      brake, confirmed, zero, settled, hold_brake = self.step(state, regular_brake=regular_brake)
+      commands.append(brake)
+      state = (confirmed, zero, settled, hold_brake)
+
+    self.assertTrue(state[0])
+    self.assertTrue(all(b >= 20 for b in commands))
+    self.assertEqual(commands[-1], 51)
+
+    # If the wheels move again during the ramp, restoring hold takes priority.
+    brake, confirmed, *_ = self.step(state, regular_brake=0, v_ego_raw=0.09, a_ego=0.5)
+    self.assertEqual(brake, 400)
     self.assertTrue(confirmed)
 
   def test_roll_after_hold_request_applies_full_pressure(self):
@@ -225,6 +255,11 @@ class TestGMLongAutoHoldBrake(unittest.TestCase):
       self.assertFalse(confirmed)
       state = (confirmed, zero, settled, hold_brake)
     brake, confirmed, *_ = self.step(state, v_ego_raw=0.09, a_ego=0.3)
+    self.assertEqual(brake, 400)
+    self.assertTrue(confirmed)
+
+  def test_roll_after_confirmation_skips_ramp(self):
+    brake, confirmed, *_ = self.step((True, 5, 5, 82), v_ego_raw=0.09, a_ego=0.1)
     self.assertEqual(brake, 400)
     self.assertTrue(confirmed)
 

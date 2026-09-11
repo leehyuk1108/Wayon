@@ -162,6 +162,7 @@ class LongControl:
     self.sng_ui_creep_last_time = None
     self.sng_ui_phase = None
     self.sng_ui_motion_frames = 0
+    self.gas_override_active = False
 
   def reset(self):
     self.pid.reset()
@@ -393,6 +394,13 @@ class LongControl:
   def update(self, active, CS, long_plan, accel_limits, radar_state=None, icbm=None, pitch=0.0, manual_resume=False,
              manual_resume_sensors_valid=False):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
+    previous_state_active = self.long_control_state != LongCtrlState.off
+    if CS.gasPressed and (previous_state_active or self.gas_override_active):
+      self.gas_override_active = True
+    override_released = active and self.gas_override_active and not CS.gasPressed
+    if override_released or (not active and not CS.gasPressed):
+      self.gas_override_active = False
+
     a_target = long_plan.aTarget
     should_stop = long_plan.shouldStop
     if self.wayon_carrot_profile:
@@ -481,7 +489,7 @@ class LongControl:
           output_accel, CS.aEgo, CS.vEgo, v_target_now,
           planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
           lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]),
-          throttle_release=anticipatory_coast)
+          throttle_release=anticipatory_coast, override_release=override_released)
       else:
         error = a_target - CS.aEgo
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)

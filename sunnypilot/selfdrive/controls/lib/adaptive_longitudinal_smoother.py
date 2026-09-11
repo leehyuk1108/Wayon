@@ -13,11 +13,13 @@ class AdaptiveLongitudinalSmoother:
     self.dt = dt
     self.output_accel = 0.0
     self.output_jerk = 0.0
+    self.override_release_frames = 0
     self.initialized = False
 
   def reset(self, accel: float = 0.0) -> None:
     self.output_accel = float(accel) if math.isfinite(accel) else 0.0
     self.output_jerk = 0.0
+    self.override_release_frames = 0
     self.initialized = True
 
   @staticmethod
@@ -81,7 +83,8 @@ class AdaptiveLongitudinalSmoother:
   def update(self, target_accel: float, measured_accel: float, v_ego: float,
              v_target: float, planned_jerk: float = 0.0, lead: Any | None = None,
              cutin_risk: Any | None = None, accel_limits: tuple[float, float] | None = None,
-             throttle_release: bool = False, launch_transition: bool = False) -> float:
+             throttle_release: bool = False, launch_transition: bool = False,
+             override_release: bool = False) -> float:
     if not math.isfinite(target_accel):
       target_accel = 0.0
     if not math.isfinite(measured_accel):
@@ -96,6 +99,11 @@ class AdaptiveLongitudinalSmoother:
 
     if not self.initialized:
       self.reset(measured_accel)
+    if override_release:
+      self.override_release_frames = max(1, round(0.4 / self.dt))
+    override_release_active = self.override_release_frames > 0
+    if self.override_release_frames > 0:
+      self.override_release_frames -= 1
 
     error = target_accel - self.output_accel
     if abs(error) < 1e-4 and abs(self.output_jerk) < 1e-3:
@@ -115,6 +123,12 @@ class AdaptiveLongitudinalSmoother:
       natural_frequency = 8.0
       jerk_limit = 5.0
       snap_limit = 40.0
+    elif override_release_active and error > 0.0:
+      # The driver has just released an accelerator override. Rejoin the
+      # already-running planner promptly without stepping the command.
+      natural_frequency = 6.5
+      jerk_limit = 4.0
+      snap_limit = 30.0
     elif error > 0.0 and lead_departure_urgency >= 0.15:
       # A radar lead that is accelerating away can use a quicker S-curve.
       # Keep snap and jerk bounded so the stronger low-speed command still

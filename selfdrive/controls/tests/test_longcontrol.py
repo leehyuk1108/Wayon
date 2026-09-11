@@ -405,7 +405,7 @@ def test_adaptive_smoother_builds_low_speed_departure_accel_quickly_without_step
                                          lead=departing_lead) for _ in range(40)]
 
   assert 0.45 < departing[0] < 0.46
-  assert all(a <= b for a, b in zip(departing, departing[1:], strict=True))
+  assert all(a <= b for a, b in zip(departing[:-1], departing[1:], strict=True))
   assert departing[-1] > calm[-1] + 0.1
   assert departing[-1] < 1.5
 
@@ -477,6 +477,26 @@ def test_launch_transition_does_not_change_normal_acceleration_curve():
                                   v_ego=0.0, v_target=1.0, launch_transition=True) for _ in range(60)]
 
   assert launch_outputs[-1] > normal_outputs[-1] + 0.2
+
+
+def test_accelerator_override_release_rejoins_positive_target_quickly_and_smoothly():
+  normal = AdaptiveLongitudinalSmoother(dt=0.01)
+  normal.reset(0.0)
+  normal_outputs = [normal.update(1.2, measured_accel=0.0, v_ego=5.0, v_target=8.0)
+                    for _ in range(40)]
+
+  handoff = AdaptiveLongitudinalSmoother(dt=0.01)
+  handoff.reset(0.0)
+  handoff_outputs = [handoff.update(1.2, measured_accel=0.0, v_ego=5.0, v_target=8.0,
+                                    override_release=(i == 0)) for i in range(40)]
+  handoff_slopes = [(handoff_outputs[i] - handoff_outputs[i - 1]) / 0.01
+                    for i in range(1, len(handoff_outputs))]
+
+  assert 0.0 < handoff_outputs[0] < 0.01
+  assert handoff_outputs[19] > normal_outputs[19]
+  assert handoff_outputs[39] > normal_outputs[39] + 0.15
+  assert max(handoff_outputs) <= 1.2
+  assert max(handoff_slopes) <= 4.0
 
 
 def test_closing_radar_lead_caps_accel_before_gap_is_lost():

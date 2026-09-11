@@ -16,6 +16,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   get_max_accel,
   is_enabled,
 )
+from openpilot.selfdrive.controls.lib.longitudinal_planner import should_reset_planner_state
 
 
 def make_cp(fingerprint="CHEVROLET_TRAVERSE", brand="gm", openpilot_long=True):
@@ -57,3 +58,10 @@ def test_carrot_profile_scalars():
   assert CURVE_SPEED_FLOOR == pytest.approx(30 * CV.KPH_TO_MS)
   assert MAP_CURVE_FACTOR == 1.20
   assert MAX_ACCEL_V == [1.80, 1.70, 1.55, 1.20, 0.90, 0.65, 0.55, 0.50, 0.50]
+
+
+def test_traverse_accelerator_override_preserves_planner_state():
+  assert not should_reset_planner_state(True, True, True)
+  assert should_reset_planner_state(True, False, True)
+  assert should_reset_planner_state(True, True, False)
+  assert not should_reset_planner_state(False, False, True)

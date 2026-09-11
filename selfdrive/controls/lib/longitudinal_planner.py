@@ -46,6 +46,13 @@ def get_max_accel(v_ego, wayon_carrot_profile=False):
     return get_wayon_carrot_max_accel(v_ego)
   return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
 
+
+def should_reset_planner_state(long_control_off: bool, long_override: bool,
+                               wayon_carrot_profile: bool) -> bool:
+  # Preserve the latest target trajectory while a still-engaged Traverse is
+  # temporarily overridden by the driver's accelerator.
+  return long_control_off and not (wayon_carrot_profile and long_override)
+
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
@@ -121,17 +128,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
     v_cruise_initialized = sm['carState'].vCruise != V_CRUISE_UNSET
+    long_override = sm['carControl'].cruiseControl.override
 
     long_control_off = sm['controlsState'].longControlState == LongCtrlState.off
     force_slow_decel = sm['controlsState'].forceDecel
 
     # Reset current state when not engaged, or user is controlling the speed
-    reset_state = long_control_off if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
+    reset_state = should_reset_planner_state(long_control_off, long_override, self.wayon_carrot_profile) \
+      if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
     # PCM cruise speed may be updated a few cycles later, check if initialized
     reset_state = reset_state or not v_cruise_initialized
 
     # No change cost when user is controlling the speed, or when standstill
-    prev_accel_constraint = not (reset_state or sm['carState'].standstill)
+    prev_accel_constraint = not (reset_state or long_override or sm['carState'].standstill)
 
     accel_clip = [ACCEL_MIN, get_max_accel(v_ego, self.wayon_carrot_profile)]
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg

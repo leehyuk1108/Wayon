@@ -326,7 +326,9 @@ class CarInterface(CarInterfaceBase, CarInterfaceExt):
       if ret.openpilotLongitudinalControl:
         ret.autoResumeSng = True
         ret.startingState = True
-        ret.startAccel = 0.35
+        # Match the Traverse's measured manual launch while LongControl keeps
+        # the brake-to-throttle transition jerk limited.
+        ret.startAccel = 1.20
         ret.vEgoStopping = 0.5
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 

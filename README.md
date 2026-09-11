@@ -4,11 +4,12 @@ Hylink is an Android companion for a vehicle connected to Wayon Cloud.
 It is a separate application from My Traverse and uses a distinct package ID:
 `app.hylink.mobile`.
 
-## wip connection (1.6.0)
+## wip connection (1.6.1)
 
 Open `http://<comma IP>:1108` on the same private network while offroad, then paste
 the displayed key into **Vehicle → Wayon Cloud key**. Driving telemetry remains
-connected; live/media/impact/SSH are separately enabled parking features.
+connected; live/media/impact/SSH are enabled by default but remain offroad-only.
+The key page has no setup checkboxes: opening it connects all features automatically.
 See [setup, changes and verification boundaries](docs/WIP_CONNECT_20260911.md).
 
 ## Approved dashboard (1.5.0)

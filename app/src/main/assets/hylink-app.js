@@ -28,7 +28,7 @@ function featureState(name){
   const features=model.raw.hylink;
   if(!features)return {ready:true,label:'주차 상태 확인됨 · 연결 시 장치 확인'};
   const enabled=features[name==='live'?'mediaEnabled':name+'Enabled'];
-  if(enabled!==true)return {ready:false,label:'IP:1108에서 '+({live:'라이브/주차 사진',impact:'충격 감지',remote:'원격 터미널'}[name])+'을 켜 주세요'};
+  if(enabled!==true)return {ready:false,label:'IP:1108을 열어 차량 연결을 완료해 주세요'};
   return features[name+'Ready']===true?{ready:true,label:'주차 중 사용 가능'}:{ready:false,label:'전압·온도·카메라·차량 상태 확인 필요'};
 }
 window.hylinkFeatureState=featureState;
@@ -89,7 +89,7 @@ function showAlerts(){
 }
 function refresh(){if(hylink.token)window.Android?.refreshWayonData?.();else showConnection()}
 function showConnection(){
-  showSheet('Wayon Cloud 키','<p class="sheet-copy">시동을 끄고 콤마와 같은 Wi-Fi에 연결한 뒤 브라우저에서 <b>http://콤마IP:1108</b>을 열어 주세요. 표시된 키를 아래에 붙여 넣으면 연결됩니다.</p><label for="connection-key">Wayon Cloud key</label><input id="connection-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="wayon_으로 시작하는 키 붙여넣기" aria-describedby="key-feedback"><p id="key-feedback" role="status" aria-live="polite">키로 위치·카메라·원격 기능에 접근할 수 있으니 공유하지 마세요.</p><button class="primary-button" id="save-key">키 확인 및 연결</button><button class="sheet-choice" id="refresh-data">'+icon('refresh-cw')+'새로고침</button>'+(hylink.token?'<button class="sheet-choice danger-text" id="disconnect-key">'+icon('unlink')+'이 휴대폰의 연결 해제</button>':'')+'<p class="detail-note">라이브·주차 사진·충격 감지·원격 터미널은 IP:1108에서 선택할 수 있어요. 콤마 전원과 인터넷이 필요하고, 주행 중에는 주차 기능이 중단됩니다.</p>');
+  showSheet('Wayon Cloud 키','<p class="sheet-copy">시동을 끄고 콤마와 같은 Wi-Fi에 연결한 뒤 브라우저에서 <b>http://콤마IP:1108</b>을 열어 주세요. 표시된 키를 아래에 붙여 넣으면 연결됩니다.</p><label for="connection-key">Wayon Cloud key</label><input id="connection-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="wayon_으로 시작하는 키 붙여넣기" aria-describedby="key-feedback"><p id="key-feedback" role="status" aria-live="polite">키로 위치·카메라·원격 기능에 접근할 수 있으니 공유하지 마세요.</p><button class="primary-button" id="save-key">키 확인 및 연결</button><button class="sheet-choice" id="refresh-data">'+icon('refresh-cw')+'새로고침</button>'+(hylink.token?'<button class="sheet-choice danger-text" id="disconnect-key">'+icon('unlink')+'이 휴대폰의 연결 해제</button>':'')+'<p class="detail-note">차량 정보·라이브·주차 사진·충격 감지·원격 터미널은 연결하면 기본으로 켜져요. 콤마 전원과 인터넷이 필요하고, 주행 중에는 주차 기능이 중단됩니다.</p>');
   $('save-key').onclick=()=>{const key=$('connection-key').value.trim();if(!/^wayon_[A-Za-z0-9_-]{32,128}$/.test(key))return window.onHylinkKeyError('wayon_으로 시작하는 전체 키를 붙여 넣어 주세요.');window.Android?.saveWayonCloudKey?.(key)};
   $('refresh-data').onclick=()=>{$('sheet').close();refresh()};
   $('disconnect-key')?.addEventListener('click',()=>{

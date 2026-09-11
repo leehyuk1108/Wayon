@@ -1,14 +1,18 @@
-# Hylink Dev 1.6.0 — wip connection
+# Hylink Dev 1.6.1 — simple wip connection
 
-Package `app.hylink.mobile.debug`, versionCode 8. Keep the approved dashboard.
+Package `app.hylink.mobile.debug`, versionCode 9. Keep the approved dashboard.
 Apple Design onboarding/accessibility principles were applied to the visible key entry,
 inline validation/retry status, 48px+ targets and large-text reflow, without adding a top settings bar.
 
 ## Connect
 
 With ignition off, join the comma's private Wi-Fi/hotspot network and open
-`http://<comma IP>:1108`. Existing enrollment shows its Wayon Cloud key immediately.
-On first enrollment, choose data-sharing and parking permissions on that page.
+`http://<comma IP>:1108`. The page contains only the key and a copy button.
+Opening it automatically registers the device and enables telemetry, live/photos,
+impact detection and remote terminal. Existing enrollments keep the same key.
+This all-enabled default replaces the previous per-feature choices at the user's request.
+Only a same-LAN, same-origin POST activates defaults; GET polling never re-enables
+sharing stopped from the comma settings. Opening the page again does re-enable it.
 Paste the key into Hylink's **Vehicle → Wayon Cloud key** (also available on an unconnected home).
 The server checks a replacement key before the app saves it, retaining the old key on failure.
 Do not share the key: it grants access to the selected vehicle's data and enabled remote features.
@@ -47,7 +51,10 @@ App pause closes Live/SSH, and key change fences late native requests.
 - Existing signing certificate SHA-256:
   `55a14240fb656db17c66c695a61ae5679982a5ae24e233563a43211c5125fa94`.
   The Mac default debug keystore differs: re-sign with the restored original key held outside Git.
-- Final APK SHA-256: `c0a5dd3220fa1d6504f0060f633f538a244196dbdc86db66bb70b68858dd308d`.
+- Final APK SHA-256: `0027f43bc8ab84038697c6aab152563d122deeba247410e1dbff54c735fd5a7d`.
+- Simple key page: automatic enrollment, stable key, copy API/HTTP fallback calls,
+  stopped-state clearing, failure recovery and 16 light/dark/large-text layouts.
+  Clipboard APIs are mocked to leave the user's actual system clipboard unchanged.
 
 No connected phone was available for this build. No Trailblazer comma is remotely
 accessible: real installation/boot, camera/IMU, SSH/systemd and driving-transition

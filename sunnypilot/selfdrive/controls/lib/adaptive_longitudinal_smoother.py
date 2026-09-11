@@ -105,6 +105,7 @@ class AdaptiveLongitudinalSmoother:
 
     urgency = self._urgency(target_accel, measured_accel, v_ego, v_target,
                             planned_jerk, lead, cutin_risk)
+    lead_departure_urgency = self._lead_departure_urgency(lead, v_ego)
     emergency_braking = error < 0.0 and (
       target_accel <= -2.0 or self._lead_urgency(lead) >= 0.9 or self._cutin_urgency(cutin_risk) >= 0.9)
 
@@ -114,6 +115,13 @@ class AdaptiveLongitudinalSmoother:
       natural_frequency = 8.0
       jerk_limit = 5.0
       snap_limit = 40.0
+    elif error > 0.0 and lead_departure_urgency >= 0.15:
+      # A radar lead that is accelerating away can use a quicker S-curve.
+      # Keep snap and jerk bounded so the stronger low-speed command still
+      # builds progressively instead of stepping onto the accelerator.
+      natural_frequency = 5.5
+      jerk_limit = 3.0
+      snap_limit = 25.0
     elif throttle_release and error < 0.0 and self.output_accel > 0.0:
       # A release-only response may drop positive acceleration promptly, but
       # cannot cross through zero and turn into an unplanned brake request.

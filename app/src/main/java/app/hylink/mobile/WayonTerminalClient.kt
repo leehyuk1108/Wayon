@@ -34,6 +34,7 @@ internal class WayonTerminalClient(
     private val onOutput: (ByteArray) -> Unit,
 ) {
     private val executor = Executors.newSingleThreadExecutor()
+    private val inputExecutor = Executors.newSingleThreadExecutor()
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -111,9 +112,12 @@ internal class WayonTerminalClient(
 
     fun send(text: String) {
         if (text.isEmpty()) return
-        executor.execute {
+        // The connection executor blocks reading shell output. Input must never
+        // queue behind that loop (otherwise a connected terminal is read-only).
+        val expected = terminalInput ?: return
+        inputExecutor.execute {
             try {
-                terminalInput?.apply {
+                if (!disconnectRequested.get() && terminalInput === expected) expected.apply {
                     write(text.toByteArray(Charsets.UTF_8))
                     flush()
                 }
@@ -136,6 +140,7 @@ internal class WayonTerminalClient(
     fun shutdown() {
         disconnect()
         executor.shutdownNow()
+        inputExecutor.shutdownNow()
         httpClient.dispatcher.executorService.shutdown()
         httpClient.connectionPool.evictAll()
     }

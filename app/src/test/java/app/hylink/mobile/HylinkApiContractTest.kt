@@ -7,6 +7,13 @@ import org.json.JSONObject
 
 class HylinkApiContractTest {
     @Test
+    fun connectionKeyRequiresCompleteWayonKey() {
+        assertTrue(HylinkApiContract.validKey("wayon_" + "a".repeat(43)))
+        assertFalse(HylinkApiContract.validKey("wayon_short"))
+        assertFalse(HylinkApiContract.validKey("http://192.168.1.2:1108"))
+        assertFalse(HylinkApiContract.validKey("wayon_" + "a".repeat(43) + "\n"))
+    }
+    @Test
     fun readEndpointsContainOnlyWayonReadFeatures() {
         val paths = HylinkApiContract.READ_ENDPOINTS.map { it.path }
 

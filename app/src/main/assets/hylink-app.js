@@ -21,6 +21,17 @@ window.getWayonCloudViewToken=()=>hylink.token;
 window.getWayonCloudBaseUrl=()=>hylink.baseUrl;
 function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('visible'),5000)}
 window.toast=toast;
+function featureState(name){
+  if(!hylink.token)return {ready:false,label:'Wayon Cloud 키를 먼저 연결해 주세요'};
+  if(!model||model.age===null||model.stale||data.error)return {ready:false,label:'최신 차량 상태 확인 필요'};
+  if(CloudOverview.flag(model.state.onroad)!==false||CloudOverview.flag(model.state.ignition)!==false)return {ready:false,label:'시동을 끈 주차 상태에서 사용 가능'};
+  const features=model.raw.hylink;
+  if(!features)return {ready:true,label:'주차 상태 확인됨 · 연결 시 장치 확인'};
+  const enabled=features[name==='live'?'mediaEnabled':name+'Enabled'];
+  if(enabled!==true)return {ready:false,label:'IP:1108에서 '+({live:'라이브/주차 사진',impact:'충격 감지',remote:'원격 터미널'}[name])+'을 켜 주세요'};
+  return features[name+'Ready']===true?{ready:true,label:'주차 중 사용 가능'}:{ready:false,label:'전압·온도·카메라·차량 상태 확인 필요'};
+}
+window.hylinkFeatureState=featureState;
 function render(){
   model=CloudOverview.derive(data);
   // A valid old position stays a last-received location, never a phone position.
@@ -43,7 +54,9 @@ function render(){
   $('photo-count').textContent=data.snapshots?'수신된 사진 '+model.photos.length+'장':'사진 수신 대기';
   $('vehicle-age').textContent=model.received+' 기준이에요.';
   $('locate-button').disabled=!model.point;
-  $('btnWayonLive').disabled=!hylink.token;
+  $('btnWayonLive').disabled=!featureState('live').ready;
+  $('btnWayonLive').querySelector('small').textContent=featureState('live').label;
+  $('connect-home').hidden=Boolean(hylink.token);
   $('photos-button').disabled=!hylink.token;
   document.querySelector('.map-section').hidden=!model.point;
   if(!model.point&&$('map-dialog').open)$('map-dialog').close();
@@ -76,14 +89,16 @@ function showAlerts(){
 }
 function refresh(){if(hylink.token)window.Android?.refreshWayonData?.();else showConnection()}
 function showConnection(){
-  showSheet('차량 연결','<p class="sheet-copy">차량의 Wayon 연결 키를 입력해 주세요. 키는 이 휴대폰에만 저장되며 다른 사람과 공유하면 안 돼요.</p><label for="connection-key">차량 연결 키</label><input id="connection-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="새 연결 키 붙여넣기"><button class="primary-button" id="save-key">저장 및 연결</button><button class="sheet-choice" id="refresh-data">'+icon('refresh-cw')+'새로고침</button>'+(hylink.token?'<button class="sheet-choice danger-text" id="disconnect-key">'+icon('unlink')+'이 휴대폰의 연결 해제</button>':'')+'<p class="detail-note">차량의 기록은 삭제되지 않아요. 연결 서버: '+esc(hylink.baseUrl)+'</p>');
-  $('save-key').onclick=()=>{const key=$('connection-key').value.trim();if(!key)return toast('연결 키를 입력해 주세요.');window.Android?.saveWayonCloudKey?.(key)};
+  showSheet('Wayon Cloud 키','<p class="sheet-copy">시동을 끄고 콤마와 같은 Wi-Fi에 연결한 뒤 브라우저에서 <b>http://콤마IP:1108</b>을 열어 주세요. 표시된 키를 아래에 붙여 넣으면 연결됩니다.</p><label for="connection-key">Wayon Cloud key</label><input id="connection-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="wayon_으로 시작하는 키 붙여넣기" aria-describedby="key-feedback"><p id="key-feedback" role="status" aria-live="polite">키로 위치·카메라·원격 기능에 접근할 수 있으니 공유하지 마세요.</p><button class="primary-button" id="save-key">키 확인 및 연결</button><button class="sheet-choice" id="refresh-data">'+icon('refresh-cw')+'새로고침</button>'+(hylink.token?'<button class="sheet-choice danger-text" id="disconnect-key">'+icon('unlink')+'이 휴대폰의 연결 해제</button>':'')+'<p class="detail-note">라이브·주차 사진·충격 감지·원격 터미널은 IP:1108에서 선택할 수 있어요. 콤마 전원과 인터넷이 필요하고, 주행 중에는 주차 기능이 중단됩니다.</p>');
+  $('save-key').onclick=()=>{const key=$('connection-key').value.trim();if(!/^wayon_[A-Za-z0-9_-]{32,128}$/.test(key))return window.onHylinkKeyError('wayon_으로 시작하는 전체 키를 붙여 넣어 주세요.');window.Android?.saveWayonCloudKey?.(key)};
   $('refresh-data').onclick=()=>{$('sheet').close();refresh()};
   $('disconnect-key')?.addEventListener('click',()=>{
     showSheet('연결을 해제할까요?','<p class="sheet-copy">다시 연결하려면 차량의 연결 키가 필요해요. 차량에 저장된 기록은 유지돼요.</p><button class="primary-button" id="confirm-disconnect">연결 해제</button>');
     $('confirm-disconnect').onclick=()=>window.Android?.clearWayonCloudKey?.();
   });
 }
+window.onHylinkKeyPending=()=>{if($('save-key'))$('save-key').disabled=true;if($('key-feedback'))$('key-feedback').textContent='클라우드에서 키를 확인하고 있어요…'};
+window.onHylinkKeyError=message=>{if($('save-key'))$('save-key').disabled=false;if($('key-feedback'))$('key-feedback').textContent=message;else toast(message)};
 function sourceFor(filter){return ({trips:['trips','trips'],photos:['snapshots','snapshots'],captures:['liveCaptures','captures'],impacts:['impacts','impacts']})[filter]}
 function recordsFor(filter){
   const [source,field]=sourceFor(filter);
@@ -142,7 +157,11 @@ async function fetchMedia(path){
 }
 async function openRecord(v,type){
   if(type==='trips')return showTrip(v);
-  if(type==='impacts')return showSheet('충격 감지 기록','<p class="sheet-copy">'+esc(date(v.detected_at))+'</p><div class="sheet-facts"><div><small>동적 가속도 피크</small><b>'+scaled(v.peak_dynamic_g,1,2)+' g</b></div><div><small>전체 가속도 피크</small><b>'+scaled(v.peak_total_g,1,2)+' g</b></div><div><small>저크 피크</small><b>'+scaled(v.peak_jerk_g_per_s,1,2)+' g/s</b></div></div><p class="detail-note">센서 감지값이며 충돌 여부를 확정하지 않아요. 촬영 기록에서 같은 시각의 사진을 함께 확인해 주세요.</p>');
+  if(type==='impacts'){
+    const linked=list(data.snapshots?.snapshots).filter(p=>p.impact_id===v.id||[v.wide_snapshot_id,v.driver_snapshot_id].includes(p.id));
+    showSheet('충격 감지 기록','<p class="sheet-copy">'+esc(date(v.detected_at))+'</p><div class="sheet-facts"><div><small>동적 가속도 피크</small><b>'+scaled(v.peak_dynamic_g,1,2)+' g</b></div><div><small>전체 가속도 피크</small><b>'+scaled(v.peak_total_g,1,2)+' g</b></div><div><small>저크 피크</small><b>'+scaled(v.peak_jerk_g_per_s,1,2)+' g/s</b></div></div><p class="detail-note">센서 감지값이며 충돌을 확정하지 않아요. 사진은 감지 후 촬영되며 충격 순간이나 이전 영상이 아니에요.</p>'+linked.map((p,i)=>'<button class="sheet-choice" data-impact-photo="'+i+'">'+icon('image')+(p.camera==='driver'?'실내':'전방')+' 사진 · '+esc(date(p.captured_at))+'</button>').join('')+(!linked.length?'<p class="detail-note">연결된 사진: '+esc(({failed:'촬영하지 못함',pending:'처리 중',not_requested:'촬영 꺼짐'})[v.capture_status]||'목록 미수신')+'</p>':''));
+    document.querySelectorAll('[data-impact-photo]').forEach(b=>b.onclick=()=>openRecord(linked[Number(b.dataset.impactPhoto)],'photos'));return;
+  }
   const path=mediaPath(v,type);
   if(type==='captures'&&isVideoCapture(v))return window.startWayonSavedClip?.({url:hylink.baseUrl+path,token:hylink.token,capture:{durationS:v.duration_s}});
   const epoch=mediaEpoch;
@@ -211,6 +230,9 @@ $('close-sheet').onclick=()=>$('sheet').close();
 $('sheet').addEventListener('close',()=>{closeTrip();lastFocus?.focus()});
 $('btn-close-image').onclick=closeImage;
 $('connection-button').onclick=showConnection;
+$('connection-button').querySelector('b').textContent='Wayon Cloud 키';
+$('connection-button').querySelector('small').textContent='키 입력 · 차량 연결 · 새로고침';
+$('connect-home').onclick=showConnection;
 document.querySelector('.overview-heading').addEventListener('click',()=>{if(!hylink.token)showConnection()});
 document.querySelectorAll('[data-navigate]').forEach(b=>b.onclick=()=>navigate(b.dataset.navigate));
 document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{recordFilter=b.dataset.filter;recordLimit=8;document.querySelectorAll('[data-filter]').forEach(x=>{x.classList.toggle('selected',x===b);x.setAttribute('aria-pressed',String(x===b))});renderRecords()});
@@ -253,6 +275,7 @@ function renderVehicle(){
   const details=document.createElement('details');details.id='telemetry-details';details.className='telemetry-details';details.open=detailsOpen;
   details.innerHTML='<summary>장치 상세 데이터</summary><div class="list-card">'+diagnosticRows()+'</div><p class="detail-note">받은 항목만 표시해요. 배터리 에너지는 장치의 추정치이며 연료량이나 배터리 잔량이 아니에요.</p>';
   $('vehicle-content').append(details);
+  if(model.raw.hylink){const features=document.createElement('div');features.className='list-card';features.innerHTML=row('라이브/주차 사진',featureState('live').label)+row('주차 충격 감지',featureState('impact').label)+row('원격 터미널',featureState('remote').label);$('vehicle-content').append(features)}
 }
 function diagnosticRows(){
   const raw=model.raw,d=raw.device||{},p=model.panda,o=raw.openpilot||{},s=model.state;

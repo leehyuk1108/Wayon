@@ -43,8 +43,8 @@ class MainActivity : AppCompatActivity() {
     // Only the single network executor reads/writes these cached JSON objects.
     private val historyCache = mutableMapOf<String, Any>()
     private var pageReady = false
-    private var activityVisible = false
-    private var liveActive = false
+    @Volatile private var activityVisible = false
+    @Volatile private var liveActive = false
     @Volatile private var terminalActive = false
     private lateinit var terminalClient: WayonTerminalClient
     private var locationRequestId: Int? = null
@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private var locationPermissionPending = false
     private var locationTimeout: Runnable? = null
     @Volatile private var tripSequence = 0
+    @Volatile private var keySequence = 0
 
     private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
 
@@ -141,6 +142,8 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         if (!locationPermissionPending && locationRequestId != null) finishLocation(locationRequestId!!, JSONObject().put("error", true).put("code", 2))
         activityVisible = false
+        runJs("window.stopWayonLiveView?.()")
+        liveActive = false
         mainHandler.removeCallbacks(autoRefresh)
         terminalClient.disconnect()
         terminalActive = false
@@ -165,17 +168,32 @@ class MainActivity : AppCompatActivity() {
 
     @JavascriptInterface
     fun saveWayonCloudKey(value: String) {
-        terminalClient.disconnect()
-        terminalActive = false
-        tripSequence++
         val normalized = value.trim()
-        preferences.edit().putString(PREFERENCE_WAYON_KEY, normalized).apply()
-        runJs("window.onHylinkKeySaved?.(${JSONObject.quote(normalized)})")
-        if (normalized.isNotBlank()) refreshWayonData()
+        if (!HylinkApiContract.validKey(normalized)) {
+            runJs("window.onHylinkKeyError?.('wayon_으로 시작하는 전체 키를 붙여 넣어 주세요.')")
+            return
+        }
+        val sequence = ++keySequence
+        runJs("window.onHylinkKeyPending?.()")
+        networkExecutor.execute {
+            try {
+                fetchJson("/api/state", normalized)
+                if (sequence != keySequence) return@execute
+                terminalClient.disconnect()
+                terminalActive = false
+                tripSequence++
+                preferences.edit().putString(PREFERENCE_WAYON_KEY, normalized).apply()
+                runJs("window.onHylinkKeySaved?.(${JSONObject.quote(normalized)})")
+                refreshWayonData()
+            } catch (error: Exception) {
+                if (sequence == keySequence) runJs("window.onHylinkKeyError?.(${JSONObject.quote(safeMessage(error))})")
+            }
+        }
     }
 
     @JavascriptInterface
     fun clearWayonCloudKey() {
+        keySequence++
         tripSequence++
         terminalClient.disconnect()
         terminalActive = false
@@ -270,16 +288,18 @@ class MainActivity : AppCompatActivity() {
         }
         networkExecutor.execute {
             try {
+                if (!activityVisible || key != loadWayonCloudKey()) return@execute
                 val response = postJson(HylinkApiContract.LIVE_SESSION_ENDPOINT, key, JSONObject())
                 val websocketUrl = response.getString("websocketUrl")
                 val protocol = response.getString("protocol")
-                if (key != loadWayonCloudKey()) return@execute
+                if (!activityVisible || key != loadWayonCloudKey()) return@execute
                 runJs(
                     "window.onWayonLiveSession?.(" +
                         "${JSONObject.quote(websocketUrl)},${JSONObject.quote(protocol)})",
                 )
             } catch (error: Exception) {
                 Log.w(TAG, "Wayon Live session failed", error)
+                if (!activityVisible || key != loadWayonCloudKey()) return@execute
                 runJs("window.onWayonLiveSessionError?.(${JSONObject.quote(safeMessage(error))})")
             }
         }
@@ -309,7 +329,7 @@ class MainActivity : AppCompatActivity() {
                     JSONObject().put("publicKey", terminalClient.publicKey()),
                 )
                 val protocol = response.getString("protocol")
-                if (!terminalActive) return@execute
+                if (!terminalActive || !activityVisible || key != loadWayonCloudKey()) return@execute
                 val websocketUrl = BuildConfig.WAYON_CLOUD_URL
                     .replaceFirst("https://", "wss://")
                     .replaceFirst("http://", "ws://") + HylinkApiContract.REMOTE_SSH_ENDPOINT
@@ -424,6 +444,7 @@ class MainActivity : AppCompatActivity() {
             connectTimeout = NETWORK_TIMEOUT_MS
             readTimeout = NETWORK_TIMEOUT_MS
             useCaches = false
+            instanceFollowRedirects = false
             setRequestProperty("Authorization", "Bearer $key")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Cache-Control", "no-cache")
@@ -458,6 +479,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun safeMessage(error: Exception): String = when {
         error.message?.contains("unauthorized", ignoreCase = true) == true -> "Wayon Cloud 키를 확인해 주세요."
+        error.message?.contains("device_offline", ignoreCase = true) == true -> "차량이 주차 중인지, 콤마 전원·인터넷과 원격 기능이 켜져 있는지 확인해 주세요."
         else -> error.message?.take(160)?.takeIf { it.isNotBlank() } ?: "Wayon Cloud 연결에 실패했습니다."
     }
 
@@ -475,6 +497,7 @@ class MainActivity : AppCompatActivity() {
 }
 
 internal object HylinkApiContract {
+    fun validKey(value: String): Boolean = Regex("^wayon_[A-Za-z0-9_-]{32,128}$").matches(value)
     data class Endpoint(val name: String, val path: String)
 
     val READ_ENDPOINTS = listOf(

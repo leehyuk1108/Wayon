@@ -1379,7 +1379,7 @@
                 if (socket === currentSocket) socket = null;
                 showMessage("차량 영상이 도착하지 않습니다. 다시 연결해 주세요.", true, false);
                 setStatus("영상 대기 시간 초과");
-            }, 12000);
+            }, 45000);
         };
         currentSocket.onmessage = async (event) => {
             if (socket !== currentSocket) return;
@@ -1451,6 +1451,8 @@
     };
 
     window.startWayonLiveView = () => {
+        const feature = window.hylinkFeatureState?.('live');
+        if (feature && !feature.ready) { window.toast?.(feature.label); return; }
         if (overlay.classList.contains("active") && (sessionRequestPending || socket)) return;
         if (typeof VideoDecoder === "undefined" || typeof EncodedVideoChunk === "undefined") {
             overlay.classList.add("active");

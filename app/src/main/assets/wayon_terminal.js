@@ -25,6 +25,7 @@
   }
 
   function confirmedOffroad() {
+    if (window.hylinkFeatureState) return window.hylinkFeatureState('remote').ready;
     const s = window.hylink?.data?.feed?.state;
     const age = Date.now() - Date.parse(s?.updated_at);
     return !window.hylink?.data?.error && (s?.onroad === false || s?.onroad === 0) && Number.isFinite(age) && age >= -60000 && age <= 900000;
@@ -122,7 +123,7 @@
     const caption = byId("terminal-launch-caption");
     const hasFeed = Boolean(window.hylink?.data?.feed?.state);
     const onroad = vehicleOnroad();
-    available.textContent = onroad ? "주행 중에는 사용할 수 없어요" : confirmedOffroad() ? "비주행 상태 확인됨" : "최신 비주행 상태 확인 필요";
+    available.textContent = window.hylinkFeatureState?.('remote').label || (onroad ? "주행 중에는 사용할 수 없어요" : confirmedOffroad() ? "비주행 상태 확인됨" : "최신 비주행 상태 확인 필요");
     openButtons.forEach(button => { button.disabled = !window.hylink?.token || !confirmedOffroad(); });
     caption.textContent = onroad
       ? "주행 중에는 Wayon 릴레이가 터미널을 차단합니다."

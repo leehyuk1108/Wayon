@@ -8,6 +8,8 @@ from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 import cereal.messaging as messaging
 
+PLANNER_IGNORE_AVG_FREQ = ['carState', 'controlsState', 'selfdriveState']
+
 
 def main():
   config_realtime_process(5, Priority.CTRL_LOW)
@@ -30,9 +32,9 @@ def main():
                             'selfdriveStateSP',
                             'liveMapDataSP', 'carStateSP', gps_location_service],
                            poll='carState',
-                           # Planner work can delay this process's 100 Hz receive loop even while card is healthy.
-                           # Keep carState alive/valid checks, but do not invalidate derived plans from local rate jitter.
-                           ignore_avg_freq=['carState'])
+                           # Planner work can delay this process's 100 Hz receive loop even while publishers stay healthy.
+                           # Keep alive/valid checks, but ignore receiver-side rate jitter for conflated 100 Hz inputs.
+                           ignore_avg_freq=PLANNER_IGNORE_AVG_FREQ)
 
   while True:
     sm.update()

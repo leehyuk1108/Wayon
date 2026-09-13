@@ -40,6 +40,7 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
+PLAN_REQUIRED_SERVICES = ('carState', 'controlsState', 'selfdriveState', 'radarState')
 
 def get_max_accel(v_ego, wayon_carrot_profile=False):
   if wayon_carrot_profile:
@@ -91,6 +92,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.cutin_predecel_mode = 1
     self.cutin_shadow_accel = None
     self.traffic_stop_controller = TrafficStopController()
+    self.plan_input_health = None
+    self.plan_local_rate_jitter = None
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -247,7 +250,32 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')
 
-    plan_send.valid = sm.all_checks(service_list=['carState', 'controlsState', 'selfdriveState', 'radarState'])
+    required_services = list(PLAN_REQUIRED_SERVICES)
+    plan_send.valid = sm.all_checks(service_list=required_services)
+
+    input_health = bool(plan_send.valid)
+    if self.plan_input_health is not None and input_health != self.plan_input_health:
+      cloudlog.event(
+        "longitudinalPlanInputHealth",
+        error=not input_health,
+        recovered=input_health,
+        not_alive=[s for s in required_services if not sm.alive[s] and s not in sm.ignore_alive],
+        not_freq_ok=[s for s in required_services if not sm.freq_ok[s]
+                     and s not in sm.ignore_average_freq and s not in sm.ignore_alive],
+        invalid=[s for s in required_services if not sm.valid[s] and s not in sm.ignore_valid],
+      )
+    self.plan_input_health = input_health
+
+    local_rate_jitter = tuple(s for s in required_services
+                              if s in sm.ignore_average_freq and not sm.freq_ok[s])
+    if self.plan_local_rate_jitter is not None and local_rate_jitter != self.plan_local_rate_jitter:
+      cloudlog.event(
+        "longitudinalPlanLocalRateJitter",
+        error=False,
+        recovered=not local_rate_jitter,
+        not_freq_ok=list(local_rate_jitter),
+      )
+    self.plan_local_rate_jitter = local_rate_jitter
 
     longitudinalPlan = plan_send.longitudinalPlan
     longitudinalPlan.modelMonoTime = sm.logMonoTime['modelV2']

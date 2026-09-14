@@ -19,7 +19,7 @@ LANE_MARKING_MAX_AGE_SEC = 1.25
 LANE_MARKING_READ_INTERVAL_SEC = 0.1
 LANE_PROB_MIN = 0.55
 ROAD_EDGE_STD_MAX = 0.65
-TARGET_LANE_MIN_WIDTH_M = 2.00
+TARGET_LANE_MIN_WIDTH_M = 2.40
 TARGET_LANE_WIDTH_CONFIRM_FRAMES = 5
 WIDTH_SAMPLE_DISTANCES_M = (8.0, 15.0, 25.0)
 BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid", "centerDashed"))
@@ -66,34 +66,63 @@ def _space_between(inner: Any, outer: Any) -> float | None:
   return float(median(widths)) if widths else None
 
 
-def target_lane_space_width(model_v2: Any, direction: Any) -> float | None:
-  """Return a reliable adjacent-lane/edge space width, or None when unknown."""
+def _lane_geometry(model_v2: Any, direction: Any):
   if model_v2 is None:
-    return None
+    return None, None, None
   lane_lines = list(getattr(model_v2, "laneLines", []))
   lane_probs = list(getattr(model_v2, "laneLineProbs", []))
   if len(lane_lines) < 4 or len(lane_probs) < 4:
-    return None
+    return None, None, None
 
   if direction == LaneChangeDirection.left:
     outer_index, inner_index, edge_index = 0, 1, 0
   elif direction == LaneChangeDirection.right:
     outer_index, inner_index, edge_index = 3, 2, 1
   else:
-    return None
+    return None, None, None
+  return (lane_lines, lane_probs), (outer_index, inner_index), edge_index
 
-  inner_prob = _finite(lane_probs[inner_index])
-  outer_prob = _finite(lane_probs[outer_index])
-  if min(inner_prob, outer_prob) >= LANE_PROB_MIN:
-    return _space_between(lane_lines[inner_index], lane_lines[outer_index])
+
+def target_road_edge_space_width(model_v2: Any, direction: Any) -> float | None:
+  geometry, indices, edge_index = _lane_geometry(model_v2, direction)
+  if geometry is None:
+    return None
+  lane_lines, lane_probs = geometry
+  _, inner_index = indices
 
   road_edges = list(getattr(model_v2, "roadEdges", []))
   road_edge_stds = list(getattr(model_v2, "roadEdgeStds", []))
-  if inner_prob < LANE_PROB_MIN or len(road_edges) <= edge_index or len(road_edge_stds) <= edge_index:
-    return None
-  if _finite(road_edge_stds[edge_index], math.inf) > ROAD_EDGE_STD_MAX:
+  if _finite(lane_probs[inner_index]) < LANE_PROB_MIN or \
+     len(road_edges) <= edge_index or len(road_edge_stds) <= edge_index or \
+     _finite(road_edge_stds[edge_index], math.inf) > ROAD_EDGE_STD_MAX:
     return None
   return _space_between(lane_lines[inner_index], road_edges[edge_index])
+
+
+def target_lane_space_width(model_v2: Any, direction: Any) -> float | None:
+  """Return the narrowest reliable adjacent-lane or road-edge space."""
+  geometry, indices, _ = _lane_geometry(model_v2, direction)
+  if geometry is None:
+    return None
+  lane_lines, lane_probs = geometry
+  outer_index, inner_index = indices
+
+  inner_prob = _finite(lane_probs[inner_index])
+  outer_prob = _finite(lane_probs[outer_index])
+  if inner_prob < LANE_PROB_MIN:
+    return None
+
+  widths = []
+  if outer_prob >= LANE_PROB_MIN:
+    lane_width = _space_between(lane_lines[inner_index], lane_lines[outer_index])
+    if lane_width is not None:
+      widths.append(lane_width)
+
+  edge_width = target_road_edge_space_width(model_v2, direction)
+  if edge_width is not None:
+    widths.append(edge_width)
+
+  return min(widths) if widths else None
 
 
 @dataclass(frozen=True)
@@ -148,6 +177,7 @@ class LaneChangeSafetyGate:
     self.blocked = False
     self.block_reason = ""
     self.target_width_m: float | None = None
+    self.road_edge_width_m: float | None = None
 
   def reset(self) -> None:
     self.direction = LaneChangeDirection.none
@@ -158,6 +188,7 @@ class LaneChangeSafetyGate:
     self.blocked = False
     self.block_reason = ""
     self.target_width_m = None
+    self.road_edge_width_m = None
 
   def update(self, direction: Any, model_v2: Any) -> bool:
     if direction == LaneChangeDirection.none:
@@ -179,9 +210,11 @@ class LaneChangeSafetyGate:
       self.boundary_block_reason = ""
 
     self.target_width_m = target_lane_space_width(model_v2, direction)
+    self.road_edge_width_m = target_road_edge_space_width(model_v2, direction)
     narrow_now = self.target_width_m is not None and self.target_width_m < TARGET_LANE_MIN_WIDTH_M
     self.narrow_frames = self.narrow_frames + 1 if narrow_now else 0
-    if self.narrow_frames >= TARGET_LANE_WIDTH_CONFIRM_FRAMES:
+    road_edge_narrow = self.road_edge_width_m is not None and self.road_edge_width_m < TARGET_LANE_MIN_WIDTH_M
+    if road_edge_narrow or self.narrow_frames >= TARGET_LANE_WIDTH_CONFIRM_FRAMES:
       self.narrow_blocked = True
 
     self.blocked = self.boundary_blocked or self.narrow_blocked

@@ -50,6 +50,11 @@ def test_target_lane_width_falls_back_to_road_edge():
   assert target_lane_space_width(m, Direction.right) == pytest.approx(2.3)
 
 
+def test_confident_close_road_edge_wins_over_outer_lane_line():
+  m = model(left_width=3.2, right_width=3.2, outer_prob=0.9, right_edge=2.2, edge_std=0.3)
+  assert target_lane_space_width(m, Direction.right) == pytest.approx(0.7)
+
+
 def test_unreliable_geometry_does_not_report_a_width():
   m = model(outer_prob=0.1, edge_std=1.0)
   assert target_lane_space_width(m, Direction.left) is None
@@ -101,16 +106,26 @@ def test_narrow_target_requires_consecutive_frames_and_latches(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state)
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
-  narrow = model(right_width=1.99)
+  narrow = model(right_width=2.39)
 
   for _ in range(TARGET_LANE_WIDTH_CONFIRM_FRAMES - 1):
     assert not gate.update(Direction.right, narrow)
   assert gate.update(Direction.right, narrow)
   assert gate.block_reason == "narrowTargetLane"
 
-  assert gate.update(Direction.right, model(right_width=2.0))
+  assert gate.update(Direction.right, model(right_width=2.4))
   gate.reset()
-  assert not gate.update(Direction.right, model(right_width=2.0))
+  assert not gate.update(Direction.right, model(right_width=2.4))
+
+
+def test_road_edge_blocks_before_nudgeless_lane_change_can_start(tmp_path):
+  state = tmp_path / "markings.json"
+  write_markings(state)
+  gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
+  direct_road_edge = model(outer_prob=0.01, right_edge=2.2, edge_std=0.38)
+
+  assert gate.update(Direction.right, direct_road_edge)
+  assert gate.block_reason == "narrowTargetLane"
 
 
 def test_stale_centerline_state_is_ignored(tmp_path):

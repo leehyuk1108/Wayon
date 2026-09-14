@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from cereal import log, custom
 from openpilot.common.params import Params
@@ -5,6 +7,7 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_turn_desire import LaneTurnController, LANE_CHANGE_SPEED_MIN
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLaneChangeMode
+from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_safety import LaneBoundaryStateReader, LaneChangeSafetyGate
 
 TurnDirection = custom.ModelDataV2SP.TurnDirection
 
@@ -96,6 +99,19 @@ class DummyLaneChangeSafetyGate:
     pass
 
 
+def model_line(y):
+  return SimpleNamespace(x=[0.0, 8.0, 15.0, 25.0, 40.0], y=[y] * 5)
+
+
+def close_right_road_edge_model():
+  return SimpleNamespace(
+    laneLines=[model_line(-4.5), model_line(-1.5), model_line(1.5), model_line(4.5)],
+    laneLineProbs=[0.01, 0.98, 0.98, 0.01],
+    roadEdges=[model_line(-5.0), model_line(2.2)],
+    roadEdgeStds=[0.4, 0.38],
+  )
+
+
 @pytest.fixture
 def set_lane_turn_params():
   params = Params()
@@ -154,3 +170,28 @@ def test_lane_change_safety_gate_blocks_start_but_not_an_active_maneuver():
   gate.blocked = True
   dh.update(carstate, True, 1.0, object())
   assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+
+
+def test_close_road_edge_blocks_before_nudgeless_timer(tmp_path):
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
+  dh.lane_change_safety = LaneChangeSafetyGate(LaneBoundaryStateReader(str(tmp_path / "missing.json")))
+  carstate = DummyCarState(
+    vEgo=15.0,
+    rightBlinker=True,
+    steeringPressed=True,
+    steeringTorque=-1.0,
+  )
+  model_v2 = close_right_road_edge_model()
+
+  dh.update(carstate, True, 1.0, model_v2)
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+  dh.update(carstate, True, 1.0, model_v2)
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+  dh.update(carstate, True, 1.0, model_v2)
+
+  assert dh.lane_change_safety.blocked
+  assert dh.lane_change_safety.block_reason == "narrowTargetLane"
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange

@@ -3,6 +3,7 @@ import numpy as np
 
 from cereal import car
 from openpilot.common.constants import CV
+from openpilot.selfdrive.navdy.wayon_tmap_road_limit import read_road_limit_kph, set_target_kph
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import VCruiseHelperSP
 
 
@@ -163,6 +164,13 @@ class VCruiseHelper(VCruiseHelperSP):
     if any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in CS.buttonEvents) and self.v_cruise_initialized:
       self.v_cruise_kph = self.v_cruise_kph_last
     else:
-      self.v_cruise_kph = int(round(np.clip(CS.vEgo * CV.MS_TO_KPH, initial, V_CRUISE_MAX)))
+      current_kph = CS.vEgo * CV.MS_TO_KPH
+      set_pressed = any(b.type in (ButtonType.decelCruise, ButtonType.setCruise) for b in CS.buttonEvents)
+      road_limit_kph = read_road_limit_kph() if set_pressed else None
+      if road_limit_kph is None:
+        self.v_cruise_kph = int(round(np.clip(current_kph, initial, V_CRUISE_MAX)))
+      else:
+        target_kph = set_target_kph(current_kph, road_limit_kph)
+        self.v_cruise_kph = int(round(np.clip(target_kph, V_CRUISE_MIN, V_CRUISE_MAX)))
 
     self.v_cruise_cluster_kph = self.v_cruise_kph

@@ -22,6 +22,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
+from openpilot.selfdrive.navdy.wayon_tmap_road_limit import RoadLimitFeedback
+
 from openpilot.system.wayon_drive_quality import resolve_operating_state
 from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import selected_cutin_risk
 
@@ -1672,7 +1674,7 @@ def socket_send(payload: dict[str, Any], args: argparse.Namespace) -> bool:
   try:
     conn = getattr(args, "_socket_conn")
     conn.sendall(json_payload.encode("utf-8"))
-    if not read_navdy_feedback(conn, args):
+    if not read_navdy_feedback(conn, args, payload.get("onroad") is True):
       raise ConnectionError("Navdy socket acknowledgement timed out")
     publish_bridge_health(args, "socket", True)
     return True
@@ -1731,7 +1733,7 @@ def publish_navdy_camera_state(camera_speed_kph: Any, camera_source: Any, camera
     pass
 
 
-def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> bool:
+def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace, onroad: bool | None = None) -> bool:
   try:
     buffer = getattr(args, "_socket_feedback_buffer", b"")
     while b"\n" not in buffer:
@@ -1739,7 +1741,7 @@ def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> bool:
       if not chunk:
         return False
       buffer += chunk
-      if len(buffer) > 4096:
+      if len(buffer) > 32768:
         return False
     lines = buffer.split(b"\n")
     setattr(args, "_socket_feedback_buffer", lines.pop())
@@ -1747,6 +1749,12 @@ def read_navdy_feedback(conn: socket.socket, args: argparse.Namespace) -> bool:
       if not line:
         continue
       feedback = json.loads(line)
+      if onroad is not None:
+        road_limit = getattr(args, "_tmap_road_limit_feedback", None)
+        if road_limit is None:
+          road_limit = RoadLimitFeedback()
+          setattr(args, "_tmap_road_limit_feedback", road_limit)
+        road_limit.accept(feedback, onroad)
       publish_navdy_camera_state(feedback.get("cameraSpeedKph", 0),
                                  feedback.get("cameraSource"), feedback.get("cameraType"),
                                  feedback.get("cameraDistance"), args)

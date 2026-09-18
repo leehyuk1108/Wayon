@@ -12,6 +12,7 @@ import time
 import numpy as np
 
 from openpilot.common.constants import CV
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import UPHILL_COMPENSATION_DEADBAND
 
 DT_CTRL = 0.01
 
@@ -125,7 +126,7 @@ class WayonCoastController:
     observed_allowance = float(np.clip(self.natural_accel, 0.0, 0.25)) if self.natural_accel_initialized else 0.0
     free_roll_allowance = max(gravity_allowance, observed_allowance)
     base_valid = (active and (v_ego >= 5.0 or stable_low_speed_lead) and
-                  abs(pitch) <= math.radians(4.0) and not automatic_control and
+                  -math.radians(4.0) <= pitch <= UPHILL_COMPENSATION_DEADBAND and not automatic_control and
                   not lead_urgent and not cutin_urgent)
     if stable_low_speed_lead:
       enter_valid = (base_valid and -0.30 <= speed_error <= 0.75 and

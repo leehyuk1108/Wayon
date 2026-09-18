@@ -14,7 +14,8 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   PID_KF,
   PID_KI,
   PID_KP,
-  get_max_accel as get_wayon_max_accel,
+  apply_uphill_accel_compensation,
+  get_grade_adjusted_max_accel,
   is_enabled,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
@@ -404,7 +405,7 @@ class LongControl:
     a_target = long_plan.aTarget
     should_stop = long_plan.shouldStop
     if self.wayon_carrot_profile:
-      accel_limits = (accel_limits[0], min(accel_limits[1], get_wayon_max_accel(CS.vEgo)))
+      accel_limits = (accel_limits[0], min(accel_limits[1], get_grade_adjusted_max_accel(CS.vEgo, pitch)))
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
     self.speed_pid.neg_limit = accel_limits[0]
@@ -484,6 +485,8 @@ class LongControl:
           active and self.wayon_carrot_profile, CS.vEgo, output_accel, CS.aEgo, lead)
         if regular_coast or anticipatory_coast:
           output_accel = 0.0
+        else:
+          output_accel = apply_uphill_accel_compensation(output_accel, CS.vEgo, v_target_now, pitch)
         output_accel = self.response_learner.correction(output_accel, CS.vEgo)
         output_accel = self.accel_smoother.update(
           output_accel, CS.aEgo, CS.vEgo, v_target_now,

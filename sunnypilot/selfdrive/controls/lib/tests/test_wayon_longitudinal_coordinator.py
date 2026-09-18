@@ -120,6 +120,16 @@ def test_downhill_low_speed_follow_can_coast_instead_of_gas_brake_hunting():
                                measured_accel=0.1, previous_accel=0.0)
 
 
+def test_meaningful_uphill_exits_coasting_before_speed_drops():
+  controller = WayonCoastController()
+  for _ in range(controller.ENTER_FRAMES):
+    controller.update(True, 20.0, 20.2, -0.1, 0.0, False)
+  assert controller.state.active
+
+  assert not controller.update(True, 20.0, 20.2, -0.1, 1.0 * CV.DEG_TO_RAD, False)
+  assert not controller.state.active
+
+
 def test_low_speed_stop_only_tapers_final_stop_with_verified_lead():
   controller = LowSpeedStopController()
   assert controller.update(-0.4, 1.6 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0)) == -0.4

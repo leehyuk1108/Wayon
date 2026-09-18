@@ -27,7 +27,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements impor
 from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import cutin_risk_for_control
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import (
   A_CHANGE_COST_STARTING,
-  get_max_accel as get_wayon_carrot_max_accel,
+  get_grade_adjusted_max_accel,
   is_enabled,
 )
 
@@ -42,9 +42,9 @@ _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 PLAN_REQUIRED_SERVICES = ('carState', 'controlsState', 'selfdriveState', 'radarState')
 
-def get_max_accel(v_ego, wayon_carrot_profile=False):
+def get_max_accel(v_ego, wayon_carrot_profile=False, pitch=0.0):
   if wayon_carrot_profile:
-    return get_wayon_carrot_max_accel(v_ego)
+    return get_grade_adjusted_max_accel(v_ego, pitch)
   return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
 
 
@@ -122,8 +122,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
   def update(self, sm):
     LongitudinalPlannerSP.update(self, sm)
 
+    pitch = float(sm['carControl'].orientationNED[1]) if len(sm['carControl'].orientationNED) == 3 else 0.0
     if not self.wayon_carrot_profile and len(sm['carControl'].orientationNED) == 3:
-      accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
+      accel_coast = get_coast_accel(pitch)
     else:
       accel_coast = get_coast_accel(0.0) if self.wayon_carrot_profile else ACCEL_MAX
 
@@ -145,7 +146,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # No change cost when user is controlling the speed, or when standstill
     prev_accel_constraint = not (reset_state or long_override or sm['carState'].standstill)
 
-    accel_clip = [ACCEL_MIN, get_max_accel(v_ego, self.wayon_carrot_profile)]
+    accel_clip = [ACCEL_MIN, get_max_accel(v_ego, self.wayon_carrot_profile, pitch)]
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
     accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
     curvature_future = future_curvature(sm['modelV2'], sm['controlsState'].desiredCurvature)

@@ -501,7 +501,25 @@ def test_accelerator_override_release_rejoins_positive_target_quickly_and_smooth
 
 def test_closing_radar_lead_caps_accel_before_gap_is_lost():
   lead = SimpleNamespace(status=True, radar=True, dRel=10.5, vRel=-2.0)
-  assert get_lead_accel_safety_cap(4.67, lead) == pytest.approx(-0.4444, abs=0.01)
+  assert get_lead_accel_safety_cap(4.67, lead) == pytest.approx(-0.328, abs=0.01)
+
+
+@pytest.mark.parametrize("v_ego,d_rel,v_rel,planner_accel", [
+  (10.4 / 3.6, 6.6, -2.38, -1.69),
+  (5.1 / 3.6, 6.6, -1.88, -0.76),
+  (8.5 / 3.6, 6.4, -1.50, -1.21),
+  (5.5 / 3.6, 6.5, -1.88, -0.94),
+])
+def test_recorded_low_speed_following_does_not_trigger_panic_cap(v_ego, d_rel, v_rel, planner_accel):
+  lead = SimpleNamespace(status=True, radar=True, dRel=d_rel, vRel=v_rel)
+  safety_cap = get_lead_accel_safety_cap(v_ego, lead)
+  assert safety_cap is not None
+  assert safety_cap > planner_accel
+
+
+def test_close_radar_lead_still_triggers_emergency_cap():
+  lead = SimpleNamespace(status=True, radar=True, dRel=4.0, vRel=-2.0)
+  assert get_lead_accel_safety_cap(2.0, lead) <= -3.9
 
 
 def test_fast_closing_radar_lead_requires_strong_decel():

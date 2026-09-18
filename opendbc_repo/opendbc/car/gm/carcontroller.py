@@ -26,9 +26,10 @@ GM_AUTO_HOLD_SETTLED_ACCEL = 0.15
 GM_AUTO_HOLD_SETTLED_SPEED = 0.01
 GM_AUTO_HOLD_SETTLED_FRAMES = 5  # 0.20 seconds at the 25 Hz brake command rate
 GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES = 20  # Ensure hold engages even when aEgo remains noisy
-GM_AUTO_HOLD_RAMP_STEP = 31  # 40 -> 400 in about 0.5 seconds at the 25 Hz brake command rate
+GM_AUTO_HOLD_RAMP_STEP = 31  # 30 -> 400 in about 0.5 seconds at the 25 Hz brake command rate
 GM_AUTO_HOLD_ROLL_SPEED = 0.08
-GM_STOPPING_BRAKE_MIN = 40
+GM_STOPPING_BRAKE_SETTLE_MIN = 30
+GM_STOPPING_BRAKE_APPROACH_MIN = 40
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 0.8 * CV.KPH_TO_MS
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 GM_SNG_BUTTON_FRAMES = 5  # stationary physical RES in Traverse route 45/23
@@ -64,11 +65,18 @@ def update_traverse_coasting(CP, coasting, long_active, stopping, v_ego, accel):
   return accel_range[0] <= accel <= accel_range[1]
 
 
+def get_traverse_stopping_brake_floor(v_ego):
+  speed_kph = abs(v_ego) * CV.MS_TO_KPH
+  return int(round(np.interp(speed_kph, [0.0, 0.1, 0.3, 0.5, 0.8],
+                             [GM_STOPPING_BRAKE_SETTLE_MIN, GM_STOPPING_BRAKE_SETTLE_MIN, 32, 36,
+                              GM_STOPPING_BRAKE_APPROACH_MIN])))
+
+
 def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):
   if (CP.carFingerprint != CAR.CHEVROLET_TRAVERSE or not stopping or
       v_ego >= GM_STOPPING_BRAKE_TAPER_START_SPEED):
     return apply_brake
-  return max(apply_brake, GM_STOPPING_BRAKE_MIN)
+  return max(apply_brake, get_traverse_stopping_brake_floor(v_ego))
 
 
 def gm_auto_hold_command(CP, CC, CS):
@@ -97,7 +105,7 @@ def update_gm_long_auto_hold_brake(hold_requested, confirmed, zero_frames, settl
     return regular_brake, False, 0, 0, 0
 
   raw_speed = abs(v_ego_raw)
-  regular_brake = max(regular_brake, GM_STOPPING_BRAKE_MIN)
+  regular_brake = max(regular_brake, get_traverse_stopping_brake_floor(raw_speed))
 
   # Restoring stationary control takes priority over the comfort ramp. This
   # also applies after hold confirmation, when the previous branch ordering

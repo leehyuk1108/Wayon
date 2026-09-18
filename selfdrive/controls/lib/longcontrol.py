@@ -44,7 +44,10 @@ SNG_MANUAL_RELEASE_TIMEOUT = 4.0
 SNG_MANUAL_CREEP_MIN_SPEED = 0.1
 SNG_MANUAL_CREEP_MAX_SPEED = 1.0
 SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
-LEAD_SAFETY_STOP_DISTANCE = 6.0
+LEAD_SAFETY_COMFORT_STOP_DISTANCE = 6.0
+LEAD_SAFETY_RESERVE_BASE = 3.0
+LEAD_SAFETY_RESERVE_SPEED_GAIN = 0.3
+LEAD_SAFETY_RESERVE_MAX = 6.0
 LEAD_SAFETY_T_FOLLOW = 1.45
 LEAD_SAFETY_MIN_CLOSING_SPEED = 0.3
 LEAD_SAFETY_MAX_TTC = 8.0
@@ -60,12 +63,17 @@ def get_lead_accel_safety_cap(v_ego, lead):
   if d_rel <= 0.0 or closing_speed < LEAD_SAFETY_MIN_CLOSING_SPEED:
     return None
 
-  desired_gap = LEAD_SAFETY_STOP_DISTANCE + LEAD_SAFETY_T_FOLLOW * max(0.0, v_ego)
+  desired_gap = LEAD_SAFETY_COMFORT_STOP_DISTANCE + LEAD_SAFETY_T_FOLLOW * max(0.0, v_ego)
   ttc = d_rel / closing_speed
   if d_rel > desired_gap and ttc > LEAD_SAFETY_MAX_TTC:
     return None
 
-  remaining_distance = max(0.5, d_rel - LEAD_SAFETY_STOP_DISTANCE)
+  # The normal 6 m following stop target is not a collision reserve. Using it
+  # here caused routine 6-7 m low-speed following to collapse the available
+  # braking distance to 0.5 m and request an immediate -4 m/s^2 stop.
+  hard_reserve = min(LEAD_SAFETY_RESERVE_MAX,
+                     LEAD_SAFETY_RESERVE_BASE + LEAD_SAFETY_RESERVE_SPEED_GAIN * max(0.0, v_ego))
+  remaining_distance = max(0.5, d_rel - hard_reserve)
   required_decel = -(closing_speed * closing_speed) / (2.0 * remaining_distance)
   return min(0.0, required_decel)
 
@@ -488,6 +496,9 @@ class LongControl:
         else:
           output_accel = apply_uphill_accel_compensation(output_accel, CS.vEgo, v_target_now, pitch)
         output_accel = self.response_learner.correction(output_accel, CS.vEgo)
+        lead_safety_cap = get_lead_accel_safety_cap(CS.vEgo, lead)
+        if lead_safety_cap is not None:
+          output_accel = min(output_accel, lead_safety_cap)
         output_accel = self.accel_smoother.update(
           output_accel, CS.aEgo, CS.vEgo, v_target_now,
           planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
@@ -497,13 +508,6 @@ class LongControl:
         error = a_target - CS.aEgo
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)
         self.speed_pid.reset()
-
-    if self.wayon_carrot_profile and self.long_control_state == LongCtrlState.pid:
-      lead = radar_state.leadOne if radar_state is not None else None
-      lead_safety_cap = get_lead_accel_safety_cap(CS.vEgo, lead)
-      if lead_safety_cap is not None and output_accel > lead_safety_cap:
-        output_accel = max(accel_limits[0], lead_safety_cap)
-        self.accel_smoother.reset(output_accel)
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     lead = radar_state.leadOne if radar_state is not None else None

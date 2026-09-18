@@ -25,10 +25,12 @@ LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 ICBM_MIN_TARGET_KPH = 20.0
 ICBM_COAST_ENTRY_MARGIN_KPH = 3.0
-ICBM_TRACKING_DEADBAND_KPH = 0.5
-ICBM_TRACKING_DECEL_MIN_MPS2 = 0.12
-ICBM_TRACKING_DECEL_GAIN_MPS2_PER_KPH = 0.10
-ICBM_TRACKING_DECEL_MAX_MPS2 = 0.45
+ICBM_CAMERA_REACCEL_MARGIN_KPH = 10.0
+ICBM_CAMERA_REACCEL_MAX_MPS2 = 0.08
+ICBM_TRACKING_DEADBAND_KPH = 1.0
+ICBM_TRACKING_DECEL_MIN_MPS2 = 0.08
+ICBM_TRACKING_DECEL_GAIN_MPS2_PER_KPH = 0.06
+ICBM_TRACKING_DECEL_MAX_MPS2 = 0.35
 
 
 def apply_icbm_target(icbm: custom.IntelligentCruiseButtonManagement, v_cruise: float) -> float:
@@ -51,11 +53,20 @@ def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_eg
     return a_target
 
   target_ms = target_kph * CV.KPH_TO_MS
-  if target_ms >= v_cruise or target_ms > v_ego + ICBM_COAST_ENTRY_MARGIN_KPH * CV.KPH_TO_MS:
+  if target_ms >= v_cruise:
     return a_target
 
-  speed_error_kph = (v_ego - target_ms) * CV.MS_TO_KPH
   control_source = str(getattr(icbm, "controlSource", ""))
+  target_margin_kph = (target_ms - v_ego) * CV.MS_TO_KPH
+  if target_margin_kph > ICBM_COAST_ENTRY_MARGIN_KPH:
+    if control_source == "camera" and target_margin_kph <= ICBM_CAMERA_REACCEL_MARGIN_KPH:
+      # Do not chase a falling camera ceiling after an initial slowdown. A
+      # small positive allowance avoids dragging on level roads while keeping
+      # downhill approaches out of the brake-throttle-brake cycle.
+      return min(a_target, ICBM_CAMERA_REACCEL_MAX_MPS2)
+    return a_target
+
+  speed_error_kph = -target_margin_kph
   required_accel = float(getattr(icbm, "requiredAccel", 0.0))
   if control_source != "camera" or speed_error_kph <= ICBM_TRACKING_DEADBAND_KPH:
     # On GM SDGM, zero acceleration maps to zero gas and zero friction brake.
@@ -68,7 +79,8 @@ def apply_icbm_accel_target(icbm: custom.IntelligentCruiseButtonManagement, v_eg
     speed_error_kph - ICBM_TRACKING_DEADBAND_KPH
   ) * ICBM_TRACKING_DECEL_GAIN_MPS2_PER_KPH
   tracking_decel = min(ICBM_TRACKING_DECEL_MAX_MPS2, tracking_decel)
-  predicted_decel = required_accel if math.isfinite(required_accel) and required_accel < -0.08 else 0.0
+  predicted_decel = max(-ICBM_TRACKING_DECEL_MAX_MPS2, required_accel) \
+    if math.isfinite(required_accel) and required_accel < -0.08 else 0.0
   return min(a_target, -tracking_decel, predicted_decel)
 
 

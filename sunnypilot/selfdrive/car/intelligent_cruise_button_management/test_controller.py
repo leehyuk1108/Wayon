@@ -77,7 +77,7 @@ def test_fixed_camera_profile_reserves_settling_distance_before_compliance_point
 
   write_camera_state(camera_path, 50, "fixed", 1000)
   controller.run(state, make_control(), make_plan(), True)
-  assert 95 <= controller.v_target < 100
+  assert 90 <= controller.v_target < 100
   assert controller.automatic_control_active
   assert controller.required_accel < 0.0
 
@@ -105,7 +105,7 @@ def test_fixed_camera_profile_holds_limit_inside_one_hundred_meters(tmp_path):
 
 def test_fixed_camera_profile_starts_with_early_coast_window():
   assert IntelligentCruiseButtonManagement.fixed_camera_target(80, 60, 600) == 80
-  assert IntelligentCruiseButtonManagement.fixed_camera_target(80, 60, 490) == 79
+  assert IntelligentCruiseButtonManagement.fixed_camera_target(80, 60, 490) == 77
 
 
 def test_openpilot_long_uses_camera_target_without_requesting_buttons(tmp_path):

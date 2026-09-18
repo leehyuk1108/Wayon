@@ -33,16 +33,20 @@ def test_icbm_never_raises_driver_cruise_target():
 
 def test_icbm_releases_propulsion_instead_of_requesting_early_braking():
   accel = apply_icbm_accel_target(icbm_target(65), 67 * CV.KPH_TO_MS, 0.3, 80 * CV.KPH_TO_MS)
-  assert accel == pytest.approx(-0.27)
+  assert accel == pytest.approx(-0.14)
 
 
 def test_icbm_large_speed_error_uses_bounded_tracking_decel():
   accel = apply_icbm_accel_target(icbm_target(50), 80 * CV.KPH_TO_MS, 0.3, 100 * CV.KPH_TO_MS)
-  assert accel == -0.45
+  assert accel == -0.35
 
 
-def test_icbm_does_not_brake_below_target():
-  assert apply_icbm_accel_target(icbm_target(60), 55 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS) == 0.4
+def test_icbm_limits_reacceleration_near_falling_camera_target():
+  assert apply_icbm_accel_target(icbm_target(60), 55 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS) == 0.08
+
+
+def test_icbm_keeps_acceleration_when_well_below_camera_target():
+  assert apply_icbm_accel_target(icbm_target(70), 55 * CV.KPH_TO_MS, 0.4, 80 * CV.KPH_TO_MS) == 0.4
 
 
 def test_icbm_starts_coasting_when_target_is_near_current_speed():
@@ -63,6 +67,12 @@ def test_camera_arrival_predictor_can_request_earlier_deceleration():
   output = apply_icbm_accel_target(icbm_target(70, required_accel=-0.32),
                                    80 * CV.KPH_TO_MS, 0.2, 100 * CV.KPH_TO_MS)
   assert output <= -0.32
+
+
+def test_camera_arrival_predictor_cannot_bypass_comfort_decel_cap():
+  output = apply_icbm_accel_target(icbm_target(70, required_accel=-1.2),
+                                   80 * CV.KPH_TO_MS, 0.2, 100 * CV.KPH_TO_MS)
+  assert output == -0.35
 
 
 def test_camera_arrival_predictor_never_adds_acceleration():

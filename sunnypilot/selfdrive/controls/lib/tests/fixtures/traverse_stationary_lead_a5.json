@@ -1,0 +1,16 @@
+{
+  "sourceRoute": "2026-09-19_1153_24min_000000a5.tar",
+  "responseDelay": 0.146,
+  "samples": [
+    {"t": 557.6288, "speedKph": 26.12, "requestedAccel": -0.3471, "dRel": 38.625, "vRel": -7.250, "vLeadK": 0.0161, "trackId": 4},
+    {"t": 558.1292, "speedKph": 26.10, "requestedAccel": -0.7053, "dRel": 34.750, "vRel": -7.250, "vLeadK": 0.0116, "trackId": 4},
+    {"t": 559.1693, "speedKph": 23.87, "requestedAccel": -1.0589, "dRel": 27.375, "vRel": -6.750, "vLeadK": -0.2123, "trackId": 4},
+    {"t": 560.1691, "speedKph": 20.67, "requestedAccel": -1.1362, "dRel": 20.750, "vRel": -5.875, "vLeadK": -0.1462, "trackId": 4},
+    {"t": 561.1891, "speedKph": 16.88, "requestedAccel": -1.2141, "dRel": 15.625, "vRel": -4.875, "vLeadK": -0.1622, "trackId": 4},
+    {"t": 562.2194, "speedKph": 12.90, "requestedAccel": -1.2642, "dRel": 11.000, "vRel": -3.750, "vLeadK": -0.1505, "trackId": 4},
+    {"t": 563.2191, "speedKph": 9.06, "requestedAccel": -1.2581, "dRel": 7.875, "vRel": -2.750, "vLeadK": -0.1422, "trackId": 4},
+    {"t": 564.2193, "speedKph": 5.13, "requestedAccel": -1.0973, "dRel": 5.625, "vRel": -1.500, "vLeadK": -0.1208, "trackId": 4},
+    {"t": 565.2187, "speedKph": 2.47, "requestedAccel": -0.8201, "dRel": 4.375, "vRel": -0.750, "vLeadK": -0.0276, "trackId": 4},
+    {"t": 565.7389, "speedKph": 1.39, "requestedAccel": -1.2134, "dRel": 4.125, "vRel": -0.375, "vLeadK": -0.0251, "trackId": 4}
+  ]
+}

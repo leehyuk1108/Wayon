@@ -5,7 +5,8 @@ from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.gm import gmcan
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.gm.cluster_speed import gm_raw_display_kph_from_cluster_display_kph
-from opendbc.car.gm.values import CAR, DBC, CanBus, CarControllerParams, CruiseButtons, SDGM_CAR
+from opendbc.car.gm.values import (CAR, DBC, CanBus, CarControllerParams, CruiseButtons, SDGM_CAR,
+                                  get_traverse_stopping_brake_floor)
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.sunnypilot.car.gm.icbm import IntelligentCruiseButtonManagementInterface
 
@@ -25,8 +26,6 @@ GM_AUTO_HOLD_SETTLED_FRAMES = 5  # 0.20 seconds at the 25 Hz brake command rate
 GM_AUTO_HOLD_SETTLE_TIMEOUT_FRAMES = 20  # Ensure hold engages even when aEgo remains noisy
 GM_AUTO_HOLD_RAMP_STEP = 31  # 30 -> 400 in about 0.5 seconds at the 25 Hz brake command rate
 GM_AUTO_HOLD_ROLL_SPEED = 0.08
-GM_STOPPING_BRAKE_SETTLE_MIN = 30
-GM_STOPPING_BRAKE_APPROACH_MIN = 40
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 0.8 * CV.KPH_TO_MS
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 GM_SNG_BUTTON_FRAMES = 5  # stationary physical RES in Traverse route 45/23
@@ -59,13 +58,6 @@ def get_gas_brake_commands(params, accel):
   gas = float(np.interp(accel, params.GAS_LOOKUP_BP, params.GAS_LOOKUP_V))
   brake = int(round(np.interp(accel, params.BRAKE_LOOKUP_BP, params.BRAKE_LOOKUP_V)))
   return gas, brake
-
-
-def get_traverse_stopping_brake_floor(v_ego):
-  speed_kph = abs(v_ego) * CV.MS_TO_KPH
-  return int(round(np.interp(speed_kph, [0.0, 0.1, 0.3, 0.5, 0.8],
-                             [GM_STOPPING_BRAKE_SETTLE_MIN, GM_STOPPING_BRAKE_SETTLE_MIN, 32, 36,
-                              GM_STOPPING_BRAKE_APPROACH_MIN])))
 
 
 def limit_traverse_stopping_brake(CP, stopping, v_ego, apply_brake):

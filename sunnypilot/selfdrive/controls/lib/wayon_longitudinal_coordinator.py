@@ -12,6 +12,7 @@ import time
 import numpy as np
 
 from openpilot.common.constants import CV
+from opendbc.car.gm.values import get_traverse_stopping_accel_floor
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import UPHILL_COMPENSATION_DEADBAND
 
 DT_CTRL = 0.01
@@ -20,6 +21,16 @@ DT_CTRL = 0.01
 RESPONSE_PROFILE_PATH = "/data/wayon/longitudinal_response.json"
 PROFILE_VERSION = 1
 SPEED_BIN_EDGES_KPH = (10.0, 30.0, 60.0)
+LEAD_APPROACH_COMFORT_STOP_DISTANCE = 6.0
+LEAD_APPROACH_RESERVE_BASE = 3.0
+LEAD_APPROACH_RESERVE_SPEED_GAIN = 0.3
+LEAD_APPROACH_RESERVE_MAX = 6.0
+LEAD_APPROACH_T_FOLLOW = 1.45
+LEAD_APPROACH_MIN_CLOSING_SPEED = 0.3
+LEAD_APPROACH_BASE_MAX_TTC = 8.0
+LEAD_APPROACH_STATIONARY_MAX_TTC = 10.0
+LEAD_APPROACH_STATIONARY_MAX_SPEED = 1.0
+LEAD_APPROACH_RESPONSE_MARGIN = 0.15
 
 
 def speed_bin_index(v_ego: float) -> int:
@@ -32,7 +43,8 @@ def empty_response_profile(default_delay: float) -> dict:
     "version": PROFILE_VERSION,
     "updatedAt": 0,
     "bins": [
-      {"samples": 0, "delaySamples": 0, "delay": default_delay, "gasGain": 1.0, "brakeGain": 1.0}
+      {"samples": 0, "gasSamples": 0, "brakeSamples": 0, "delaySamples": 0,
+       "delay": default_delay, "gasGain": 1.0, "brakeGain": 1.0}
       for _ in range(4)
     ],
   }
@@ -53,6 +65,8 @@ def load_response_profile(profile_path: str, default_delay: float) -> dict:
         continue
       target = profile["bins"][index]
       target["samples"] = max(0, int(learned.get("samples", 0)))
+      target["gasSamples"] = max(0, int(learned.get("gasSamples", target["samples"])))
+      target["brakeSamples"] = max(0, int(learned.get("brakeSamples", target["samples"])))
       target["delaySamples"] = max(0, int(learned.get("delaySamples", 0)))
       target["delay"] = float(np.clip(float(learned.get("delay", default_delay)), 0.08, 0.9))
       target["gasGain"] = float(np.clip(float(learned.get("gasGain", 1.0)), 0.65, 1.35))
@@ -71,6 +85,78 @@ def learned_delay_for_speed(profile: dict, v_ego: float, default_delay: float) -
     return float(np.clip(float(learned["delay"]), 0.08, 0.9))
   except (KeyError, IndexError, TypeError, ValueError):
     return default_delay
+
+
+def get_lead_accel_safety_cap(v_ego: float, lead, response_delay: float = 0.0,
+                              stationary_confirmed: bool = False) -> float | None:
+  """Return a braking cap from measured closing speed and remaining distance."""
+  if lead is None or not getattr(lead, "status", False) or not getattr(lead, "radar", False):
+    return None
+
+  d_rel = float(getattr(lead, "dRel", 0.0))
+  closing_speed = max(0.0, -float(getattr(lead, "vRel", 0.0)))
+  if d_rel <= 0.0 or closing_speed < LEAD_APPROACH_MIN_CLOSING_SPEED:
+    return None
+
+  desired_gap = LEAD_APPROACH_COMFORT_STOP_DISTANCE + LEAD_APPROACH_T_FOLLOW * max(0.0, v_ego)
+  ttc = d_rel / closing_speed
+  max_ttc = LEAD_APPROACH_STATIONARY_MAX_TTC if stationary_confirmed else LEAD_APPROACH_BASE_MAX_TTC
+  if d_rel > desired_gap and ttc > max_ttc:
+    return None
+
+  hard_reserve = min(LEAD_APPROACH_RESERVE_MAX,
+                     LEAD_APPROACH_RESERVE_BASE + LEAD_APPROACH_RESERVE_SPEED_GAIN * max(0.0, v_ego))
+  bounded_delay = float(np.clip(response_delay, 0.0, 0.9))
+  response_margin = LEAD_APPROACH_RESPONSE_MARGIN if bounded_delay > 0.0 else 0.0
+  response_distance = closing_speed * (bounded_delay + response_margin)
+  remaining_distance = max(0.5, d_rel - hard_reserve - response_distance)
+  required_decel = -(closing_speed * closing_speed) / (2.0 * remaining_distance)
+
+  if stationary_confirmed and ttc > LEAD_APPROACH_BASE_MAX_TTC and d_rel > desired_gap:
+    early_blend = float(np.interp(
+      ttc,
+      [LEAD_APPROACH_BASE_MAX_TTC, LEAD_APPROACH_STATIONARY_MAX_TTC],
+      [1.0, 0.0],
+    ))
+    required_decel *= early_blend
+  return min(0.0, required_decel)
+
+
+class LeadApproachController:
+  """Confirm a stationary radar track and extend its smooth braking horizon."""
+
+  STATIONARY_CONFIRM_FRAMES = round(0.25 / DT_CTRL)
+
+  def __init__(self):
+    self.track_id = None
+    self.stationary_frames = 0
+
+  def reset(self) -> None:
+    self.track_id = None
+    self.stationary_frames = 0
+
+  def update(self, active: bool, v_ego: float, lead, response_delay: float = 0.0) -> float | None:
+    valid_radar = bool(lead is not None and getattr(lead, "status", False) and getattr(lead, "radar", False))
+    if not active or not valid_radar:
+      self.reset()
+      return None
+
+    track_value = float(getattr(lead, "radarTrackId", -1))
+    track_id = int(track_value) if math.isfinite(track_value) else -1
+    if self.track_id is not None and track_id != self.track_id:
+      self.stationary_frames = 0
+    self.track_id = track_id
+
+    v_rel = float(getattr(lead, "vRel", 0.0))
+    v_lead = float(getattr(lead, "vLeadK", max(0.0, v_ego + v_rel)))
+    stationary_candidate = (
+      track_id >= 0 and
+      abs(v_lead) <= LEAD_APPROACH_STATIONARY_MAX_SPEED and
+      v_rel < -LEAD_APPROACH_MIN_CLOSING_SPEED
+    )
+    self.stationary_frames = self.stationary_frames + 1 if stationary_candidate else 0
+    stationary_confirmed = self.stationary_frames >= self.STATIONARY_CONFIRM_FRAMES
+    return get_lead_accel_safety_cap(v_ego, lead, response_delay, stationary_confirmed)
 
 
 @dataclass
@@ -99,7 +185,8 @@ class WayonCoastController:
 
   def update(self, active: bool, v_ego: float, v_target: float, requested_accel: float,
              pitch: float, automatic_control: bool, lead=None, cutin_risk=None,
-             measured_accel: float = 0.0, previous_accel: float = 0.0) -> bool:
+             measured_accel: float = 0.0, previous_accel: float = 0.0,
+             lead_accel_cap: float | None = None) -> bool:
     if active and abs(previous_accel) <= 0.08 and math.isfinite(measured_accel) and abs(measured_accel) < 1.5:
       if not self.natural_accel_initialized:
         self.natural_accel = measured_accel
@@ -109,10 +196,10 @@ class WayonCoastController:
         self.natural_accel += alpha * (measured_accel - self.natural_accel)
 
     speed_error = v_target - v_ego
-    lead_urgent = bool(lead is not None and getattr(lead, "status", False) and (
-      (float(getattr(lead, "dRel", 1000.0)) < max(12.0, v_ego * 1.8) and float(getattr(lead, "vRel", 0.0)) < -0.8) or
-      float(getattr(lead, "dRel", 1000.0)) < 7.0
-    ))
+    lead_urgent = bool(
+      lead_accel_cap is not None or
+      (lead is not None and getattr(lead, "status", False) and float(getattr(lead, "dRel", 1000.0)) < 7.0)
+    )
     cutin_urgent = bool(cutin_risk is not None and bool(getattr(cutin_risk, "status", False)) and
                         float(getattr(cutin_risk, "score", 0.0)) > 0.35)
     radar_lead = bool(lead is not None and getattr(lead, "status", False) and getattr(lead, "radar", False))
@@ -261,8 +348,8 @@ class LowSpeedStopController:
     self.hold_confirm_frames = self.hold_confirm_frames + 1 if filtered_stopped else 0
     if self.hold_confirm_frames >= self.HOLD_CONFIRM_FRAMES:
       self.phase = "hold"
-      self.output_accel = requested_accel
-      return requested_accel
+      self.output_accel = min(requested_accel, get_traverse_stopping_accel_floor(v_ego))
+      return self.output_accel
     if not should_stop or v_ego >= self.TAPER_START:
       self.phase = "approach"
       self.output_accel = requested_accel
@@ -288,12 +375,14 @@ class LowSpeedStopController:
         return requested_accel
 
     self.phase = "settle" if filtered_stopped else "taper"
-    desired_accel = -0.02 if filtered_stopped else float(np.interp(
+    comfort_accel = -0.02 if filtered_stopped else float(np.interp(
       v_ego,
       [self.STOP_EPSILON, 0.15 * CV.KPH_TO_MS, 0.4 * CV.KPH_TO_MS,
        0.8 * CV.KPH_TO_MS, self.TAPER_START],
       [0.0, -0.02, -0.06, -0.16, -0.38],
     ))
+    stopping_accel_floor = get_traverse_stopping_accel_floor(v_ego)
+    desired_accel = min(comfort_accel, stopping_accel_floor)
 
     if self.output_accel is None:
       self.output_accel = requested_accel
@@ -301,6 +390,7 @@ class LowSpeedStopController:
     # wheel-speed zero bin, then let GM Auto Hold build stationary pressure.
     release_step = 4.5 * DT_CTRL
     self.output_accel += float(np.clip(desired_accel - self.output_accel, 0.0, release_step))
+    self.output_accel = min(self.output_accel, stopping_accel_floor)
     return self.output_accel
 
 
@@ -333,11 +423,14 @@ class LongitudinalResponseLearner:
 
   def correction(self, command: float, v_ego: float) -> float:
     learned = self.profile["bins"][speed_bin_index(v_ego)]
-    if int(learned["samples"]) < 300 or abs(command) < 0.12:
+    sample_key = "gasSamples" if command > 0.0 else "brakeSamples"
+    direction_samples = int(learned.get(sample_key, learned.get("samples", 0)))
+    if direction_samples < 100 or abs(command) < 0.12:
       return command
     gain = float(learned["gasGain"] if command > 0.0 else learned["brakeGain"])
     correction = float(np.clip(1.0 / gain, 0.85, 1.15))
-    return command * correction
+    confidence = float(np.interp(direction_samples, [100, 1000], [0.0, 1.0]))
+    return command * (1.0 + confidence * (correction - 1.0))
 
   def update(self, command: float, measured_accel: float, v_ego: float, active: bool,
              pitch: float, gas_pressed: bool, brake_pressed: bool, urgent: bool) -> None:
@@ -379,9 +472,12 @@ class LongitudinalResponseLearner:
       gain_sample = measured_accel / command
       if 0.5 <= gain_sample <= 1.5:
         key = "gasGain" if command > 0.0 else "brakeGain"
-        alpha = 0.02 if bin_data["samples"] < 300 else 0.005
+        sample_key = "gasSamples" if command > 0.0 else "brakeSamples"
+        direction_samples = int(bin_data.get(sample_key, bin_data["samples"]))
+        alpha = 0.02 if direction_samples < 300 else 0.005
         bin_data[key] = float((1.0 - alpha) * bin_data[key] + alpha * gain_sample)
         bin_data["samples"] += 1
+        bin_data[sample_key] = direction_samples + 1
 
     if now - self.last_save >= self.SAVE_INTERVAL_S:
       self.save()

@@ -11,6 +11,28 @@ from opendbc.sunnypilot.car.gm.values_ext import GMFlagsSP
 Ecu = CarParams.Ecu
 
 
+TRAVERSE_STOPPING_BRAKE_SPEEDS_KPH = (0.0, 0.1, 0.3, 0.5, 0.8)
+TRAVERSE_STOPPING_BRAKE_FLOORS = (30, 30, 32, 36, 40)
+
+
+def get_traverse_stopping_brake_floor(v_ego: float) -> int:
+  speed_kph = abs(v_ego) * 3.6
+  for index in range(1, len(TRAVERSE_STOPPING_BRAKE_SPEEDS_KPH)):
+    upper_speed = TRAVERSE_STOPPING_BRAKE_SPEEDS_KPH[index]
+    if speed_kph <= upper_speed:
+      lower_speed = TRAVERSE_STOPPING_BRAKE_SPEEDS_KPH[index - 1]
+      ratio = (speed_kph - lower_speed) / (upper_speed - lower_speed)
+      lower_floor = TRAVERSE_STOPPING_BRAKE_FLOORS[index - 1]
+      upper_floor = TRAVERSE_STOPPING_BRAKE_FLOORS[index]
+      return int(round(lower_floor + ratio * (upper_floor - lower_floor)))
+  return TRAVERSE_STOPPING_BRAKE_FLOORS[-1]
+
+
+def get_traverse_stopping_accel_floor(v_ego: float) -> float:
+  # Traverse SDGM braking is linear: -4 m/s^2 maps to raw brake 400.
+  return -get_traverse_stopping_brake_floor(v_ego) / 100.0
+
+
 class CarControllerParams:
   STEER_MAX = 300  # GM limit is 3Nm. Used by carcontroller to generate LKA output
   STEER_STEP = 3  # Active control frames per command (~33hz)

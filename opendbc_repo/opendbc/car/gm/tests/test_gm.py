@@ -17,7 +17,8 @@ from opendbc.car.gm.carstate import (EPB_CONFIRM_FRAMES, STANDSTILL_THRESHOLD, T
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.gmcan import create_acc_dashboard_command
 from opendbc.car.gm.fingerprints import FINGERPRINTS
-from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CarControllerParams, CruiseButtons
+from opendbc.car.gm.values import (CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CarControllerParams, CruiseButtons,
+                                  get_traverse_stopping_accel_floor)
 from opendbc.car.structs import CarControl, CarParams, CarState
 from opendbc.testing import parameterized
 
@@ -146,6 +147,13 @@ class TestGMTraverseStoppingBrake(unittest.TestCase):
       with self.subTest(speed_kph=speed_kph):
         self.assertEqual(expected, get_traverse_stopping_brake_floor(speed_kph / 3.6))
         self.assertEqual(expected, limit_traverse_stopping_brake(self.CP, True, speed_kph / 3.6, 12))
+
+  def test_controller_accel_floor_matches_raw_brake_floor(self):
+    for speed_kph in (0.0, 0.1, 0.3, 0.5, 0.8):
+      with self.subTest(speed_kph=speed_kph):
+        v_ego = speed_kph / 3.6
+        expected_brake = get_traverse_stopping_brake_floor(v_ego)
+        self.assertEqual(expected_brake, round(-100.0 * get_traverse_stopping_accel_floor(v_ego)))
 
   def test_raises_small_requests_to_minimum_brake(self):
     self.assertEqual(32, limit_traverse_stopping_brake(self.CP, True, 0.3 / 3.6, 10))

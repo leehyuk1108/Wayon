@@ -21,6 +21,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import cutin_risk_for_control
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
+  LeadApproachController,
   LeadTrendAnticipator,
   LongitudinalResponseLearner,
   LowSpeedStopController,
@@ -44,40 +45,6 @@ SNG_MANUAL_RELEASE_TIMEOUT = 4.0
 SNG_MANUAL_CREEP_MIN_SPEED = 0.1
 SNG_MANUAL_CREEP_MAX_SPEED = 1.0
 SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
-LEAD_SAFETY_COMFORT_STOP_DISTANCE = 6.0
-LEAD_SAFETY_RESERVE_BASE = 3.0
-LEAD_SAFETY_RESERVE_SPEED_GAIN = 0.3
-LEAD_SAFETY_RESERVE_MAX = 6.0
-LEAD_SAFETY_T_FOLLOW = 1.45
-LEAD_SAFETY_MIN_CLOSING_SPEED = 0.3
-LEAD_SAFETY_MAX_TTC = 8.0
-
-
-def get_lead_accel_safety_cap(v_ego, lead):
-  """Return the maximum safe accel for a closing radar lead, if constrained."""
-  if lead is None or not getattr(lead, "status", False) or not getattr(lead, "radar", False):
-    return None
-
-  d_rel = float(getattr(lead, "dRel", 0.0))
-  closing_speed = max(0.0, -float(getattr(lead, "vRel", 0.0)))
-  if d_rel <= 0.0 or closing_speed < LEAD_SAFETY_MIN_CLOSING_SPEED:
-    return None
-
-  desired_gap = LEAD_SAFETY_COMFORT_STOP_DISTANCE + LEAD_SAFETY_T_FOLLOW * max(0.0, v_ego)
-  ttc = d_rel / closing_speed
-  if d_rel > desired_gap and ttc > LEAD_SAFETY_MAX_TTC:
-    return None
-
-  # The normal 6 m following stop target is not a collision reserve. Using it
-  # here caused routine 6-7 m low-speed following to collapse the available
-  # braking distance to 0.5 m and request an immediate -4 m/s^2 stop.
-  hard_reserve = min(LEAD_SAFETY_RESERVE_MAX,
-                     LEAD_SAFETY_RESERVE_BASE + LEAD_SAFETY_RESERVE_SPEED_GAIN * max(0.0, v_ego))
-  remaining_distance = max(0.5, d_rel - hard_reserve)
-  required_decel = -(closing_speed * closing_speed) / (2.0 * remaining_distance)
-  return min(0.0, required_decel)
-
-
 def use_gm_auto_hold_sng(CP) -> bool:
   return getattr(CP, "brand", "") == "gm" and bool(getattr(CP, "autoResumeSng", False))
 
@@ -147,6 +114,7 @@ class LongControl:
                                    rate=1 / DT_CTRL)
     self.accel_smoother = AdaptiveLongitudinalSmoother()
     self.coast_controller = WayonCoastController()
+    self.lead_approach_controller = LeadApproachController()
     self.lead_trend_anticipator = LeadTrendAnticipator()
     self.stop_controller = LowSpeedStopController()
     self.response_learner = LongitudinalResponseLearner(
@@ -434,6 +402,7 @@ class LongControl:
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       self.coast_controller.reset()
+      self.lead_approach_controller.reset()
       self.lead_trend_anticipator.reset()
       self.stop_controller.reset()
       output_accel = 0.
@@ -441,6 +410,7 @@ class LongControl:
 
     elif self.long_control_state == LongCtrlState.stopping:
       self.coast_controller.reset()
+      self.lead_approach_controller.reset()
       self.lead_trend_anticipator.reset()
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
@@ -455,6 +425,7 @@ class LongControl:
 
     elif self.long_control_state == LongCtrlState.starting:
       self.coast_controller.reset()
+      self.lead_approach_controller.reset()
       self.lead_trend_anticipator.reset()
       self.stop_controller.reset()
       self.reset()
@@ -485,10 +456,13 @@ class LongControl:
         lead = radar_state.leadOne if radar_state is not None else None
         cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None
         automatic_control = bool(icbm is not None and getattr(icbm, "automaticControlActive", False))
+        lead_safety_cap = self.lead_approach_controller.update(
+          active, CS.vEgo, lead, self.response_learner.response_delay(CS.vEgo))
         regular_coast = self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,
                                                      automatic_control, lead, cutin_risk,
                                                      measured_accel=CS.aEgo,
-                                                     previous_accel=self.last_output_accel)
+                                                     previous_accel=self.last_output_accel,
+                                                     lead_accel_cap=lead_safety_cap)
         anticipatory_coast = self.lead_trend_anticipator.update(
           active and self.wayon_carrot_profile, CS.vEgo, output_accel, CS.aEgo, lead)
         if regular_coast or anticipatory_coast:
@@ -496,7 +470,6 @@ class LongControl:
         else:
           output_accel = apply_uphill_accel_compensation(output_accel, CS.vEgo, v_target_now, pitch)
         output_accel = self.response_learner.correction(output_accel, CS.vEgo)
-        lead_safety_cap = get_lead_accel_safety_cap(CS.vEgo, lead)
         if lead_safety_cap is not None:
           output_accel = min(output_accel, lead_safety_cap)
         output_accel = self.accel_smoother.update(

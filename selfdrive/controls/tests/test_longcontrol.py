@@ -6,9 +6,9 @@ from cereal import car, custom
 from openpilot.selfdrive.controls.lib.longcontrol import (LongControl, LongCtrlState,
                                                           SNG_LEAD_CONFIRM_FRAMES, SNG_RESUME_TIMEOUT_FRAMES,
                                                           SNG_PRESTOP_TRACK_SPEED, SNG_STOP_CONFIRM_FRAMES, SNG_STARTED_CONFIRM_FRAMES,
-                                                          get_lead_accel_safety_cap, long_control_state_trans,
-                                                          use_gm_auto_hold_sng)
+                                                          long_control_state_trans, use_gm_auto_hold_sng)
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import get_lead_accel_safety_cap
 
 
 

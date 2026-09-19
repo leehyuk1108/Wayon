@@ -1,14 +1,19 @@
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from openpilot.common.constants import CV
+from opendbc.car.gm.values import get_traverse_stopping_accel_floor
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import (
+  LeadApproachController,
   LeadTrendAnticipator,
   LongitudinalResponseLearner,
   LowSpeedStopController,
   WayonCoastController,
   empty_response_profile,
+  get_lead_accel_safety_cap,
   learned_delay_for_speed,
   speed_bin_index,
 )
@@ -21,6 +26,7 @@ def radar_lead(**overrides):
     "radarTrackId": 7,
     "dRel": 15.0,
     "vRel": 1.0,
+    "vLeadK": 4.6,
     "aLeadK": 0.3,
   }
   values.update(overrides)
@@ -90,7 +96,74 @@ def test_coasting_requires_stability_and_exits_for_camera_or_closing_lead():
   for _ in range(controller.ENTER_FRAMES):
     controller.update(True, 20.0, 20.2, -0.1, 0.0, False)
   assert controller.state.active
-  assert not controller.update(True, 20.0, 20.2, -0.1, 0.0, False, lead(10.0, -2.0))
+  closing_lead = lead(10.0, -2.0)
+  lead_cap = get_lead_accel_safety_cap(20.0, closing_lead)
+  assert lead_cap is not None
+  assert not controller.update(True, 20.0, 20.2, -0.1, 0.0, False, closing_lead,
+                               lead_accel_cap=lead_cap)
+
+
+def test_coasting_and_lead_cap_share_the_same_urgency_decision():
+  controller = WayonCoastController()
+  closing_lead = lead(28.0, -4.0)
+  lead_cap = get_lead_accel_safety_cap(12.0, closing_lead)
+  assert lead_cap is not None
+
+  for _ in range(controller.ENTER_FRAMES + 2):
+    assert not controller.update(True, 12.0, 12.2, -0.05, 0.0, False, closing_lead,
+                                 lead_accel_cap=lead_cap)
+  assert not controller.state.active
+
+
+def test_stationary_lead_extends_braking_horizon_only_after_stable_track():
+  controller = LeadApproachController()
+  stopped_lead = radar_lead(radarTrackId=41, dRel=72.0, vRel=-8.0, vLeadK=0.0)
+
+  for _ in range(controller.STATIONARY_CONFIRM_FRAMES - 1):
+    assert controller.update(True, 8.0, stopped_lead, response_delay=0.15) is None
+
+  cap = controller.update(True, 8.0, stopped_lead, response_delay=0.15)
+  assert cap is not None
+  assert -0.5 < cap < 0.0
+
+
+def test_stationary_lead_confirmation_resets_when_radar_track_changes():
+  controller = LeadApproachController()
+  stopped_lead = radar_lead(radarTrackId=41, dRel=72.0, vRel=-8.0, vLeadK=0.0)
+  for _ in range(controller.STATIONARY_CONFIRM_FRAMES - 1):
+    controller.update(True, 8.0, stopped_lead, response_delay=0.15)
+
+  stopped_lead.radarTrackId = 42
+  assert controller.update(True, 8.0, stopped_lead, response_delay=0.15) is None
+  assert controller.stationary_frames == 1
+
+
+def test_recorded_stationary_lead_route_never_coasts_or_drops_braking():
+  fixture_path = Path(__file__).parent / "fixtures" / "traverse_stationary_lead_a5.json"
+  fixture = json.loads(fixture_path.read_text())
+  approach = LeadApproachController()
+  coast = WayonCoastController()
+  caps = []
+
+  for sample in fixture["samples"]:
+    v_ego = sample["speedKph"] * CV.KPH_TO_MS
+    route_lead = radar_lead(
+      radarTrackId=sample["trackId"], dRel=sample["dRel"], vRel=sample["vRel"],
+      vLeadK=sample["vLeadK"],
+    )
+    cap = approach.update(True, v_ego, route_lead, fixture["responseDelay"])
+    caps.append(cap)
+    assert cap is not None
+    assert not coast.update(
+      True, v_ego, v_ego + 0.1, sample["requestedAccel"], 0.0, False, route_lead,
+      measured_accel=sample["requestedAccel"], previous_accel=sample["requestedAccel"],
+      lead_accel_cap=cap,
+    )
+    assert min(sample["requestedAccel"], cap) < 0.0
+
+  # At first detection the recorded planner request was mild; the stopped-lead cap
+  # must already request earlier braking rather than waiting for the gap to collapse.
+  assert caps[0] < fixture["samples"][0]["requestedAccel"]
 
 
 def test_low_speed_follow_coasts_only_with_stable_radar_lead():
@@ -139,12 +212,12 @@ def test_low_speed_stop_only_tapers_final_stop_with_verified_lead():
   for _ in range(30):
     tapered = controller.update(tapered, 0.7 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0))
   assert controller.phase == "taper"
-  assert -0.4 < tapered < 0.0
+  assert tapered == pytest.approx(get_traverse_stopping_accel_floor(0.7 * CV.KPH_TO_MS))
 
   for _ in range(controller.HOLD_CONFIRM_FRAMES - 1):
-    assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) > -0.2
+    assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) <= -0.2
     assert controller.phase == "settle"
-  assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) == -0.2
+  assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) == pytest.approx(-0.3)
   assert controller.phase == "hold"
 
 
@@ -155,7 +228,16 @@ def test_low_speed_stop_relaxes_strong_request_with_verified_reserve():
   for _ in range(20):
     output = controller.update(-1.1, speed, -0.5, False, True, lead(5.0, -0.2))
   assert controller.phase == "taper"
-  assert -0.25 < output < -0.05
+  assert output == pytest.approx(get_traverse_stopping_accel_floor(speed))
+
+
+def test_low_speed_stop_returns_the_same_floor_as_the_gm_output_layer():
+  controller = LowSpeedStopController()
+  speed = 0.7 * CV.KPH_TO_MS
+
+  output = controller.update(-0.2, speed, -0.1, False, True, lead(5.0, -0.2))
+
+  assert output == pytest.approx(get_traverse_stopping_accel_floor(speed))
 
 
 def test_low_speed_stop_tapers_recorded_close_stable_lead():
@@ -167,7 +249,7 @@ def test_low_speed_stop_tapers_recorded_close_stable_lead():
     output = controller.update(-1.67, 1.44 * CV.KPH_TO_MS, -0.95, False, True, recorded_lead)
 
   assert controller.phase == "taper"
-  assert -0.5 < output < -0.3
+  assert output == pytest.approx(get_traverse_stopping_accel_floor(1.44 * CV.KPH_TO_MS))
 
 
 def test_low_speed_stop_close_taper_has_distance_and_closing_hysteresis():
@@ -198,11 +280,11 @@ def test_low_speed_stop_does_not_raise_hold_pressure_on_premature_standstill():
   output = -1.2
   for _ in range(25):
     output = controller.update(-1.2, 0.2, -0.4, False, True, safe_lead)
-  assert output > -0.3
+  assert output == pytest.approx(get_traverse_stopping_accel_floor(0.2))
 
   output = controller.update(-1.2, 0.03, -1.4, True, True, safe_lead)
 
-  assert output > -0.3
+  assert output <= get_traverse_stopping_accel_floor(0.03)
   assert controller.phase == "taper"
 
 
@@ -218,14 +300,26 @@ def test_low_speed_stop_never_relaxes_close_or_unverified_stop():
 def test_response_learning_stays_shadow_until_confident_then_is_bounded(tmp_path):
   learner = LongitudinalResponseLearner(0.5, str(tmp_path / "profile.json"))
   learned = learner.profile["bins"][2]
-  learned["samples"] = 299
+  learned["brakeSamples"] = 99
   learned["brakeGain"] = 0.5
   assert learner.correction(-1.0, 45.0 * CV.KPH_TO_MS) == -1.0
 
-  learned["samples"] = 300
+  learned["brakeSamples"] = 550
+  assert learner.correction(-1.0, 45.0 * CV.KPH_TO_MS) == pytest.approx(-1.075)
+  learned["brakeSamples"] = 1000
   assert learner.correction(-1.0, 45.0 * CV.KPH_TO_MS) == pytest.approx(-1.15)
   learned["gasGain"] = 1.5
+  learned["gasSamples"] = 1000
   assert learner.correction(1.0, 45.0 * CV.KPH_TO_MS) == pytest.approx(0.85)
+
+
+def test_response_learning_uses_direction_specific_confidence(tmp_path):
+  learner = LongitudinalResponseLearner(0.5, str(tmp_path / "profile.json"))
+  learned = learner.profile["bins"][1]
+  learned.update({"gasSamples": 1000, "brakeSamples": 20, "gasGain": 0.5, "brakeGain": 0.5})
+
+  assert learner.correction(1.0, 20.0 * CV.KPH_TO_MS) == pytest.approx(1.15)
+  assert learner.correction(-1.0, 20.0 * CV.KPH_TO_MS) == -1.0
 
 
 def test_learned_delay_requires_multiple_observations():
@@ -262,8 +356,12 @@ def test_response_profile_save_is_atomic_and_reloadable(tmp_path):
   profile_path = str(tmp_path / "profile" / "response.json")
   learner = LongitudinalResponseLearner(0.5, profile_path)
   learner.profile["bins"][1]["samples"] = 321
+  learner.profile["bins"][1]["gasSamples"] = 123
+  learner.profile["bins"][1]["brakeSamples"] = 198
   learner.save()
 
   reloaded = LongitudinalResponseLearner(0.5, profile_path)
   assert reloaded.profile["bins"][1]["samples"] == 321
+  assert reloaded.profile["bins"][1]["gasSamples"] == 123
+  assert reloaded.profile["bins"][1]["brakeSamples"] == 198
   assert not (tmp_path / "profile" / "response.json.tmp").exists()

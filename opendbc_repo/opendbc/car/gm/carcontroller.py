@@ -18,9 +18,6 @@ GearShifter = structs.CarState.GearShifter
 CAMERA_CANCEL_DELAY_FRAMES = 10
 # Enforce a minimum interval between steering messages to avoid a fault
 MIN_STEER_MSG_INTERVAL_MS = 15
-TRAVERSE_COAST_MIN_SPEED = 5.0
-TRAVERSE_COAST_ENTER_ACCEL = (-0.30, 0.05)
-TRAVERSE_COAST_STAY_ACCEL = (-0.45, 0.12)
 GM_AUTO_HOLD_BRAKE = 400
 GM_AUTO_HOLD_SETTLED_ACCEL = 0.15
 GM_AUTO_HOLD_SETTLED_SPEED = 0.01
@@ -58,11 +55,10 @@ def get_acc_dashboard_speed_kph(CP, cluster_target_kph):
   return cluster_target_kph
 
 
-def update_traverse_coasting(CP, coasting, long_active, stopping, v_ego, accel):
-  if CP.carFingerprint != CAR.CHEVROLET_TRAVERSE or not long_active or stopping or v_ego < TRAVERSE_COAST_MIN_SPEED:
-    return False
-  accel_range = TRAVERSE_COAST_STAY_ACCEL if coasting else TRAVERSE_COAST_ENTER_ACCEL
-  return accel_range[0] <= accel <= accel_range[1]
+def get_gas_brake_commands(params, accel):
+  gas = float(np.interp(accel, params.GAS_LOOKUP_BP, params.GAS_LOOKUP_V))
+  brake = int(round(np.interp(accel, params.BRAKE_LOOKUP_BP, params.BRAKE_LOOKUP_V)))
+  return gas, brake
 
 
 def get_traverse_stopping_brake_floor(v_ego):
@@ -167,7 +163,6 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.last_steer_frame = 0
     self.last_button_frame = 0
     self.cancel_counter = 0
-    self.traverse_coasting = False
     self.sng_resume_request_prev = False
     self.sng_resume_attempted = False
     self.sng_brake_release_ns = 0
@@ -382,19 +377,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       if self.frame % 4 == 0:
         stopping = actuators.longControlState == LongCtrlState.stopping
         if not CC.longActive:
-          self.traverse_coasting = False
           # ASCM sends max regen when not enabled
           self.apply_gas = self.params.INACTIVE_REGEN
           self.apply_brake = 0
         else:
-          self.traverse_coasting = update_traverse_coasting(
-            self.CP, self.traverse_coasting, CC.longActive, stopping, CS.out.vEgo, actuators.accel)
-          if self.traverse_coasting:
-            self.apply_gas = 0.0
-            self.apply_brake = 0
-          else:
-            self.apply_gas = float(np.interp(actuators.accel, self.params.GAS_LOOKUP_BP, self.params.GAS_LOOKUP_V))
-            self.apply_brake = int(round(np.interp(actuators.accel, self.params.BRAKE_LOOKUP_BP, self.params.BRAKE_LOOKUP_V)))
+          self.apply_gas, self.apply_brake = get_gas_brake_commands(self.params, actuators.accel)
           # Don't allow any gas above inactive regen while stopping
           # FIXME: brakes aren't applied immediately when enabling at a stop
           if stopping:

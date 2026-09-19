@@ -6,17 +6,18 @@ from opendbc.can import CANPacker, CANParser
 from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
 from opendbc.car import Bus, gen_empty_fingerprint
-from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, gm_auto_hold_command,
+from opendbc.car.gm.carcontroller import (get_acc_dashboard_speed_kph, get_friction_brake_bus, get_gas_brake_commands,
+                                         gm_auto_hold_command,
                                          gm_long_auto_hold_command, gm_uses_auto_hold_sng,
                                          get_traverse_stopping_brake_floor, limit_traverse_stopping_brake,
                                          update_gm_long_auto_hold_brake,
-                                         update_epb_hold_handoff, update_traverse_coasting)
+                                         update_epb_hold_handoff)
 from opendbc.car.gm.carstate import (EPB_CONFIRM_FRAMES, STANDSTILL_THRESHOLD, TRAVERSE_STANDSTILL_THRESHOLD,
                                     CarState as GMCarState, get_standstill_threshold, update_epb_closed)
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.gmcan import create_acc_dashboard_command
 from opendbc.car.gm.fingerprints import FINGERPRINTS
-from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CruiseButtons
+from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, GM_RX_OFFSET, CanBus, CarControllerParams, CruiseButtons
 from opendbc.car.structs import CarControl, CarParams, CarState
 from opendbc.testing import parameterized
 
@@ -119,24 +120,20 @@ class TestGMAccDashboardFCW(unittest.TestCase):
       self.assertEqual(parser.vl["ASCMActiveCruiseControlStatus"]["FCWAlert"], alert)
 
 
-class TestGMTraverseCoasting(unittest.TestCase):
+class TestGMTraverseLongitudinalCommands(unittest.TestCase):
   def setUp(self):
     self.CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_TRAVERSE)
+    self.params = CarControllerParams(self.CP)
 
-  def test_enters_and_holds_with_hysteresis(self):
-    self.assertTrue(update_traverse_coasting(self.CP, False, True, False, 20.0, -0.25))
-    self.assertTrue(update_traverse_coasting(self.CP, True, True, False, 20.0, -0.40))
-    self.assertFalse(update_traverse_coasting(self.CP, False, True, False, 20.0, -0.40))
-    self.assertFalse(update_traverse_coasting(self.CP, True, True, False, 20.0, -0.50))
+  def test_preserves_mild_brake_request(self):
+    gas, brake = get_gas_brake_commands(self.params, -0.25)
+    self.assertEqual(gas, self.params.MAX_ACC_REGEN)
+    self.assertEqual(brake, 25)
 
-  def test_disabled_when_braking_or_below_minimum_speed(self):
-    self.assertFalse(update_traverse_coasting(self.CP, True, True, True, 20.0, -0.25))
-    self.assertFalse(update_traverse_coasting(self.CP, True, True, False, 4.9, -0.25))
-    self.assertFalse(update_traverse_coasting(self.CP, True, False, False, 20.0, -0.25))
-
-  def test_other_gm_cars_are_unchanged(self):
-    CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_EUV)
-    self.assertFalse(update_traverse_coasting(CP, False, True, False, 20.0, -0.25))
+  def test_zero_accel_remains_true_coasting(self):
+    gas, brake = get_gas_brake_commands(self.params, 0.0)
+    self.assertEqual(gas, 0.0)
+    self.assertEqual(brake, 0)
 
 
 class TestGMTraverseStoppingBrake(unittest.TestCase):

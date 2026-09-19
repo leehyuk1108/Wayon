@@ -68,7 +68,13 @@ function launch {
 
   # handle pythonpath
   ln -sfn $(pwd) /data/pythonpath
-  export PYTHONPATH="$PWD"
+  if [ -d /data/wayon_pydeps ]; then
+    export PYTHONPATH="/data/wayon_pydeps:$PWD"
+  elif [ -d "$PWD/pydeps" ]; then
+    export PYTHONPATH="$PWD/pydeps:$PWD"
+  else
+    export PYTHONPATH="$PWD"
+  fi
 
   # hardware specific init
   if [ -f /AGNOS ]; then

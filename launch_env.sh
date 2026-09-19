@@ -16,7 +16,12 @@ export VECLIB_MAXIMUM_THREADS=1
 export QCOM_PRIORITY=12
 
 if [ -z "$AGNOS_VERSION" ]; then
-  export AGNOS_VERSION="18.4"
+  AGNOS_VERSION_OVERRIDE="/data/params/d/WayonAgnosVersionOverride"
+  if [ -s "$AGNOS_VERSION_OVERRIDE" ]; then
+    export AGNOS_VERSION="$(tr -d '\000\r\n' < "$AGNOS_VERSION_OVERRIDE")"
+  else
+    export AGNOS_VERSION="18.4"
+  fi
 fi
 
 export STAGING_ROOT="/data/safe_staging"

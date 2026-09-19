@@ -240,6 +240,9 @@ class LowSpeedStopController:
   STOP_EPSILON = 0.015
   HOLD_CONFIRM_FRAMES = round(0.2 / DT_CTRL)
   MIN_LEAD_RESERVE = 4.2
+  FINAL_TAPER_ENTER_RESERVE = 3.4
+  FINAL_TAPER_STAY_RESERVE = 3.2
+  FINAL_TAPER_ENTER_CLOSING_SPEED = -0.7
   MAX_CLOSING_SPEED = -0.8
 
   def __init__(self):
@@ -270,7 +273,11 @@ class LowSpeedStopController:
       if valid_lead:
         d_rel = float(getattr(lead, "dRel", 1000.0))
         v_rel = float(getattr(lead, "vRel", 0.0))
-        if d_rel <= self.MIN_LEAD_RESERVE or v_rel < self.MAX_CLOSING_SPEED:
+        final_taper_active = self.phase in ("taper", "settle")
+        final_taper_reserve = self.FINAL_TAPER_STAY_RESERVE if final_taper_active else self.FINAL_TAPER_ENTER_RESERVE
+        final_taper_closing_speed = self.MAX_CLOSING_SPEED if final_taper_active else self.FINAL_TAPER_ENTER_CLOSING_SPEED
+        final_taper_safe = d_rel > final_taper_reserve and v_rel >= final_taper_closing_speed
+        if (d_rel <= self.MIN_LEAD_RESERVE and not final_taper_safe) or v_rel < self.MAX_CLOSING_SPEED:
           self.phase = "safety"
           self.output_accel = requested_accel
           return requested_accel

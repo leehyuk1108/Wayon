@@ -158,6 +158,40 @@ def test_low_speed_stop_relaxes_strong_request_with_verified_reserve():
   assert -0.25 < output < -0.05
 
 
+def test_low_speed_stop_tapers_recorded_close_stable_lead():
+  controller = LowSpeedStopController()
+  output = -1.67
+  recorded_lead = lead(3.8, -0.62)
+
+  for _ in range(30):
+    output = controller.update(-1.67, 1.44 * CV.KPH_TO_MS, -0.95, False, True, recorded_lead)
+
+  assert controller.phase == "taper"
+  assert -0.5 < output < -0.3
+
+
+def test_low_speed_stop_close_taper_has_distance_and_closing_hysteresis():
+  controller = LowSpeedStopController()
+  output = controller.update(-1.4, 1.0 * CV.KPH_TO_MS, -0.6, False, True, lead(3.6, -0.65))
+  assert controller.phase == "taper"
+  assert output > -1.4
+
+  output = controller.update(-1.4, 0.8 * CV.KPH_TO_MS, -0.5, False, True, lead(3.3, -0.75))
+  assert controller.phase == "taper"
+  assert output > -1.4
+
+  assert controller.update(-1.4, 0.8 * CV.KPH_TO_MS, -0.5, False, True, lead(3.15, -0.75)) == -1.4
+  assert controller.phase == "safety"
+
+
+def test_low_speed_stop_does_not_taper_fast_closing_close_lead():
+  controller = LowSpeedStopController()
+  speed = 1.0 * CV.KPH_TO_MS
+
+  assert controller.update(-1.4, speed, -0.6, False, True, lead(3.8, -0.85)) == -1.4
+  assert controller.phase == "safety"
+
+
 def test_low_speed_stop_does_not_raise_hold_pressure_on_premature_standstill():
   controller = LowSpeedStopController()
   safe_lead = lead(5.0, -0.25)

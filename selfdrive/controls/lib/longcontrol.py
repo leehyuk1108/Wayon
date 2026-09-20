@@ -139,6 +139,8 @@ class LongControl:
     self.sng_ui_creep_last_time = None
     self.sng_ui_phase = None
     self.sng_ui_motion_frames = 0
+    self.sng_auto_attempt_id = 0
+    self.sng_auto_logged_stages = set()
     self.gas_override_active = False
 
   def reset(self):
@@ -166,10 +168,21 @@ class LongControl:
       self.sng_resume_succeeded = False
       self.sng_resume_moved = False
       self.sng_manual_resume = False
+      self.sng_auto_logged_stages.clear()
+
+  def log_gm_auto_resume(self, stage, **kwargs):
+    if not use_gm_auto_hold_sng(self.CP) or self.sng_ui_resume or self.sng_manual_resume:
+      return
+    if stage in self.sng_auto_logged_stages:
+      return
+    self.sng_auto_logged_stages.add(stage)
+    cloudlog.event("gm_auto_resume", stage=stage, attempt=self.sng_auto_attempt_id, **kwargs)
 
   def fail_sng_resume(self, reason="conditions_changed"):
     if self.sng_ui_resume:
       cloudlog.event("gm_manual_resume", stage="stopped", reason=reason)
+    elif self.sng_resume_attempted and not self.sng_manual_resume:
+      self.log_gm_auto_resume("failed", reason=reason)
     self.reset_sng_resume(clear_attempt=False)
     self.sng_resume_failed = True
     self.sng_resume_succeeded = False
@@ -195,6 +208,9 @@ class LongControl:
                   SNG_LEAD_MIN_DISTANCE < lead.dRel < SNG_LEAD_MAX_DISTANCE)
 
     if not self.CP.autoResumeSng or not active or CS.brakePressed or CS.gasPressed:
+      if self.sng_resume_attempted and not self.sng_manual_resume:
+        reason = "brake_pressed" if CS.brakePressed else "gas_pressed" if CS.gasPressed else "control_inactive"
+        self.log_gm_auto_resume("failed", reason=reason)
       self.reset_sng_resume()
       return False
 
@@ -238,11 +254,22 @@ class LongControl:
 
   def update_gm_sng_resume(self, CS, long_plan, valid_lead, lead, now, ui_resume=False, radar_state=None, sensors_valid=False):
     if CS.regenBraking or CS.parkingBrake or CS.gearShifter not in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low):
+      if self.sng_resume_attempted and not self.sng_manual_resume:
+        reason = "regen_braking" if CS.regenBraking else "parking_brake" if CS.parkingBrake else "gear_invalid"
+        self.log_gm_auto_resume("failed", reason=reason)
       self.reset_sng_resume()
       return False
 
-    if self.sng_resume_attempted and gm_cruise_active(CS) and CS.vEgo > self.CP.vEgoStarting:
-      self.sng_resume_moved = True
+    if self.sng_resume_attempted and not self.sng_manual_resume:
+      if gm_cruise_active(CS):
+        self.log_gm_auto_resume("pcm_active", speed=float(CS.vEgo), raw_speed=float(CS.vEgoRaw))
+      if CS.aEgo > 0.2 and CS.vEgoRaw > 0.05:
+        self.log_gm_auto_resume("positive_accel_proxy", accel=float(CS.aEgo), speed=float(CS.vEgo),
+                                raw_speed=float(CS.vEgoRaw))
+      if gm_cruise_active(CS) and CS.vEgo > self.CP.vEgoStarting:
+        self.sng_resume_moved = True
+        self.log_gm_auto_resume("vehicle_moving", speed=float(CS.vEgo), raw_speed=float(CS.vEgoRaw),
+                                accel=float(CS.aEgo))
     if (self.sng_resume_succeeded and self.sng_resume_moved and CS.standstill and abs(CS.vEgo) < 0.05 and
         self.long_control_state == LongCtrlState.stopping):
       # A successful low-speed launch can be followed by another stop without
@@ -289,7 +316,7 @@ class LongControl:
         self.long_control_state in (LongCtrlState.starting, LongCtrlState.pid)):
       # A temporary ACK must not leave starting/PID applying acceleration
       # indefinitely if the PCM relatches. Require driver action after failure.
-      self.fail_sng_resume()
+      self.fail_sng_resume("pcm_relatched")
       return False
 
     # Process an outstanding attempt before any speed-based reset. Wheel creep
@@ -322,7 +349,8 @@ class LongControl:
             self.sng_resume_started_at = now
             cloudlog.event("gm_manual_resume", stage="creep_confirmed_res_requested", speed=float(CS.vEgoRaw))
       if not cruise_valid or (long_plan.shouldStop and not self.sng_ui_creep) or (not valid_lead and not self.sng_ui_resume):
-        self.fail_sng_resume()
+        reason = "cruise_invalid" if not cruise_valid else "planner_restopped" if long_plan.shouldStop else "lead_lost"
+        self.fail_sng_resume(reason)
         return False
       self.sng_resume_frames += 1
       # An already ACTIVE PCM cannot acknowledge a new hold-only request.
@@ -334,6 +362,8 @@ class LongControl:
       if self.sng_started_frames >= SNG_STARTED_CONFIRM_FRAMES:
         if self.sng_ui_resume:
           cloudlog.event("gm_manual_resume", stage="accepted", speed=float(CS.vEgo))
+        elif not self.sng_manual_resume:
+          self.log_gm_auto_resume("pcm_active_confirmed", speed=float(CS.vEgo), raw_speed=float(CS.vEgoRaw))
         self.reset_sng_resume(clear_attempt=False)
         self.sng_resume_succeeded = True
         return False
@@ -358,10 +388,16 @@ class LongControl:
       return False
     self.sng_stop_frames = min(self.sng_stop_frames + 1, SNG_STOP_CONFIRM_FRAMES)
     self.sng_lead_baseline_m = lead.dRel if self.sng_lead_baseline_m is None else min(self.sng_lead_baseline_m, lead.dRel)
+    if self.sng_stop_frames >= SNG_STOP_CONFIRM_FRAMES:
+      if "hold_confirmed" not in self.sng_auto_logged_stages:
+        self.sng_auto_attempt_id += 1
+      self.log_gm_auto_resume("hold_confirmed", lead_distance=float(lead.dRel), pcm_standstill=bool(CS.cruiseState.standstill))
     lead_departing = (self.sng_stop_frames >= SNG_STOP_CONFIRM_FRAMES and not long_plan.shouldStop and
                      (lead.vRel > SNG_LEAD_MIN_REL_SPEED or lead.dRel - self.sng_lead_baseline_m > SNG_LEAD_MIN_DISTANCE_DELTA))
     self.sng_lead_frames = min(self.sng_lead_frames + 1, SNG_LEAD_CONFIRM_FRAMES) if lead_departing else 0
     if self.sng_lead_frames >= SNG_LEAD_CONFIRM_FRAMES:
+      self.log_gm_auto_resume("lead_departed", lead_distance=float(lead.dRel), lead_relative_speed=float(lead.vRel),
+                              distance_delta=float(lead.dRel - self.sng_lead_baseline_m))
       self.sng_resume_ready = True
       self.sng_resume_attempted = True
       self.sng_resume_moved = False

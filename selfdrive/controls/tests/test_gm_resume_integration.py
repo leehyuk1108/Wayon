@@ -8,6 +8,7 @@ from cereal import car, custom
 from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
 from opendbc.car import gen_empty_fingerprint
+from opendbc.car.gm import carcontroller as gm_carcontroller
 from opendbc.car.gm.carcontroller import GM_AUTO_HOLD_BRAKE
 from opendbc.car.gm.interface import CarInterface
 from opendbc.car.gm.values import CAR, CanBus, CruiseButtons
@@ -25,6 +26,13 @@ class TraverseControlChain:
     self.ci = CarInterface(self.cp, self.cp_sp)
     self.now_ns = 10_000_000_000
     monkeypatch.setattr(longcontrol, "monotonic", lambda: self.now_ns / 1e9)
+    self.events = []
+
+    def record_event(name, **kwargs):
+      self.events.append((name, kwargs))
+
+    monkeypatch.setattr(longcontrol.cloudlog, "event", record_event)
+    monkeypatch.setattr(gm_carcontroller.cloudlog, "event", record_event)
     # Preserve the real learner while isolating its optional profile from user data.
     learner = longcontrol.LongitudinalResponseLearner
     monkeypatch.setattr(longcontrol, "LongitudinalResponseLearner", lambda delay, enabled:
@@ -134,6 +142,32 @@ def test_hold_releases_before_five_fresh_resume_frames(chain):
   assert not chain.loc.sng_resume_succeeded
 
 
+def test_automatic_resume_logs_each_control_and_can_phase_once(chain):
+  chain.run(110)
+  auto_stages = [event["stage"] for name, event in chain.events if name == "gm_auto_resume"]
+  assert auto_stages == ["hold_confirmed"]
+
+  chain.depart()
+  chain.run(170)
+  auto_stages = [event["stage"] for name, event in chain.events if name == "gm_auto_resume"]
+  can_events = [event for name, event in chain.events if name == "gm_resume_can"]
+  assert auto_stages == ["hold_confirmed", "lead_departed"]
+  assert [event["stage"] for event in can_events] == [
+    "brake_release_sent", "resume_armed", *("res_frame",) * 5, "unpress_sent", "sequence_complete",
+  ]
+  assert [event["index"] for event in can_events if event["stage"] == "res_frame"] == [1, 2, 3, 4, 5]
+
+  chain.cs.out.cruiseState.standstill = False
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.3
+  chain.cs.out.aEgo = 0.4
+  chain.run(25)
+  auto_stages = [event["stage"] for name, event in chain.events if name == "gm_auto_resume"]
+  assert auto_stages == ["hold_confirmed", "lead_departed", "pcm_active", "positive_accel_proxy",
+                         "vehicle_moving", "pcm_active_confirmed"]
+  assert len(auto_stages) == len(set(auto_stages))
+
+
 def test_creep_without_pcm_ack_times_out_into_regular_stopping(chain):
   chain.run(110)
   chain.depart()
@@ -153,6 +187,9 @@ def test_creep_without_pcm_ack_times_out_into_regular_stopping(chain):
   assert failed_brakes
   assert all(0 < brake < GM_AUTO_HOLD_BRAKE for _, brake in failed_brakes)
   assert len([b for b in chain.buttons() if b[1] == CanBus.POWERTRAIN and b[2] == CruiseButtons.RES_ACCEL]) == 5
+  failures = [event for name, event in chain.events if name == "gm_auto_resume" and event["stage"] == "failed"]
+  assert len(failures) == 1
+  assert failures[0]["reason"] == "resume_ack_timeout"
 
 
 def test_valid_pcm_ack_at_zero_prevents_timeout_failure(chain):

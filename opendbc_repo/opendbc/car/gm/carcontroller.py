@@ -1,4 +1,5 @@
 import numpy as np
+from openpilot.common.swaglog import cloudlog
 from opendbc.can import CANPacker
 from opendbc.car import Bus, DT_CTRL, structs
 from opendbc.car.lateral import apply_driver_steer_torque_limits
@@ -165,6 +166,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.sng_last_sent_counter = None
     self.sng_last_sent_ns = 0
     self.sng_button_frames_remaining = 0
+    self.sng_can_attempt_id = 0
+    self.sng_can_attempt_active = False
     self.gm_auto_hold_confirmed = False
     self.gm_auto_hold_zero_frames = 0
     self.gm_auto_hold_settled_frames = 0
@@ -190,6 +193,14 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.sng_last_sent_counter = None
     self.sng_last_sent_ns = 0
     self.sng_button_frames_remaining = 0
+
+  def log_sng_can(self, stage, **kwargs):
+    if self.sng_can_attempt_active:
+      cloudlog.event("gm_resume_can", stage=stage, attempt=self.sng_can_attempt_id, **kwargs)
+
+  def finish_sng_can(self, stage, **kwargs):
+    self.log_sng_can(stage, **kwargs)
+    self.sng_can_attempt_active = False
 
   def send_sng_button(self, can_sends, button, counter=None):
     if counter is None:
@@ -239,6 +250,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       was_intercepting = self.sng_last_sent_counter is not None
       if was_intercepting:
         self.send_sng_button(can_sends, CruiseButtons.CANCEL)
+      self.finish_sng_can("aborted", reason="physical_cancel", cancel_relayed=was_intercepting)
       self.reset_sng_resume()
       return was_intercepting
 
@@ -246,6 +258,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     # button). Panda ends interception when it receives a physical button;
     # forwarding may already have blocked that first frame before RX processing.
     if CS.cruise_buttons != CruiseButtons.UNPRESS:
+      self.finish_sng_can("aborted", reason="physical_button", button=int(CS.cruise_buttons))
       self.reset_sng_resume()
       return False
 
@@ -253,6 +266,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       self.sng_brake_release_ns = 0
       if self.sng_resume_frame >= 0:
         self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
+        self.log_sng_can("unpress_sent", reason="request_withdrawn")
+      self.finish_sng_can("aborted", reason="eligibility_lost")
       self.reset_sng_resume()
       return False
 
@@ -263,6 +278,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     if request_rising and not self.sng_resume_attempted and self.sng_resume_frame < 0:
       self.sng_resume_attempted = True
       if stock_ts <= 0 or not 0 <= now_nanos - stock_ts <= GM_SNG_BUTTON_MAX_INTERVAL_NS:
+        self.finish_sng_can("aborted", reason="stale_source_on_arm", source_age_ns=int(now_nanos - stock_ts))
         return False
       self.sng_resume_frame = self.frame
       self.sng_resume_arm_ns = now_nanos
@@ -270,6 +286,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       self.sng_last_stock_ts_ns = stock_ts
       self.sng_last_sent_counter = None
       self.sng_button_frames_remaining = GM_SNG_BUTTON_FRAMES
+      self.log_sng_can("resume_armed", stock_counter=stock_counter, source_age_ns=int(now_nanos - stock_ts),
+                       brake_release_age_ns=int(now_nanos - self.sng_brake_release_ns))
       return True
 
     if self.sng_resume_frame < 0:
@@ -293,6 +311,13 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         abs(CS.out.vEgo) >= GM_SNG_MAX_RESUME_SPEED or
         self.frame - self.sng_resume_frame > GM_SNG_RESUME_ARM_TIMEOUT_FRAMES):
       self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
+      self.log_sng_can("unpress_sent", reason="validation_abort")
+      reason = ("invalid_source" if not valid_source else "invalid_send_timing" if not valid_send else
+                "brake_not_released" if self.apply_brake != 0 else "speed_limit" if abs(CS.out.vEgo) >= GM_SNG_MAX_RESUME_SPEED else
+                "arm_timeout")
+      self.finish_sng_can("aborted", reason=reason, source_age_ns=int(source_age),
+                          source_interval_ns=int(source_interval), send_interval_ns=int(send_interval),
+                          stock_counter=stock_counter)
       self.reset_sng_resume()
       return True
 
@@ -309,9 +334,14 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       resume_counter = (stock_counter + 1) & 0x3 if self.sng_last_sent_counter is None else None
       self.send_sng_button(can_sends, CruiseButtons.RES_ACCEL, resume_counter)
       self.sng_last_sent_ns = now_nanos
+      self.log_sng_can("res_frame", index=GM_SNG_BUTTON_FRAMES - self.sng_button_frames_remaining + 1,
+                       counter=int(self.sng_last_sent_counter), stock_counter=stock_counter,
+                       source_age_ns=int(source_age))
       self.sng_button_frames_remaining -= 1
     else:
       self.send_sng_button(can_sends, CruiseButtons.UNPRESS)
+      self.log_sng_can("unpress_sent", reason="sequence_complete", counter=int(self.sng_last_sent_counter))
+      self.finish_sng_can("sequence_complete", res_frames=GM_SNG_BUTTON_FRAMES)
       self.reset_sng_resume()
 
     return True
@@ -429,7 +459,14 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         if self.apply_brake == 0 and CC.cruiseControl.resume and actuators.longControlState == LongCtrlState.starting:
           if self.sng_brake_release_ns == 0:
             self.sng_brake_release_ns = now_nanos
+            self.sng_can_attempt_id += 1
+            self.sng_can_attempt_active = True
+            self.log_sng_can("brake_release_sent", brake=int(self.apply_brake), gas=float(self.apply_gas),
+                             speed=float(CS.out.vEgo), raw_speed=float(CS.out.vEgoRaw),
+                             pcm_standstill=bool(CS.out.cruiseState.standstill))
         else:
+          if self.sng_can_attempt_active and self.sng_resume_frame < 0:
+            self.finish_sng_can("aborted", reason="brake_release_withdrawn")
           self.sng_brake_release_ns = 0
 
         # Send dashboard UI commands (ACC status)

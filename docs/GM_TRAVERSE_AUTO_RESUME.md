@@ -73,6 +73,14 @@ route `0000004f--740fd8bb3b`의 원본 rlog에서 버튼 요청 2회를 확인�
 
 Python 송신 데이터, Panda echo, PCM 상태 해제, 실제 엔진 토크와 지속 가속은 서로 다른 증거다. bus 0의 원본 물리 프레임을 제거할 수 없으므로 물리 네트워크 전체의 완전한 버튼 복제를 보장하지 않는다. 이번 변경은 Panda safety 코드, firmware, 제동/가속 상한을 변경하지 않는다.
 
+## 자동 재출발 진단 로그
+
+자동 앞차 출발 경로는 동작 시점에만 `gm_auto_resume` 이벤트를 남긴다. `hold_confirmed`, `lead_departed`, `pcm_active`, `pcm_active_confirmed`, `vehicle_moving` 순서로 정차 확인, 출발 판단, PCM 상태 변화와 실제 움직임을 구분한다. 실패는 `cruise_invalid`, `planner_restopped`, `lead_lost`, `resume_ack_timeout`, `pcm_relatched`처럼 원인을 함께 기록한다.
+
+실제 명령 생성은 별도의 `gm_resume_can` 이벤트로 기록한다. `brake_release_sent`, `resume_armed`, RES 5개의 `res_frame`, `unpress_sent`를 순정 counter와 수신 시각에 맞춰 확인할 수 있다. 이 계층은 자동 요청과 명시적 시험 요청을 모두 받을 수 있으므로, 자동 재출발 분석에서는 같은 시각의 `gm_auto_resume` `lead_departed` 이벤트와 함께 대조한다.
+
+`positive_accel_proxy`는 양의 `aEgo`와 바퀴 움직임을 관측했다는 뜻일 뿐 엔진 토크 수용 증거가 아니다. 실제 성공은 `pcm_active_confirmed`와 `vehicle_moving`이 함께 있는지 확인해야 한다. 로그 추가는 제어 조건, 타이밍, Panda 허용 범위, 가속·제동 명령을 변경하지 않는다.
+
 ## 검증
 
 실제 cereal, CAN parser/packer, LongControl, GM controller, 호스트 컴파일 safety를 사용하며 차량 CAN을 송신하지 않는다. 원본 프레임 동기화, 200 ms 대기, 5회 송신, PCM ACK/타임아웃, 앞차 없는 명시적 요청, 기존 ACTIVE 오판 방지, 정차 요구 중 버튼 표시와 요청 차단, 한국어 글꼴과 터치를 검사한다.

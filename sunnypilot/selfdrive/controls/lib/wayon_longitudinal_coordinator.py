@@ -338,7 +338,7 @@ class LeadTrendAnticipator:
 class LowSpeedStopController:
   """Taper residual braking only in the final fraction of a stop."""
 
-  TAPER_START = 1.5 * CV.KPH_TO_MS
+  TAPER_START = 2.5 * CV.KPH_TO_MS
   STOP_EPSILON = 0.015
   HOLD_CONFIRM_FRAMES = round(0.2 / DT_CTRL)
   MIN_LEAD_RESERVE = 4.2

@@ -243,7 +243,7 @@ def test_meaningful_uphill_exits_coasting_before_speed_drops():
 
 def test_low_speed_stop_only_tapers_final_stop_with_verified_lead():
   controller = LowSpeedStopController()
-  assert controller.update(-0.4, 1.6 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0)) == -0.4
+  assert controller.update(-0.4, 2.6 * CV.KPH_TO_MS, -0.2, False, True, lead(8.0)) == -0.4
   assert controller.phase == "approach"
 
   tapered = -0.4
@@ -257,6 +257,35 @@ def test_low_speed_stop_only_tapers_final_stop_with_verified_lead():
     assert controller.phase == "settle"
   assert controller.update(-0.2, 0.0, 0.0, True, True, lead(8.0)) == pytest.approx(-0.3)
   assert controller.phase == "hold"
+
+
+def test_low_speed_stop_avoids_recorded_stopping_transition_brake_pulse():
+  controller = LowSpeedStopController()
+  # The recorded stop entered stopping at 2.08 km/h with 5.88 m to the lead.
+  # The old 1.5 km/h taper threshold let the stopping ramp reach 96 raw brake.
+  samples = [
+    (2.08, -0.55, 5.88, -0.62),
+    (1.99, -0.63, 5.75, -0.50),
+    (1.84, -0.71, 5.75, -0.50),
+    (1.70, -0.79, 5.62, -0.50),
+    (1.70, -0.87, 5.62, -0.50),
+    (1.51, -0.95, 5.62, -0.50),
+    (1.32, -1.03, 5.50, -0.38),
+  ]
+  outputs = [controller.update(requested, speed * CV.KPH_TO_MS, -0.3, False, True,
+                               lead(distance, relative_speed))
+             for speed, requested, distance, relative_speed in samples]
+
+  assert controller.phase == "taper"
+  assert min(outputs) >= -0.55
+  assert outputs[-1] == pytest.approx(get_traverse_stopping_accel_floor(1.32 * CV.KPH_TO_MS))
+
+
+def test_low_speed_stop_preserves_braking_when_closing_quickly_above_old_threshold():
+  controller = LowSpeedStopController()
+  assert controller.update(-0.9, 2.1 * CV.KPH_TO_MS, -0.3, False, True,
+                           lead(3.2, -0.9)) == -0.9
+  assert controller.phase == "safety"
 
 
 def test_low_speed_stop_relaxes_strong_request_with_verified_reserve():

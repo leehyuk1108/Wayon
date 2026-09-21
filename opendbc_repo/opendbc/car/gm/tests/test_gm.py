@@ -528,15 +528,15 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     stopped_buttons = [msg for msg in stopped_sends if msg[0] == 0x1E1]
     self.assertEqual(0, len(stopped_buttons))
 
-    # After the 200 ms settling interval, snapshot the latest original frame.
-    CI.CC.frame = 24
-    CS.buttons_ts_nanos = 10_195_000_000
-    _, armed_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_200_000_000)
+    # After the 500 ms command interval, snapshot the latest original frame.
+    CI.CC.frame = 54
+    CS.buttons_ts_nanos = 10_495_000_000
+    _, armed_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_500_000_000)
     self.assertFalse(any(msg[0] == 0x1E1 for msg in armed_sends))
     CS.buttons_counter = 1
-    CS.buttons_ts_nanos = 10_225_000_000
-    CI.CC.frame = 27
-    _, first_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_230_000_000)
+    CS.buttons_ts_nanos = 10_525_000_000
+    CI.CC.frame = 57
+    _, first_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_530_000_000)
     first_buttons = [msg for msg in first_sends if msg[0] == 0x1E1]
     self.assertEqual(2, len(first_buttons))
     self.assertEqual({CanBus.POWERTRAIN, CanBus.CAMERA}, {msg[2] for msg in first_buttons})
@@ -548,10 +548,10 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     pulse_sends = []
     for i in range(4):
       CS.buttons_counter = (i + 2) % 4
-      CS.buttons_ts_nanos = 10_255_000_000 + (i * 30_000_000)
-      CI.CC.frame = 30 + (i * 3)
+      CS.buttons_ts_nanos = 10_555_000_000 + (i * 30_000_000)
+      CI.CC.frame = 60 + (i * 3)
       _, sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS,
-                              10_260_000_000 + (i * 30_000_000))
+                              10_560_000_000 + (i * 30_000_000))
       pulse_sends.extend(msg for msg in sends if msg[0] == 0x1E1)
 
     self.assertEqual(8, len(pulse_sends))
@@ -560,9 +560,9 @@ class TestGMTraverseAutoHold(unittest.TestCase):
                         for msg in pulse_sends))
 
     CS.buttons_counter = 2
-    CS.buttons_ts_nanos = 10_375_000_000
-    CI.CC.frame = 42
-    _, release_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_380_000_000)
+    CS.buttons_ts_nanos = 10_675_000_000
+    CI.CC.frame = 72
+    _, release_sends = CI.CC.update(control.as_reader(), custom.CarControlSP.new_message().as_reader(), CS, 10_680_000_000)
     release_buttons = [msg for msg in release_sends if msg[0] == 0x1E1]
     self.assertEqual(2, len(release_buttons))
     self.assertEqual(CruiseButtons.UNPRESS, get_raw_value(release_buttons[0][1], button_msg.sigs["ACCButtons"]))
@@ -572,7 +572,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     controller = CarInterface(CP, CP_SP).CC
-    controller.sng_brake_release_ns = 800_000_000
+    controller.sng_brake_release_ns = 500_000_000
     CC = SimpleNamespace(
       enabled=True, longActive=True,
       cruiseControl=SimpleNamespace(resume=True),
@@ -611,7 +611,7 @@ class TestGMTraverseAutoHold(unittest.TestCase):
     CP = CarInterface.get_params(CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     CP_SP = CarInterface.get_params_sp(CP, CAR.CHEVROLET_TRAVERSE, fingerprint, [], True, False, False)
     controller = CarInterface(CP, CP_SP).CC
-    controller.sng_brake_release_ns = 800_000_000
+    controller.sng_brake_release_ns = 500_000_000
     CC = SimpleNamespace(
       enabled=True, longActive=True,
       cruiseControl=SimpleNamespace(resume=True),

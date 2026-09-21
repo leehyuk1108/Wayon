@@ -30,9 +30,9 @@ GM_AUTO_HOLD_ROLL_SPEED = 0.08
 GM_STOPPING_BRAKE_TAPER_START_SPEED = 0.8 * CV.KPH_TO_MS
 GM_SNG_RESUME_ARM_TIMEOUT_FRAMES = round(2.0 / DT_CTRL)
 GM_SNG_BUTTON_FRAMES = 5  # stationary physical RES in Traverse route 45/23
-# That press followed the zero brake command by 216 ms. Leave a bounded
-# settling interval, then synchronize to a fresh OEM frame (not a wire ACK).
-GM_SNG_BRAKE_RELEASE_DELAY_NS = 200_000_000
+# Wait 500 ms after our first zero brake command, then synchronize to a fresh
+# OEM frame. This delay does not confirm actual hydraulic release.
+GM_SNG_BRAKE_RELEASE_DELAY_NS = 500_000_000
 # Original buttons arrive at about 33 Hz. Allow 20-40 ms receive/control
 # quantization plus 2 ms of jitter, but never compress missed frames into a burst.
 GM_SNG_BUTTON_MIN_SOURCE_INTERVAL_NS = 18_000_000

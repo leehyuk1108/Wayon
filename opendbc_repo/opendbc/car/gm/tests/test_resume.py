@@ -60,7 +60,7 @@ def resume():
   CC.actuators.accel = 0.35
   # Scheduling unit tests start after a zero brake command. The full-controller
   # test below verifies that this evidence can only be established by output.
-  CI.CC.sng_brake_release_ns = BASE_NS - 200_000_000
+  CI.CC.sng_brake_release_ns = BASE_NS - 500_000_000
   return CI, CS, CC
 
 
@@ -168,9 +168,10 @@ def test_withdrawn_request_at_stop_allows_a_fresh_explicit_retry(resume):
   assert tick(resume, 80, 76.824, 1) == []
   assert tick(resume, 270, 256.824, 3) == []
   assert tick(resume, 280, 276.824, 0) == []
-  for now, counter, expected in [(310, 1, 2), (340, 2, 3), (370, 3, 0), (400, 0, 1), (430, 1, 2)]:
+  assert tick(resume, 580, 576.824, 0) == []
+  for now, counter, expected in [(610, 1, 2), (640, 2, 3), (670, 3, 0), (700, 0, 1), (730, 1, 2)]:
     assert tick(resume, now, now-3.176, counter) == [(CruiseButtons.RES_ACCEL, expected)]
-  assert tick(resume, 460, 456.824, 2) == [(CruiseButtons.UNPRESS, 3)]
+  assert tick(resume, 760, 756.824, 2) == [(CruiseButtons.UNPRESS, 3)]
   assert resume[0].CC.sng_resume_attempted
 
 
@@ -282,7 +283,7 @@ def test_full_controller_emits_brake_release_before_arming_then_waits_for_origin
   assert CI.CC.sng_brake_release_ns == BASE_NS
   assert CI.CC.sng_resume_frame == -1
   presses = []
-  for now in range(10, 261, 10):
+  for now in range(10, 561, 10):
     # Exercise the full 25 Hz brake output repeatedly, not just the sequencer.
     source_index = max(0, int((now-6.879)//30))
     CS.buttons_ts_nanos = BASE_NS + round((6.879 + source_index*30)*1e6)
@@ -290,9 +291,46 @@ def test_full_controller_emits_brake_release_before_arming_then_waits_for_origin
     _, sends = CI.CC.update(CC.as_reader(), CC_SP.as_reader(), CS, BASE_NS+now*1_000_000)
     presses.extend(now for button, _ in decode_buttons(sends) if button == CruiseButtons.RES_ACCEL)
     assert CI.CC.sng_brake_release_ns == BASE_NS
-    if now < 200:
+    if now < 500:
       assert not presses
-  assert presses and 200 <= presses[0] <= 250
+  assert presses and 500 <= presses[0] <= 550
+
+
+def test_brake_reapplication_restarts_resume_wait(resume):
+  CI, CS, CC = resume
+  CC_SP = custom.CarControlSP.new_message().as_reader()
+  CI.CC.sng_brake_release_ns = 0
+  CI.CC.frame = 0
+  CI.CC.update(CC.as_reader(), CC_SP, CS, BASE_NS)
+  assert CI.CC.sng_brake_release_ns == BASE_NS
+
+  CC.actuators.accel = -2.0
+  CI.CC.frame = 20
+  CI.CC.update(CC.as_reader(), CC_SP, CS, BASE_NS + 200_000_000)
+  assert CI.CC.apply_brake > 0
+  assert CI.CC.sng_brake_release_ns == 0
+
+  CC.actuators.accel = 0.35
+  CI.CC.frame = 24
+  CI.CC.update(CC.as_reader(), CC_SP, CS, BASE_NS + 240_000_000)
+  assert CI.CC.apply_brake == 0
+  assert CI.CC.sng_brake_release_ns == BASE_NS + 240_000_000
+
+  CI.CC.frame = 50
+  CS.buttons_ts_nanos = BASE_NS + 495_000_000
+  _, early = CI.CC.update(CC.as_reader(), CC_SP, CS, BASE_NS + 500_000_000)
+  assert decode_buttons(early) == []
+  assert CI.CC.sng_resume_frame == -1
+
+  CI.CC.frame = 74
+  CS.buttons_ts_nanos = BASE_NS + 735_000_000
+  _, armed = CI.CC.update(CC.as_reader(), CC_SP, CS, BASE_NS + 740_000_000)
+  assert decode_buttons(armed) == []
+  CS.buttons_counter = (CS.buttons_counter + 1) % 4
+  CS.buttons_ts_nanos = BASE_NS + 765_000_000
+  CI.CC.frame = 77
+  _, first = CI.CC.update(CC.as_reader(), CC_SP, CS, BASE_NS + 770_000_000)
+  assert [button for button, _ in decode_buttons(first)] == [CruiseButtons.RES_ACCEL]
 
 
 def test_acknowledged_low_speed_motion_allows_the_next_stop_attempt(resume):
@@ -307,7 +345,8 @@ def test_acknowledged_low_speed_motion_allows_the_next_stop_attempt(resume):
   resume[0].CC.sng_brake_release_ns = BASE_NS + 40_000_000
   assert tick(resume, 40, 36.824, 0) == []
   assert tick(resume, 240, 236.824, 1) == []
-  assert tick(resume, 270, 266.853, 2) == [(CruiseButtons.RES_ACCEL, 3)]
+  assert tick(resume, 540, 536.824, 1) == []
+  assert tick(resume, 570, 566.853, 2) == [(CruiseButtons.RES_ACCEL, 3)]
 
 
 def test_creep_alone_does_not_reset_attempt_even_above_the_resume_limit(resume):

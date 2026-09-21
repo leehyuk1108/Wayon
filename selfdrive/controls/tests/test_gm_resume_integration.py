@@ -129,7 +129,7 @@ def test_hold_releases_before_five_fresh_resume_frames(chain):
   buttons = chain.buttons()
   first_resume = next(time for time, _, button, _ in buttons if button == CruiseButtons.RES_ACCEL)
   first_zero = next(time for time, brake in chain.brakes() if departure_time <= time and brake == 0)
-  assert 200_000_000 <= first_resume-first_zero <= 250_000_000
+  assert 500_000_000 <= first_resume-first_zero <= 550_000_000
   assert all(brake == 0 for time, brake in chain.brakes() if first_resume <= time)
   for bus in (CanBus.POWERTRAIN, CanBus.CAMERA):
     bus_buttons = [(time, button, payload) for time, msg_bus, button, payload in buttons if msg_bus == bus]
@@ -247,7 +247,7 @@ def test_screen_request_without_lead_retries_only_after_another_tap(chain):
     assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == attempt * 5
     chain.cs.out.standstill = False
     chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.2
-    chain.run(60)
+    chain.run(80)
     assert chain.loc.sng_ui_resume and chain.loc.sng_resume_ready
     assert len([b for b in chain.buttons() if b[1] == CanBus.CAMERA and b[2] == CruiseButtons.RES_ACCEL]) == (attempt + 1) * 5
     if attempt == 0:
@@ -340,10 +340,10 @@ def test_explicit_creep_releases_brake_without_positive_gas_then_sends_res(chain
   moving_at = chain.now_ns
   chain.cs.out.standstill = False
   chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.2
-  chain.run(60)
+  chain.run(80)
   res = [b for b in chain.buttons() if b[1] == CanBus.POWERTRAIN and b[2] == CruiseButtons.RES_ACCEL]
   assert len(res) == 5
-  assert res[0][0] - moving_at >= 200_000_000
+  assert res[0][0] - moving_at >= 500_000_000
   assert chain.ci.CC.apply_gas == 0.0 and chain.ci.CC.apply_brake == 0
   assert not chain.loc.sng_resume_succeeded and not chain.loc.sng_resume_failed
 

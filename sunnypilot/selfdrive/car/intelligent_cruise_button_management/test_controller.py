@@ -90,7 +90,7 @@ def test_frozen_section_camera_does_not_mask_new_camera(tmp_path):
   assert not sample(80, "section", 13.0, 15.0, 2.0)
   assert not sample(80, "section", 13.0, 15.0, 3.0)
   assert not sample(80, "section", 13.0, 15.0, 4.0)
-  assert sample(80, "section", 13.0, 15.0, 5.0)
+  assert not sample(80, "section", 13.0, 15.0, 5.0)
   assert not sample(60, "fixed", 400.0, 15.0, 6.0)
 
 

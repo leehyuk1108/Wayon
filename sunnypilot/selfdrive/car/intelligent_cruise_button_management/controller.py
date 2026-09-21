@@ -144,6 +144,11 @@ class IntelligentCruiseButtonManagement:
 
   def camera_sample_is_stale(self, speed: int, camera_type: str, distance_m: float,
                              v_ego: float, now: float) -> bool:
+    if camera_type == "section":
+      self.camera_last_key = None
+      self.camera_stalled_travel_m = 0.0
+      self.camera_stale = False
+      return False
     key = (speed, camera_type) if speed > 0 and distance_m > 0.0 else None
     if key is None:
       self.camera_last_key = None

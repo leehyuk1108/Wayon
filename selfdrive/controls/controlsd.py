@@ -168,11 +168,13 @@ class Controls(ControlsExt):
 
     curvature_guarded = False
     path_curvature = math.nan
+    driving_model_data = self.sm['drivingModelData']
     model_path_fresh = self.sm.alive['drivingModelData'] and self.sm.valid['drivingModelData'] and \
+                       driving_model_data.frameId == model_v2.frameId and \
                        abs(self.sm.logMonoTime['drivingModelData'] - self.sm.logMonoTime['modelV2']) <= MODEL_PATH_MAX_AGE_NS
     if using_model_action and CC.latActive and model_path_fresh and \
        model_v2.meta.laneChangeState == LaneChangeState.off:
-      model_path = self.sm['drivingModelData'].path
+      model_path = driving_model_data.path
       path_curvature = get_curvature_from_path_poly(model_path.xCoefficients, model_path.yCoefficients)
       new_desired_curvature, curvature_guarded = guard_model_curvature(CS.vEgo, new_desired_curvature, path_curvature)
 

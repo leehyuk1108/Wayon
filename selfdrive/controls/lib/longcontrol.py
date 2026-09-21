@@ -26,6 +26,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
   LongitudinalResponseLearner,
   LowSpeedStopController,
   WayonCoastController,
+  icbm_blocks_coast,
 )
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
@@ -525,7 +526,7 @@ class LongControl:
         self.pid.reset()
         lead = radar_state.leadOne if radar_state is not None else None
         cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None
-        automatic_control = bool(icbm is not None and getattr(icbm, "automaticControlActive", False))
+        automatic_control = icbm_blocks_coast(icbm, CS.vEgo)
         lead_safety_cap = self.lead_approach_controller.update(
           active, CS.vEgo, lead, self.response_learner.response_delay(CS.vEgo))
         regular_coast = self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,

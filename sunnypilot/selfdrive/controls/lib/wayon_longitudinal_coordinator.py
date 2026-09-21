@@ -165,6 +165,21 @@ class CoastDecision:
   enter_frames: int = 0
 
 
+def icbm_blocks_coast(icbm, v_ego: float) -> bool:
+  if icbm is None or not getattr(icbm, "automaticControlActive", False):
+    return False
+  if str(getattr(icbm, "controlSource", "")) != "restore" or str(getattr(icbm, "sectionPhase", "")) != "inactive":
+    return True
+
+  try:
+    target_kph = float(icbm.automaticTargetSpeedKph)
+    required_accel = float(icbm.requiredAccel)
+  except (AttributeError, TypeError, ValueError):
+    return True
+  return (not math.isfinite(v_ego) or not math.isfinite(target_kph) or not math.isfinite(required_accel) or
+          target_kph <= 0.0 or target_kph < v_ego * CV.MS_TO_KPH or required_accel < -0.05)
+
+
 class WayonCoastController:
   """Select a true zero-gas/zero-brake state with hysteresis."""
 

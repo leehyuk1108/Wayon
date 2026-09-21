@@ -14,6 +14,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
   WayonCoastController,
   empty_response_profile,
   get_lead_accel_safety_cap,
+  icbm_blocks_coast,
   learned_delay_for_speed,
   speed_bin_index,
 )
@@ -101,6 +102,43 @@ def test_coasting_requires_stability_and_exits_for_camera_or_closing_lead():
   assert lead_cap is not None
   assert not controller.update(True, 20.0, 20.2, -0.1, 0.0, False, closing_lead,
                                lead_accel_cap=lead_cap)
+
+
+def test_icbm_restore_allows_coasting_only_without_active_slowdown():
+  icbm = SimpleNamespace(automaticControlActive=True, controlSource="restore", sectionPhase="inactive",
+                         automaticTargetSpeedKph=110.0, requiredAccel=0.0)
+  v_ego = 85.0 * CV.KPH_TO_MS
+  assert not icbm_blocks_coast(icbm, v_ego)
+
+  controller = WayonCoastController()
+  distant_lead = lead(d_rel=50.0, v_rel=-0.3)
+  for _ in range(controller.ENTER_FRAMES - 1):
+    assert not controller.update(True, v_ego, v_ego + 0.2, -0.1, 0.0,
+                                 icbm_blocks_coast(icbm, v_ego), distant_lead)
+  assert controller.update(True, v_ego, v_ego + 0.2, -0.1, 0.0,
+                           icbm_blocks_coast(icbm, v_ego), distant_lead)
+
+  close_lead = lead(d_rel=18.0, v_rel=-4.0)
+  lead_cap = get_lead_accel_safety_cap(v_ego, close_lead)
+  assert lead_cap is not None
+  assert not controller.update(True, v_ego, v_ego + 0.2, -0.1, 0.0,
+                               icbm_blocks_coast(icbm, v_ego), close_lead, lead_accel_cap=lead_cap)
+
+  for source in ("camera", "curve", "section"):
+    icbm.controlSource = source
+    assert icbm_blocks_coast(icbm, v_ego)
+  icbm.controlSource = "restore"
+  icbm.sectionPhase = "active"
+  assert icbm_blocks_coast(icbm, v_ego)
+  icbm.sectionPhase = "inactive"
+  icbm.automaticTargetSpeedKph = 80.0
+  assert icbm_blocks_coast(icbm, v_ego)
+  icbm.automaticTargetSpeedKph = 110.0
+  icbm.requiredAccel = -0.2
+  assert icbm_blocks_coast(icbm, v_ego)
+  icbm.requiredAccel = 0.0
+  icbm.automaticTargetSpeedKph = float("nan")
+  assert icbm_blocks_coast(icbm, v_ego)
 
 
 def test_coasting_and_lead_cap_share_the_same_urgency_decision():

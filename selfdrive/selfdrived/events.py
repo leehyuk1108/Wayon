@@ -436,7 +436,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventName.laneChangeUnavailable: {
     ET.WARNING: Alert(
       "Lane Change Paused",
-      "Lane Change Unavailable Area Detected",
+      "Check Lane Boundary or Vehicle Signals",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
   },
@@ -1170,7 +1170,7 @@ if HARDWARE.get_device_type() == 'mici':
     EventName.laneChangeUnavailable: {
       ET.WARNING: Alert(
         "차선 변경 일시정지",
-        "차선 변경 불가 구역 감지됨",
+        "차선 경계 또는 차량 신호 확인 필요",
         AlertStatus.normal, AlertSize.mid,
         Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
     },

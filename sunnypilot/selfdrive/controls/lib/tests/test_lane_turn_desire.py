@@ -136,6 +136,7 @@ def set_lane_turn_params():
 ])
 def test_desire_helper_integration(carstate, lateral_active, lane_change_prob, expected_desire, set_lane_turn_params):
   dh = DesireHelper()
+  dh.lane_change_safety = DummyLaneChangeSafetyGate(blocked=False)
   dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGE
   for _ in range(10):
     dh.update(carstate, lateral_active, lane_change_prob)
@@ -199,6 +200,7 @@ def test_close_road_edge_blocks_before_nudgeless_timer(tmp_path):
 
 def test_fresh_signal_still_starts_nudgeless_lane_change():
   dh = DesireHelper()
+  dh.lane_change_safety = DummyLaneChangeSafetyGate(blocked=False)
   dh.alc.update_params = lambda: None
   dh.lane_turn_controller.update_params = lambda: None
   dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
@@ -211,8 +213,52 @@ def test_fresh_signal_still_starts_nudgeless_lane_change():
   assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
 
 
+def test_stale_signal_prompts_immediately_but_never_auto_starts_on_recovery():
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
+  gate = DummyLaneChangeSafetyGate(blocked=False)
+  dh.lane_change_safety = gate
+  stale_state = DummyCarState(vEgo=19.0, rightBlinker=True, brakePressed=True)
+
+  dh.update(stale_state, True, 1.0, object(), input_stale=True)
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+  assert dh.lane_change_safety.blocked
+  assert dh.lane_change_safety.block_reason == "staleCarState"
+  assert not dh.lane_change_auto_armed
+
+  fresh_state = DummyCarState(vEgo=19.0, rightBlinker=True)
+  gate.blocked = False
+  for _ in range(10):
+    dh.update(fresh_state, True, 1.0, object())
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+
+  fresh_state.steeringPressed = True
+  fresh_state.steeringTorque = -1.0
+  dh.update(fresh_state, True, 1.0, object())
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+
+
+def test_unknown_target_lane_blocks_nudgeless_start():
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
+  carstate = DummyCarState(vEgo=15.0, rightBlinker=True)
+
+  dh.update(carstate, True, 1.0, None)
+  for _ in range(5):
+    dh.update(carstate, True, 1.0, None)
+
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+  assert dh.lane_change_safety.block_reason == "targetLaneUnknown"
+  assert not dh.lane_change_auto_armed
+
+
 def test_held_signal_recovers_with_nudge_without_repeating_auto_change():
   dh = DesireHelper()
+  dh.lane_change_safety = DummyLaneChangeSafetyGate(blocked=False)
   dh.alc.update_params = lambda: None
   dh.lane_turn_controller.update_params = lambda: None
   dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
@@ -237,6 +283,7 @@ def test_held_signal_recovers_with_nudge_without_repeating_auto_change():
 
 def test_signal_held_before_engagement_needs_nudge():
   dh = DesireHelper()
+  dh.lane_change_safety = DummyLaneChangeSafetyGate(blocked=False)
   dh.alc.update_params = lambda: None
   dh.lane_turn_controller.update_params = lambda: None
   dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS

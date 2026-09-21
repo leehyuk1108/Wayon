@@ -1,6 +1,31 @@
 import time
+from types import SimpleNamespace
 
 from openpilot.common.swaglog import cloudlog
+
+
+LANE_CHANGE_INPUT_MAX_AGE_NS = 300_000_000
+
+
+def lane_change_car_state(sm, now_ns=None):
+  now_ns = time.monotonic_ns() if now_ns is None else now_ns
+  car_age = now_ns - sm.logMonoTime['carState']
+  if 0 <= car_age <= LANE_CHANGE_INPUT_MAX_AGE_NS and sm.valid['carState']:
+    return sm['carState'], False
+
+  navdy_age = now_ns - sm.logMonoTime['carStateSP']
+  navdy_fresh = 0 <= navdy_age <= LANE_CHANGE_INPUT_MAX_AGE_NS and sm.valid['carStateSP']
+  navdy = sm['carStateSP'] if navdy_fresh else None
+  return SimpleNamespace(
+    vEgo=navdy.navdyVEgo if navdy is not None else 0.0,
+    leftBlinker=bool(navdy.navdyLeftBlinker) if navdy is not None else False,
+    rightBlinker=bool(navdy.navdyRightBlinker) if navdy is not None else False,
+    leftBlindspot=bool(navdy.navdyLeftBlindspot) if navdy is not None else False,
+    rightBlindspot=bool(navdy.navdyRightBlindspot) if navdy is not None else False,
+    brakePressed=True,
+    steeringPressed=False,
+    steeringTorque=0.0,
+  ), True
 
 
 class LaneChangeInputMonitor:

@@ -60,7 +60,7 @@ class DesireHelper:
   def get_lane_change_direction(CS):
     return LaneChangeDirection.left if CS.leftBlinker else LaneChangeDirection.right
 
-  def update(self, carstate, lateral_active, lane_change_prob, model_v2=None):
+  def update(self, carstate, lateral_active, lane_change_prob, model_v2=None, input_stale=False):
     self.alc.update_params()
     self.lane_turn_controller.update_params()
     v_ego = carstate.vEgo
@@ -71,6 +71,8 @@ class DesireHelper:
       (carstate.steeringTorque > 0 and blinker_direction == LaneChangeDirection.left) or
       (carstate.steeringTorque < 0 and blinker_direction == LaneChangeDirection.right)
     )
+    if input_stale:
+      self.lane_change_auto_armed = False
 
     if not one_blinker:
       self.lane_change_signal_handled = False
@@ -80,7 +82,7 @@ class DesireHelper:
       # A signal already active before lateral control may show a prompt, but
       # must not trigger an automatic maneuver on engagement.
       self.lane_change_auto_armed = (
-        self.prev_blinker_direction == LaneChangeDirection.none and lateral_active and
+        self.prev_blinker_direction == LaneChangeDirection.none and lateral_active and not input_stale and
         not below_lane_change_speed and self.alc.lane_change_set_timer != AutoLaneChangeMode.OFF
       )
     elif not lateral_active or below_lane_change_speed:
@@ -113,12 +115,18 @@ class DesireHelper:
 
         self.alc.update_lane_change(blindspot_detected, carstate.brakePressed)
         lane_change_blocked = self.lane_change_safety.update(self.lane_change_direction, model_v2)
+        if lane_change_blocked:
+          self.lane_change_auto_armed = False
+        if input_stale:
+          self.lane_change_safety.blocked = True
+          self.lane_change_safety.block_reason = "staleCarState"
+          lane_change_blocked = True
 
         if not one_blinker or below_lane_change_speed:
           self.lane_change_state = LaneChangeState.off
           self.lane_change_direction = LaneChangeDirection.none
           self.lane_change_safety.reset()
-        elif (torque_applied or (self.lane_change_auto_armed and self.alc.auto_lane_change_allowed)) and \
+        elif not input_stale and (torque_applied or (self.lane_change_auto_armed and self.alc.auto_lane_change_allowed)) and \
              not blindspot_detected and not lane_change_blocked:
           self.lane_change_state = LaneChangeState.laneChangeStarting
           self.lane_change_auto_armed = False
@@ -150,6 +158,10 @@ class DesireHelper:
       self.lane_change_timer += DT_MDL
 
     self.prev_blinker_direction = blinker_direction
+
+    if input_stale and self.lane_change_state == LaneChangeState.preLaneChange:
+      self.lane_change_safety.blocked = True
+      self.lane_change_safety.block_reason = "staleCarState"
 
     if not one_blinker and self.lane_change_state == LaneChangeState.off:
       self.lane_change_safety.reset()

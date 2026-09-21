@@ -9,6 +9,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_safety import (
   LaneBoundaryStateReader,
   LaneChangeSafetyGate,
   TARGET_LANE_WIDTH_CONFIRM_FRAMES,
+  road_edge_center_clearance,
   target_lane_space_width,
 )
 
@@ -55,10 +56,30 @@ def test_confident_close_road_edge_wins_over_outer_lane_line():
   assert target_lane_space_width(m, Direction.right) == pytest.approx(0.7)
 
 
+def test_confident_close_road_edge_blocks_with_unreliable_inner_lane_line():
+  m = model(right_edge=2.0, edge_std=0.3)
+  m.laneLineProbs[2] = 0.2
+  assert target_lane_space_width(m, Direction.right) is None
+  assert road_edge_center_clearance(m, Direction.right) == pytest.approx(2.0)
+
+  gate = LaneChangeSafetyGate()
+  assert gate.update(Direction.right, m)
+  assert gate.block_reason == "narrowTargetLane"
+
+
+def test_distant_road_edge_does_not_block_a_clear_target_lane():
+  gate = LaneChangeSafetyGate()
+  assert not gate.update(Direction.right, model(right_edge=5.2))
+
+
 def test_unreliable_geometry_does_not_report_a_width():
   m = model(outer_prob=0.1, edge_std=1.0)
   assert target_lane_space_width(m, Direction.left) is None
   assert target_lane_space_width(m, Direction.right) is None
+
+  gate = LaneChangeSafetyGate()
+  assert gate.update(Direction.right, m)
+  assert gate.block_reason == "targetLaneUnknown"
 
 
 def test_centerline_block_releases_on_explicit_dashed_line(tmp_path):
@@ -102,15 +123,17 @@ def test_dashed_centerline_also_blocks_requested_direction(tmp_path):
   assert not gate.update(Direction.left, model())
 
 
-def test_narrow_target_requires_consecutive_frames_and_latches(tmp_path):
+def test_narrow_target_blocks_immediately_and_latches_after_confirmation(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state)
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
   narrow = model(right_width=2.39)
 
   for _ in range(TARGET_LANE_WIDTH_CONFIRM_FRAMES - 1):
-    assert not gate.update(Direction.right, narrow)
+    assert gate.update(Direction.right, narrow)
+    assert not gate.narrow_blocked
   assert gate.update(Direction.right, narrow)
+  assert gate.narrow_blocked
   assert gate.block_reason == "narrowTargetLane"
 
   assert gate.update(Direction.right, model(right_width=2.4))

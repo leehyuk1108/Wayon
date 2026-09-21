@@ -19,6 +19,7 @@ LANE_MARKING_MAX_AGE_SEC = 1.25
 LANE_MARKING_READ_INTERVAL_SEC = 0.1
 LANE_PROB_MIN = 0.55
 ROAD_EDGE_STD_MAX = 0.65
+ROAD_EDGE_CENTER_CLEARANCE_MIN_M = 3.5
 TARGET_LANE_MIN_WIDTH_M = 2.40
 TARGET_LANE_WIDTH_CONFIRM_FRAMES = 5
 WIDTH_SAMPLE_DISTANCES_M = (8.0, 15.0, 25.0)
@@ -99,6 +100,25 @@ def target_road_edge_space_width(model_v2: Any, direction: Any) -> float | None:
   return _space_between(lane_lines[inner_index], road_edges[edge_index])
 
 
+def road_edge_center_clearance(model_v2: Any, direction: Any) -> float | None:
+  if direction not in (LaneChangeDirection.left, LaneChangeDirection.right) or model_v2 is None:
+    return None
+  edge_index = 0 if direction == LaneChangeDirection.left else 1
+  road_edges = list(getattr(model_v2, "roadEdges", []))
+  road_edge_stds = list(getattr(model_v2, "roadEdgeStds", []))
+  if len(road_edges) <= edge_index or len(road_edge_stds) <= edge_index or \
+     _finite(road_edge_stds[edge_index], math.inf) > ROAD_EDGE_STD_MAX:
+    return None
+
+  direction_sign = -1.0 if direction == LaneChangeDirection.left else 1.0
+  clearances = []
+  for distance_m in WIDTH_SAMPLE_DISTANCES_M:
+    edge_y = _line_y_at(road_edges[edge_index], distance_m)
+    if edge_y is not None and 0.5 <= direction_sign * edge_y <= 10.0:
+      clearances.append(direction_sign * edge_y)
+  return float(median(clearances)) if clearances else None
+
+
 def target_lane_space_width(model_v2: Any, direction: Any) -> float | None:
   """Return the narrowest reliable adjacent-lane or road-edge space."""
   geometry, indices, _ = _lane_geometry(model_v2, direction)
@@ -174,10 +194,12 @@ class LaneChangeSafetyGate:
     self.boundary_blocked = False
     self.boundary_block_reason = ""
     self.narrow_blocked = False
+    self.geometry_unverified = False
     self.blocked = False
     self.block_reason = ""
     self.target_width_m: float | None = None
     self.road_edge_width_m: float | None = None
+    self.road_edge_clearance_m: float | None = None
 
   def reset(self) -> None:
     self.direction = LaneChangeDirection.none
@@ -185,10 +207,12 @@ class LaneChangeSafetyGate:
     self.boundary_blocked = False
     self.boundary_block_reason = ""
     self.narrow_blocked = False
+    self.geometry_unverified = False
     self.blocked = False
     self.block_reason = ""
     self.target_width_m = None
     self.road_edge_width_m = None
+    self.road_edge_clearance_m = None
 
   def update(self, direction: Any, model_v2: Any) -> bool:
     if direction == LaneChangeDirection.none:
@@ -211,17 +235,23 @@ class LaneChangeSafetyGate:
 
     self.target_width_m = target_lane_space_width(model_v2, direction)
     self.road_edge_width_m = target_road_edge_space_width(model_v2, direction)
+    self.road_edge_clearance_m = road_edge_center_clearance(model_v2, direction)
+    self.geometry_unverified = self.target_width_m is None
     narrow_now = self.target_width_m is not None and self.target_width_m < TARGET_LANE_MIN_WIDTH_M
     self.narrow_frames = self.narrow_frames + 1 if narrow_now else 0
     road_edge_narrow = self.road_edge_width_m is not None and self.road_edge_width_m < TARGET_LANE_MIN_WIDTH_M
-    if road_edge_narrow or self.narrow_frames >= TARGET_LANE_WIDTH_CONFIRM_FRAMES:
+    road_edge_close = (self.road_edge_clearance_m is not None and
+                       self.road_edge_clearance_m < ROAD_EDGE_CENTER_CLEARANCE_MIN_M)
+    if road_edge_narrow or road_edge_close or self.narrow_frames >= TARGET_LANE_WIDTH_CONFIRM_FRAMES:
       self.narrow_blocked = True
 
-    self.blocked = self.boundary_blocked or self.narrow_blocked
-    if self.narrow_blocked:
+    self.blocked = self.boundary_blocked or self.narrow_blocked or self.geometry_unverified or narrow_now
+    if self.narrow_blocked or narrow_now:
       self.block_reason = "narrowTargetLane"
     elif self.boundary_blocked:
       self.block_reason = self.boundary_block_reason
+    elif self.geometry_unverified:
+      self.block_reason = "targetLaneUnknown"
     else:
       self.block_reason = ""
 

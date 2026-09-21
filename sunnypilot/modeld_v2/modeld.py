@@ -30,7 +30,7 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.system import sentry
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
-from openpilot.selfdrive.modeld.lane_change_input_monitor import LaneChangeInputMonitor
+from openpilot.selfdrive.modeld.lane_change_input_monitor import LaneChangeInputMonitor, lane_change_car_state
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value
 
 from openpilot.sunnypilot.modeld_v2.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState, get_curvature_from_output
@@ -430,7 +430,8 @@ def main(demo=False):
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]
       r_lane_change_prob = desire_state[log.Desire.laneChangeRight]
       lane_change_prob = l_lane_change_prob + r_lane_change_prob
-      DH.update(sm['carState'], sm['carControl'].latActive, lane_change_prob, modelv2_send.modelV2)
+      lane_change_state, input_stale = lane_change_car_state(sm)
+      DH.update(lane_change_state, sm['carControl'].latActive, lane_change_prob, modelv2_send.modelV2, input_stale=input_stale)
       lane_change_input_monitor.update(sm, DH)
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction

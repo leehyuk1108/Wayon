@@ -11,7 +11,8 @@ from openpilot.common.swaglog import cloudlog
 
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
-from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
+from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, get_curvature_from_path_poly, guard_model_curvature, \
+                                                           MODEL_CURVATURE_GUARD_MAX_LATERAL_JERK
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
@@ -28,6 +29,7 @@ LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
+MODEL_PATH_MAX_AGE_NS = 100_000_000
 
 
 class Controls(ControlsExt):
@@ -42,7 +44,7 @@ class Controls(ControlsExt):
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
-    self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
+    self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'drivingModelData', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'lateralManeuverPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay'] + self.sm_services_ext,
                                   poll='selfdriveState')
@@ -51,6 +53,7 @@ class Controls(ControlsExt):
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
+    self.model_curvature_guard_active = False
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -157,11 +160,38 @@ class Controls(ControlsExt):
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
-    if self.sm.valid['lateralManeuverPlan']:
+    using_model_action = not self.sm.valid['lateralManeuverPlan']
+    if not using_model_action:
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
-    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+
+    curvature_guarded = False
+    path_curvature = math.nan
+    model_path_fresh = self.sm.alive['drivingModelData'] and self.sm.valid['drivingModelData'] and \
+                       abs(self.sm.logMonoTime['drivingModelData'] - self.sm.logMonoTime['modelV2']) <= MODEL_PATH_MAX_AGE_NS
+    if using_model_action and CC.latActive and model_path_fresh and \
+       model_v2.meta.laneChangeState == LaneChangeState.off:
+      model_path = self.sm['drivingModelData'].path
+      path_curvature = get_curvature_from_path_poly(model_path.xCoefficients, model_path.yCoefficients)
+      new_desired_curvature, curvature_guarded = guard_model_curvature(CS.vEgo, new_desired_curvature, path_curvature)
+
+    if curvature_guarded != self.model_curvature_guard_active:
+      path_curvature_log = float(path_curvature) if math.isfinite(path_curvature) else None
+      lateral_accel_delta = abs(model_v2.action.desiredCurvature - path_curvature) * CS.vEgo ** 2 if path_curvature_log is not None else None
+      cloudlog.event("model_curvature_guard", active=curvature_guarded,
+                     modelCurvature=float(model_v2.action.desiredCurvature),
+                     pathCurvature=path_curvature_log, guardedCurvature=float(new_desired_curvature),
+                     lateralAccelDelta=lateral_accel_delta,
+                     speed=float(CS.vEgo))
+      self.model_curvature_guard_active = curvature_guarded
+
+    max_lateral_jerk = MODEL_CURVATURE_GUARD_MAX_LATERAL_JERK if curvature_guarded else None
+    if max_lateral_jerk is None:
+      self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+    else:
+      self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature,
+                                                                 lp.roll, max_lateral_jerk=max_lateral_jerk)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
     actuators.curvature = self.desired_curvature

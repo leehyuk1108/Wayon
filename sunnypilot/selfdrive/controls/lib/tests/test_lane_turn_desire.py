@@ -195,3 +195,78 @@ def test_close_road_edge_blocks_before_nudgeless_timer(tmp_path):
   assert dh.lane_change_safety.blocked
   assert dh.lane_change_safety.block_reason == "narrowTargetLane"
   assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+
+
+def test_fresh_signal_still_starts_nudgeless_lane_change():
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
+  carstate = DummyCarState(vEgo=15.0, leftBlinker=True)
+
+  dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+  for _ in range(4):
+    dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+
+
+def test_held_signal_recovers_with_nudge_without_repeating_auto_change():
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
+  carstate = DummyCarState(vEgo=15.0, leftBlinker=True)
+
+  dh.update(carstate, True, 1.0)
+  for _ in range(4):
+    dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+
+  dh.lane_change_state = log.LaneChangeState.off
+  dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.off
+
+  carstate.steeringPressed = True
+  carstate.steeringTorque = 1.0
+  dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+  dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+
+
+def test_signal_held_before_engagement_needs_nudge():
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
+  carstate = DummyCarState(vEgo=15.0, rightBlinker=True)
+
+  dh.update(carstate, False, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.off
+  for _ in range(5):
+    dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+
+  carstate.steeringPressed = True
+  carstate.steeringTorque = -1.0
+  dh.update(carstate, True, 1.0)
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+
+
+def test_missed_signal_edge_enters_prompt_but_road_edge_still_blocks(tmp_path):
+  dh = DesireHelper()
+  dh.alc.update_params = lambda: None
+  dh.lane_turn_controller.update_params = lambda: None
+  dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGELESS
+  dh.lane_change_safety = LaneChangeSafetyGate(LaneBoundaryStateReader(str(tmp_path / "missing.json")))
+  dh.prev_blinker_direction = log.LaneChangeDirection.right
+  carstate = DummyCarState(vEgo=15.0, rightBlinker=True, steeringPressed=True, steeringTorque=-1.0)
+  model_v2 = close_right_road_edge_model()
+
+  dh.update(carstate, True, 1.0, model_v2)
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
+  for _ in range(5):
+    dh.update(carstate, True, 1.0, model_v2)
+  assert dh.lane_change_safety.blocked
+  assert dh.lane_change_state == log.LaneChangeState.preLaneChange

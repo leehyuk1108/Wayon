@@ -47,7 +47,9 @@ class DesireHelper:
     self.lane_change_timer = 0.0
     self.lane_change_ll_prob = 1.0
     self.keep_pulse_timer = 0.0
-    self.prev_one_blinker = False
+    self.prev_blinker_direction = LaneChangeDirection.none
+    self.lane_change_signal_handled = False
+    self.lane_change_auto_armed = False
     self.desire = log.Desire.none
     self.alc = AutoLaneChangeController(self)
     self.lane_turn_controller = LaneTurnController(self)
@@ -64,6 +66,25 @@ class DesireHelper:
     v_ego = carstate.vEgo
     one_blinker = carstate.leftBlinker != carstate.rightBlinker
     below_lane_change_speed = v_ego < LANE_CHANGE_SPEED_MIN
+    blinker_direction = self.get_lane_change_direction(carstate) if one_blinker else LaneChangeDirection.none
+    torque_applied = carstate.steeringPressed and (
+      (carstate.steeringTorque > 0 and blinker_direction == LaneChangeDirection.left) or
+      (carstate.steeringTorque < 0 and blinker_direction == LaneChangeDirection.right)
+    )
+
+    if not one_blinker:
+      self.lane_change_signal_handled = False
+      self.lane_change_auto_armed = False
+    elif blinker_direction != self.prev_blinker_direction:
+      self.lane_change_signal_handled = False
+      # A signal already active before lateral control may show a prompt, but
+      # must not trigger an automatic maneuver on engagement.
+      self.lane_change_auto_armed = (
+        self.prev_blinker_direction == LaneChangeDirection.none and lateral_active and
+        not below_lane_change_speed and self.alc.lane_change_set_timer != AutoLaneChangeMode.OFF
+      )
+    elif not lateral_active or below_lane_change_speed:
+      self.lane_change_auto_armed = False
 
     # Lane turn controller update
     self.lane_turn_controller.update_lane_turn(blindspot_left=carstate.leftBlindspot, blindspot_right=carstate.rightBlindspot,
@@ -75,20 +96,17 @@ class DesireHelper:
       self.lane_change_direction = LaneChangeDirection.none
     else:
       # LaneChangeState.off
-      if self.lane_change_state == LaneChangeState.off and one_blinker and not self.prev_one_blinker and not below_lane_change_speed:
+      if (self.lane_change_state == LaneChangeState.off and one_blinker and not below_lane_change_speed and
+          (not self.lane_change_signal_handled or torque_applied)):
         self.lane_change_state = LaneChangeState.preLaneChange
         self.lane_change_ll_prob = 1.0
-        # Initialize lane change direction to prevent UI alert flicker
-        self.lane_change_direction = self.get_lane_change_direction(carstate)
+        self.lane_change_direction = blinker_direction
+        self.lane_change_signal_handled = True
 
       # LaneChangeState.preLaneChange
       elif self.lane_change_state == LaneChangeState.preLaneChange:
         # Update lane change direction
-        self.lane_change_direction = self.get_lane_change_direction(carstate)
-
-        torque_applied = carstate.steeringPressed and \
-                         ((carstate.steeringTorque > 0 and self.lane_change_direction == LaneChangeDirection.left) or
-                          (carstate.steeringTorque < 0 and self.lane_change_direction == LaneChangeDirection.right))
+        self.lane_change_direction = blinker_direction
 
         blindspot_detected = ((carstate.leftBlindspot and self.lane_change_direction == LaneChangeDirection.left) or
                               (carstate.rightBlindspot and self.lane_change_direction == LaneChangeDirection.right))
@@ -100,8 +118,10 @@ class DesireHelper:
           self.lane_change_state = LaneChangeState.off
           self.lane_change_direction = LaneChangeDirection.none
           self.lane_change_safety.reset()
-        elif (torque_applied or self.alc.auto_lane_change_allowed) and not blindspot_detected and not lane_change_blocked:
+        elif (torque_applied or (self.lane_change_auto_armed and self.alc.auto_lane_change_allowed)) and \
+             not blindspot_detected and not lane_change_blocked:
           self.lane_change_state = LaneChangeState.laneChangeStarting
+          self.lane_change_auto_armed = False
 
       # LaneChangeState.laneChangeStarting
       elif self.lane_change_state == LaneChangeState.laneChangeStarting:
@@ -129,7 +149,7 @@ class DesireHelper:
     else:
       self.lane_change_timer += DT_MDL
 
-    self.prev_one_blinker = one_blinker
+    self.prev_blinker_direction = blinker_direction
 
     if not one_blinker and self.lane_change_state == LaneChangeState.off:
       self.lane_change_safety.reset()

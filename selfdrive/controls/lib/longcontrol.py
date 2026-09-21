@@ -45,8 +45,14 @@ SNG_MANUAL_RELEASE_TIMEOUT = 4.0
 SNG_MANUAL_CREEP_MIN_SPEED = 0.1
 SNG_MANUAL_CREEP_MAX_SPEED = 1.0
 SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
+
+
 def use_gm_auto_hold_sng(CP) -> bool:
   return getattr(CP, "brand", "") == "gm" and bool(getattr(CP, "autoResumeSng", False))
+
+
+def use_traverse_unacked_follow(CP) -> bool:
+  return use_gm_auto_hold_sng(CP) and getattr(CP, "carFingerprint", "") == "CHEVROLET_TRAVERSE"
 
 
 def gm_cruise_active(CS) -> bool:
@@ -57,7 +63,7 @@ def gm_cruise_active(CS) -> bool:
 
 def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
                              should_stop, brake_pressed, cruise_standstill,
-                             sng_resume=False):
+                             sng_resume=False, unacked_follow=False):
   # Gas Interceptor
   cruise_standstill = cruise_standstill and not CP_SP.enableGasInterceptor
 
@@ -68,9 +74,9 @@ def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
   gm_hold_standstill = use_gm_auto_hold_sng(CP) and v_ego <= max(CP.vEgoStopping, 0.05)
   launch_latched = cruise_standstill or gm_hold_standstill
   starting_condition = (not should_stop and
-                        (not launch_latched or sng_resume) and
+                        (not launch_latched or sng_resume or unacked_follow) and
                         not brake_pressed)
-  started_condition = v_ego > CP.vEgoStarting and not (use_gm_auto_hold_sng(CP) and cruise_standstill)
+  started_condition = v_ego > CP.vEgoStarting and (unacked_follow or not (use_gm_auto_hold_sng(CP) and cruise_standstill))
 
   if not active:
     long_control_state = LongCtrlState.off
@@ -129,6 +135,7 @@ class LongControl:
     self.sng_resume_failed = False
     self.sng_resume_succeeded = False
     self.sng_resume_moved = False
+    self.sng_unacked_follow = False
     self.sng_resume_started_at = None
     self.sng_started_frames = 0
     self.sng_manual_resume = False
@@ -162,6 +169,7 @@ class LongControl:
     self.sng_ui_creep_last_time = None
     self.sng_ui_phase = None
     self.sng_ui_motion_frames = 0
+    self.sng_unacked_follow = False
     if clear_attempt:
       self.sng_resume_attempted = False
       self.sng_resume_failed = False
@@ -280,6 +288,23 @@ class LongControl:
     # synthetic burst. Keep the normal planner/lead and driver-override gates.
     manual_resume = any(b.type == car.CarState.ButtonEvent.Type.accelCruise and b.pressed for b in CS.buttonEvents)
     cruise_valid = CS.canValid and CS.cruiseState.enabled and not CS.accFaulted
+    if self.sng_unacked_follow:
+      if not cruise_valid or not valid_lead or not manual_resume_obstacle_clear(long_plan, radar_state):
+        self.fail_sng_resume("unacked_follow_invalid")
+        return False
+      if long_plan.shouldStop:
+        if CS.standstill and abs(CS.vEgoRaw) < 0.05:
+          self.log_gm_auto_resume("unacked_follow_stopped")
+          self.reset_sng_resume()
+        return False
+      self.sng_started_frames = self.sng_started_frames + 1 if gm_cruise_active(CS) else 0
+      if self.sng_started_frames >= SNG_STARTED_CONFIRM_FRAMES:
+        self.log_gm_auto_resume("pcm_active_confirmed", speed=float(CS.vEgo), raw_speed=float(CS.vEgoRaw))
+        self.reset_sng_resume(clear_attempt=False)
+        self.sng_resume_succeeded = True
+        self.sng_resume_moved = True
+        return False
+      return True
     if (ui_resume and sensors_valid and manual_resume_obstacle_clear(long_plan, radar_state) and
         self.long_control_state == LongCtrlState.stopping and
         manual_resume_eligible(self.CP, CS, True, True)):
@@ -369,6 +394,15 @@ class LongControl:
         return False
       timeout = SNG_MANUAL_RELEASE_TIMEOUT if self.sng_ui_phase == "release" else SNG_RESUME_TIMEOUT_FRAMES * DT_CTRL
       if self.sng_resume_started_at is None or now - self.sng_resume_started_at >= timeout:
+        if (not self.sng_ui_resume and not self.sng_manual_resume and use_traverse_unacked_follow(self.CP) and
+            not CS.standstill and CS.vEgoRaw >= SNG_MANUAL_CREEP_MIN_SPEED and
+            manual_resume_obstacle_clear(long_plan, radar_state)):
+          self.sng_resume_ready = False
+          self.sng_unacked_follow = True
+          self.sng_started_frames = 0
+          self.accel_smoother.reset(0.0)
+          self.log_gm_auto_resume("unacked_follow", speed=float(CS.vEgo), raw_speed=float(CS.vEgoRaw))
+          return True
         self.fail_sng_resume("brake_release_timeout" if self.sng_ui_phase == "release" else "resume_ack_timeout")
         return False
       return True
@@ -432,7 +466,7 @@ class LongControl:
 
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop or sng_launch_failed, CS.brakePressed,
-                                                       CS.cruiseState.standstill, sng_resume)
+                                                       CS.cruiseState.standstill, sng_resume, self.sng_unacked_follow)
     if self.sng_ui_phase is not None:
       self.long_control_state = LongCtrlState.starting
     if self.long_control_state == LongCtrlState.off:
@@ -518,6 +552,10 @@ class LongControl:
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)
         self.speed_pid.reset()
 
+    if self.sng_unacked_follow:
+      output_accel = min(output_accel, 0.0)
+      if self.accel_smoother.output_accel > 0.0:
+        self.accel_smoother.reset(output_accel)
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     lead = radar_state.leadOne if radar_state is not None else None
     cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None

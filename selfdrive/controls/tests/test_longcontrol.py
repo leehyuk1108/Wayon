@@ -98,6 +98,8 @@ def sng_controller():
   controller = LongControl.__new__(LongControl)
   controller.CP = SimpleNamespace(brand="gm", autoResumeSng=True, vEgoStarting=0.5)
   controller.long_control_state = LongCtrlState.stopping
+  controller.sng_auto_logged_stages = set()
+  controller.sng_auto_attempt_id = 0
   controller.reset_sng_resume()
   return controller
 
@@ -312,6 +314,16 @@ def test_gm_stays_starting_while_creeping_with_pcm_standstill():
                                     True, False, True, False) == LongCtrlState.stopping
   assert long_control_state_trans(CP, CP_SP, True, LongCtrlState.starting, 0.2,
                                   False, False, False, True) == LongCtrlState.pid
+
+
+def test_unacked_follow_uses_speed_control_but_honors_new_stop():
+  CP = car.CarParams.new_message(brand="gm", autoResumeSng=True, startingState=True,
+                                 vEgoStopping=0.5, vEgoStarting=0.5)
+  CP_SP = custom.CarParamsSP.new_message()
+  assert long_control_state_trans(CP, CP_SP, True, LongCtrlState.starting, 0.6,
+                                  False, False, True, False, True) == LongCtrlState.pid
+  assert long_control_state_trans(CP, CP_SP, True, LongCtrlState.pid, 0.6,
+                                  True, False, True, False, True) == LongCtrlState.stopping
 
 
 def test_sng_disengage_and_withdrawn_longitudinal_request():

@@ -168,7 +168,7 @@ def test_automatic_resume_logs_each_control_and_can_phase_once(chain):
   assert len(auto_stages) == len(set(auto_stages))
 
 
-def test_creep_without_pcm_ack_times_out_into_regular_stopping(chain):
+def test_creep_without_pcm_ack_keeps_brake_released_until_lead_restops(chain):
   chain.run(110)
   chain.depart()
   chain.run(60)
@@ -177,19 +177,48 @@ def test_creep_without_pcm_ack_times_out_into_regular_stopping(chain):
   chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.6
   # Keep PCM standstill latched even though the vehicle has begun to creep.
   chain.run(220)
-  assert chain.loc.sng_resume_failed
+  assert chain.loc.sng_unacked_follow
+  assert not chain.loc.sng_resume_failed
   assert not chain.loc.sng_resume_succeeded
-  assert chain.loc.long_control_state == LongCtrlState.stopping
-  failed_frames = chain.run(40)
-  assert all(entry.state == LongCtrlState.stopping and entry.accel < 0 and not entry.resume for entry in failed_frames)
-  assert all(not entry.hold for entry in failed_frames)
-  failed_brakes = chain.brakes(failed_frames)
-  assert failed_brakes
-  assert all(0 < brake < GM_AUTO_HOLD_BRAKE for _, brake in failed_brakes)
+  follow_frames = chain.run(40)
+  assert all(entry.state == LongCtrlState.pid and entry.accel <= 0 and not entry.resume for entry in follow_frames)
+  assert all(not entry.hold for entry in follow_frames)
+  assert all(brake == 0 for _, brake in chain.brakes(follow_frames))
   assert len([b for b in chain.buttons() if b[1] == CanBus.POWERTRAIN and b[2] == CruiseButtons.RES_ACCEL]) == 5
-  failures = [event for name, event in chain.events if name == "gm_auto_resume" and event["stage"] == "failed"]
-  assert len(failures) == 1
-  assert failures[0]["reason"] == "resume_ack_timeout"
+  assert any(event["stage"] == "unacked_follow" for name, event in chain.events if name == "gm_auto_resume")
+
+  chain.plan.shouldStop = True
+  chain.plan.aTarget = -1.0
+  chain.plan.speeds = [0.0] * 33
+  braking = chain.run(40)
+  assert all(entry.state == LongCtrlState.stopping and not entry.resume for entry in braking)
+  assert any(brake > 0 for _, brake in chain.brakes(braking))
+  chain.cs.out.standstill = True
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.0
+  chain.run(110)
+  assert not chain.loc.sng_unacked_follow
+  assert chain.trace[-1].hold
+  chain.depart()
+  chain.run(60)
+  assert chain.loc.sng_resume_ready
+
+
+def test_unacked_follow_brakes_for_slowing_lead_before_stop_flag(chain):
+  chain.run(110)
+  chain.depart()
+  chain.run(60)
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.6
+  chain.run(220)
+  assert chain.loc.sng_unacked_follow
+
+  chain.plan.shouldStop = False
+  chain.plan.aTarget = -1.0
+  chain.plan.speeds = [0.0] * 33
+  chain.radar.leadOne.vRel = -0.2
+  slowing = chain.run(100)
+  assert all(entry.state == LongCtrlState.pid and not entry.resume for entry in slowing)
+  assert any(brake > 0 for _, brake in chain.brakes(slowing))
 
 
 def test_valid_pcm_ack_at_zero_prevents_timeout_failure(chain):
@@ -431,13 +460,16 @@ def test_gradual_roll_before_hold_pressure_settles_is_arrested(chain):
   assert chain.buttons() == []
 
 
-def test_failed_launch_recovery_does_not_taper_brakes_away_while_rolling(chain):
+def test_unacked_follow_does_not_hide_invalid_lead_while_rolling(chain):
   chain.run(110)
   chain.depart()
   chain.run(180)
   chain.cs.out.standstill = False
   chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.3
   chain.run(100)
+  assert chain.loc.sng_unacked_follow
+  chain.radar.leadOne.status = False
+  chain.run(65)
   assert chain.loc.sng_resume_failed
   assert chain.trace[-1].accel <= -0.4
   assert chain.ci.CC.apply_brake > 20

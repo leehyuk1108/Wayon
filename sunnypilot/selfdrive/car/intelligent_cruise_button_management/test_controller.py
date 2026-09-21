@@ -70,6 +70,37 @@ def test_camera_speed_becomes_temporary_target(tmp_path):
   assert controller.automatic_control_source == "camera"
 
 
+def test_frozen_camera_at_thirteen_meters_expires_only_after_moving(tmp_path):
+  controller = make_controller(tmp_path)
+  sample = controller.camera_sample_is_stale
+  assert not sample(60, "fixed", 100.0, 20.0, 1.0)
+  assert not sample(60, "fixed", 13.0, 20.0, 2.0)
+  assert not sample(60, "fixed", 13.0, 0.0, 12.0)
+  assert not sample(60, "fixed", 13.0, 20.0, 13.0)
+  assert not sample(60, "fixed", 13.0, 20.0, 14.0)
+  assert sample(60, "fixed", 13.0, 20.0, 15.0)
+  assert sample(60, "fixed", 13.0, 20.0, 16.0)
+  assert not sample(60, "fixed", 500.0, 20.0, 17.0)
+
+
+def test_frozen_section_camera_does_not_mask_new_camera(tmp_path):
+  controller = make_controller(tmp_path)
+  sample = controller.camera_sample_is_stale
+  assert not sample(80, "section", 13.0, 15.0, 1.0)
+  assert not sample(80, "section", 13.0, 15.0, 2.0)
+  assert not sample(80, "section", 13.0, 15.0, 3.0)
+  assert not sample(80, "section", 13.0, 15.0, 4.0)
+  assert sample(80, "section", 13.0, 15.0, 5.0)
+  assert not sample(60, "fixed", 400.0, 15.0, 6.0)
+
+
+def test_camera_one_meter_countdown_does_not_expire(tmp_path):
+  controller = make_controller(tmp_path)
+  for offset, distance in enumerate(range(30, 0, -1)):
+    assert not controller.camera_sample_is_stale(60, "fixed", float(distance),
+                                                 20.0, float(offset))
+
+
 def test_fixed_camera_profile_reserves_settling_distance_before_compliance_point(tmp_path):
   camera_path = tmp_path / "camera.json"
   controller = make_controller(tmp_path, openpilot_long=True, pcm_cruise_speed=True)

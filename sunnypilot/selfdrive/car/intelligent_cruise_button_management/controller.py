@@ -35,6 +35,8 @@ INACTIVE_TIMER = 0.4
 NAVDY_CAMERA_STATE_PATH = "/dev/shm/navdy_camera_state.json"
 NAVDY_CAMERA_STATE_MAX_AGE = 2.5
 NAVDY_CAMERA_SOURCE = "trafficNotification"
+CAMERA_END_ZONE_M = 30.0
+CAMERA_STALLED_TRAVEL_M = 30.0
 # Finish lowering the planner ceiling early enough for the real vehicle to
 # settle at the posted speed by 100 m before the camera.  The previous profile
 # reached the posted-speed ceiling at 100 m, leaving no room for MPC, actuator,
@@ -80,6 +82,11 @@ class IntelligentCruiseButtonManagement:
     self.camera_type = ""
     self.camera_distance_m = 0.0
     self.camera_state_checked_at = 0.0
+    self.camera_last_key = None
+    self.camera_last_distance_m = 0.0
+    self.camera_last_sample_at = 0.0
+    self.camera_stalled_travel_m = 0.0
+    self.camera_stale = False
     self.automatic_speed_control_active = False
     self.automatic_control_source = "inactive"
     self.wayon_longitudinal_profile = is_enabled(CP)
@@ -135,7 +142,33 @@ class IntelligentCruiseButtonManagement:
     self.section_last_target_kph = 0
     self.section_feedback_hold_frames = 0
 
-  def read_camera_speed(self) -> int:
+  def camera_sample_is_stale(self, speed: int, camera_type: str, distance_m: float,
+                             v_ego: float, now: float) -> bool:
+    key = (speed, camera_type) if speed > 0 and distance_m > 0.0 else None
+    if key is None:
+      self.camera_last_key = None
+      self.camera_stalled_travel_m = 0.0
+      self.camera_stale = False
+      return False
+
+    new_camera = (key != self.camera_last_key or
+                  distance_m < self.camera_last_distance_m - 0.25 or
+                  distance_m > self.camera_last_distance_m + 20.0 or
+                  now < self.camera_last_sample_at)
+    if new_camera:
+      self.camera_stalled_travel_m = 0.0
+      self.camera_stale = False
+    elif distance_m <= CAMERA_END_ZONE_M and not self.camera_stale:
+      elapsed = min(0.5, max(0.0, now - self.camera_last_sample_at))
+      self.camera_stalled_travel_m += max(0.0, v_ego) * elapsed
+      self.camera_stale = self.camera_stalled_travel_m >= CAMERA_STALLED_TRAVEL_M
+
+    self.camera_last_key = key
+    self.camera_last_distance_m = distance_m
+    self.camera_last_sample_at = now
+    return self.camera_stale
+
+  def read_camera_speed(self, v_ego: float = 0.0) -> int:
     now = time.monotonic()
     if now - self.camera_state_checked_at < 0.1:
       return self.camera_speed
@@ -159,6 +192,11 @@ class IntelligentCruiseButtonManagement:
         distance_m = float(state.get("cameraDistanceM", 0.0))
         self.camera_distance_m = distance_m if math.isfinite(distance_m) and distance_m >= 0.0 else 0.0
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
+      self.camera_speed = 0
+      self.camera_type = ""
+      self.camera_distance_m = 0.0
+    if self.camera_sample_is_stale(self.camera_speed, self.camera_type,
+                                   self.camera_distance_m, v_ego, now):
       self.camera_speed = 0
       self.camera_type = ""
       self.camera_distance_m = 0.0
@@ -274,7 +312,7 @@ class IntelligentCruiseButtonManagement:
       restore_speed = max(self.v_cruise_min, self.v_cruise_cluster)
     restore_target = max(self.v_cruise_min, min(V_CRUISE_MAX, round(restore_speed)))
 
-    camera_target = self.read_camera_speed()
+    camera_target = self.read_camera_speed(float(CS.vEgo))
     camera_target_kph = camera_target
     restore_target_kph = round(restore_target if self.is_metric else restore_target * CV.MPH_TO_KPH)
     if self.camera_type == "section" and camera_target_kph > 0:

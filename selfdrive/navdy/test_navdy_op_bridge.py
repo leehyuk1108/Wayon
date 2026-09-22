@@ -2043,6 +2043,7 @@ def test_navdy_path_renderer_animates_dashed_lanes_and_keeps_road_edges_solid():
   assert "Math.min(80.0f, Math.max(18.0f, vehicleSpeedKph * 0.8f))" in java
   assert "drawLane(canvas, laneFarLeft, laneFarLeftProb, 0.0f, laneFarLeftType)" in java
   assert "drawLane(canvas, laneLeft, laneLeftProb, laneRiskLeft, laneLeftType)" in java
+  assert 'type == null || "unknown".equals(type)' in java
   assert "drawLane(canvas, laneRight, laneRightProb, laneRiskRight, laneRightType)" in java
   assert "drawLane(canvas, laneFarRight, laneFarRightProb, 0.0f, laneFarRightType)" in java
   assert "lanePaint.setPathEffect(solid ? null : laneDashEffect)" in java

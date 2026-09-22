@@ -1755,6 +1755,16 @@
 
     .line 328
     :cond_e
+    if-eqz p5, :cond_77
+
+    const-string v0, "unknown"
+
+    invoke-virtual {v0, p5}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+
+    move-result v0
+
+    if-nez v0, :cond_77
+
     nop
 
     .line 329

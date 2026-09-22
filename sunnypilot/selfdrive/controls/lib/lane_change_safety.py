@@ -14,7 +14,7 @@ from cereal import log
 
 LaneChangeDirection = log.LaneChangeDirection
 
-LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
+LANE_MARKING_STATE_PATH = "/dev/shm/wayon_onnx_vision.json"
 LANE_MARKING_MAX_AGE_SEC = 1.25
 LANE_MARKING_READ_INTERVAL_SEC = 0.1
 LANE_PROB_MIN = 0.55
@@ -173,7 +173,7 @@ class LaneBoundaryStateReader:
     try:
       with open(self.path, encoding="utf-8") as state_file:
         data = json.load(state_file)
-      updated_at = _finite(data.get("updatedAtMonotonic"), -math.inf)
+      updated_at = _finite(data.get("laneUpdatedAtMonotonic"), -math.inf)
       if updated_at <= 0.0 or now < updated_at or now - updated_at > LANE_MARKING_MAX_AGE_SEC:
         self.state = LaneBoundaryState()
         return self.state

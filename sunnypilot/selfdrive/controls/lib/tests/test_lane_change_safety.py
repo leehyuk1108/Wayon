@@ -6,6 +6,7 @@ import pytest
 from cereal import log
 
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_safety import (
+  LANE_MARKING_STATE_PATH,
   LaneBoundaryStateReader,
   LaneChangeSafetyGate,
   TARGET_LANE_WIDTH_CONFIRM_FRAMES,
@@ -15,6 +16,11 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_safety import (
 
 
 Direction = log.LaneChangeDirection
+
+
+def test_default_boundary_reader_uses_raw_onnx_state():
+  assert LaneBoundaryStateReader().path == LANE_MARKING_STATE_PATH
+  assert LANE_MARKING_STATE_PATH == "/dev/shm/wayon_onnx_vision.json"
 
 
 def line(y):
@@ -35,7 +41,7 @@ def write_markings(path, left="dashed", right="dashed", updated_at=None):
   path.write_text(json.dumps({
     "leftType": left,
     "rightType": right,
-    "updatedAtMonotonic": time.monotonic() if updated_at is None else updated_at,
+    "laneUpdatedAtMonotonic": time.monotonic() if updated_at is None else updated_at,
   }))
 
 

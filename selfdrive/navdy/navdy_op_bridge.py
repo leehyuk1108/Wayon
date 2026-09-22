@@ -258,12 +258,10 @@ def create_navdy_lane_marking_classifier(args: argparse.Namespace) -> Any:
   if not args.lane_marking_classifier:
     return None
   try:
-    from openpilot.selfdrive.navdy.lane_marking_classifier import NavdyLaneMarkingClassifier
-    return NavdyLaneMarkingClassifier(
-      interval_sec=args.lane_marking_interval_sec,
-      stale_sec=args.lane_marking_stale_sec,
-      stdout=args.stdout,
-    )
+    # Legacy solid/dashed/yellow camera classifier is disabled while ONNX is active.
+    # from openpilot.selfdrive.navdy.lane_marking_classifier import NavdyLaneMarkingClassifier
+    from openpilot.selfdrive.lane_marking.state import OnnxLaneMarkingReader
+    return OnnxLaneMarkingReader()
   except Exception as error:
     if args.stdout:
       print(f"navdy lane classifier unavailable: {error}", flush=True)

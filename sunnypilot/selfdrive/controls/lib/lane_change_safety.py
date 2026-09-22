@@ -232,6 +232,10 @@ class LaneChangeSafetyGate:
       # or occlusion cannot make a prohibited lane change available.
       self.boundary_blocked = False
       self.boundary_block_reason = ""
+    else:
+      # CPU-limited ONNX results must not make an unknown boundary permissive.
+      self.boundary_blocked = True
+      self.boundary_block_reason = "laneMarkingUnknown"
 
     self.target_width_m = target_lane_space_width(model_v2, direction)
     self.road_edge_width_m = target_road_edge_space_width(model_v2, direction)
@@ -248,10 +252,10 @@ class LaneChangeSafetyGate:
     self.blocked = self.boundary_blocked or self.narrow_blocked or self.geometry_unverified or narrow_now
     if self.narrow_blocked or narrow_now:
       self.block_reason = "narrowTargetLane"
-    elif self.boundary_blocked:
-      self.block_reason = self.boundary_block_reason
     elif self.geometry_unverified:
       self.block_reason = "targetLaneUnknown"
+    elif self.boundary_blocked:
+      self.block_reason = self.boundary_block_reason
     else:
       self.block_reason = ""
 

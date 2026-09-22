@@ -67,8 +67,10 @@ def test_confident_close_road_edge_blocks_with_unreliable_inner_lane_line():
   assert gate.block_reason == "narrowTargetLane"
 
 
-def test_distant_road_edge_does_not_block_a_clear_target_lane():
-  gate = LaneChangeSafetyGate()
+def test_distant_road_edge_does_not_block_a_clear_target_lane(tmp_path):
+  state = tmp_path / "markings.json"
+  write_markings(state)
+  gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
   assert not gate.update(Direction.right, model(right_edge=5.2))
 
 
@@ -151,9 +153,10 @@ def test_road_edge_blocks_before_nudgeless_lane_change_can_start(tmp_path):
   assert gate.block_reason == "narrowTargetLane"
 
 
-def test_stale_centerline_state_is_ignored(tmp_path):
+def test_stale_centerline_state_fails_closed(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, left="centerSolid", updated_at=time.monotonic() - 10.0)
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
-  assert not gate.update(Direction.left, model())
+  assert gate.update(Direction.left, model())
+  assert gate.block_reason == "laneMarkingUnknown"

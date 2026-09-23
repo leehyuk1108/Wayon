@@ -14,7 +14,7 @@ from cereal import log
 
 LaneChangeDirection = log.LaneChangeDirection
 
-LANE_MARKING_STATE_PATH = "/dev/shm/wayon_onnx_vision.json"
+LANE_MARKING_STATE_PATH = "/dev/shm/navdy_lane_marking_state.json"
 LANE_MARKING_MAX_AGE_SEC = 1.25
 LANE_MARKING_READ_INTERVAL_SEC = 0.1
 LANE_PROB_MIN = 0.55
@@ -23,7 +23,8 @@ ROAD_EDGE_CENTER_CLEARANCE_MIN_M = 3.5
 TARGET_LANE_MIN_WIDTH_M = 2.40
 TARGET_LANE_WIDTH_CONFIRM_FRAMES = 5
 WIDTH_SAMPLE_DISTANCES_M = (8.0, 15.0, 25.0)
-BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid"))
+BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid", "centerDashed"))
+PERMISSIVE_BOUNDARY_TYPES = frozenset(("dashed",))
 
 
 def _finite(value: Any, default: float = 0.0) -> float:
@@ -172,7 +173,7 @@ class LaneBoundaryStateReader:
     try:
       with open(self.path, encoding="utf-8") as state_file:
         data = json.load(state_file)
-      updated_at = _finite(data.get("laneUpdatedAtMonotonic"), -math.inf)
+      updated_at = _finite(data.get("updatedAtMonotonic"), -math.inf)
       if updated_at <= 0.0 or now < updated_at or now - updated_at > LANE_MARKING_MAX_AGE_SEC:
         self.state = LaneBoundaryState()
         return self.state
@@ -224,10 +225,11 @@ class LaneChangeSafetyGate:
     boundary_type = self.boundary_reader.read().type_for_direction(direction)
     if boundary_type in BLOCKING_BOUNDARY_TYPES:
       self.boundary_blocked = True
-      self.boundary_block_reason = "solidLine"
-    else:
-      # Lane type only blocks a confirmed solid boundary. Unknown, stale, or
-      # dashed classifications leave the existing geometry checks in charge.
+      self.boundary_block_reason = "solidLine" if boundary_type == "solid" else "centerline"
+    elif boundary_type in PERMISSIVE_BOUNDARY_TYPES:
+      # Only an explicit dashed-line classification releases a previous block.
+      # Keep the last decision through brief unknown/stale samples so a shadow
+      # or occlusion cannot make a prohibited lane change available.
       self.boundary_blocked = False
       self.boundary_block_reason = ""
 
@@ -246,10 +248,10 @@ class LaneChangeSafetyGate:
     self.blocked = self.boundary_blocked or self.narrow_blocked or self.geometry_unverified or narrow_now
     if self.narrow_blocked or narrow_now:
       self.block_reason = "narrowTargetLane"
-    elif self.geometry_unverified:
-      self.block_reason = "targetLaneUnknown"
     elif self.boundary_blocked:
       self.block_reason = self.boundary_block_reason
+    elif self.geometry_unverified:
+      self.block_reason = "targetLaneUnknown"
     else:
       self.block_reason = ""
 

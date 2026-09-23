@@ -23,8 +23,7 @@ ROAD_EDGE_CENTER_CLEARANCE_MIN_M = 3.5
 TARGET_LANE_MIN_WIDTH_M = 2.40
 TARGET_LANE_WIDTH_CONFIRM_FRAMES = 5
 WIDTH_SAMPLE_DISTANCES_M = (8.0, 15.0, 25.0)
-BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid", "centerDashed"))
-PERMISSIVE_BOUNDARY_TYPES = frozenset(("dashed",))
+BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid"))
 
 
 def _finite(value: Any, default: float = 0.0) -> float:
@@ -225,17 +224,12 @@ class LaneChangeSafetyGate:
     boundary_type = self.boundary_reader.read().type_for_direction(direction)
     if boundary_type in BLOCKING_BOUNDARY_TYPES:
       self.boundary_blocked = True
-      self.boundary_block_reason = "solidLine" if boundary_type == "solid" else "centerline"
-    elif boundary_type in PERMISSIVE_BOUNDARY_TYPES:
-      # Only an explicit dashed-line classification releases a previous block.
-      # Keep the last decision through brief unknown/stale samples so a shadow
-      # or occlusion cannot make a prohibited lane change available.
+      self.boundary_block_reason = "solidLine"
+    else:
+      # Lane type only blocks a confirmed solid boundary. Unknown, stale, or
+      # dashed classifications leave the existing geometry checks in charge.
       self.boundary_blocked = False
       self.boundary_block_reason = ""
-    else:
-      # CPU-limited ONNX results must not make an unknown boundary permissive.
-      self.boundary_blocked = True
-      self.boundary_block_reason = "laneMarkingUnknown"
 
     self.target_width_m = target_lane_space_width(model_v2, direction)
     self.road_edge_width_m = target_road_edge_space_width(model_v2, direction)

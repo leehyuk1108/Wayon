@@ -90,17 +90,13 @@ def test_unreliable_geometry_does_not_report_a_width():
   assert gate.block_reason == "targetLaneUnknown"
 
 
-def test_centerline_block_releases_on_explicit_dashed_line(tmp_path):
+def test_centerline_block_releases_when_classification_becomes_unknown(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, left="centerSolid")
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
   assert gate.update(Direction.left, model())
   write_markings(state, left="unknown")
-  gate.boundary_reader.last_read_at = 0.0
-  assert gate.update(Direction.left, model())
-
-  write_markings(state, left="dashed")
   gate.boundary_reader.last_read_at = 0.0
   assert not gate.update(Direction.left, model())
   assert gate.block_reason == ""
@@ -120,14 +116,13 @@ def test_white_solid_line_blocks_and_releases_on_dashed_line(tmp_path):
   assert gate.block_reason == ""
 
 
-def test_dashed_centerline_also_blocks_requested_direction(tmp_path):
+def test_dashed_centerline_does_not_block_requested_direction(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, right="centerDashed")
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
-  assert gate.update(Direction.right, model())
-  assert gate.block_reason == "centerline"
-  gate.reset()
+  assert not gate.update(Direction.right, model())
+  assert gate.block_reason == ""
   assert not gate.update(Direction.left, model())
 
 
@@ -159,10 +154,10 @@ def test_road_edge_blocks_before_nudgeless_lane_change_can_start(tmp_path):
   assert gate.block_reason == "narrowTargetLane"
 
 
-def test_stale_centerline_state_fails_closed(tmp_path):
+def test_stale_centerline_state_leaves_geometry_logic_in_charge(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, left="centerSolid", updated_at=time.monotonic() - 10.0)
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
-  assert gate.update(Direction.left, model())
-  assert gate.block_reason == "laneMarkingUnknown"
+  assert not gate.update(Direction.left, model())
+  assert gate.block_reason == ""

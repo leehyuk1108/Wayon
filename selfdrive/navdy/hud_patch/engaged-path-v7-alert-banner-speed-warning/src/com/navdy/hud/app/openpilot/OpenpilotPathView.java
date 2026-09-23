@@ -325,7 +325,7 @@ public final class OpenpilotPathView extends View implements Runnable {
 
   private void drawLane(
       Canvas canvas, float[] points, float probability, float risk, String type) {
-    if (!validLine(points) || probability < 0.05f || type == null || "unknown".equals(type)) {
+    if (!validLine(points) || probability < 0.05f) {
       return;
     }
     int filterIndex = Math.min(LANE_RISK_FILTER_STEPS,

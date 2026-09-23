@@ -202,6 +202,17 @@ def boolean_runs(mask: np.ndarray) -> list[tuple[bool, int]]:
   return runs
 
 
+def lane_contrast_peak(column_luma: np.ndarray) -> tuple[int, float]:
+  values = np.asarray(column_luma, dtype=np.float32)
+  peak = int(np.argmax(values))
+  background = float(np.median(values))
+  contrast_floor = float(np.interp(background, [24.0, 180.0], [5.0, 12.0]))
+  contrast_span = float(np.interp(background, [24.0, 180.0], [18.0, 35.0]))
+  strength = clamp01(
+    (float(values[peak]) - background - contrast_floor) / contrast_span)
+  return peak, strength
+
+
 def classify_yellow_marking(yellow_scores: np.ndarray) -> tuple[str, float]:
   yellow_scores = np.asarray(yellow_scores, dtype=np.float32)
   if yellow_scores.size < 12:
@@ -324,8 +335,10 @@ def sample_profile(frame: Any, line: LaneModelLine,
     search_half = int(round(np.interp(distance, [SAMPLE_START_M, SAMPLE_END_M], [16.0, 5.0])))
     left = max(0, center_x - search_half)
     right = min(width, center_x + search_half + 1)
-    top = max(0, center_y - 1)
-    bottom = min(height, center_y + 2)
+    vertical_radius = int(round(np.interp(
+      distance, [SAMPLE_START_M, SAMPLE_END_M], [3.0, 2.0])))
+    top = max(0, center_y - vertical_radius)
+    bottom = min(height, center_y + vertical_radius + 1)
     patch = y_plane[top:bottom, left:right]
     if patch.size < 6:
       continue
@@ -338,13 +351,23 @@ def sample_profile(frame: Any, line: LaneModelLine,
       column_luma = np.partition(patch_float, -2, axis=0)[-2]
     else:
       column_luma = patch_float[0]
-    patch_x = int(np.argmax(column_luma))
-    max_luma = float(column_luma[patch_x])
-    background = float(np.median(column_luma))
-    contrast_floor = float(np.interp(background, [24.0, 180.0], [5.0, 12.0]))
-    contrast_span = float(np.interp(background, [24.0, 180.0], [18.0, 35.0]))
-    strengths[index] = clamp01(
-      (max_luma - background - contrast_floor) / contrast_span)
+    center_top = max(0, center_y - 1)
+    center_bottom = min(height, center_y + 2)
+    center_patch = y_plane[center_top:center_bottom, left:right].astype(np.float32)
+    if center_patch.shape[0] >= 2:
+      center_luma = np.partition(center_patch, -2, axis=0)[-2]
+    else:
+      center_luma = center_patch[0]
+    narrow_x, narrow_strength = lane_contrast_peak(center_luma)
+    wide_x, wide_strength = lane_contrast_peak(column_luma)
+    # Keep the original narrow result whenever it has credible evidence. The
+    # wider search only recovers small vertical projection errors.
+    if narrow_strength >= 0.30 or wide_strength <= narrow_strength:
+      patch_x = narrow_x
+      strengths[index] = narrow_strength
+    else:
+      patch_x = wide_x
+      strengths[index] = wide_strength
     peak_offsets[index] = float(left + patch_x - center_x)
     search_halves[index] = float(search_half)
 
@@ -358,7 +381,7 @@ def sample_profile(frame: Any, line: LaneModelLine,
     yellow_bottom = min(height, center_y + 3)
     background_pair_left = yellow_left & ~1
     background_pair_right = min(width - 2, (yellow_right - 1) & ~1)
-    paint_x = left + patch_x
+    paint_x = left + narrow_x
     ridge_left = max(yellow_left, paint_x - YELLOW_RIDGE_RADIUS_PX)
     ridge_right = min(yellow_right - 1, paint_x + YELLOW_RIDGE_RADIUS_PX)
     ridge_pair_left = ridge_left & ~1

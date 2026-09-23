@@ -34,7 +34,7 @@ def request_for_lines(frame_id: int = -1):
   return classifier.capture_request(model, calibration)
 
 
-def synthetic_nv12_frame(request, lane_patterns, yellow_lanes):
+def synthetic_nv12_frame(request, lane_patterns, yellow_lanes, vertical_shift=0):
   width, height, stride = 1344, 760, 1344
   uv_offset = stride * height
   raw = np.empty(uv_offset + stride * (height // 2), dtype=np.uint8)
@@ -50,7 +50,7 @@ def synthetic_nv12_frame(request, lane_patterns, yellow_lanes):
       if not painted:
         continue
       center_x = int(round(float(pixel[0])))
-      center_y = int(round(float(pixel[1])))
+      center_y = int(round(float(pixel[1]))) + vertical_shift
       for y in range(max(0, center_y - 1), min(height, center_y + 2)):
         for x in range(max(0, center_x - 2), min(width, center_x + 3)):
           raw[y * stride + x] = 225
@@ -320,6 +320,23 @@ def test_local_contrast_keeps_markings_across_dark_and_bright_exposure():
     profiles = classifier.classify_frame(request, frame)
 
     assert all(profile.pattern == "solid" for profile in profiles)
+
+
+def test_frame_classifier_recovers_small_vertical_projection_error():
+  request = request_for_lines()
+  assert request is not None
+  frame = synthetic_nv12_frame(
+    request,
+    lane_patterns=("dashed", "solid", "solid", "dashed"),
+    yellow_lanes=set(),
+    vertical_shift=2,
+  )
+
+  profiles = classifier.classify_frame(request, frame)
+
+  assert [profile.pattern for profile in profiles] == [
+    "dashed", "solid", "solid", "dashed",
+  ]
 
 
 def test_lane_request_rejects_stale_or_older_camera_frames():

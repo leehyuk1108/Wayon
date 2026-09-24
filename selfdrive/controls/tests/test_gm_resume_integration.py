@@ -221,17 +221,33 @@ def test_unacked_follow_brakes_for_slowing_lead_before_stop_flag(chain):
   assert any(brake > 0 for _, brake in chain.brakes(slowing))
 
 
-def test_valid_pcm_ack_at_zero_prevents_timeout_failure(chain):
+def test_active_pcm_at_zero_times_out_and_restores_hold(chain):
   chain.run(110)
   chain.depart()
   chain.run(60)
-  # This simulates a received ACTIVE state; CAN output itself never supplies ACK.
+  # ACTIVE without wheel movement was observed briefly before the PCM relatched.
   chain.cs.out.cruiseState.standstill = False
-  chain.run(220)
+  chain.run(25)
   assert chain.cs.out.standstill and chain.cs.out.vEgo == 0
-  assert chain.loc.sng_resume_succeeded
-  assert not chain.loc.sng_resume_failed
-  assert not chain.trace[-1].hold
+  assert not chain.loc.sng_resume_succeeded
+  chain.run(200)
+  assert chain.loc.sng_resume_failed
+  assert chain.trace[-1].hold
+
+
+def test_rolling_stop_cancels_before_auto_hold(chain):
+  chain.loc.long_control_state = LongCtrlState.stopping
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.3
+  chain.cs.out.cruiseState.standstill = True
+  chain.depart()
+
+  entry = chain.step()
+
+  assert entry.state == LongCtrlState.starting
+  assert not entry.resume
+  assert not entry.hold
+  assert chain.ci.CC.apply_brake == 0
 
 
 def test_screen_request_without_lead_retries_only_after_another_tap(chain):

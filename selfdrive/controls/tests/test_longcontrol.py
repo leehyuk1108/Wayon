@@ -94,6 +94,33 @@ def test_gm_hold_blocks_launch_without_confirmed_lead_departure():
   assert next_state == LongCtrlState.starting
 
 
+@pytest.mark.parametrize("speed", [0.9, 0.3, 0.06])
+def test_gm_rolling_stop_restarts_when_planner_clears(speed):
+  CP = car.CarParams.new_message(brand="gm", autoResumeSng=True, startingState=True,
+                                 vEgoStopping=0.5, vEgoStarting=0.25)
+  CP_SP = custom.CarParamsSP.new_message()
+
+  next_state = long_control_state_trans(
+    CP, CP_SP, True, LongCtrlState.stopping, v_ego=speed,
+    should_stop=False, brake_pressed=False, cruise_standstill=True,
+    vehicle_standstill=False,
+  )
+  assert next_state == LongCtrlState.starting
+
+
+def test_gm_physical_stop_remains_latched_without_resume():
+  CP = car.CarParams.new_message(brand="gm", autoResumeSng=True, startingState=True,
+                                 vEgoStopping=0.5, vEgoStarting=0.25)
+  CP_SP = custom.CarParamsSP.new_message()
+
+  next_state = long_control_state_trans(
+    CP, CP_SP, True, LongCtrlState.stopping, v_ego=0.0,
+    should_stop=False, brake_pressed=False, cruise_standstill=False,
+    vehicle_standstill=True,
+  )
+  assert next_state == LongCtrlState.stopping
+
+
 def sng_controller():
   controller = LongControl.__new__(LongControl)
   controller.CP = SimpleNamespace(brand="gm", autoResumeSng=True, vEgoStarting=0.5)
@@ -244,25 +271,17 @@ def test_sng_success_requires_consecutive_pcm_active_ack():
   arm_sng(controller, CS, plan, radar, now=20.0)
 
 
-def test_pcm_active_ack_is_accepted_at_zero_speed_but_cannot_rearm_same_stop():
+def test_pcm_active_at_zero_speed_is_not_a_resume_ack():
   controller = sng_controller()
   CS, plan, radar = sng_inputs()
-  CS.vEgo = 0.8
-  CS.standstill = False
-  CS.cruiseState.standstill = False
-  assert not controller.update_sng_resume(True, CS, plan, radar, now=9.0)
-  CS.vEgo = 0.0
-  CS.standstill = True
-  CS.cruiseState.standstill = True
   arm_sng(controller, CS, plan, radar)
   CS.cruiseState.standstill = False
   for _ in range(SNG_STARTED_CONFIRM_FRAMES):
-    controller.update_sng_resume(True, CS, plan, radar, now=10.1)
-  assert controller.sng_resume_succeeded
+    assert controller.update_sng_resume(True, CS, plan, radar, now=10.1)
+  assert not controller.sng_resume_succeeded
   assert not controller.sng_resume_moved
-  CS.cruiseState.standstill = True
-  for _ in range(SNG_STOP_CONFIRM_FRAMES + SNG_LEAD_CONFIRM_FRAMES):
-    assert not controller.update_sng_resume(True, CS, plan, radar, now=11.0)
+  assert not controller.update_sng_resume(True, CS, plan, radar, now=12.0)
+  assert controller.sng_resume_failed
 
 
 @pytest.mark.parametrize("state", [LongCtrlState.starting, LongCtrlState.pid])

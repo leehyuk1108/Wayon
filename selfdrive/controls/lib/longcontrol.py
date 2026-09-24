@@ -62,18 +62,25 @@ def gm_cruise_active(CS) -> bool:
   return CS.canValid and CS.cruiseState.enabled and not CS.cruiseState.standstill and not CS.accFaulted
 
 
+def gm_resume_motion_confirmed(CS) -> bool:
+  motion_speed = max(abs(CS.vEgoRaw), abs(CS.vEgo))
+  return gm_cruise_active(CS) and not CS.standstill and motion_speed >= SNG_MANUAL_CREEP_MIN_SPEED
+
+
 def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
                              should_stop, brake_pressed, cruise_standstill,
-                             sng_resume=False, unacked_follow=False):
+                             sng_resume=False, unacked_follow=False, vehicle_standstill=None):
   # Gas Interceptor
   cruise_standstill = cruise_standstill and not CP_SP.enableGasInterceptor
 
   stopping_condition = should_stop
-  # Traverse keeps the ACC full-stop latch clear and uses GM hydraulic hold.
-  # Treat a physically stopped GM Hold as latched until the existing lead
-  # departure detector explicitly opens the launch window.
-  gm_hold_standstill = use_gm_auto_hold_sng(CP) and v_ego <= max(CP.vEgoStopping, 0.05)
-  launch_latched = cruise_standstill or gm_hold_standstill
+  # The Traverse can report PCM standstill before the wheels have stopped. Do
+  # not turn a rolling stop into Auto Hold after the planner clears shouldStop.
+  if use_gm_auto_hold_sng(CP):
+    physically_stopped = abs(v_ego) <= 0.05 if vehicle_standstill is None else vehicle_standstill
+    launch_latched = physically_stopped
+  else:
+    launch_latched = cruise_standstill
   starting_condition = (not should_stop and
                         (not launch_latched or sng_resume or unacked_follow) and
                         not brake_pressed)
@@ -275,7 +282,7 @@ class LongControl:
       if CS.aEgo > 0.2 and CS.vEgoRaw > 0.05:
         self.log_gm_auto_resume("positive_accel_proxy", accel=float(CS.aEgo), speed=float(CS.vEgo),
                                 raw_speed=float(CS.vEgoRaw))
-      if gm_cruise_active(CS) and CS.vEgo > self.CP.vEgoStarting:
+      if gm_resume_motion_confirmed(CS):
         self.sng_resume_moved = True
         self.log_gm_auto_resume("vehicle_moving", speed=float(CS.vEgo), raw_speed=float(CS.vEgoRaw),
                                 accel=float(CS.aEgo))
@@ -298,7 +305,7 @@ class LongControl:
           self.log_gm_auto_resume("unacked_follow_stopped")
           self.reset_sng_resume()
         return False
-      self.sng_started_frames = self.sng_started_frames + 1 if gm_cruise_active(CS) else 0
+      self.sng_started_frames = self.sng_started_frames + 1 if gm_resume_motion_confirmed(CS) else 0
       if self.sng_started_frames >= SNG_STARTED_CONFIRM_FRAMES:
         self.log_gm_auto_resume("pcm_active_confirmed", speed=float(CS.vEgo), raw_speed=float(CS.vEgoRaw))
         self.reset_sng_resume(clear_attempt=False)
@@ -379,11 +386,10 @@ class LongControl:
         self.fail_sng_resume(reason)
         return False
       self.sng_resume_frames += 1
-      # An already ACTIVE PCM cannot acknowledge a new hold-only request.
-      # Require observed motion for that path; wheel creep alone still cannot
-      # acknowledge a request that began with PCM standstill latched.
-      started = self.sng_ui_phase != "release" and not self.sng_ui_creep and gm_cruise_active(CS) and (not self.sng_ui_hold_release or
-                                         (not CS.standstill and CS.vEgo > self.CP.vEgoStarting))
+      # A transient PCM ACTIVE at zero speed can relatch without departure.
+      # Require observed wheel motion before accepting any resume request.
+      started = (self.sng_ui_phase != "release" and not self.sng_ui_creep and
+                 gm_resume_motion_confirmed(CS))
       self.sng_started_frames = self.sng_started_frames + 1 if started else 0
       if self.sng_started_frames >= SNG_STARTED_CONFIRM_FRAMES:
         if self.sng_ui_resume:
@@ -467,7 +473,8 @@ class LongControl:
 
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop or sng_launch_failed, CS.brakePressed,
-                                                       CS.cruiseState.standstill, sng_resume, self.sng_unacked_follow)
+                                                       CS.cruiseState.standstill, sng_resume, self.sng_unacked_follow,
+                                                       CS.standstill)
     if self.sng_ui_phase is not None:
       self.long_control_state = LongCtrlState.starting
     if self.long_control_state == LongCtrlState.off:

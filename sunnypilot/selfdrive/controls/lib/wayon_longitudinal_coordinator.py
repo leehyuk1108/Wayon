@@ -416,11 +416,12 @@ class QueueCreepDecision:
 
 
 class QueueCreepController:
-  """Keep a rolling queue approach below 1 km/h until the lead gap is consumed."""
+  """Keep a rolling queue approach at 0.4-1 km/h until the lead is 3 m away."""
 
-  TARGET_GAP = 5.0
-  MIN_LEAD_RESERVE = 4.2
+  TARGET_GAP = 3.0
+  MIN_LEAD_RESERVE = 3.0
   MAX_LEAD_DISTANCE = 15.0
+  MIN_TARGET_SPEED = 0.4 * CV.KPH_TO_MS
   MAX_TARGET_SPEED = 1.0 * CV.KPH_TO_MS
   MAX_ENTRY_SPEED = 2.0 * CV.KPH_TO_MS
   MAX_TRACKING_SPEED = 10.0 * CV.KPH_TO_MS
@@ -504,7 +505,7 @@ class QueueCreepController:
 
     target_speed = float(np.clip(
       self.SPEED_GAIN * (d_rel - self.TARGET_GAP),
-      0.0,
+      self.MIN_TARGET_SPEED,
       self.MAX_TARGET_SPEED,
     ))
     return QueueCreepDecision(True, target_speed)

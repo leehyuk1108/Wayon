@@ -161,7 +161,7 @@ def test_lane_change_safety_gate_blocks_start_but_not_an_active_maneuver():
   assert dh.lane_change_state == log.LaneChangeState.preLaneChange
 
   dh.update(carstate, True, 1.0, object())
-  assert gate.update_calls == 1
+  assert gate.update_calls == 2
   assert dh.lane_change_state == log.LaneChangeState.preLaneChange
 
   gate.blocked = False
@@ -240,7 +240,7 @@ def test_stale_signal_prompts_immediately_but_never_auto_starts_on_recovery():
   assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
 
 
-def test_unknown_target_lane_blocks_nudgeless_start():
+def test_unknown_target_lane_preserves_original_nudgeless_behavior():
   dh = DesireHelper()
   dh.alc.update_params = lambda: None
   dh.lane_turn_controller.update_params = lambda: None
@@ -251,9 +251,9 @@ def test_unknown_target_lane_blocks_nudgeless_start():
   for _ in range(5):
     dh.update(carstate, True, 1.0, None)
 
-  assert dh.lane_change_state == log.LaneChangeState.preLaneChange
-  assert dh.lane_change_safety.block_reason == "targetLaneUnknown"
-  assert not dh.lane_change_auto_armed
+  assert dh.lane_change_state == log.LaneChangeState.laneChangeStarting
+  assert dh.lane_change_safety.geometry_unverified
+  assert dh.lane_change_safety.block_reason == ""
 
 
 def test_held_signal_recovers_with_nudge_without_repeating_auto_change():

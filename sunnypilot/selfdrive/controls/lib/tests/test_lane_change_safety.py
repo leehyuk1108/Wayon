@@ -8,6 +8,7 @@ from cereal import log
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_safety import (
   LaneBoundaryStateReader,
   LaneChangeSafetyGate,
+  ROAD_EDGE_CONFIRM_FRAMES,
   TARGET_LANE_WIDTH_CONFIRM_FRAMES,
   road_edge_center_clearance,
   target_lane_space_width,
@@ -63,6 +64,8 @@ def test_confident_close_road_edge_blocks_with_unreliable_inner_lane_line():
   assert road_edge_center_clearance(m, Direction.right) == pytest.approx(2.0)
 
   gate = LaneChangeSafetyGate()
+  for _ in range(ROAD_EDGE_CONFIRM_FRAMES - 1):
+    assert not gate.update(Direction.right, m)
   assert gate.update(Direction.right, m)
   assert gate.block_reason == "narrowTargetLane"
 
@@ -72,27 +75,24 @@ def test_distant_road_edge_does_not_block_a_clear_target_lane():
   assert not gate.update(Direction.right, model(right_edge=5.2))
 
 
-def test_unreliable_geometry_does_not_report_a_width():
+def test_unreliable_geometry_does_not_block_without_positive_evidence():
   m = model(outer_prob=0.1, edge_std=1.0)
   assert target_lane_space_width(m, Direction.left) is None
   assert target_lane_space_width(m, Direction.right) is None
 
   gate = LaneChangeSafetyGate()
-  assert gate.update(Direction.right, m)
-  assert gate.block_reason == "targetLaneUnknown"
+  assert not gate.update(Direction.right, m)
+  assert gate.geometry_unverified
+  assert gate.block_reason == ""
 
 
-def test_centerline_block_releases_on_explicit_dashed_line(tmp_path):
+def test_centerline_block_releases_when_classification_becomes_unknown(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, left="centerSolid")
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
   assert gate.update(Direction.left, model())
   write_markings(state, left="unknown")
-  gate.boundary_reader.last_read_at = 0.0
-  assert gate.update(Direction.left, model())
-
-  write_markings(state, left="dashed")
   gate.boundary_reader.last_read_at = 0.0
   assert not gate.update(Direction.left, model())
   assert gate.block_reason == ""
@@ -112,25 +112,25 @@ def test_white_solid_line_blocks_and_releases_on_dashed_line(tmp_path):
   assert gate.block_reason == ""
 
 
-def test_dashed_centerline_also_blocks_requested_direction(tmp_path):
+def test_dashed_centerline_matches_hud_and_does_not_block(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state, right="centerDashed")
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
 
-  assert gate.update(Direction.right, model())
-  assert gate.block_reason == "centerline"
+  assert not gate.update(Direction.right, model())
+  assert gate.block_reason == ""
   gate.reset()
   assert not gate.update(Direction.left, model())
 
 
-def test_narrow_target_blocks_immediately_and_latches_after_confirmation(tmp_path):
+def test_narrow_target_requires_confirmation_and_then_latches(tmp_path):
   state = tmp_path / "markings.json"
   write_markings(state)
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
   narrow = model(right_width=2.39)
 
   for _ in range(TARGET_LANE_WIDTH_CONFIRM_FRAMES - 1):
-    assert gate.update(Direction.right, narrow)
+    assert not gate.update(Direction.right, narrow)
     assert not gate.narrow_blocked
   assert gate.update(Direction.right, narrow)
   assert gate.narrow_blocked
@@ -147,8 +147,31 @@ def test_road_edge_blocks_before_nudgeless_lane_change_can_start(tmp_path):
   gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
   direct_road_edge = model(outer_prob=0.01, right_edge=2.2, edge_std=0.38)
 
+  for _ in range(ROAD_EDGE_CONFIRM_FRAMES - 1):
+    assert not gate.update(Direction.right, direct_road_edge)
   assert gate.update(Direction.right, direct_road_edge)
   assert gate.block_reason == "narrowTargetLane"
+
+
+def test_single_road_edge_spike_does_not_block(tmp_path):
+  state = tmp_path / "markings.json"
+  write_markings(state)
+  gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
+
+  assert not gate.update(Direction.right, model(outer_prob=0.01, right_edge=2.2, edge_std=0.38))
+  assert not gate.update(Direction.right, model())
+  assert not gate.narrow_blocked
+
+
+def test_dashed_variants_and_unknown_never_flicker_into_blocked(tmp_path):
+  state = tmp_path / "markings.json"
+  gate = LaneChangeSafetyGate(LaneBoundaryStateReader(str(state)))
+
+  for lane_type in ("dashed", "centerDashed", "unknown", "dashed", "centerDashed"):
+    write_markings(state, right=lane_type)
+    gate.boundary_reader.last_read_at = 0.0
+    assert not gate.update(Direction.right, model())
+    assert gate.block_reason == ""
 
 
 def test_stale_centerline_state_is_ignored(tmp_path):

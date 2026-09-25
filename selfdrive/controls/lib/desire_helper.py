@@ -71,6 +71,12 @@ class DesireHelper:
       (carstate.steeringTorque > 0 and blinker_direction == LaneChangeDirection.left) or
       (carstate.steeringTorque < 0 and blinker_direction == LaneChangeDirection.right)
     )
+    lane_change_blocked = self.lane_change_safety.blocked
+    if lateral_active and one_blinker and not below_lane_change_speed and \
+       self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
+      # Observe the requested side on the first blinker frame. This gives the
+      # geometry gate two consecutive model frames before a nudge can start.
+      lane_change_blocked = self.lane_change_safety.update(blinker_direction, model_v2)
     if input_stale:
       self.lane_change_auto_armed = False
 
@@ -114,7 +120,6 @@ class DesireHelper:
                               (carstate.rightBlindspot and self.lane_change_direction == LaneChangeDirection.right))
 
         self.alc.update_lane_change(blindspot_detected, carstate.brakePressed)
-        lane_change_blocked = self.lane_change_safety.update(self.lane_change_direction, model_v2)
         if lane_change_blocked:
           self.lane_change_auto_armed = False
         if input_stale:

@@ -21,10 +21,10 @@ LANE_PROB_MIN = 0.55
 ROAD_EDGE_STD_MAX = 0.65
 ROAD_EDGE_CENTER_CLEARANCE_MIN_M = 3.5
 TARGET_LANE_MIN_WIDTH_M = 2.40
-TARGET_LANE_WIDTH_CONFIRM_FRAMES = 5
+TARGET_LANE_WIDTH_CONFIRM_FRAMES = 2
+ROAD_EDGE_CONFIRM_FRAMES = 2
 WIDTH_SAMPLE_DISTANCES_M = (8.0, 15.0, 25.0)
-BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid", "centerDashed"))
-PERMISSIVE_BOUNDARY_TYPES = frozenset(("dashed",))
+BLOCKING_BOUNDARY_TYPES = frozenset(("solid", "centerSolid"))
 
 
 def _finite(value: Any, default: float = 0.0) -> float:
@@ -191,6 +191,7 @@ class LaneChangeSafetyGate:
     self.boundary_reader = boundary_reader or LaneBoundaryStateReader()
     self.direction = LaneChangeDirection.none
     self.narrow_frames = 0
+    self.road_edge_frames = 0
     self.boundary_blocked = False
     self.boundary_block_reason = ""
     self.narrow_blocked = False
@@ -204,6 +205,7 @@ class LaneChangeSafetyGate:
   def reset(self) -> None:
     self.direction = LaneChangeDirection.none
     self.narrow_frames = 0
+    self.road_edge_frames = 0
     self.boundary_blocked = False
     self.boundary_block_reason = ""
     self.narrow_blocked = False
@@ -225,11 +227,10 @@ class LaneChangeSafetyGate:
     boundary_type = self.boundary_reader.read().type_for_direction(direction)
     if boundary_type in BLOCKING_BOUNDARY_TYPES:
       self.boundary_blocked = True
-      self.boundary_block_reason = "solidLine" if boundary_type == "solid" else "centerline"
-    elif boundary_type in PERMISSIVE_BOUNDARY_TYPES:
-      # Only an explicit dashed-line classification releases a previous block.
-      # Keep the last decision through brief unknown/stale samples so a shadow
-      # or occlusion cannot make a prohibited lane change available.
+      self.boundary_block_reason = "solidLine"
+    else:
+      # centerDashed is still a dashed boundary on the HUD. Unknown and stale
+      # lane-marking samples also leave the model geometry checks in charge.
       self.boundary_blocked = False
       self.boundary_block_reason = ""
 
@@ -242,16 +243,17 @@ class LaneChangeSafetyGate:
     road_edge_narrow = self.road_edge_width_m is not None and self.road_edge_width_m < TARGET_LANE_MIN_WIDTH_M
     road_edge_close = (self.road_edge_clearance_m is not None and
                        self.road_edge_clearance_m < ROAD_EDGE_CENTER_CLEARANCE_MIN_M)
-    if road_edge_narrow or road_edge_close or self.narrow_frames >= TARGET_LANE_WIDTH_CONFIRM_FRAMES:
+    road_edge_now = road_edge_narrow or road_edge_close
+    self.road_edge_frames = self.road_edge_frames + 1 if road_edge_now else 0
+    if self.road_edge_frames >= ROAD_EDGE_CONFIRM_FRAMES or \
+       self.narrow_frames >= TARGET_LANE_WIDTH_CONFIRM_FRAMES:
       self.narrow_blocked = True
 
-    self.blocked = self.boundary_blocked or self.narrow_blocked or self.geometry_unverified or narrow_now
-    if self.narrow_blocked or narrow_now:
+    self.blocked = self.boundary_blocked or self.narrow_blocked
+    if self.narrow_blocked:
       self.block_reason = "narrowTargetLane"
     elif self.boundary_blocked:
       self.block_reason = self.boundary_block_reason
-    elif self.geometry_unverified:
-      self.block_reason = "targetLaneUnknown"
     else:
       self.block_reason = ""
 

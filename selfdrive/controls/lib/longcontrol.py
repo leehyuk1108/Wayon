@@ -25,6 +25,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
   LeadTrendAnticipator,
   LongitudinalResponseLearner,
   LowSpeedStopController,
+  QueueCreepController,
   WayonCoastController,
   icbm_blocks_coast,
 )
@@ -46,6 +47,8 @@ SNG_MANUAL_RELEASE_TIMEOUT = 4.0
 SNG_MANUAL_CREEP_MIN_SPEED = 0.1
 SNG_MANUAL_CREEP_MAX_SPEED = 1.0
 SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
+QUEUE_CREEP_MAX_ACCEL = 0.15
+QUEUE_CREEP_MAX_DECEL = -0.55
 
 
 def use_gm_auto_hold_sng(CP) -> bool:
@@ -131,6 +134,7 @@ class LongControl:
     self.lead_approach_controller = LeadApproachController()
     self.lead_trend_anticipator = LeadTrendAnticipator()
     self.stop_controller = LowSpeedStopController()
+    self.queue_creep_controller = QueueCreepController()
     self.response_learner = LongitudinalResponseLearner(
       float(CP.longitudinalActuatorDelay), enabled=self.wayon_carrot_profile)
     self.last_output_accel = 0.0
@@ -456,7 +460,7 @@ class LongControl:
       self.gas_override_active = False
 
     a_target = long_plan.aTarget
-    should_stop = long_plan.shouldStop
+    planner_should_stop = long_plan.shouldStop
     if self.wayon_carrot_profile:
       accel_limits = (accel_limits[0], min(accel_limits[1], get_grade_adjusted_max_accel(CS.vEgo, pitch)))
     self.pid.neg_limit = accel_limits[0]
@@ -465,7 +469,16 @@ class LongControl:
     self.speed_pid.pos_limit = accel_limits[1]
     sng_resume = self.update_sng_resume(active, CS, long_plan, radar_state, manual_resume=manual_resume,
                                        manual_resume_sensors_valid=manual_resume_sensors_valid)
-    should_stop = should_stop and not self.sng_ui_creep
+    lead = radar_state.leadOne if radar_state is not None else None
+    queue_creep_enabled = bool(
+      self.wayon_carrot_profile and active and CS.canValid and not CS.brakePressed and not CS.gasPressed and
+      not CS.regenBraking and not CS.parkingBrake and
+      CS.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low) and
+      self.sng_ui_phase is None and not self.sng_resume_ready and not self.sng_unacked_follow
+    )
+    queue_creep = self.queue_creep_controller.update(
+      queue_creep_enabled, planner_should_stop, CS.vEgo, CS.vEgoRaw, CS.standstill, lead)
+    should_stop = planner_should_stop and not self.sng_ui_creep and not queue_creep.active
     sng_launch_failed = (self.CP.autoResumeSng and self.sng_resume_attempted and not sng_resume and
                          self.long_control_state == LongCtrlState.starting and CS.vEgo <= self.CP.vEgoStarting)
     if use_gm_auto_hold_sng(self.CP):
@@ -477,12 +490,17 @@ class LongControl:
                                                        CS.standstill)
     if self.sng_ui_phase is not None:
       self.long_control_state = LongCtrlState.starting
+    elif queue_creep.active:
+      # Remaining in stopping would force inactive regen and a brake floor in
+      # the GM output layer. PID is required to track the bounded creep speed.
+      self.long_control_state = LongCtrlState.pid
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       self.coast_controller.reset()
       self.lead_approach_controller.reset()
       self.lead_trend_anticipator.reset()
       self.stop_controller.reset()
+      self.queue_creep_controller.reset()
       output_accel = 0.
       self.accel_smoother.reset(CS.aEgo)
 
@@ -527,33 +545,42 @@ class LongControl:
 
     else:  # LongCtrlState.pid
       if self.speed_pid_enabled:
-        v_target_now = float(long_plan.speeds[0]) if len(long_plan.speeds) else CS.vEgo
+        v_target_now = (queue_creep.target_speed if queue_creep.active else
+                        float(long_plan.speeds[0]) if len(long_plan.speeds) else CS.vEgo)
         error = v_target_now - CS.vEgo
-        output_accel = self.speed_pid.update(error, speed=CS.vEgo, feedforward=a_target * self.speed_pid_kf)
+        if queue_creep.active:
+          output_accel = float(np.clip(error, QUEUE_CREEP_MAX_DECEL, QUEUE_CREEP_MAX_ACCEL))
+          self.speed_pid.reset()
+        else:
+          output_accel = self.speed_pid.update(error, speed=CS.vEgo, feedforward=a_target * self.speed_pid_kf)
         self.pid.reset()
-        lead = radar_state.leadOne if radar_state is not None else None
         cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None
         automatic_control = icbm_blocks_coast(icbm, CS.vEgo)
         lead_safety_cap = self.lead_approach_controller.update(
           active, CS.vEgo, lead, self.response_learner.response_delay(CS.vEgo))
-        regular_coast = self.coast_controller.update(active, CS.vEgo, v_target_now, output_accel, pitch,
-                                                     automatic_control, lead, cutin_risk,
-                                                     measured_accel=CS.aEgo,
-                                                     previous_accel=self.last_output_accel,
-                                                     lead_accel_cap=lead_safety_cap)
-        anticipatory_coast = self.lead_trend_anticipator.update(
+        if queue_creep.active:
+          self.coast_controller.reset()
+          self.lead_trend_anticipator.reset()
+        regular_coast = not queue_creep.active and self.coast_controller.update(
+          active, CS.vEgo, v_target_now, output_accel, pitch, automatic_control, lead, cutin_risk,
+          measured_accel=CS.aEgo, previous_accel=self.last_output_accel, lead_accel_cap=lead_safety_cap)
+        anticipatory_coast = not queue_creep.active and self.lead_trend_anticipator.update(
           active and self.wayon_carrot_profile, CS.vEgo, output_accel, CS.aEgo, lead)
         if regular_coast or anticipatory_coast:
           output_accel = 0.0
         else:
           output_accel = apply_uphill_accel_compensation(output_accel, CS.vEgo, v_target_now, pitch)
-        output_accel = self.response_learner.correction(output_accel, CS.vEgo)
+        if not queue_creep.active:
+          output_accel = self.response_learner.correction(output_accel, CS.vEgo)
         if lead_safety_cap is not None:
           output_accel = min(output_accel, lead_safety_cap)
+        smoother_limits = ((max(accel_limits[0], QUEUE_CREEP_MAX_DECEL),
+                            min(accel_limits[1], QUEUE_CREEP_MAX_ACCEL))
+                           if queue_creep.active else (accel_limits[0], accel_limits[1]))
         output_accel = self.accel_smoother.update(
           output_accel, CS.aEgo, CS.vEgo, v_target_now,
-          planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
-          lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]),
+          planned_jerk=0.0 if queue_creep.active else float(getattr(long_plan, "jTargetNow", 0.0)),
+          lead=lead, cutin_risk=cutin_risk, accel_limits=smoother_limits,
           throttle_release=anticipatory_coast, override_release=override_released)
       else:
         error = a_target - CS.aEgo

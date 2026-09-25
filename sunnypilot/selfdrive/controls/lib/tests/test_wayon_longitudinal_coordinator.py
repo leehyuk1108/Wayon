@@ -11,6 +11,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
   LeadTrendAnticipator,
   LongitudinalResponseLearner,
   LowSpeedStopController,
+  QueueCreepController,
   WayonCoastController,
   empty_response_profile,
   get_lead_accel_safety_cap,
@@ -362,6 +363,75 @@ def test_low_speed_stop_never_relaxes_close_or_unverified_stop():
   assert controller.phase == "safety"
   assert controller.update(-0.4, speed, -0.2, False, True, None) == -0.4
   assert controller.phase == "unverified"
+
+
+def queue_lead(d_rel=6.0, v_rel=-0.3, v_lead=0.0, track_id=11, radar=True):
+  return SimpleNamespace(status=True, radar=radar, radarTrackId=track_id,
+                         dRel=d_rel, vRel=v_rel, vLeadK=v_lead)
+
+
+def test_queue_creep_arms_only_after_stationary_radar_lead_confirmation():
+  controller = QueueCreepController()
+  measured_lead = queue_lead(d_rel=6.0)
+
+  for _ in range(controller.CONFIRM_FRAMES - 1):
+    assert not controller.update(True, True, 3.0 * CV.KPH_TO_MS, 3.0 * CV.KPH_TO_MS,
+                                 False, measured_lead).active
+  assert not controller.update(True, True, 3.0 * CV.KPH_TO_MS, 3.0 * CV.KPH_TO_MS,
+                               False, measured_lead).active
+
+  decision = controller.update(True, True, 1.5 * CV.KPH_TO_MS, 1.5 * CV.KPH_TO_MS,
+                               False, measured_lead)
+  assert decision.active
+  assert decision.target_speed == pytest.approx(1.0 * CV.KPH_TO_MS)
+
+
+def test_queue_creep_scales_speed_to_gap_and_hands_close_gap_back_to_stopping():
+  controller = QueueCreepController()
+  measured_lead = queue_lead(d_rel=5.5)
+  for _ in range(controller.CONFIRM_FRAMES):
+    controller.update(True, True, 1.0 * CV.KPH_TO_MS, 1.0 * CV.KPH_TO_MS, False, measured_lead)
+
+  decision = controller.update(True, True, 1.0 * CV.KPH_TO_MS, 1.0 * CV.KPH_TO_MS,
+                               False, measured_lead)
+  assert decision.active
+  assert decision.target_speed == pytest.approx(0.14)
+
+  measured_lead.dRel = controller.MIN_LEAD_RESERVE
+  assert not controller.update(True, True, 0.5 * CV.KPH_TO_MS, 0.5 * CV.KPH_TO_MS,
+                               False, measured_lead).active
+
+
+@pytest.mark.parametrize("override", [
+  {"standstill": True},
+  {"v_lead": 0.5},
+  {"radar": False},
+  {"v_rel": -0.9},
+])
+def test_queue_creep_fails_closed_for_stop_or_invalid_lead(override):
+  controller = QueueCreepController()
+  measured_lead = queue_lead(v_rel=override.get("v_rel", -0.3),
+                             v_lead=override.get("v_lead", 0.0),
+                             radar=override.get("radar", True))
+  for _ in range(controller.CONFIRM_FRAMES + 1):
+    decision = controller.update(True, True, 1.0 * CV.KPH_TO_MS, 1.0 * CV.KPH_TO_MS,
+                                 override.get("standstill", False), measured_lead)
+  assert not decision.active
+
+
+def test_queue_creep_does_not_rearm_after_a_physical_stop_until_planner_releases():
+  controller = QueueCreepController()
+  measured_lead = queue_lead()
+  controller.update(True, True, 0.0, 0.0, True, measured_lead)
+
+  for _ in range(controller.CONFIRM_FRAMES + 1):
+    decision = controller.update(True, True, 0.12, 0.12, False, measured_lead)
+  assert not decision.active
+
+  controller.update(True, False, 0.12, 0.12, False, measured_lead)
+  for _ in range(controller.CONFIRM_FRAMES):
+    decision = controller.update(True, True, 0.12, 0.12, False, measured_lead)
+  assert decision.active
 
 
 def test_response_learning_stays_shadow_until_confident_then_is_bounded(tmp_path):

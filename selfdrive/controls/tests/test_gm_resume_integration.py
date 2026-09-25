@@ -53,7 +53,9 @@ class TraverseControlChain:
       "LKADriverAppldTrq", "LKATorqueDelivered", "LKATotalTorqueDelivered", "RollingCounter", "PSCMStatusChecksum",
     ), 0)
     self.plan = SimpleNamespace(shouldStop=True, aTarget=-0.5, speeds=[0.0] * 33, jTargetNow=0.0)
-    self.radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, dRel=6.0, vRel=0.0, vLead=0.0),
+    self.radar = SimpleNamespace(leadOne=SimpleNamespace(status=True, radar=True, radarTrackId=1,
+                                                        dRel=6.0, vRel=0.0, vLead=0.0, vLeadK=0.0,
+                                                        aLeadK=0.0, jLead=0.0),
                                  leadTwo=SimpleNamespace(status=False), leadCutInRisk=None)
     self.custom_control = custom.CarControlSP.new_message().as_reader()
     self.button_signals = DBC("gm_global_a_powertrain_generated").addr_to_msg[0x1E1].sigs
@@ -248,6 +250,31 @@ def test_rolling_stop_cancels_before_auto_hold(chain):
   assert not entry.resume
   assert not entry.hold
   assert chain.ci.CC.apply_brake == 0
+
+
+def test_queue_creep_keeps_a_confirmed_rolling_stop_out_of_gm_stopping(chain):
+  chain.loc.long_control_state = LongCtrlState.stopping
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 1.5 / 3.6
+  chain.cs.out.cruiseState.standstill = True
+  chain.plan.shouldStop = True
+  chain.plan.aTarget = -0.5
+  chain.plan.speeds = [0.0] * 33
+  chain.radar.leadOne.dRel = 6.0
+  chain.radar.leadOne.vRel = -chain.cs.out.vEgo
+
+  entries = chain.run(chain.loc.queue_creep_controller.CONFIRM_FRAMES + 10)
+
+  assert chain.loc.queue_creep_controller.active
+  assert entries[-1].state == LongCtrlState.pid
+  assert entries[-1].accel >= -0.55
+  assert not entries[-1].hold
+
+  chain.radar.leadOne.dRel = chain.loc.queue_creep_controller.MIN_LEAD_RESERVE
+  entry = chain.step()
+  assert not chain.loc.queue_creep_controller.active
+  assert entry.state == LongCtrlState.stopping
+  assert entry.accel < 0.0
 
 
 def test_screen_request_without_lead_retries_only_after_another_tap(chain):

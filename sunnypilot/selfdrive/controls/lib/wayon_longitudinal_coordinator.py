@@ -409,6 +409,107 @@ class LowSpeedStopController:
     return self.output_accel
 
 
+@dataclass(frozen=True)
+class QueueCreepDecision:
+  active: bool = False
+  target_speed: float = 0.0
+
+
+class QueueCreepController:
+  """Keep a rolling queue approach below 1 km/h until the lead gap is consumed."""
+
+  TARGET_GAP = 5.0
+  MIN_LEAD_RESERVE = 4.2
+  MAX_LEAD_DISTANCE = 15.0
+  MAX_TARGET_SPEED = 1.0 * CV.KPH_TO_MS
+  MAX_ENTRY_SPEED = 2.0 * CV.KPH_TO_MS
+  MAX_TRACKING_SPEED = 10.0 * CV.KPH_TO_MS
+  MIN_ROLLING_SPEED = 0.05
+  MAX_STATIONARY_LEAD_SPEED = 0.25
+  MAX_CLOSING_SPEED = -0.8
+  SPEED_GAIN = 0.28
+  CONFIRM_FRAMES = round(0.25 / DT_CTRL)
+
+  def __init__(self):
+    self.active = False
+    self.track_id = None
+    self.stationary_frames = 0
+    self.stopped_latched = False
+
+  def reset(self) -> None:
+    self._reset_tracking()
+    self.stopped_latched = False
+
+  def _reset_tracking(self) -> None:
+    self.active = False
+    self.track_id = None
+    self.stationary_frames = 0
+
+  def update(self, enabled: bool, should_stop: bool, v_ego: float, v_ego_raw: float,
+             standstill: bool, lead=None) -> QueueCreepDecision:
+    valid_lead = bool(lead is not None and getattr(lead, "status", False) and
+                      getattr(lead, "radar", False))
+    values = (
+      v_ego,
+      v_ego_raw,
+      float(getattr(lead, "dRel", math.nan)) if valid_lead else math.nan,
+      float(getattr(lead, "vRel", math.nan)) if valid_lead else math.nan,
+      float(getattr(lead, "vLeadK", math.nan)) if valid_lead else math.nan,
+      float(getattr(lead, "radarTrackId", math.nan)) if valid_lead else math.nan,
+    )
+    if not should_stop:
+      self.reset()
+      return QueueCreepDecision()
+    if standstill:
+      self._reset_tracking()
+      self.stopped_latched = True
+      return QueueCreepDecision()
+    if (not enabled or not valid_lead or
+        not all(math.isfinite(value) for value in values)):
+      self._reset_tracking()
+      return QueueCreepDecision()
+    if self.stopped_latched:
+      return QueueCreepDecision()
+
+    d_rel, v_rel, v_lead, track_value = values[2:]
+    track_id = int(track_value)
+    if track_id < 0 or max(abs(v_ego), abs(v_ego_raw)) > self.MAX_TRACKING_SPEED:
+      self._reset_tracking()
+      return QueueCreepDecision()
+    if self.track_id is not None and track_id != self.track_id:
+      self.active = False
+      self.stationary_frames = 0
+    self.track_id = track_id
+
+    stationary_lead = abs(v_lead) <= self.MAX_STATIONARY_LEAD_SPEED
+    self.stationary_frames = min(self.CONFIRM_FRAMES, self.stationary_frames + 1) if stationary_lead else 0
+    if (not stationary_lead or d_rel <= self.MIN_LEAD_RESERVE or d_rel > self.MAX_LEAD_DISTANCE or
+        v_rel < self.MAX_CLOSING_SPEED):
+      self.active = False
+      return QueueCreepDecision()
+
+    rolling_speed = max(abs(v_ego), abs(v_ego_raw))
+    if self.active:
+      if rolling_speed < self.MIN_ROLLING_SPEED:
+        self._reset_tracking()
+        self.stopped_latched = True
+        return QueueCreepDecision()
+    elif (self.stationary_frames >= self.CONFIRM_FRAMES and
+          self.MIN_ROLLING_SPEED <= rolling_speed <= self.MAX_ENTRY_SPEED and
+          d_rel > self.TARGET_GAP):
+      self.active = True
+
+    if not self.active:
+      return QueueCreepDecision()
+
+    target_speed = float(np.clip(
+      self.SPEED_GAIN * (d_rel - self.TARGET_GAP),
+      0.0,
+      self.MAX_TARGET_SPEED,
+    ))
+    return QueueCreepDecision(True, target_speed)
+
+
 class LongitudinalResponseLearner:
   """Learn bounded delay and command response by speed bin during normal driving."""
 

@@ -116,6 +116,7 @@ class AdaptiveLongitudinalSmoother:
     lead_departure_urgency = self._lead_departure_urgency(lead, v_ego)
     emergency_braking = error < 0.0 and (
       target_accel <= -2.0 or self._lead_urgency(lead) >= 0.9 or self._cutin_urgency(cutin_risk) >= 0.9)
+    brake_transition = self.output_accel > 0.02 and target_accel < -0.05
 
     if launch_transition and error > 0.0:
       # Starting needs a short S-curve: release hold pressure promptly, then
@@ -147,6 +148,12 @@ class AdaptiveLongitudinalSmoother:
       natural_frequency = 8.0
       jerk_limit = 8.0
       snap_limit = 50.0
+    elif brake_transition:
+      # Release positive torque promptly when the plan crosses into braking.
+      # This keeps an early mild request from turning into a late hard stop.
+      natural_frequency = 7.0
+      jerk_limit = 4.0
+      snap_limit = 30.0
     elif error < 0.0:
       # Releasing throttle or building brake pressure can respond quickly as risk rises.
       natural_frequency = 2.0 + 4.5 * urgency
@@ -162,6 +169,12 @@ class AdaptiveLongitudinalSmoother:
       natural_frequency = 1.6 + 2.8 * urgency
       jerk_limit = 0.35 + 1.45 * urgency
       snap_limit = 1.5 + 11.0 * urgency
+
+    # A stale jerk in the opposite direction makes the command move farther
+    # away after the target reverses. Cancel only that derivative; acceleration
+    # itself remains continuous and resumes toward the new target below.
+    if abs(error) > 0.03 and error * self.output_jerk < 0.0:
+      self.output_jerk = 0.0
 
     desired_snap = natural_frequency * natural_frequency * error - \
                    2.0 * natural_frequency * self.output_jerk

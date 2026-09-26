@@ -448,6 +448,32 @@ def test_adaptive_smoother_preserves_emergency_brake_response():
   assert min(outputs) >= -3.0
 
 
+def test_adaptive_smoother_releases_positive_torque_promptly_before_braking():
+  smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  smoother.reset(0.6)
+  outputs = [smoother.update(-0.6, measured_accel=smoother.output_accel,
+                             v_ego=12.0, v_target=11.5) for _ in range(60)]
+  steps = [abs(outputs[i] - outputs[i - 1]) for i in range(1, len(outputs))]
+
+  assert outputs[24] <= 0.0
+  assert min(outputs) >= -0.6
+  assert max(steps) <= 0.041
+
+
+def test_adaptive_smoother_does_not_deepen_brake_after_target_relaxes():
+  smoother = AdaptiveLongitudinalSmoother(dt=0.01)
+  smoother.reset(0.4)
+  for _ in range(45):
+    smoother.update(-1.8, measured_accel=smoother.output_accel,
+                    v_ego=12.0, v_target=10.0)
+  before_release = smoother.output_accel
+  outputs = [smoother.update(-0.4, measured_accel=smoother.output_accel,
+                             v_ego=10.0, v_target=10.0) for _ in range(80)]
+
+  assert min(outputs) >= before_release
+  assert outputs[-1] > before_release
+
+
 def test_adaptive_smoother_releases_throttle_quickly_without_braking():
   smoother = AdaptiveLongitudinalSmoother(dt=0.01)
   smoother.reset(1.43)

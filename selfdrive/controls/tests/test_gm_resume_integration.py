@@ -277,6 +277,20 @@ def test_queue_creep_keeps_a_confirmed_rolling_stop_out_of_gm_stopping(chain):
   assert entry.accel < 0.0
 
 
+def test_queue_creep_damps_idle_surge_without_requesting_throttle():
+  target_speed = 1.0 / 3.6
+
+  # Release residual brake promptly while the vehicle is still decelerating.
+  assert longcontrol.get_queue_creep_accel(target_speed, 0.8 / 3.6, -0.35) == 0.0
+  # Once idle creep starts accelerating the vehicle, rebuild light brake before
+  # filtered speed has time to overshoot the target.
+  assert longcontrol.get_queue_creep_accel(target_speed, 0.9 / 3.6, 0.2) < 0.0
+  assert longcontrol.get_queue_creep_accel(target_speed, 2.0 / 3.6, 0.0) < 0.0
+  assert longcontrol.get_queue_creep_accel(target_speed, 0.2 / 3.6, -0.4) <= 0.0
+  assert longcontrol.rate_limit_queue_creep_accel(0.0, -0.4) == pytest.approx(-0.385)
+  assert longcontrol.rate_limit_queue_creep_accel(-0.4, 0.0) == pytest.approx(-0.015)
+
+
 def test_screen_request_without_lead_retries_only_after_another_tap(chain):
   chain.radar.leadOne.status = False
   chain.run(110)

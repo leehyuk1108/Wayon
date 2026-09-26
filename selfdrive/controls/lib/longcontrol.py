@@ -47,8 +47,32 @@ SNG_MANUAL_RELEASE_TIMEOUT = 4.0
 SNG_MANUAL_CREEP_MIN_SPEED = 0.1
 SNG_MANUAL_CREEP_MAX_SPEED = 1.0
 SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
-QUEUE_CREEP_MAX_ACCEL = 0.15
+QUEUE_CREEP_MAX_ACCEL = 0.0
 QUEUE_CREEP_MAX_DECEL = -0.55
+QUEUE_CREEP_SPEED_KP = 0.9
+QUEUE_CREEP_ACCEL_DAMPING = 0.75
+QUEUE_CREEP_MEASURED_ACCEL_LIMIT = 0.4
+QUEUE_CREEP_BRAKE_BUILD_RATE = 1.5
+QUEUE_CREEP_BRAKE_RELEASE_RATE = 1.5
+
+
+def get_queue_creep_accel(v_target: float, v_ego: float, a_ego: float) -> float:
+  """Track crawl speed with brake release only and damp torque-converter surge."""
+  if not all(math.isfinite(value) for value in (v_target, v_ego, a_ego)):
+    return QUEUE_CREEP_MAX_DECEL
+
+  measured_accel = float(np.clip(a_ego, -QUEUE_CREEP_MEASURED_ACCEL_LIMIT,
+                                 QUEUE_CREEP_MEASURED_ACCEL_LIMIT))
+  requested_accel = QUEUE_CREEP_SPEED_KP * (v_target - v_ego) - \
+                    QUEUE_CREEP_ACCEL_DAMPING * measured_accel
+  return float(np.clip(requested_accel, QUEUE_CREEP_MAX_DECEL, QUEUE_CREEP_MAX_ACCEL))
+
+
+def rate_limit_queue_creep_accel(requested_accel: float, previous_accel: float) -> float:
+  """Move brake command promptly but continuously in both directions."""
+  rate = QUEUE_CREEP_BRAKE_RELEASE_RATE if requested_accel > previous_accel else QUEUE_CREEP_BRAKE_BUILD_RATE
+  step = rate * DT_CTRL
+  return float(previous_accel + np.clip(requested_accel - previous_accel, -step, step))
 
 
 def use_gm_auto_hold_sng(CP) -> bool:
@@ -549,7 +573,8 @@ class LongControl:
                         float(long_plan.speeds[0]) if len(long_plan.speeds) else CS.vEgo)
         error = v_target_now - CS.vEgo
         if queue_creep.active:
-          output_accel = float(np.clip(error, QUEUE_CREEP_MAX_DECEL, QUEUE_CREEP_MAX_ACCEL))
+          creep_speed = max(abs(CS.vEgo), abs(CS.vEgoRaw))
+          output_accel = get_queue_creep_accel(v_target_now, creep_speed, CS.aEgo)
           self.speed_pid.reset()
         else:
           output_accel = self.speed_pid.update(error, speed=CS.vEgo, feedforward=a_target * self.speed_pid_kf)
@@ -574,14 +599,15 @@ class LongControl:
           output_accel = self.response_learner.correction(output_accel, CS.vEgo)
         if lead_safety_cap is not None:
           output_accel = min(output_accel, lead_safety_cap)
-        smoother_limits = ((max(accel_limits[0], QUEUE_CREEP_MAX_DECEL),
-                            min(accel_limits[1], QUEUE_CREEP_MAX_ACCEL))
-                           if queue_creep.active else (accel_limits[0], accel_limits[1]))
-        output_accel = self.accel_smoother.update(
-          output_accel, CS.aEgo, CS.vEgo, v_target_now,
-          planned_jerk=0.0 if queue_creep.active else float(getattr(long_plan, "jTargetNow", 0.0)),
-          lead=lead, cutin_risk=cutin_risk, accel_limits=smoother_limits,
-          throttle_release=anticipatory_coast, override_release=override_released)
+        if queue_creep.active:
+          output_accel = rate_limit_queue_creep_accel(output_accel, self.last_output_accel)
+          self.accel_smoother.reset(output_accel)
+        else:
+          output_accel = self.accel_smoother.update(
+            output_accel, CS.aEgo, CS.vEgo, v_target_now,
+            planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
+            lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]),
+            throttle_release=anticipatory_coast, override_release=override_released)
       else:
         error = a_target - CS.aEgo
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)

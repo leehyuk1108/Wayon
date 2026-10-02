@@ -1,5 +1,9 @@
 # Engaged Path v39 Curve-Aware Vehicle Yaw and Distance Scale
 
+Historical snapshot: for the installed ambient/BLE/power implementation as of
+2026-10-02, use [ambient-lifecycle v156](../ambient-lifecycle/README.md).
+Do not reinstall this older base to recover current ambient behavior.
+
 Base APK: `build_outputs/Hud-engaged-path-v38-curve-yaw-signed.apk`
 
 Base SHA-256:

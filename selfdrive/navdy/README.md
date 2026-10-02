@@ -1,5 +1,13 @@
 # Comma to Navdy Integration
 
+## Latest Ambient Power Patch (2026-10-02)
+
+The installed v156 ambient/BLE/power source, build dependencies, artifact hashes
+and verification record are in [ambient-lifecycle](hud_patch/ambient-lifecycle/README.md).
+Use that record for ambient changes instead of the historical v39/v67 snapshot
+described below. Git deployment and the persistent Navdy APK installation are
+separate; this repository does not automatically reinstall the HUD APK at boot.
+
 이 문서는 현재 Wayon Sunnypilot에서 comma 장치와 Navdy HUD를 연결하는 전체 구현을 설명한다.
 다른 개발자나 AI가 기존 대화 기록 없이도 연결 구조를 이해하고, 수정하고, 빌드하고,
 장치에서 진단할 수 있게 하는 것이 목적이다.

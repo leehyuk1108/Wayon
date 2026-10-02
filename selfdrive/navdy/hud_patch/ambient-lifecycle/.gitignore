@@ -1,0 +1,8 @@
+output/
+__pycache__/
+*.pyc
+*.apk
+*.jks
+*.keystore
+*.dex
+*.jar

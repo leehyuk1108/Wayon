@@ -1,0 +1,17 @@
+{
+  "release": "v156",
+  "verified_on": "2026-10-02",
+  "package": "com.navdy.hud.app",
+  "base_apk": "Hud-v155r2-signed.apk",
+  "base_sha256": "9f241b73188d6d98419609aed45c5ea4b16b9cba35f0bc2cd65f566a77d29df1",
+  "installed_apk": "Hud-v156-signed.apk",
+  "installed_sha256": "4e819112d0ad57eb908766f47c94247d585c0040107087a5a62ec033950e9ad2",
+  "signing_certificate_sha256": "afe4eff90076c92ed8e087ec49a5d7257f5d473916243daafb16dc41e8b40bcf",
+  "dex_version": "035",
+  "automatic_install_on_boot": false,
+  "host_tests_passed": 5,
+  "installed_art_checks_passed": 50,
+  "offroad_observation_seconds": 960,
+  "physical_door_test_confirmed": true,
+  "post_patch_onroad_reverse_test_confirmed": false
+}

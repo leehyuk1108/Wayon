@@ -6,6 +6,7 @@ from openpilot.system.wayon_impact import (
   append_impact_diagnostic,
   enqueue_impact_event,
   peek_impact_event,
+  peek_impact_events,
   remove_impact_event,
   update_impact_event,
 )
@@ -188,6 +189,16 @@ def test_impact_queue_round_trip(tmp_path: Path):
   assert peek_impact_event(queue) == second
   assert remove_impact_event("second", queue)
   assert peek_impact_event(queue) is None
+
+
+def test_impact_queue_snapshot_preserves_order_and_empty_queue(tmp_path: Path):
+  queue = tmp_path / "impact_queue.jsonl"
+  assert peek_impact_events(queue) == []
+  first, second = {"id": "first"}, {"id": "second"}
+  enqueue_impact_event(first, queue)
+  enqueue_impact_event(second, queue)
+  assert peek_impact_events(queue) == [first, second]
+  assert peek_impact_event(queue) == first
 
 
 def test_impact_diagnostics_append_and_rotate(tmp_path: Path):

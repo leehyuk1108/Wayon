@@ -325,14 +325,19 @@ def append_impact_diagnostic(record: dict, path: Path = DEFAULT_IMPACT_DIAGNOSTI
   os.replace(temporary, path)
 
 
-def peek_impact_event(path: Path = DEFAULT_IMPACT_QUEUE_PATH) -> dict | None:
+def peek_impact_events(path: Path = DEFAULT_IMPACT_QUEUE_PATH) -> list[dict]:
   try:
     with path.open("r", encoding="utf-8") as handle:
       fcntl.flock(handle, fcntl.LOCK_SH)
       events = _read_events(handle)
       fcntl.flock(handle, fcntl.LOCK_UN)
   except FileNotFoundError:
-    return None
+    return []
+  return events
+
+
+def peek_impact_event(path: Path = DEFAULT_IMPACT_QUEUE_PATH) -> dict | None:
+  events = peek_impact_events(path)
   return events[0] if events else None
 
 

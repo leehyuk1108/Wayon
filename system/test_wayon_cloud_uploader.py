@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
+import requests
 
 # Direct execution starts inside system/, so add openpilot root explicitly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,7 +16,7 @@ from openpilot.system.wayon_cloud_uploader import (device_details_payload, enhan
                                                    panda_details_payload, resolve_onroad_state,
                                                    upload_pending_impacts, upload_pending_vehicle_events,
                                                    vehicle_details_payload)
-from openpilot.system.wayon_impact import enqueue_impact_event, peek_impact_event
+from openpilot.system.wayon_impact import enqueue_impact_event, peek_impact_event, peek_impact_events
 from openpilot.system.wayon_vehicle_events import door_lock_event, enqueue_vehicle_event, peek_vehicle_event
 
 
@@ -326,8 +328,9 @@ def test_impact_upload_captures_both_cameras_and_cleans_local_media(tmp_path, mo
     queue,
     media_root=media_root,
     capture_fn=capture,
+    now=datetime(2026, 7, 19, tzinfo=timezone.utc),
   ) == 1
-  assert operations == ["capture", "/api/impact", "/api/impact-media"]
+  assert operations == ["/api/impact", "capture", "/api/impact-media"]
   assert [path for path, _ in posted] == ["/api/impact", "/api/impact-media"]
   assert posted[1][1]["captureStatus"] == "complete"
   assert posted[1][1]["wideJpegBase64"]
@@ -377,6 +380,136 @@ def test_impact_media_retry_does_not_repost_impact(tmp_path, monkeypatch):
     media_root=media_root, capture_fn=lambda: (image, image), now=now,
   ) == 0
   assert calls == ["/api/impact", "/api/impact-media"]
+
+
+def test_suppressed_impact_skips_capture_and_media(tmp_path, monkeypatch):
+  queue = tmp_path / "queue.jsonl"
+  enqueue_impact_event({"id": "suppressed", "captureRequested": True}, queue)
+  calls = []
+
+  def post(config, path, payload):
+    calls.append(path)
+    return {"ok": True, "suppressed": True}
+
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json", post)
+  assert upload_pending_impacts({}, "device", queue, media_root=tmp_path / "media",
+                               capture_fn=lambda: pytest.fail("suppressed impact must not capture")) == 1
+  assert calls == ["/api/impact"]
+  assert peek_impact_event(queue) is None
+
+
+def test_deferred_media_head_cannot_block_new_impact(tmp_path, monkeypatch):
+  queue = tmp_path / "queue.jsonl"
+  enqueue_impact_event({"id": "old", "impactUploaded": True, "nextUploadAt": "2026-07-19T06:00:00Z"}, queue)
+  enqueue_impact_event({"id": "new", "detectedAt": "2026-07-19T00:00:00Z"}, queue)
+  calls = []
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json",
+                      lambda config, path, payload: calls.append((path, payload["id"])) or {"ok": True})
+  assert upload_pending_impacts({}, "device", queue, limit=1, media_root=tmp_path / "media",
+                               now=datetime(2026, 7, 19, tzinfo=timezone.utc)) == 1
+  assert calls == [("/api/impact", "new")]
+  assert [event["id"] for event in peek_impact_events(queue)] == ["old"]
+
+
+def test_all_notifications_precede_camera_work(tmp_path, monkeypatch):
+  queue = tmp_path / "queue.jsonl"
+  now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+  for event_id in ("first", "second"):
+    enqueue_impact_event({"id": event_id, "detectedAt": now.isoformat(), "captureRequested": True}, queue)
+  calls = []
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json",
+                      lambda config, path, payload: calls.append(path) or {"ok": True})
+
+  def capture():
+    calls.append("capture")
+    return np.zeros((4, 4, 3), dtype=np.uint8), np.zeros((4, 4, 3), dtype=np.uint8)
+
+  assert upload_pending_impacts({}, "device", queue, media_root=tmp_path / "media", capture_fn=capture, now=now) == 2
+  assert calls == ["/api/impact", "/api/impact", "capture", "/api/impact-media", "capture", "/api/impact-media"]
+
+
+def test_failed_event_does_not_block_other_notifications(tmp_path, monkeypatch):
+  queue = tmp_path / "queue.jsonl"
+  for event_id in ("bad", "good"):
+    enqueue_impact_event({"id": event_id}, queue)
+  calls = []
+
+  def post(config, path, payload):
+    calls.append(payload["id"])
+    if payload["id"] == "bad":
+      raise RuntimeError("temporary failure")
+    return {"ok": True}
+
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json", post)
+  with pytest.raises(RuntimeError, match="temporary failure"):
+    upload_pending_impacts({}, "device", queue, media_root=tmp_path / "media")
+  assert calls == ["bad", "good"]
+  assert [event["id"] for event in peek_impact_events(queue)] == ["bad"]
+
+
+def test_capture_exceptions_are_bounded_and_do_not_resend_notification(tmp_path, monkeypatch):
+  queue = tmp_path / "queue.jsonl"
+  now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+  enqueue_impact_event({"id": "camera-fails", "detectedAt": now.isoformat(), "captureRequested": True}, queue)
+  calls, captures = [], []
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json",
+                      lambda config, path, payload: calls.append((path, payload)) or {"ok": True})
+
+  def capture():
+    captures.append(True)
+    raise RuntimeError("camera unavailable")
+
+  for attempt, elapsed in enumerate((0, 60), start=1):
+    with pytest.raises(RuntimeError, match="capture incomplete"):
+      upload_pending_impacts({}, "device", queue, media_root=tmp_path / "media", capture_fn=capture,
+                             now=now + timedelta(seconds=elapsed))
+    assert peek_impact_event(queue)["captureAttempts"] == attempt
+    assert peek_impact_event(queue)["impactUploaded"] is True
+
+  assert upload_pending_impacts({}, "device", queue, media_root=tmp_path / "media", capture_fn=capture,
+                               now=now + timedelta(seconds=360)) == 1
+  assert len(captures) == 3
+  assert [path for path, _ in calls] == ["/api/impact", "/api/impact-media"]
+  assert calls[-1][1]["captureStatus"] == "failed"
+  assert calls[-1][1]["captureAttempts"] == 3
+  assert peek_impact_event(queue) is None
+
+
+def test_old_backlog_is_saved_without_taking_misleading_current_photo(tmp_path, monkeypatch):
+  queue = tmp_path / "queue.jsonl"
+  enqueue_impact_event({"id": "old", "detectedAt": "2026-07-18T00:00:00Z", "captureRequested": True}, queue)
+  calls = []
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json",
+                      lambda config, path, payload: calls.append((path, payload)) or {"ok": True, "stale": True})
+  assert upload_pending_impacts({}, "device", queue, media_root=tmp_path / "media",
+                               capture_fn=lambda: pytest.fail("old impact must not take a current photo"),
+                               now=datetime(2026, 7, 19, tzinfo=timezone.utc)) == 1
+  assert calls[-1][1]["captureStatus"] == "failed"
+  assert calls[-1][1]["captureAttempts"] == 0
+
+
+@pytest.mark.parametrize("status,error,reset", [(404, "impact_not_found", True), (403, "unauthorized", False),
+                                               (404, "other_error", False)])
+def test_missing_legacy_record_revalidates_same_event_without_bypassing_auth(tmp_path, monkeypatch, status, error, reset):
+  queue = tmp_path / "queue.jsonl"
+  now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+  enqueue_impact_event({"id": "legacy", "detectedAt": "2026-07-18T00:00:00Z", "impactUploaded": True,
+                        "captureRequested": True, "uploadAttempts": 12}, queue)
+  response = requests.Response()
+  response.status_code = status
+  response._content = json.dumps({"error": error}).encode()
+
+  def post(config, path, payload):
+    assert path == "/api/impact-media"
+    raise requests.HTTPError(response=response)
+
+  monkeypatch.setattr("openpilot.system.wayon_cloud_uploader.post_json", post)
+  with pytest.raises(requests.HTTPError):
+    upload_pending_impacts({}, "device", queue, media_root=tmp_path / "media", now=now)
+  event = peek_impact_event(queue)
+  assert event["impactUploaded"] is (not reset)
+  assert event["uploadAttempts"] == (1 if reset else 13)
+  assert event["id"] == "legacy"
 
 
 if __name__ == "__main__":

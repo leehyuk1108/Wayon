@@ -17,7 +17,7 @@ from openpilot.common.realtime import set_core_affinity
 from openpilot.system.camera_lease import CameraLease
 from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
-from openpilot.system.wayon_impact import peek_impact_event, remove_impact_event, update_impact_event
+from openpilot.system.wayon_impact import peek_impact_events, remove_impact_event, update_impact_event
 from openpilot.system.wayon_vehicle_events import (
   DEFAULT_DOOR_LOCK_WAKE_FILTER_MAX_S,
   DEFAULT_DOOR_LOCK_WAKE_FILTER_MIN_S,
@@ -49,6 +49,7 @@ LAST_SUPPRESSED_VEHICLE_PAIR_PATH = Path(os.getenv(
   "/data/wayon_cloud/last_suppressed_vehicle_pair.json",
 ))
 MAX_IMPACT_CAPTURE_ATTEMPTS = 3
+MAX_IMPACT_CAPTURE_AGE_S = 600.0
 IMPACT_UPLOAD_RETRY_DELAYS_S = (60, 300, 900, 3600, 21600)
 WAYON_WIDE_SNAPSHOT_WARMUP_S = 0.5
 WAYON_DRIVER_SNAPSHOT_WARMUP_S = 0.8
@@ -403,39 +404,67 @@ def _defer_impact_upload(event, event_id, queue_path, now=None):
 def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
                            media_root=IMPACT_MEDIA_ROOT, capture_fn=None, now=None):
   uploaded = 0
-  for _ in range(max(1, limit)):
-    event = peek_impact_event() if queue_path is None else peek_impact_event(queue_path)
-    if event is None:
-      break
-    if not _impact_retry_due(event, now):
-      break
+  events = peek_impact_events() if queue_path is None else peek_impact_events(queue_path)
+  # New notifications outrank media retries, including a deferred queue head.
+  events.sort(key=lambda event: (not event.get("impactUploaded"), str(event.get("detectedAt", ""))), reverse=True)
+  pending = [event for event in events if _impact_retry_due(event, now)][:max(1, limit)]
+  media_pending = []
+  first_error = None
 
-    payload = {**event, "deviceId": device_id}
+  def finish(event_id):
+    remove_impact_media(event_id, media_root)
+    if queue_path is None:
+      remove_impact_event(event_id)
+    else:
+      remove_impact_event(event_id, queue_path)
+
+  # Send every selected notification before any blocking camera work.
+  for event in pending:
     event_id = str(event.get("id", ""))
-    media = {}
-    captured_at = None
-    attempts = int(event.get("captureAttempts", 0))
-    capture_complete = False
-
     try:
-      if event.get("captureRequested"):
-        media, captured_at = capture_and_store_impact_media(event_id, media_root, capture_fn)
-        attempts += 1
-        capture_complete = all(camera in media for camera in ("wide", "driver"))
-
-      # Persist completion of the event upload before attempting media. A media
-      # retry must not resend the notification-bearing /api/impact request.
       if not event.get("impactUploaded"):
-        post_json(config, "/api/impact", payload)
+        response = post_json(config, "/api/impact", {**event, "deviceId": device_id})
         event = _update_queued_impact(event_id, {
           "impactUploaded": True,
+          "impactSuppressed": response.get("suppressed") is True,
           "uploadAttempts": 0,
           "nextUploadAt": None,
-        }, queue_path) or {**event, "impactUploaded": True}
+        }, queue_path) or {**event, "impactUploaded": True, "impactSuppressed": response.get("suppressed") is True}
+      if event.get("impactSuppressed"):
+        finish(event_id)
+        uploaded += 1
+        continue
+      media_pending.append(event)
+    except Exception as exc:
+      _defer_impact_upload(event, event_id, queue_path, now)
+      first_error = first_error or exc
 
+  for event in media_pending:
+    event_id = str(event.get("id", ""))
+    try:
       if event.get("captureRequested"):
-        if not capture_complete and attempts < MAX_IMPACT_CAPTURE_ATTEMPTS:
-          _update_queued_impact(event_id, {"captureAttempts": attempts}, queue_path)
+        media, captured_at = read_impact_media(event_id, media_root)
+        attempts = int(event.get("captureAttempts", 0))
+        try:
+          detected_at = datetime.fromisoformat(str(event.get("detectedAt", "")).replace("Z", "+00:00"))
+          age = ((now or datetime.now(timezone.utc)) - detected_at).total_seconds()
+          capture_current = 0 <= age <= MAX_IMPACT_CAPTURE_AGE_S
+        except (TypeError, ValueError):
+          capture_current = False
+
+        if len(media) < 2 and capture_current and attempts < MAX_IMPACT_CAPTURE_ATTEMPTS:
+          attempts += 1
+          event = _update_queued_impact(event_id, {"captureAttempts": attempts}, queue_path) or event
+          try:
+            media, captured_at = capture_and_store_impact_media(event_id, media_root, capture_fn)
+          except Exception as exc:
+            # Camera failures must count toward the bound and cannot block alerts.
+            print(f"Wayon impact: camera capture failed ({attempts}/{MAX_IMPACT_CAPTURE_ATTEMPTS}): {type(exc).__name__}")
+            media, captured_at = read_impact_media(event_id, media_root)
+
+        capture_complete = all(camera in media for camera in ("wide", "driver"))
+        # Never take a current photo and label it as a much older queued impact.
+        if not capture_complete and capture_current and attempts < MAX_IMPACT_CAPTURE_ATTEMPTS:
           raise RuntimeError(f"impact camera capture incomplete ({attempts}/{MAX_IMPACT_CAPTURE_ATTEMPTS})")
 
         capture_status = "complete" if capture_complete else "partial" if media else "failed"
@@ -448,17 +477,23 @@ def upload_pending_impacts(config, device_id, queue_path=None, limit=3,
           "wideJpegBase64": base64.b64encode(media["wide"]).decode("ascii") if "wide" in media else None,
           "driverJpegBase64": base64.b64encode(media["driver"]).decode("ascii") if "driver" in media else None,
         })
-        remove_impact_media(event_id, media_root)
-    except Exception:
-      latest = peek_impact_event() if queue_path is None else peek_impact_event(queue_path)
-      _defer_impact_upload(latest or event, event_id, queue_path, now)
-      raise
+    except Exception as exc:
+      if isinstance(exc, requests.HTTPError) and exc.response is not None and exc.response.status_code == 404:
+        try:
+          missing = exc.response.json().get("error") == "impact_not_found"
+        except (ValueError, AttributeError):
+          missing = False
+        if missing:
+          # Recover legacy entries marked uploaded after a suppression response.
+          event = _update_queued_impact(event_id, {"impactUploaded": False, "uploadAttempts": 0}, queue_path) or event
+      _defer_impact_upload(event, event_id, queue_path, now)
+      first_error = first_error or exc
+      continue
 
-    if queue_path is None:
-      remove_impact_event(event_id)
-    else:
-      remove_impact_event(event_id, queue_path)
+    finish(event_id)
     uploaded += 1
+  if first_error is not None:
+    raise first_error
   return uploaded
 
 

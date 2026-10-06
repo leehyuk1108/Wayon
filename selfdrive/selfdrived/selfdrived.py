@@ -29,9 +29,9 @@ from openpilot.sunnypilot import get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
+from openpilot.sunnypilot.selfdrive.controls.lib.cutin_warning import CutInWarningTracker
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_enhancements import cutin_predecel_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.phone_forward_risk import lead_closing_risk
-from openpilot.sunnypilot.selfdrive.controls.lib.radar_lead_helpers import selected_cutin_risk
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 REPLAY = "REPLAY" in os.environ
@@ -54,7 +54,6 @@ TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 PHONE_FORWARD_RISK_COOLDOWN = 4.0
-LANE_INTRUSION_COOLDOWN = 4.0
 
 
 def lane_change_warning_event(model_meta, car_state):
@@ -199,9 +198,7 @@ class SelfdriveD(CruiseHelper):
     self.previous_lead_d_rel = 0.0
     self.previous_lead_closing_risk = False
     self.previous_lead_status = False
-    self.radar_lane_intrusion_cooldown = 0.0
-    self.previous_cutin_warning_active = False
-    self.previous_cutin_warning_track_id = -1
+    self.cutin_warning_tracker = CutInWarningTracker()
 
     self.mads = ModularAssistiveDrivingSystem(self)
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
@@ -237,36 +234,44 @@ class SelfdriveD(CruiseHelper):
     self.phone_forward_risk_lead_history_initialized = True
 
   def _update_radar_lane_intrusion(self, CS):
-    self.radar_lane_intrusion_cooldown = max(0.0, self.radar_lane_intrusion_cooldown - DT_CTRL)
+    if self.CP.brand != 'gm':
+      self.cutin_warning_tracker.reset()
+      return
     if not self.sm.updated['radarState']:
       return
 
     radar_state = self.sm['radarState']
     cutin_risk = radar_state.leadCutInRisk
-    predecel_accel = cutin_predecel_accel(cutin_risk, max(CS.vEgo, 0.0))
-    confirmed_risk = selected_cutin_risk(radar_state)
-    active = confirmed_risk is not None
-    track_id = int(getattr(confirmed_risk, 'radarTrackId', -1)) if active else -1
-    newly_active = active and (
-      not self.previous_cutin_warning_active or track_id != self.previous_cutin_warning_track_id
+    now = self.sm.logMonoTime['radarState'] / 1e9
+    if not self.sm.valid['radarState'] or not self.sm.valid['modelV2'] or \
+       abs(now - self.sm.logMonoTime['modelV2'] / 1e9) > 0.25:
+      self.cutin_warning_tracker.reset()
+      return
+    model = self.sm['modelV2']
+    own_lane_change = model.meta.laneChangeState != LaneChangeState.off or CS.leftBlinker != CS.rightBlinker
+    warning = self.cutin_warning_tracker.update(
+      radar_state, model, CS.vEgo, now, own_lane_change,
     )
 
-    if newly_active and self.radar_lane_intrusion_cooldown <= 0.0:
+    if warning is not None:
+      lead = warning.lead
+      matched_risk = cutin_risk if cutin_risk.status and cutin_risk.radarTrackId == warning.track_id else None
+      predecel_accel = cutin_predecel_accel(matched_risk, max(CS.vEgo, 0.0))
       self.events_sp.add(custom.OnroadEventSP.EventName.radarLaneIntrusion)
-      self.radar_lane_intrusion_cooldown = LANE_INTRUSION_COOLDOWN
       cloudlog.event(
         "radarCutInWarning",
-        trackId=track_id,
-        distance=float(getattr(cutin_risk, 'dRel', 0.0)),
-        lateral=float(getattr(cutin_risk, 'yRel', 0.0)),
-        relativeSpeed=float(getattr(cutin_risk, 'vRel', 0.0)),
-        inwardSpeed=float(getattr(cutin_risk, 'vLat', 0.0)),
-        score=float(getattr(cutin_risk, 'score', 0.0)),
+        trackId=warning.track_id,
+        distance=float(lead.dRel),
+        lateral=float(lead.yRel),
+        relativeSpeed=float(lead.vRel),
+        inwardSpeed=float(getattr(matched_risk, 'vLat', 0.0)),
+        score=float(getattr(matched_risk, 'score', 0.0)),
         predecelAccel=float(predecel_accel) if predecel_accel is not None else 0.0,
+        side=warning.side,
+        inwardTravel=warning.inward_travel,
+        outsideAge=warning.outside_age,
+        selectedByVision=warning.selected_by_vision,
       )
-
-    self.previous_cutin_warning_active = active
-    self.previous_cutin_warning_track_id = track_id
 
   def update_events(self, CS):
     """Compute onroadEvents from carState"""

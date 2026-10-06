@@ -9,6 +9,8 @@ from openpilot.selfdrive.controls.lib.longcontrol import (LongControl, LongCtrlS
                                                           long_control_state_trans, use_gm_auto_hold_sng)
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
 from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import get_lead_accel_safety_cap
+from openpilot.common.constants import CV
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import get_max_accel, get_max_actuation_accel
 
 
 
@@ -141,6 +143,75 @@ def test_traverse_stopping_decel_rate_is_soft_until_standstill():
 
   controller.wayon_carrot_profile = False
   assert controller.get_stopping_decel_rate(False) == 2.0
+
+
+@pytest.fixture
+def high_speed_controller(monkeypatch, tmp_path):
+  from openpilot.selfdrive.controls.lib import longcontrol
+  from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator import LongitudinalResponseLearner
+
+  monkeypatch.setattr(longcontrol, "LongitudinalResponseLearner", lambda delay, enabled: LongitudinalResponseLearner(
+    delay, str(tmp_path / "response.json"), enabled=enabled))
+  cp = car.CarParams.new_message(brand="gm", carFingerprint="CHEVROLET_TRAVERSE",
+                                 openpilotLongitudinalControl=True, longitudinalActuatorDelay=0.5,
+                                 vEgoStopping=0.5, vEgoStarting=0.25, stopAccel=-2.0)
+  cp.longitudinalTuning.kpBP = [0.0]
+  cp.longitudinalTuning.kpV = [1.0]
+  cp.longitudinalTuning.kiBP = [0.0]
+  cp.longitudinalTuning.kiV = [0.0]
+  controller = LongControl(cp, custom.CarParamsSP.new_message())
+  controller.accel_smoother.reset(0.0)
+  controller.response_learner.profile["bins"][3].update({"gasGain": 2.0 / 3.0, "gasSamples": 1000})
+  # Freeze a known response profile while testing the actual controller pipeline.
+  monkeypatch.setattr(controller.response_learner, "update", lambda *args: None)
+  return controller
+
+
+def run_high_speed_controller(controller, speed_kph=100.0, target_accel=None, upper_limit=2.0, active=True):
+  speed = speed_kph * CV.KPH_TO_MS
+  cs = car.CarState.new_message(vEgo=speed, vEgoRaw=speed, aEgo=0.05, canValid=True, gearShifter="drive")
+  cs.cruiseState.enabled = True
+  plan = SimpleNamespace(shouldStop=False, aTarget=get_max_accel(speed) if target_accel is None else target_accel,
+                         speeds=[speed], jTargetNow=0.0)
+  return [float(controller.update(active, cs, plan, (-3.5, upper_limit))) for _ in range(500)]
+
+
+@pytest.mark.parametrize("speed_kph", [70, 80, 100, 110])
+def test_high_speed_compensation_survives_smoother_and_final_clipping(high_speed_controller, speed_kph):
+  outputs = run_high_speed_controller(high_speed_controller, speed_kph)
+  speed = speed_kph * CV.KPH_TO_MS
+  assert outputs[-1] > get_max_accel(speed)
+  assert outputs[-1] == pytest.approx(get_max_actuation_accel(speed, 0.0), abs=0.002)
+  assert max(abs(after - before) for before, after in zip(outputs[:-1], outputs[1:], strict=True)) < 0.03
+
+
+@pytest.mark.parametrize("speed_kph", [20, 40, 60])
+def test_low_speed_output_ceiling_is_unchanged(high_speed_controller, speed_kph):
+  outputs = run_high_speed_controller(high_speed_controller, speed_kph)
+  assert max(outputs) == pytest.approx(get_max_accel(speed_kph * CV.KPH_TO_MS), abs=1e-6)
+
+
+def test_high_speed_compensation_cannot_exceed_vehicle_limit(high_speed_controller):
+  assert max(run_high_speed_controller(high_speed_controller, upper_limit=0.4)) <= 0.4
+
+
+def test_high_speed_flat_road_headroom_requires_learned_weak_response(high_speed_controller):
+  high_speed_controller.response_learner.profile["bins"][3]["gasSamples"] = 0
+  outputs = run_high_speed_controller(high_speed_controller)
+  assert outputs[-1] == pytest.approx(get_max_accel(100 * CV.KPH_TO_MS), abs=0.002)
+
+
+def test_high_speed_compensation_preserves_lead_braking_cap(high_speed_controller, monkeypatch):
+  monkeypatch.setattr(high_speed_controller.lead_approach_controller, "update", lambda *args: -0.5)
+  outputs = run_high_speed_controller(high_speed_controller)
+  assert max(outputs) <= 0.0
+  assert outputs[-1] == pytest.approx(-0.5, abs=0.002)
+
+
+@pytest.mark.parametrize(("target_accel", "active"), [(0.0, True), (-1.0, True), (0.5, False)])
+def test_high_speed_headroom_does_not_create_unrequested_acceleration(high_speed_controller, target_accel, active):
+  outputs = run_high_speed_controller(high_speed_controller, target_accel=target_accel, active=active)
+  assert outputs[-1] <= 0.0
 
 
 def sng_inputs():

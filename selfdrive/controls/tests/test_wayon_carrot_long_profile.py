@@ -16,7 +16,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   UPHILL_COMPENSATION_MAX,
   apply_uphill_accel_compensation,
   get_grade_adjusted_max_accel,
+  get_max_actuation_accel,
   get_max_accel,
+  get_max_gas_response_correction,
   get_uphill_accel_compensation,
   is_enabled,
 )
@@ -90,6 +92,27 @@ def test_uphill_feedforward_only_applies_while_maintaining_or_accelerating():
   assert apply_uphill_accel_compensation(0.2, 20.0, 19.0, pitch) == 0.2
   assert apply_uphill_accel_compensation(-0.2, 20.0, 21.0, pitch) == -0.2
   assert apply_uphill_accel_compensation(0.2, 1.0, 2.0, pitch) == 0.2
+
+
+@pytest.mark.parametrize("speed_kph", [0, 20, 40, 59, 60])
+def test_actuation_headroom_preserves_low_speed_ceiling(speed_kph):
+  speed = speed_kph * CV.KPH_TO_MS
+  for pitch in (0.0, 1.3 * CV.DEG_TO_RAD):
+    assert get_max_actuation_accel(speed, pitch) == get_grade_adjusted_max_accel(speed, pitch)
+  assert get_max_gas_response_correction(speed) == 1.15
+
+
+@pytest.mark.parametrize(("speed_kph", "actuation_limit", "correction_limit"), [
+  (70, 0.75, 1.325),
+  (80, 0.825, 1.50),
+  (100, 0.775, 1.50),
+  (110, 0.75, 1.50),
+])
+def test_high_speed_actuation_headroom_is_separate_from_planner_limit(speed_kph, actuation_limit, correction_limit):
+  speed = speed_kph * CV.KPH_TO_MS
+  assert get_max_actuation_accel(speed, 0.0) == pytest.approx(actuation_limit)
+  assert get_max_gas_response_correction(speed) == pytest.approx(correction_limit)
+  assert get_max_actuation_accel(speed, 10 * CV.DEG_TO_RAD) <= 2.0
 
 
 def test_traverse_accelerator_override_preserves_planner_state():

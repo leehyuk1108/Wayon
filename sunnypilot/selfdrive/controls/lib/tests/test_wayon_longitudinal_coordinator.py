@@ -465,6 +465,20 @@ def test_response_learning_uses_direction_specific_confidence(tmp_path):
   assert learner.correction(-1.0, 20.0 * CV.KPH_TO_MS) == -1.0
 
 
+@pytest.mark.parametrize(("speed_kph", "expected"), [(60, 1.15), (70, 1.325), (80, 1.50), (110, 1.50)])
+def test_high_speed_gas_compensation_is_confident_and_bounded(tmp_path, speed_kph, expected):
+  learner = LongitudinalResponseLearner(0.5, str(tmp_path / "profile.json"))
+  learned = learner.profile["bins"][3]
+  learned.update({"gasSamples": 99, "brakeSamples": 1000, "gasGain": 0.5, "brakeGain": 0.5})
+  speed = speed_kph * CV.KPH_TO_MS
+  assert learner.correction(0.5, speed) == 0.5
+  learned["gasSamples"] = 1000
+  assert learner.correction(0.5, speed) == pytest.approx(0.5 * expected)
+  assert learner.correction(-0.5, speed) == pytest.approx(-0.575)
+  assert learner.correction(0.0, speed) == 0.0
+  assert learner.correction(0.1, speed) == 0.1
+
+
 def test_learned_delay_requires_multiple_observations():
   profile = empty_response_profile(0.5)
   learned = profile["bins"][3]

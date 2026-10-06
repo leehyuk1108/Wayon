@@ -16,6 +16,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile impor
   PID_KP,
   apply_uphill_accel_compensation,
   get_grade_adjusted_max_accel,
+  get_max_actuation_accel,
   is_enabled,
 )
 from openpilot.sunnypilot.selfdrive.controls.lib.adaptive_longitudinal_smoother import AdaptiveLongitudinalSmoother
@@ -485,7 +486,9 @@ class LongControl:
 
     a_target = long_plan.aTarget
     planner_should_stop = long_plan.shouldStop
+    actuation_limits = accel_limits
     if self.wayon_carrot_profile:
+      actuation_limits = (accel_limits[0], min(accel_limits[1], get_max_actuation_accel(CS.vEgo, pitch)))
       accel_limits = (accel_limits[0], min(accel_limits[1], get_grade_adjusted_max_accel(CS.vEgo, pitch)))
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
@@ -606,7 +609,7 @@ class LongControl:
           output_accel = self.accel_smoother.update(
             output_accel, CS.aEgo, CS.vEgo, v_target_now,
             planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
-            lead=lead, cutin_risk=cutin_risk, accel_limits=(accel_limits[0], accel_limits[1]),
+            lead=lead, cutin_risk=cutin_risk, accel_limits=actuation_limits,
             throttle_release=anticipatory_coast, override_release=override_released)
       else:
         error = a_target - CS.aEgo
@@ -617,7 +620,7 @@ class LongControl:
       output_accel = min(output_accel, 0.0)
       if self.accel_smoother.output_accel > 0.0:
         self.accel_smoother.reset(output_accel)
-    self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
+    self.last_output_accel = np.clip(output_accel, actuation_limits[0], actuation_limits[1])
     lead = radar_state.leadOne if radar_state is not None else None
     cutin_risk = cutin_risk_for_control(radar_state) if radar_state is not None else None
     urgent = bool((lead is not None and getattr(lead, "status", False) and

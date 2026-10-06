@@ -13,7 +13,10 @@ import numpy as np
 
 from openpilot.common.constants import CV
 from opendbc.car.gm.values import get_traverse_stopping_accel_floor
-from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import UPHILL_COMPENSATION_DEADBAND
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import (
+  UPHILL_COMPENSATION_DEADBAND,
+  get_max_gas_response_correction,
+)
 
 DT_CTRL = 0.01
 
@@ -545,7 +548,8 @@ class LongitudinalResponseLearner:
     if direction_samples < 100 or abs(command) < 0.12:
       return command
     gain = float(learned["gasGain"] if command > 0.0 else learned["brakeGain"])
-    correction = float(np.clip(1.0 / gain, 0.85, 1.15))
+    max_correction = get_max_gas_response_correction(v_ego) if command > 0.0 else 1.15
+    correction = float(np.clip(1.0 / gain, 0.85, max_correction))
     confidence = float(np.interp(direction_samples, [100, 1000], [0.0, 1.0]))
     return command * (1.0 + confidence * (correction - 1.0))
 

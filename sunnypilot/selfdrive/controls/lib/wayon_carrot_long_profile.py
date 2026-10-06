@@ -27,6 +27,8 @@ MAX_ACCEL_BP = [
   140.0 * CV.KPH_TO_MS,
 ]
 MAX_ACCEL_V = [1.80, 1.70, 1.55, 1.20, 0.90, 0.65, 0.55, 0.50, 0.50]
+HIGH_SPEED_RESPONSE_BP = [60.0 * CV.KPH_TO_MS, 80.0 * CV.KPH_TO_MS]
+HIGH_SPEED_GAS_CORRECTION_MAX = 1.50
 
 # Keep the tuned flat-road curve unchanged. Grade compensation only provides
 # bounded headroom above it when calibrated pitch shows a real uphill.
@@ -67,6 +69,24 @@ def get_uphill_accel_compensation(pitch: float) -> float:
 def get_grade_adjusted_max_accel(v_ego: float, pitch: float) -> float:
   return min(UPHILL_COMPENSATION_ACCEL_MAX,
              get_max_accel(v_ego) + get_uphill_accel_compensation(pitch))
+
+
+def high_speed_response_blend(v_ego: float) -> float:
+  if not math.isfinite(v_ego):
+    return 0.0
+  return float(np.interp(v_ego, HIGH_SPEED_RESPONSE_BP, [0.0, 1.0]))
+
+
+def get_max_gas_response_correction(v_ego: float) -> float:
+  return 1.15 + high_speed_response_blend(v_ego) * (HIGH_SPEED_GAS_CORRECTION_MAX - 1.15)
+
+
+def get_max_actuation_accel(v_ego: float, pitch: float) -> float:
+  # Desired acceleration is not the raw GM command needed to achieve it.
+  # Keep the planner/PID ceiling, but let learned high-speed compensation through.
+  response_headroom = 1.0 + high_speed_response_blend(v_ego) * (HIGH_SPEED_GAS_CORRECTION_MAX - 1.0)
+  return min(UPHILL_COMPENSATION_ACCEL_MAX,
+             get_grade_adjusted_max_accel(v_ego, pitch) * response_headroom)
 
 
 def apply_uphill_accel_compensation(command: float, v_ego: float, v_target: float,

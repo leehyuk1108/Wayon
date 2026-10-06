@@ -1,3 +1,4 @@
+import math
 import time
 from types import SimpleNamespace
 
@@ -10,12 +11,31 @@ LANE_CHANGE_INPUT_MAX_AGE_NS = 300_000_000
 def lane_change_car_state(sm, now_ns=None):
   now_ns = time.monotonic_ns() if now_ns is None else now_ns
   car_age = now_ns - sm.logMonoTime['carState']
-  if 0 <= car_age <= LANE_CHANGE_INPUT_MAX_AGE_NS and sm.valid['carState']:
-    return sm['carState'], False
+  car_fresh = 0 <= car_age <= LANE_CHANGE_INPUT_MAX_AGE_NS and sm.valid['carState']
 
   navdy_age = now_ns - sm.logMonoTime['carStateSP']
   navdy_fresh = 0 <= navdy_age <= LANE_CHANGE_INPUT_MAX_AGE_NS and sm.valid['carStateSP']
   navdy = sm['carStateSP'] if navdy_fresh else None
+  if navdy is not None and (not math.isfinite(navdy.navdyVEgo) or navdy.navdyVEgo < 0.0):
+    navdy = None
+  # Legacy packets do not contain pedal/torque inputs; their defaults are not evidence of released controls.
+  navdy_complete = navdy is not None and getattr(navdy, 'laneChangeInputVersion', 0) == 1
+  if navdy_complete:
+    navdy_complete = math.isfinite(navdy.laneChangeSteeringTorque)
+  if navdy_complete and (not car_fresh or navdy_age < car_age):
+    return SimpleNamespace(
+      vEgo=navdy.navdyVEgo,
+      leftBlinker=bool(navdy.navdyLeftBlinker),
+      rightBlinker=bool(navdy.navdyRightBlinker),
+      leftBlindspot=bool(navdy.navdyLeftBlindspot),
+      rightBlindspot=bool(navdy.navdyRightBlindspot),
+      brakePressed=bool(navdy.laneChangeBrakePressed),
+      steeringPressed=bool(navdy.laneChangeSteeringPressed),
+      steeringTorque=navdy.laneChangeSteeringTorque,
+    ), False
+  if car_fresh:
+    return sm['carState'], False
+
   return SimpleNamespace(
     vEgo=navdy.navdyVEgo if navdy is not None else 0.0,
     leftBlinker=bool(navdy.navdyLeftBlinker) if navdy is not None else False,

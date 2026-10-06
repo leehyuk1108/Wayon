@@ -491,6 +491,10 @@ struct CarStateSP @0xb86e6369214c01c8 {
   gmEpbClosed @19 :Bool;
   gmAutoHoldEpbTransferred @20 :Bool;
   gmAutoHoldEpbTransitionAgeS @21 :Float32;
+  laneChangeInputVersion @22 :UInt8;
+  laneChangeBrakePressed @23 :Bool;
+  laneChangeSteeringPressed @24 :Bool;
+  laneChangeSteeringTorque @25 :Float32;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

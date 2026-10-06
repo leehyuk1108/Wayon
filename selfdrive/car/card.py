@@ -301,6 +301,10 @@ class Car:
     cs_sp_send.carStateSP.navdyRightBlinker = CS.rightBlinker
     cs_sp_send.carStateSP.navdyLeftBlindspot = CS.leftBlindspot
     cs_sp_send.carStateSP.navdyRightBlindspot = CS.rightBlindspot
+    cs_sp_send.carStateSP.laneChangeInputVersion = 1
+    cs_sp_send.carStateSP.laneChangeBrakePressed = CS.brakePressed
+    cs_sp_send.carStateSP.laneChangeSteeringPressed = CS.steeringPressed
+    cs_sp_send.carStateSP.laneChangeSteeringTorque = CS.steeringTorque
     cs_sp_send.carStateSP.navdyBrakeHoldActive = CS.brakeHoldActive
     cs_sp_send.carStateSP.navdyDoorOpen = CS.doorOpen
     cs_sp_send.carStateSP.gmAutoHoldActive = self.gm_auto_hold_session.active

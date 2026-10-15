@@ -52,6 +52,12 @@ def is_enabled(CP) -> bool:
   )
 
 
+def should_force_decel(CP, driver_unresponsive: bool, soft_disabling: bool) -> bool:
+  # Traverse takeover warnings must not create a zero-speed plan on their own.
+  # Driver-monitoring escalation still requests the original forced slowdown.
+  return bool(driver_unresponsive or (soft_disabling and not is_enabled(CP)))
+
+
 def get_max_accel(v_ego: float) -> float:
   return float(np.interp(v_ego, MAX_ACCEL_BP, MAX_ACCEL_V))
 

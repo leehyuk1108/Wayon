@@ -4,7 +4,7 @@ from openpilot.common.realtime import DT_CTRL
 
 State = log.SelfdriveState.OpenpilotState
 
-SOFT_DISABLE_TIME = 3  # seconds
+SOFT_DISABLE_TIME = 6  # seconds
 ACTIVE_STATES = (State.enabled, State.softDisabling, State.overriding)
 ENABLED_STATES = (State.preEnabled, *ACTIVE_STATES)
 

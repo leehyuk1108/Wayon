@@ -95,10 +95,11 @@ class CarSpecificEvents:
         self.gm_auto_hold_watch = True
       hold_release_requested = (not gm_manual_hold and
                                 CC.actuators.longControlState != car.CarControl.Actuators.LongControlState.stopping)
-      if (not gm_hold_available or CS.gasPressed or hold_release_requested or CS.vEgo > 1.0):
+      if (not gm_hold_available or CS.gasPressed or CS.regenBraking or hold_release_requested or
+          (not gm_manual_hold and abs(CS.vEgo) > 1.0)):
         self.gm_auto_hold_watch = False
         self.gm_auto_hold_moving_frames = 0
-      elif self.gm_auto_hold_watch and CS.vEgo > 0.08:
+      elif self.gm_auto_hold_watch and abs(CS.vEgo) > 0.08:
         self.gm_auto_hold_moving_frames += 1
       else:
         self.gm_auto_hold_moving_frames = 0

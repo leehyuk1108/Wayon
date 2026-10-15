@@ -383,7 +383,7 @@ def test_queue_creep_arms_only_after_stationary_radar_lead_confirmation():
   decision = controller.update(True, True, 1.5 * CV.KPH_TO_MS, 1.5 * CV.KPH_TO_MS,
                                False, measured_lead)
   assert decision.active
-  assert decision.target_speed == pytest.approx(1.0 * CV.KPH_TO_MS)
+  assert decision.target_speed == pytest.approx(0.7 * CV.KPH_TO_MS)
 
 
 def test_queue_creep_scales_speed_to_gap_and_hands_close_gap_back_to_stopping():

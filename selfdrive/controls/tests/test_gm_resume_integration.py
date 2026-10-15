@@ -62,6 +62,7 @@ class TraverseControlChain:
     self.brake_signals = DBC("gm_global_a_chassis").addr_to_msg[0x315].sigs
     self.trace = []
     self.sensors_valid = True
+    self.soft_disabling = False
 
   def step(self, manual_resume=False):
     # card calls update() before apply(); the read phase must not erase hold.
@@ -74,7 +75,8 @@ class TraverseControlChain:
     control.enabled = True
     control.longActive = True
     control.actuators.accel = float(self.loc.update(True, self.cs.out, self.plan, (-3.5, 2.0), self.radar,
-                                                   manual_resume=manual_resume, manual_resume_sensors_valid=self.sensors_valid))
+                                                   manual_resume=manual_resume, manual_resume_sensors_valid=self.sensors_valid,
+                                                   soft_disabling=self.soft_disabling))
     # Match controlsd: publish the state that produced this cycle's acceleration.
     control.actuators.longControlState = self.loc.long_control_state
     control.cruiseControl.resume = self.loc.get_resume_request(True, True, self.cs.out, self.plan)
@@ -117,6 +119,63 @@ class TraverseControlChain:
 @pytest.fixture
 def chain(monkeypatch, tmp_path):
   return TraverseControlChain(monkeypatch, tmp_path)
+
+
+def test_soft_disable_moving_coast_packs_zero_friction_brake(chain):
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 20.0
+  chain.cs.out.cruiseState.standstill = False
+  chain.radar.leadOne.status = False
+  chain.plan.shouldStop = False
+  chain.plan.aTarget = 0.8
+  chain.plan.speeds = [21.0] * 33
+  chain.run(100)
+  assert chain.trace[-1].accel > 0.0
+  chain.soft_disabling = True
+  frames = chain.run(100)
+  assert all(entry.accel == 0.0 for entry in frames)
+  assert all(brake == 0 for _, brake in chain.brakes(frames))
+  assert not any(entry.resume for entry in frames)
+  assert chain.buttons() == []
+
+
+def test_soft_disable_still_packs_friction_brake_for_closing_lead(chain):
+  chain.cs.out.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 10.0
+  chain.cs.out.cruiseState.standstill = False
+  chain.radar.leadOne.dRel = 15.0
+  chain.radar.leadOne.vRel = -3.0
+  chain.radar.leadOne.vLead = chain.radar.leadOne.vLeadK = 7.0
+  chain.plan.shouldStop = False
+  chain.plan.aTarget = -1.0
+  chain.plan.speeds = [9.0] * 33
+  chain.soft_disabling = True
+  frames = chain.run(100)
+  assert frames[-1].accel < -0.5
+  assert any(brake > 0 for _, brake in chain.brakes(frames))
+
+
+def test_soft_disable_keeps_stationary_hold_despite_departing_lead(chain):
+  chain.run(110)
+  chain.depart()
+  chain.soft_disabling = True
+  frames = chain.run(200)
+  assert all(entry.state == LongCtrlState.stopping and not entry.resume for entry in frames)
+  assert all(brake == GM_AUTO_HOLD_BRAKE for _, brake in chain.brakes(frames))
+  assert chain.buttons() == []
+  assert not chain.loc.sng_resume_attempted
+
+
+def test_soft_disable_cancels_resume_and_recovers_stationary_hold(chain):
+  chain.run(110)
+  chain.depart()
+  chain.run(40)
+  assert chain.loc.sng_resume_ready
+  chain.soft_disabling = True
+  frames = chain.run(100)
+  assert all(entry.state == LongCtrlState.stopping and not entry.resume for entry in frames)
+  assert chain.brakes(frames)[-1][1] == GM_AUTO_HOLD_BRAKE
+  assert chain.buttons() == []
 
 
 def test_hold_releases_before_five_fresh_resume_frames(chain):
@@ -278,17 +337,102 @@ def test_queue_creep_keeps_a_confirmed_rolling_stop_out_of_gm_stopping(chain):
 
 
 def test_queue_creep_damps_idle_surge_without_requesting_throttle():
-  target_speed = 1.0 / 3.6
+  target_speed = 0.7 / 3.6
 
   # Release residual brake promptly while the vehicle is still decelerating.
-  assert longcontrol.get_queue_creep_accel(target_speed, 0.8 / 3.6, -0.35) == 0.0
+  assert longcontrol.get_queue_creep_accel(target_speed, 0.6 / 3.6, -0.35) == 0.0
   # Once idle creep starts accelerating the vehicle, rebuild light brake before
   # filtered speed has time to overshoot the target.
-  assert longcontrol.get_queue_creep_accel(target_speed, 0.9 / 3.6, 0.2) < 0.0
+  assert longcontrol.get_queue_creep_accel(target_speed, 0.65 / 3.6, 0.2) < 0.0
   assert longcontrol.get_queue_creep_accel(target_speed, 2.0 / 3.6, 0.0) < 0.0
   assert longcontrol.get_queue_creep_accel(target_speed, 0.2 / 3.6, -0.4) <= 0.0
   assert longcontrol.rate_limit_queue_creep_accel(0.0, -0.4) == pytest.approx(-0.385)
   assert longcontrol.rate_limit_queue_creep_accel(-0.4, 0.0) == pytest.approx(-0.015)
+
+
+@pytest.mark.parametrize("target_kph", [0.4, 0.7])
+@pytest.mark.parametrize("excess_kph", [0.05, 0.4, 1.3])
+@pytest.mark.parametrize("measured_accel", [-0.4, -0.07851, 0.0, 0.4])
+def test_queue_creep_does_not_cancel_overspeed_braking(target_kph, excess_kph, measured_accel):
+  output = longcontrol.get_queue_creep_accel(target_kph / 3.6, (target_kph + excess_kph) / 3.6, measured_accel)
+  proportional = -longcontrol.QUEUE_CREEP_SPEED_KP * excess_kph / 3.6
+  assert longcontrol.QUEUE_CREEP_MAX_DECEL <= output < 0.0
+  assert output <= proportional + 1e-12
+
+
+def test_queue_creep_regression_recorded_brake_release_at_1_09_kph():
+  # 2026-10-11 23:31:57 KST: old damping erased the speed error and brake went to zero.
+  assert longcontrol.get_queue_creep_accel(1.0 / 3.6, 0.30236, -0.07851) < 0.0
+  assert longcontrol.get_queue_creep_accel(0.7 / 3.6, 0.30236, -0.07851) < -0.09
+
+
+@pytest.mark.parametrize("index", range(4))
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
+def test_queue_creep_invalid_input_keeps_brake_bound(index, invalid):
+  values = [0.7 / 3.6, 1.0 / 3.6, -0.1, -0.1]
+  values[index] = invalid
+  assert longcontrol.get_queue_creep_accel(*values) == longcontrol.QUEUE_CREEP_MAX_DECEL
+
+
+def arm_rolling_creep(chain, speed_kph=1.5):
+  chain.cs.out.standstill = chain.cs.out.cruiseState.standstill = False
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = speed_kph / 3.6
+  chain.cs.out.aEgo = -0.1
+  chain.radar.leadOne.vRel = -chain.cs.out.vEgo
+  chain.loc.long_control_state = LongCtrlState.pid
+  chain.loc.last_output_accel = -0.3
+  chain.loc.accel_smoother.reset(-0.3)
+  chain.run(200)
+  assert chain.loc.queue_creep_controller.active
+  assert chain.loc.queue_creep_integrator.i < 0.0
+
+
+def test_queue_creep_persistent_overspeed_builds_bounded_bias_and_unwinds(chain):
+  arm_rolling_creep(chain)
+  initial_bias = chain.loc.queue_creep_integrator.i
+  frames = chain.run(400)
+  assert -longcontrol.QUEUE_CREEP_MAX_BRAKE_BIAS <= chain.loc.queue_creep_integrator.i < initial_bias
+  assert all(longcontrol.QUEUE_CREEP_MAX_DECEL <= entry.accel < 0.0 for entry in frames)
+  assert all(brake > 0 for _, brake in chain.brakes(frames))
+  assert max(abs(a.accel - b.accel) for a, b in zip(frames[:-1], frames[1:], strict=True)) <= 0.01501
+  chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.4 / 3.6
+  chain.cs.out.aEgo = 0.0
+  chain.radar.leadOne.vRel = -chain.cs.out.vEgo
+  frames = chain.run(1200)
+  assert abs(chain.loc.queue_creep_integrator.i) <= longcontrol.QUEUE_CREEP_SPEED_KI * 0.01 * (0.3 / 3.6)
+  assert all(entry.accel <= 0.0 for entry in frames)
+  assert not any(entry.resume for entry in frames)
+
+
+@pytest.mark.parametrize("gate", ["depart", "lost", "track", "close", "standstill", "gasPressed", "brakePressed",
+                                 "regenBraking", "parkingBrake", "invalid_can", "reverse", "off"])
+def test_queue_creep_bias_is_not_carried_into_other_control_states(chain, gate):
+  arm_rolling_creep(chain)
+  if gate == "depart":
+    chain.depart()
+  elif gate == "lost":
+    chain.radar.leadOne.status = False
+  elif gate == "track":
+    chain.radar.leadOne.radarTrackId += 1
+  elif gate == "close":
+    chain.radar.leadOne.dRel = 3.0
+  elif gate == "standstill":
+    chain.cs.out.standstill = True
+    chain.cs.out.vEgo = chain.cs.out.vEgoRaw = 0.0
+  elif gate == "invalid_can":
+    chain.cs.out.canValid = False
+  elif gate == "reverse":
+    chain.cs.out.gearShifter = "reverse"
+  elif gate != "off":
+    setattr(chain.cs.out, gate, True)
+  if gate == "off":
+    chain.loc.update(False, chain.cs.out, chain.plan, (-3.5, 2.0), chain.radar)
+  else:
+    entry = chain.step()
+    if gate in ("close", "standstill"):
+      assert entry.state == LongCtrlState.stopping and entry.accel < 0.0
+  assert not chain.loc.queue_creep_controller.active
+  assert chain.loc.queue_creep_integrator.i == 0.0
 
 
 def test_screen_request_without_lead_retries_only_after_another_tap(chain):

@@ -8,10 +8,11 @@ See the LICENSE.md file in the root directory for more details.
 import pytest
 from pytest_mock import MockerFixture
 
-from cereal import custom
+from cereal import custom, log
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.mads.state import StateMachine, SOFT_DISABLE_TIME
 from openpilot.selfdrive.selfdrived.events import ET, NormalPermanentAlert, Events
+from openpilot.selfdrive.selfdrived.state import StateMachine as SelfdriveStateMachine
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP, EVENTS_SP
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -105,6 +106,31 @@ class TestMADSStateMachine:
 
     assert self.state_machine.state == State.disabled
     self.clear_events()
+
+  @pytest.mark.parametrize("long_enabled", [False, True])
+  def test_shared_six_second_timer(self, long_enabled):
+    assert SOFT_DISABLE_TIME == 6
+    ss = SelfdriveStateMachine()
+    ss.state = log.SelfdriveState.OpenpilotState.enabled if long_enabled else log.SelfdriveState.OpenpilotState.disabled
+    self.mads.selfdrive.state_machine = ss
+    self.state_machine = StateMachine(self.mads)
+    self.state_machine.state = State.enabled
+    # The shared event reaches both state machines, as in SelfdriveD.
+    self.events.add(log.OnroadEvent.EventName.commIssue)
+
+    def update():
+      self.mads.selfdrive.enabled, _ = ss.update(self.events)
+      return self.state_machine.update()
+
+    assert update() == (True, True)
+    frames = round(6 / DT_CTRL)
+    assert ss.soft_disable_timer == frames
+    for frame in range(1, frames):
+      assert update() == (True, True)
+      assert self.state_machine.state == State.softDisabling
+      assert ss.soft_disable_timer == frames - frame
+    assert update() == (False, False)
+    assert self.state_machine.state == State.disabled
 
   def test_no_entry(self):
     for et in ENABLE_EVENT_TYPES:

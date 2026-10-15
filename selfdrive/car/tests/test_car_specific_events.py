@@ -1,7 +1,12 @@
+import pytest
+
 from cereal import car, log
 from opendbc.car.gm.values import CAR
 
 from openpilot.selfdrive.car.car_specific import CarSpecificEvents
+from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
+from openpilot.selfdrive.selfdrived.events import Events
+from openpilot.selfdrive.selfdrived.state import StateMachine
 
 
 EventName = log.OnroadEvent.EventName
@@ -82,7 +87,9 @@ def test_gm_hold_timer_is_hidden_outside_drive():
   assert EventName.resumeRequired not in events
 
 
-def test_gm_autohold_warns_after_sustained_uncommanded_movement():
+@pytest.mark.parametrize("speed", [0.12, 0.651, 1.2, -0.12, -1.2])
+@pytest.mark.parametrize("engaged", [False, True])
+def test_gm_autohold_warns_after_sustained_uncommanded_movement(speed, engaged):
   CP = car.CarParams.new_message()
   CP.brand = "gm"
   CP.carFingerprint = CAR.CHEVROLET_TRAVERSE
@@ -100,11 +107,75 @@ def test_gm_autohold_warns_after_sustained_uncommanded_movement():
 
   detector.update(CS, CS_prev, CC)
   CS.standstill = False
-  CS.vEgo = 0.12
+  CS.vEgo = speed
   for _ in range(31):
-    events = detector.update(CS, CS_prev, CC).names
+    events = detector.update(CS, CS_prev, CC)
 
-  assert EventName.gmAutoHoldMoving in events
+  assert EventName.gmAutoHoldMoving in events.names
+
+  # Check the real state-machine filter and alert selection, not just detection.
+  machine = StateMachine()
+  machine.state = log.SelfdriveState.OpenpilotState.enabled if engaged else log.SelfdriveState.OpenpilotState.disabled
+  alert_events = Events()
+  alert_events.add(EventName.gmAutoHoldMoving)
+  machine.update(alert_events)
+  manager = AlertManager()
+  manager.add_many(0, alert_events.create_alerts(machine.current_alert_types))
+  manager.process_alerts(0, set())
+  alert = manager.current_alert
+  assert alert.alert_type == "gmAutoHoldMoving/permanent"
+  assert alert.audible_alert == car.CarControl.HUDControl.AudibleAlert.prompt
+  assert alert.visual_alert == car.CarControl.HUDControl.VisualAlert.brakePressed
+
+  CS.vEgo = 0.0
+  assert EventName.gmAutoHoldMoving not in detector.update(CS, CS_prev, CC).names
+
+
+@pytest.mark.parametrize("release", ["gas", "regen", "epb", "gear", "latch"])
+def test_gm_manual_hold_warning_clears_on_release(release):
+  CP = car.CarParams.new_message()
+  CP.brand = "gm"
+  CP.carFingerprint = CAR.CHEVROLET_TRAVERSE
+  CS = car.CarState.new_message()
+  CS.gearShifter = car.CarState.GearShifter.drive
+  CS.brakeHoldActive = True
+  CS.vEgo = 0.2
+  CS_prev = car.CarState.new_message()
+  CC = car.CarControl.new_message()
+  detector = CarSpecificEvents(CP)
+  for _ in range(31):
+    events = detector.update(CS, CS_prev, CC)
+  assert EventName.gmAutoHoldMoving in events.names
+
+  if release == "gas":
+    CS.gasPressed = True
+  elif release == "regen":
+    CS.regenBraking = True
+  elif release == "epb":
+    CS.parkingBrake = True
+  elif release == "gear":
+    CS.gearShifter = car.CarState.GearShifter.park
+  else:
+    CS.brakeHoldActive = False
+  assert EventName.gmAutoHoldMoving not in detector.update(CS, CS_prev, CC).names
+
+
+def test_gm_manual_hold_warning_rejects_short_movement():
+  CP = car.CarParams.new_message()
+  CP.brand = "gm"
+  CP.carFingerprint = CAR.CHEVROLET_TRAVERSE
+  CS = car.CarState.new_message()
+  CS.gearShifter = car.CarState.GearShifter.drive
+  CS.brakeHoldActive = True
+  CS_prev = car.CarState.new_message()
+  CC = car.CarControl.new_message()
+  detector = CarSpecificEvents(CP)
+  for _ in range(3):
+    CS.vEgo = 0.2
+    for _ in range(29):
+      assert EventName.gmAutoHoldMoving not in detector.update(CS, CS_prev, CC).names
+    CS.vEgo = 0.0
+    assert EventName.gmAutoHoldMoving not in detector.update(CS, CS_prev, CC).names
 
 
 def test_gm_autohold_does_not_warn_during_requested_release():

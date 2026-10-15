@@ -214,6 +214,34 @@ def test_high_speed_headroom_does_not_create_unrequested_acceleration(high_speed
   assert outputs[-1] <= 0.0
 
 
+@pytest.mark.parametrize("speed_kph", [5, 30, 70, 110])
+def test_soft_disable_removes_positive_torque_without_requesting_braking(high_speed_controller, speed_kph):
+  controller = high_speed_controller
+  speed = speed_kph * CV.KPH_TO_MS
+  cs = car.CarState.new_message(vEgo=speed, vEgoRaw=speed, aEgo=0.0, canValid=True, gearShifter="drive")
+  cs.cruiseState.enabled = True
+  plan = SimpleNamespace(shouldStop=False, aTarget=0.8, speeds=[speed + 1.0], jTargetNow=0.0)
+  controller.long_control_state = LongCtrlState.pid
+  controller.last_output_accel = 0.5
+  controller.accel_smoother.reset(0.5)
+  outputs = [float(controller.update(True, cs, plan, (-3.5, 2.0), soft_disabling=True)) for _ in range(100)]
+  assert outputs == [0.0] * 100
+  assert controller.long_control_state == LongCtrlState.pid
+  assert not controller.sng_resume_ready
+  recovered = [float(controller.update(True, cs, plan, (-3.5, 2.0))) for _ in range(100)]
+  assert recovered[-1] > 0.0
+
+
+@pytest.mark.parametrize("target", [-0.4, -1.0, -3.0])
+def test_soft_disable_preserves_planner_requested_braking(high_speed_controller, target):
+  cs = car.CarState.new_message(vEgo=10.0, vEgoRaw=10.0, canValid=True, gearShifter="drive")
+  cs.cruiseState.enabled = True
+  plan = SimpleNamespace(shouldStop=False, aTarget=target, speeds=[10.0], jTargetNow=0.0)
+  outputs = [float(high_speed_controller.update(True, cs, plan, (-3.5, 2.0), soft_disabling=True)) for _ in range(300)]
+  assert outputs[-1] == pytest.approx(target, abs=0.03)
+  assert all(target <= value <= 0.0 for value in outputs)
+
+
 def sng_inputs():
   CS = car.CarState.new_message(vEgo=0.0, standstill=True, gearShifter="drive", canValid=True)
   CS.cruiseState.enabled = True
@@ -258,6 +286,81 @@ def test_sng_resume_does_not_arm_before_full_stop():
     for _ in range(SNG_STOP_CONFIRM_FRAMES + SNG_LEAD_CONFIRM_FRAMES):
       assert not controller.update_sng_resume(True, CS, plan, radar, now=10.0)
   assert not controller.sng_resume_attempted
+
+
+def overlapping_sng_inputs():
+  controller = sng_controller()
+  controller.CP.carFingerprint = "CHEVROLET_TRAVERSE"
+  cs, plan, radar = sng_inputs()
+  plan.shouldStop = False
+  radar.leadOne.radar = True
+  radar.leadOne.radarTrackId = 27
+  radar.leadOne.vRel = 0.8
+  radar.leadTwo = SimpleNamespace(status=False)
+  return controller, cs, plan, radar
+
+
+def test_departing_lead_confirmation_overlaps_but_does_not_shorten_full_stop_confirmation():
+  controller, cs, plan, radar = overlapping_sng_inputs()
+  for frame in range(SNG_STOP_CONFIRM_FRAMES - 1):
+    assert not controller.update_sng_resume(True, cs, plan, radar, now=frame * 0.01,
+                                             manual_resume_sensors_valid=True)
+  assert controller.sng_lead_frames == SNG_LEAD_CONFIRM_FRAMES
+  assert controller.update_sng_resume(True, cs, plan, radar, now=0.49, manual_resume_sensors_valid=True)
+  assert controller.sng_resume_ready
+  assert not controller.sng_resume_succeeded
+
+
+@pytest.mark.parametrize("blocked", ["planner_stop", "lead_stopped", "lead_lost", "lead_two", "fcw", "too_close"])
+def test_overlapping_confirmation_preserves_stop_and_obstacle_gates(blocked):
+  controller, cs, plan, radar = overlapping_sng_inputs()
+  for frame in range(SNG_STOP_CONFIRM_FRAMES - 1):
+    controller.update_sng_resume(True, cs, plan, radar, now=frame * 0.01, manual_resume_sensors_valid=True)
+  if blocked == "planner_stop":
+    plan.shouldStop = True
+  elif blocked == "lead_stopped":
+    radar.leadOne.vRel = 0.0
+  elif blocked == "lead_lost":
+    radar.leadOne.status = False
+  elif blocked == "lead_two":
+    radar.leadTwo = SimpleNamespace(status=True, dRel=5.0, vRel=-1.0)
+  elif blocked == "fcw":
+    plan.fcw = True
+  else:
+    radar.leadOne.dRel = 3.5
+  assert not controller.update_sng_resume(True, cs, plan, radar, now=0.49, manual_resume_sensors_valid=True)
+  assert not controller.sng_resume_attempted
+
+
+@pytest.mark.parametrize("change", ["track", "stale", "vision", "moving"])
+def test_overlapping_confirmation_cannot_reuse_invalidated_departure(change):
+  controller, cs, plan, radar = overlapping_sng_inputs()
+  for frame in range(SNG_STOP_CONFIRM_FRAMES - 1):
+    controller.update_sng_resume(True, cs, plan, radar, now=frame * 0.01, manual_resume_sensors_valid=True)
+  if change == "track":
+    radar.leadOne.radarTrackId = 28
+  elif change == "vision":
+    radar.leadOne.radar = False
+  elif change == "moving":
+    cs.standstill = False
+    cs.vEgo = 0.1
+  assert not controller.update_sng_resume(True, cs, plan, radar, now=0.49,
+                                           manual_resume_sensors_valid=change != "stale")
+  assert controller.sng_lead_frames <= 1
+
+
+def test_overlap_does_not_reuse_departure_before_planner_stop_clears():
+  controller, cs, plan, radar = overlapping_sng_inputs()
+  plan.shouldStop = True
+  for frame in range(100):
+    assert not controller.update_sng_resume(True, cs, plan, radar, now=frame * 0.01,
+                                             manual_resume_sensors_valid=True)
+  assert controller.sng_lead_frames == 0
+  plan.shouldStop = False
+  for frame in range(SNG_LEAD_CONFIRM_FRAMES - 1):
+    assert not controller.update_sng_resume(True, cs, plan, radar, now=1.0 + frame * 0.01,
+                                             manual_resume_sensors_valid=True)
+  assert controller.update_sng_resume(True, cs, plan, radar, now=1.19, manual_resume_sensors_valid=True)
 
 
 @pytest.mark.parametrize("field,value", [("canValid", False), ("accFaulted", True),
@@ -491,6 +594,104 @@ def test_adaptive_smoother_releases_brake_faster_for_departing_radar_lead():
                                          lead=departing_lead) for _ in range(50)]
 
   assert departing[-1] > calm[-1]
+
+
+def close_departing_lead(**changes):
+  values = dict(status=True, radar=True, radarTrackId=27, dRel=5.25, vRel=0.8, aLeadK=0.7, jLead=0.0)
+  values.update(changes)
+  return SimpleNamespace(**values)
+
+
+def release_trace(allowed=True, lead=None, target=0.3, speed=0.5, cutin=None):
+  smoother = AdaptiveLongitudinalSmoother()
+  smoother.reset(-0.4)
+  lead = close_departing_lead() if lead is None else lead
+  outputs = [smoother.update(target, measured_accel=-0.2, v_ego=speed, v_target=speed,
+                             lead=lead, cutin_risk=cutin, brake_release=allowed) for _ in range(100)]
+  return outputs
+
+
+def test_close_departure_shortens_only_brake_tail_with_bounded_ramp():
+  normal = release_trace(allowed=False)
+  released = release_trace()
+  first_zero = next(i for i, value in enumerate(released) if value >= 0.0)
+  normal_zero = next(i for i, value in enumerate(normal) if value >= 0.0)
+  assert first_zero < normal_zero
+  assert released[first_zero] == 0.0
+  assert released[:9] == normal[:9]
+  assert max(abs(b - a) for a, b in zip([-0.4] + released[:-1], released, strict=True)) <= 0.031
+  assert all(a <= b for a, b in zip(released[:-1], released[1:], strict=True))
+  assert max(released) <= 0.3
+
+
+@pytest.mark.parametrize("changes", [dict(status=False), dict(radar=False), dict(radarTrackId=-1),
+                                    dict(dRel=4.0), dict(vRel=-0.1), dict(vRel=0.0),
+                                    dict(aLeadK=0.0), dict(dRel=float("nan")),
+                                    dict(vRel=float("nan")), dict(aLeadK=float("nan"))])
+def test_close_departure_rejects_unconfirmed_or_closing_lead(changes):
+  lead = close_departing_lead(**changes)
+  assert release_trace(lead=lead) == release_trace(allowed=False, lead=lead)
+
+
+@pytest.mark.parametrize("target,speed", [(-0.3, 0.5), (-2.5, 0.5), (0.3, 0.0), (0.3, 5.0)])
+def test_brake_tail_change_preserves_braking_hold_and_other_speed_ranges(target, speed):
+  assert release_trace(target=target, speed=speed) == release_trace(allowed=False, target=target, speed=speed)
+
+
+def test_brake_tail_release_does_not_create_positive_acceleration_from_zero_target():
+  assert max(release_trace(target=0.0)) <= 0.0
+
+
+def test_brake_tail_release_is_cancelled_by_cutin_risk():
+  cutin = SimpleNamespace(status=True, score=0.5)
+  assert release_trace(cutin=cutin) == release_trace(allowed=False, cutin=cutin)
+
+
+def test_brake_tail_release_requires_continuous_same_track_and_fresh_permission():
+  smoother = AdaptiveLongitudinalSmoother()
+  smoother.reset(-0.4)
+  lead = close_departing_lead()
+  for _ in range(9):
+    assert not smoother._confirmed_brake_release(True, 0.3, 0.5, lead, None)
+  lead.radarTrackId = 28
+  assert not smoother._confirmed_brake_release(True, 0.3, 0.5, lead, None)
+  assert smoother.brake_release_frames == 1
+  for _ in range(9):
+    smoother._confirmed_brake_release(True, 0.3, 0.5, lead, None)
+  assert not smoother._confirmed_brake_release(False, 0.3, 0.5, lead, None)
+  assert smoother.brake_release_frames == 0
+  assert not smoother._confirmed_brake_release(True, 0.3, 0.5, lead, None)
+
+
+@pytest.mark.parametrize("gate", ["clear", "stale", "planner_decel", "planner_stop", "lead_two", "fcw", "camera", "hold", "safety_cap",
+                                 "brakePressed", "gasPressed", "regenBraking", "parkingBrake", "reverse", "canInvalid"])
+def test_controller_brake_tail_permission_does_not_bypass_plan_or_safety(high_speed_controller, monkeypatch, gate):
+  controller = high_speed_controller
+  controller.long_control_state = LongCtrlState.pid
+  controller.last_output_accel = -0.4
+  controller.accel_smoother.reset(-0.4)
+  cs = car.CarState.new_message(vEgo=0.5, vEgoRaw=0.5, aEgo=-0.2, canValid=True, gearShifter="drive")
+  cs.cruiseState.enabled = True
+  plan = SimpleNamespace(shouldStop=gate == "planner_stop", aTarget=-0.2 if gate == "planner_decel" else 0.3,
+                         speeds=[0.5], jTargetNow=0.0, fcw=gate == "fcw")
+  radar = SimpleNamespace(leadOne=close_departing_lead(), leadTwo=SimpleNamespace(status=False))
+  if gate == "lead_two":
+    radar.leadTwo = SimpleNamespace(status=True, dRel=5.0, vRel=-1.0)
+  if gate == "hold":
+    cs.standstill = True
+    cs.vEgo = cs.vEgoRaw = 0.0
+  if gate in ("brakePressed", "gasPressed", "regenBraking", "parkingBrake"):
+    setattr(cs, gate, True)
+  elif gate == "reverse":
+    cs.gearShifter = "reverse"
+  elif gate == "canInvalid":
+    cs.canValid = False
+  if gate == "safety_cap":
+    monkeypatch.setattr(controller.lead_approach_controller, "update", lambda *args: -0.5)
+  icbm = SimpleNamespace(automaticControlActive=True, controlSource="camera") if gate == "camera" else None
+  for _ in range(20):
+    controller.update(True, cs, plan, (-3.5, 2.0), radar, icbm=icbm, manual_resume_sensors_valid=gate != "stale")
+  assert (controller.accel_smoother.brake_release_frames > 0) == (gate == "clear")
 
 
 def test_adaptive_smoother_builds_low_speed_departure_accel_quickly_without_step():

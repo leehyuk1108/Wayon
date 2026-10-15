@@ -14,13 +14,37 @@ class AdaptiveLongitudinalSmoother:
     self.output_accel = 0.0
     self.output_jerk = 0.0
     self.override_release_frames = 0
+    self.brake_release_frames = 0
+    self.brake_release_track_id = None
     self.initialized = False
 
   def reset(self, accel: float = 0.0) -> None:
     self.output_accel = float(accel) if math.isfinite(accel) else 0.0
     self.output_jerk = 0.0
     self.override_release_frames = 0
+    self.brake_release_frames = 0
+    self.brake_release_track_id = None
     self.initialized = True
+
+  def _confirmed_brake_release(self, allowed: bool, target_accel: float, v_ego: float,
+                               lead: Any | None, cutin_risk: Any | None) -> bool:
+    values = [float(getattr(lead, key, math.nan)) for key in ("dRel", "vRel", "aLeadK", "radarTrackId")]
+    valid = (allowed and target_accel >= 0.0 and self.output_accel < 0.0 and
+             0.05 < v_ego <= 3.0 and getattr(lead, "status", False) and getattr(lead, "radar", False) and
+             all(math.isfinite(value) for value in values) and values[0] > 4.0 and
+             values[1] > 0.35 and values[2] > 0.1 and values[3] >= 0.0 and
+             self._cutin_urgency(cutin_risk) < 0.2)
+    if not valid:
+      self.brake_release_frames = 0
+      self.brake_release_track_id = None
+      return False
+    track_id = int(values[3])
+    if track_id != self.brake_release_track_id:
+      self.brake_release_frames = 0
+      self.brake_release_track_id = track_id
+    confirm_frames = max(1, round(0.1 / self.dt))
+    self.brake_release_frames = min(self.brake_release_frames + 1, confirm_frames)
+    return self.brake_release_frames >= confirm_frames
 
   @staticmethod
   def _lead_urgency(lead: Any | None) -> float:
@@ -84,9 +108,10 @@ class AdaptiveLongitudinalSmoother:
              v_target: float, planned_jerk: float = 0.0, lead: Any | None = None,
              cutin_risk: Any | None = None, accel_limits: tuple[float, float] | None = None,
              throttle_release: bool = False, launch_transition: bool = False,
-             override_release: bool = False) -> float:
+             override_release: bool = False, brake_release: bool = False) -> float:
     if not math.isfinite(target_accel):
       target_accel = 0.0
+      brake_release = False
     if not math.isfinite(measured_accel):
       measured_accel = self.output_accel
     if not math.isfinite(planned_jerk):
@@ -99,6 +124,7 @@ class AdaptiveLongitudinalSmoother:
 
     if not self.initialized:
       self.reset(measured_accel)
+    release_only = self._confirmed_brake_release(brake_release, target_accel, v_ego, lead, cutin_risk)
     if override_release:
       self.override_release_frames = max(1, round(0.4 / self.dt))
     override_release_active = self.override_release_frames > 0
@@ -130,6 +156,12 @@ class AdaptiveLongitudinalSmoother:
       natural_frequency = 6.5
       jerk_limit = 4.0
       snap_limit = 30.0
+    elif release_only and error > 0.0:
+      # A confirmed opening gap may shorten only the negative-command tail.
+      # Positive acceleration still uses the normal shaping on later cycles.
+      natural_frequency = 8.0
+      jerk_limit = 3.0
+      snap_limit = 25.0
     elif error > 0.0 and lead_departure_urgency >= 0.15:
       # A radar lead that is accelerating away can use a quicker S-curve.
       # Keep snap and jerk bounded so the stronger low-speed command still
@@ -183,6 +215,9 @@ class AdaptiveLongitudinalSmoother:
                                      -jerk_limit, jerk_limit))
 
     next_accel = self.output_accel + self.output_jerk * self.dt
+    if release_only and next_accel > 0.0:
+      next_accel = 0.0
+      self.output_jerk = 0.0
     if error * (target_accel - next_accel) <= 0.0:
       next_accel = target_accel
       self.output_jerk = 0.0

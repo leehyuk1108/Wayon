@@ -1,3 +1,5 @@
+import pytest
+
 from cereal import log
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.selfdrived.state import StateMachine, SOFT_DISABLE_TIME
@@ -65,6 +67,68 @@ class TestStateMachine:
       self.state_machine.update(self.events)
 
     assert self.state_machine.state == State.disabled
+
+  @pytest.mark.parametrize("initial_state", [State.enabled, State.overriding])
+  def test_soft_disable_six_second_boundary(self, initial_state):
+    assert SOFT_DISABLE_TIME == 6
+    self.state_machine.state = initial_state
+    self.events.add(make_event([ET.SOFT_DISABLE]))
+    assert self.state_machine.update(self.events) == (True, True)
+    frames = round(6 / DT_CTRL)
+    assert self.state_machine.soft_disable_timer == frames
+
+    for frame in range(1, frames):
+      assert self.state_machine.update(self.events) == (True, True)
+      assert self.state_machine.state == State.softDisabling
+      assert self.state_machine.soft_disable_timer == frames - frame
+      assert ET.SOFT_DISABLE in self.state_machine.current_alert_types
+
+    assert self.state_machine.update(self.events) == (False, False)
+    assert self.state_machine.state == State.disabled
+
+  def test_soft_disable_recovers_and_new_fault_gets_full_timer(self):
+    self.state_machine.state = State.enabled
+    self.events.add(make_event([ET.SOFT_DISABLE]))
+    self.state_machine.update(self.events)
+    for _ in range(round(4 / DT_CTRL)):
+      self.state_machine.update(self.events)
+
+    self.events.clear()
+    assert self.state_machine.update(self.events) == (True, True)
+    assert self.state_machine.state == State.enabled
+    assert ET.SOFT_DISABLE not in self.state_machine.current_alert_types
+
+    self.events.add(make_event([ET.SOFT_DISABLE]))
+    self.state_machine.update(self.events)
+    assert self.state_machine.soft_disable_timer == round(6 / DT_CTRL)
+
+  @pytest.mark.parametrize("event_type", [ET.USER_DISABLE, ET.IMMEDIATE_DISABLE])
+  def test_disable_interrupts_extended_soft_disable(self, event_type):
+    self.state_machine.state = State.enabled
+    self.events.add(make_event([ET.SOFT_DISABLE]))
+    self.state_machine.update(self.events)
+    for _ in range(round(4 / DT_CTRL)):
+      self.state_machine.update(self.events)
+
+    self.events.clear()
+    self.events.add(make_event([ET.SOFT_DISABLE, event_type]))
+    assert self.state_machine.update(self.events) == (False, False)
+    assert self.state_machine.state == State.disabled
+    assert event_type in self.state_machine.current_alert_types
+
+  def test_other_alert_does_not_restart_soft_disable_timer(self):
+    self.state_machine.state = State.enabled
+    self.events.add(make_event([ET.SOFT_DISABLE]))
+    self.state_machine.update(self.events)
+    for _ in range(round(4 / DT_CTRL)):
+      self.state_machine.update(self.events)
+
+    remaining = self.state_machine.soft_disable_timer
+    self.events.clear()
+    self.events.add(make_event([ET.SOFT_DISABLE, ET.WARNING]))
+    for _ in range(remaining - 1):
+      assert self.state_machine.update(self.events) == (True, True)
+    assert self.state_machine.update(self.events) == (False, False)
 
   def test_no_entry(self):
     # Make sure noEntry keeps us disabled

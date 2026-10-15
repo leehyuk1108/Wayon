@@ -29,6 +29,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.wayon_longitudinal_coordinator 
   QueueCreepController,
   WayonCoastController,
   icbm_blocks_coast,
+  StopEntryBrakeRamp,
 )
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
@@ -51,21 +52,27 @@ SNG_MANUAL_CREEP_MAX_DISTANCE = 1.5
 QUEUE_CREEP_MAX_ACCEL = 0.0
 QUEUE_CREEP_MAX_DECEL = -0.55
 QUEUE_CREEP_SPEED_KP = 0.9
+QUEUE_CREEP_SPEED_KI = 0.35
+QUEUE_CREEP_MAX_BRAKE_BIAS = 0.3
 QUEUE_CREEP_ACCEL_DAMPING = 0.75
 QUEUE_CREEP_MEASURED_ACCEL_LIMIT = 0.4
 QUEUE_CREEP_BRAKE_BUILD_RATE = 1.5
 QUEUE_CREEP_BRAKE_RELEASE_RATE = 1.5
 
 
-def get_queue_creep_accel(v_target: float, v_ego: float, a_ego: float) -> float:
+def get_queue_creep_accel(v_target: float, v_ego: float, a_ego: float, brake_bias: float = 0.0) -> float:
   """Track crawl speed with brake release only and damp torque-converter surge."""
-  if not all(math.isfinite(value) for value in (v_target, v_ego, a_ego)):
+  if not all(math.isfinite(value) for value in (v_target, v_ego, a_ego, brake_bias)):
     return QUEUE_CREEP_MAX_DECEL
 
   measured_accel = float(np.clip(a_ego, -QUEUE_CREEP_MEASURED_ACCEL_LIMIT,
                                  QUEUE_CREEP_MEASURED_ACCEL_LIMIT))
-  requested_accel = QUEUE_CREEP_SPEED_KP * (v_target - v_ego) - \
-                    QUEUE_CREEP_ACCEL_DAMPING * measured_accel
+  speed_error = v_target - v_ego
+  speed_feedback = QUEUE_CREEP_SPEED_KP * speed_error + float(np.clip(brake_bias, -QUEUE_CREEP_MAX_BRAKE_BIAS, 0.0))
+  requested_accel = speed_feedback - QUEUE_CREEP_ACCEL_DAMPING * measured_accel
+  if speed_error < 0.0:
+    # Measured deceleration must not cancel braking while still above crawl speed.
+    requested_accel = min(requested_accel, speed_feedback)
   return float(np.clip(requested_accel, QUEUE_CREEP_MAX_DECEL, QUEUE_CREEP_MAX_ACCEL))
 
 
@@ -159,13 +166,18 @@ class LongControl:
     self.lead_approach_controller = LeadApproachController()
     self.lead_trend_anticipator = LeadTrendAnticipator()
     self.stop_controller = LowSpeedStopController()
+    self.stop_entry_ramp = StopEntryBrakeRamp()
     self.queue_creep_controller = QueueCreepController()
+    self.queue_creep_integrator = PIDController(0.0, QUEUE_CREEP_SPEED_KI, rate=1 / DT_CTRL,
+                                               neg_limit=-QUEUE_CREEP_MAX_BRAKE_BIAS, pos_limit=0.0)
     self.response_learner = LongitudinalResponseLearner(
       float(CP.longitudinalActuatorDelay), enabled=self.wayon_carrot_profile)
     self.last_output_accel = 0.0
     self.sng_stop_frames = 0
     self.sng_lead_frames = 0
     self.sng_lead_baseline_m = None
+    self.sng_lead_track_id = None
+    self.sng_lead_overlap = False
     self.sng_resume_ready = False
     self.sng_resume_frames = 0
     self.sng_resume_attempted = False
@@ -190,11 +202,14 @@ class LongControl:
   def reset(self):
     self.pid.reset()
     self.speed_pid.reset()
+    self.queue_creep_integrator.reset()
 
   def reset_sng_resume(self, clear_attempt=True):
     self.sng_stop_frames = 0
     self.sng_lead_frames = 0
     self.sng_lead_baseline_m = None
+    self.sng_lead_track_id = None
+    self.sng_lead_overlap = False
     self.sng_resume_ready = False
     self.sng_resume_frames = 0
     self.sng_resume_started_at = None
@@ -457,17 +472,33 @@ class LongControl:
       self.reset_sng_resume(clear_attempt=False)
       return False
     self.sng_stop_frames = min(self.sng_stop_frames + 1, SNG_STOP_CONFIRM_FRAMES)
+    track_id = getattr(lead, "radarTrackId", None)
+    if track_id != self.sng_lead_track_id:
+      self.sng_lead_frames = 0
+      self.sng_lead_baseline_m = None
+      self.sng_lead_track_id = track_id
+    overlap = bool(use_traverse_unacked_follow(self.CP) and sensors_valid and
+                   getattr(lead, "radar", False) and track_id is not None and track_id >= 0 and
+                   math.isfinite(lead.vRel) and not getattr(long_plan, "fcw", False))
+    if overlap != self.sng_lead_overlap:
+      self.sng_lead_frames = 0
+      self.sng_lead_overlap = overlap
     self.sng_lead_baseline_m = lead.dRel if self.sng_lead_baseline_m is None else min(self.sng_lead_baseline_m, lead.dRel)
     if self.sng_stop_frames >= SNG_STOP_CONFIRM_FRAMES:
       if "hold_confirmed" not in self.sng_auto_logged_stages:
         self.sng_auto_attempt_id += 1
       self.log_gm_auto_resume("hold_confirmed", lead_distance=float(lead.dRel), pcm_standstill=bool(CS.cruiseState.standstill))
-    lead_departing = (self.sng_stop_frames >= SNG_STOP_CONFIRM_FRAMES and not long_plan.shouldStop and
+    # Observe departure during stop confirmation, but never authorize release
+    # before the full stationary interval and a clear planner/obstacle check.
+    lead_departing = ((self.sng_stop_frames >= SNG_STOP_CONFIRM_FRAMES or overlap) and not long_plan.shouldStop and
                      (lead.vRel > SNG_LEAD_MIN_REL_SPEED or lead.dRel - self.sng_lead_baseline_m > SNG_LEAD_MIN_DISTANCE_DELTA))
     self.sng_lead_frames = min(self.sng_lead_frames + 1, SNG_LEAD_CONFIRM_FRAMES) if lead_departing else 0
-    if self.sng_lead_frames >= SNG_LEAD_CONFIRM_FRAMES:
+    if (self.sng_stop_frames >= SNG_STOP_CONFIRM_FRAMES and self.sng_lead_frames >= SNG_LEAD_CONFIRM_FRAMES and
+        (not overlap or manual_resume_obstacle_clear(long_plan, radar_state))):
       self.log_gm_auto_resume("lead_departed", lead_distance=float(lead.dRel), lead_relative_speed=float(lead.vRel),
-                              distance_delta=float(lead.dRel - self.sng_lead_baseline_m))
+                              distance_delta=float(lead.dRel - self.sng_lead_baseline_m),
+                              confirmation_overlapped=overlap, stop_confirm_frames=self.sng_stop_frames,
+                              lead_confirm_frames=self.sng_lead_frames)
       self.sng_resume_ready = True
       self.sng_resume_attempted = True
       self.sng_resume_moved = False
@@ -475,9 +506,10 @@ class LongControl:
     return self.sng_resume_ready
 
   def update(self, active, CS, long_plan, accel_limits, radar_state=None, icbm=None, pitch=0.0, manual_resume=False,
-             manual_resume_sensors_valid=False):
+             manual_resume_sensors_valid=False, soft_disabling=False):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
-    previous_state_active = self.long_control_state != LongCtrlState.off
+    previous_state = self.long_control_state
+    previous_state_active = previous_state != LongCtrlState.off
     if CS.gasPressed and (previous_state_active or self.gas_override_active):
       self.gas_override_active = True
     override_released = active and self.gas_override_active and not CS.gasPressed
@@ -486,6 +518,11 @@ class LongControl:
 
     a_target = long_plan.aTarget
     planner_should_stop = long_plan.shouldStop
+    takeover = self.wayon_carrot_profile and soft_disabling
+    if takeover:
+      # Remove positive torque during handover without adding a brake target.
+      # Negative limits and the planner's real obstacle/stop requests stay intact.
+      accel_limits = (accel_limits[0], min(accel_limits[1], 0.0))
     actuation_limits = accel_limits
     if self.wayon_carrot_profile:
       actuation_limits = (accel_limits[0], min(accel_limits[1], get_max_actuation_accel(CS.vEgo, pitch)))
@@ -494,7 +531,9 @@ class LongControl:
     self.pid.pos_limit = accel_limits[1]
     self.speed_pid.neg_limit = accel_limits[0]
     self.speed_pid.pos_limit = accel_limits[1]
-    sng_resume = self.update_sng_resume(active, CS, long_plan, radar_state, manual_resume=manual_resume,
+    if takeover and self.sng_resume_attempted:
+      self.log_gm_auto_resume("failed", reason="soft_disabling")
+    sng_resume = self.update_sng_resume(active and not takeover, CS, long_plan, radar_state, manual_resume=manual_resume,
                                        manual_resume_sensors_valid=manual_resume_sensors_valid)
     lead = radar_state.leadOne if radar_state is not None else None
     queue_creep_enabled = bool(
@@ -503,9 +542,15 @@ class LongControl:
       CS.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low) and
       self.sng_ui_phase is None and not self.sng_resume_ready and not self.sng_unacked_follow
     )
+    previous_creep_track = self.queue_creep_controller.track_id
     queue_creep = self.queue_creep_controller.update(
       queue_creep_enabled, planner_should_stop, CS.vEgo, CS.vEgoRaw, CS.standstill, lead)
+    if not queue_creep.active or previous_creep_track != self.queue_creep_controller.track_id or not math.isfinite(CS.aEgo):
+      self.queue_creep_integrator.reset()
     should_stop = planner_should_stop and not self.sng_ui_creep and not queue_creep.active
+    if takeover and CS.standstill:
+      # Do not release a stationary hold or start a new resume during takeover.
+      should_stop = True
     sng_launch_failed = (self.CP.autoResumeSng and self.sng_resume_attempted and not sng_resume and
                          self.long_control_state == LongCtrlState.starting and CS.vEgo <= self.CP.vEgoStarting)
     if use_gm_auto_hold_sng(self.CP):
@@ -521,6 +566,23 @@ class LongControl:
       # Remaining in stopping would force inactive regen and a brake floor in
       # the GM output layer. PID is required to track the bounded creep speed.
       self.long_control_state = LongCtrlState.pid
+    stop_entry_accel = self.stop_entry_ramp.update(
+      enabled=(self.wayon_carrot_profile and active and previous_state == LongCtrlState.pid and
+               self.long_control_state == LongCtrlState.stopping and should_stop and
+               manual_resume_sensors_valid and CS.canValid and not CS.accFaulted and
+               not CS.standstill and not CS.brakePressed and not CS.gasPressed and
+               not CS.regenBraking and not CS.parkingBrake and not takeover and
+               not self.sng_resume_failed and not self.sng_resume_attempted and
+               CS.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low) and
+               radar_state is not None and not getattr(long_plan, "fcw", False) and
+               not bool(getattr(getattr(radar_state, "leadTwo", None), "status", False)) and
+               not bool(getattr(cutin_risk_for_control(radar_state), "status", False))),
+      previous_accel=float(self.last_output_accel), requested_accel=a_target,
+      v_ego=CS.vEgo, v_ego_raw=CS.vEgoRaw, a_ego=CS.aEgo, lead=lead)
+    if stop_entry_accel is not None:
+      # Keep PID output mode only while building the floor. Entering stopping
+      # sooner would make the GM layer immediately apply that floor again.
+      self.long_control_state = LongCtrlState.pid
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       self.coast_controller.reset()
@@ -530,6 +592,15 @@ class LongControl:
       self.queue_creep_controller.reset()
       output_accel = 0.
       self.accel_smoother.reset(CS.aEgo)
+
+    elif stop_entry_accel is not None:
+      self.reset()
+      self.stop_controller.reset()
+      self.coast_controller.reset()
+      self.lead_approach_controller.reset()
+      self.lead_trend_anticipator.reset()
+      output_accel = stop_entry_accel
+      self.accel_smoother.reset(output_accel)
 
     elif self.long_control_state == LongCtrlState.stopping:
       self.coast_controller.reset()
@@ -571,13 +642,18 @@ class LongControl:
         self.accel_smoother.reset(output_accel)
 
     else:  # LongCtrlState.pid
+      self.stop_controller.reset()
       if self.speed_pid_enabled:
         v_target_now = (queue_creep.target_speed if queue_creep.active else
                         float(long_plan.speeds[0]) if len(long_plan.speeds) else CS.vEgo)
         error = v_target_now - CS.vEgo
         if queue_creep.active:
           creep_speed = max(abs(CS.vEgo), abs(CS.vEgoRaw))
-          output_accel = get_queue_creep_accel(v_target_now, creep_speed, CS.aEgo)
+          creep_error = v_target_now - creep_speed
+          brake_bias = self.queue_creep_integrator.update(
+            creep_error, freeze_integrator=(not math.isfinite(CS.aEgo) or
+                                           (creep_error < 0.0 and self.last_output_accel <= QUEUE_CREEP_MAX_DECEL)))
+          output_accel = get_queue_creep_accel(v_target_now, creep_speed, CS.aEgo, brake_bias)
           self.speed_pid.reset()
         else:
           output_accel = self.speed_pid.update(error, speed=CS.vEgo, feedforward=a_target * self.speed_pid_kf)
@@ -610,7 +686,12 @@ class LongControl:
             output_accel, CS.aEgo, CS.vEgo, v_target_now,
             planned_jerk=float(getattr(long_plan, "jTargetNow", 0.0)),
             lead=lead, cutin_risk=cutin_risk, accel_limits=actuation_limits,
-            throttle_release=anticipatory_coast, override_release=override_released)
+            throttle_release=anticipatory_coast, override_release=override_released,
+            brake_release=(manual_resume_sensors_valid and CS.canValid and not CS.standstill and
+                           not CS.brakePressed and not CS.gasPressed and not CS.regenBraking and not CS.parkingBrake and
+                           CS.gearShifter in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low) and not planner_should_stop and
+                           a_target >= 0.0 and not automatic_control and
+                           manual_resume_obstacle_clear(long_plan, radar_state)))
       else:
         error = a_target - CS.aEgo
         output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)

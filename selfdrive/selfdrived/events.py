@@ -535,7 +535,8 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.gmAutoHoldMoving: {
-    ET.WARNING: Alert(
+    # Manual hold also runs while disengaged, when WARNING alerts are filtered.
+    ET.PERMANENT: Alert(
       "오토홀드 밀림 감지",
       "브레이크를 밟아 차량을 고정하세요",
       AlertStatus.userPrompt, AlertSize.mid,

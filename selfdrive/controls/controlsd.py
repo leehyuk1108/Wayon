@@ -23,6 +23,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.sunnypilot.selfdrive.controls.lib.gm_manual_resume import ManualResumeReceiver, manual_resume_eligible, manual_resume_obstacle_clear
+from openpilot.sunnypilot.selfdrive.controls.lib.wayon_carrot_long_profile import should_force_decel
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -152,7 +153,8 @@ class Controls(ControlsExt):
     actuators.accel = float(self.LoC.update(
       CC.longActive, CS, long_plan, pid_accel_limits, self.sm['radarState'],
       self.sm['selfdriveStateSP'].intelligentCruiseButtonManagement, pitch, manual_resume=manual_resume,
-      manual_resume_sensors_valid=manual_resume_sensors_valid))
+      manual_resume_sensors_valid=manual_resume_sensors_valid,
+      soft_disabling=self.sm['selfdriveState'].state == State.softDisabling))
     if self.CP.brand == "gm" and self.CP.autoResumeSng:
       # Brake release and the RES sequencer must use the state that produced
       # this acceleration, rather than the previous control cycle's state.
@@ -266,8 +268,9 @@ class Controls(ControlsExt):
     cs.upAccelCmd = float(self.LoC.pid.p)
     cs.uiAccelCmd = float(self.LoC.pid.i)
     cs.ufAccelCmd = float(self.LoC.pid.f)
-    cs.forceDecel = bool((self.sm['driverMonitoringState'].alertLevel == log.DriverMonitoringState.AlertLevel.three) or
-                         (self.sm['selfdriveState'].state == State.softDisabling))
+    cs.forceDecel = should_force_decel(
+      self.CP, self.sm['driverMonitoringState'].alertLevel == log.DriverMonitoringState.AlertLevel.three,
+      self.sm['selfdriveState'].state == State.softDisabling)
 
     lat_tuning = self.CP.lateralTuning.which()
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:

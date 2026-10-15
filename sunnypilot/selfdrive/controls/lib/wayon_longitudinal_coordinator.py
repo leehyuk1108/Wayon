@@ -338,6 +338,57 @@ class LeadTrendAnticipator:
     return self.state.active
 
 
+class StopEntryBrakeRamp:
+  """Build the stopping floor before changing GM's output mode, while rolling."""
+
+  MAX_FRAMES = round(0.2 / DT_CTRL)
+  MIN_BUILD_RATE = 2.5
+  MAX_BUILD_RATE = 10.0
+
+  def __init__(self):
+    self.reset()
+
+  def reset(self) -> None:
+    self.frames = 0
+    self.track_id = None
+    self.target = 0.0
+
+  def update(self, enabled: bool, previous_accel: float, requested_accel: float,
+             v_ego: float, v_ego_raw: float, a_ego: float, lead=None) -> float | None:
+    if not enabled:
+      self.reset()
+      return None
+    valid_lead = bool(lead is not None and getattr(lead, "status", False) and getattr(lead, "radar", False))
+    if not valid_lead:
+      return None
+    distance, closing, track = (float(getattr(lead, field, math.nan)) for field in ("dRel", "vRel", "radarTrackId"))
+    values = (previous_accel, requested_accel, v_ego, v_ego_raw, a_ego, distance, closing, track)
+    if (not all(math.isfinite(value) for value in values) or track < 0 or
+        min(v_ego, v_ego_raw) <= 0.015 or max(v_ego, v_ego_raw) >= 2.5 * CV.KPH_TO_MS or
+        distance <= 3.4 or closing < -0.7 or not -1.0 < a_ego <= 0.05 or previous_accel > 0.0):
+      return None
+    floor = get_traverse_stopping_accel_floor(max(v_ego, v_ego_raw))
+    # Never delay a planner demand stronger than the comfort stopping floor.
+    if requested_accel < floor or self.frames >= self.MAX_FRAMES:
+      return None
+    if self.frames == 0:
+      self.track_id, self.target = track, floor
+    if track != self.track_id:
+      return None
+    self.target = min(self.target, floor)
+    if previous_accel <= self.target:
+      return None
+    # Finish before the estimated wheel-speed zero crossing, not after it.
+    time_to_build = min((self.MAX_FRAMES - self.frames) * DT_CTRL,
+                        0.5 * min(v_ego, v_ego_raw) / max(-a_ego, 0.05))
+    build_rate = max(self.MIN_BUILD_RATE, (previous_accel - self.target) / max(DT_CTRL, time_to_build))
+    if build_rate > self.MAX_BUILD_RATE:
+      return None
+    self.frames += 1
+    return max(self.target, previous_accel - build_rate * DT_CTRL)
+
+
+
 class LowSpeedStopController:
   """Taper residual braking only in the final fraction of a stop."""
 
@@ -419,13 +470,13 @@ class QueueCreepDecision:
 
 
 class QueueCreepController:
-  """Keep a rolling queue approach at 0.4-1 km/h until the lead is 3 m away."""
+  """Keep a rolling queue approach at 0.4-0.7 km/h until the lead is 3 m away."""
 
   TARGET_GAP = 3.0
   MIN_LEAD_RESERVE = 3.0
   MAX_LEAD_DISTANCE = 15.0
   MIN_TARGET_SPEED = 0.4 * CV.KPH_TO_MS
-  MAX_TARGET_SPEED = 1.0 * CV.KPH_TO_MS
+  MAX_TARGET_SPEED = 0.7 * CV.KPH_TO_MS
   MAX_ENTRY_SPEED = 2.0 * CV.KPH_TO_MS
   MAX_TRACKING_SPEED = 10.0 * CV.KPH_TO_MS
   MIN_ROLLING_SPEED = 0.05

@@ -951,6 +951,25 @@ def test_payload_suppresses_manual_auto_hold_event_text():
   assert payload["alertType"] == ""
 
 
+def test_payload_preserves_manual_hold_movement_warning_while_disengaged():
+  car_state = SimpleNamespace(
+    gearShifter="drive", standstill=False, brakeHoldActive=True,
+    vEgo=0.65, vEgoCluster=0.65,
+  )
+  selfdrive_state = SimpleNamespace(
+    active=False, enabled=False, engageable=False, state="disabled",
+    alertText1="오토홀드 밀림 감지",
+    alertText2="브레이크를 밟아 차량을 고정하세요",
+    alertType="gmAutoHoldMoving/permanent", alertStatus="userPrompt", alertSize="mid",
+  )
+  payload = navdy_op_bridge.payload_from_messages(selfdrive_state, car_state, 10)
+  assert payload["alertType"] == selfdrive_state.alertType
+  assert payload["alertText1"] == selfdrive_state.alertText1
+  assert payload["alertText2"] == selfdrive_state.alertText2
+  assert payload["alertStatus"] == "userPrompt"
+  assert payload["alertSize"] == "mid"
+
+
 def test_payload_shows_stop_icon_while_engaged_at_standstill():
   car_state = SimpleNamespace(
     cruiseState=SimpleNamespace(standstill=False, speed=0.0),

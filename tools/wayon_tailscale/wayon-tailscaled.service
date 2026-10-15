@@ -1,0 +1,36 @@
+[Unit]
+Description=Wayon private SSH network (Tailscale)
+After=local-fs.target network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+ConditionPathExists=/dev/net/tun
+
+[Service]
+Type=notify
+ExecStartPre=/data/wayon-tailscale/firewall.sh
+ExecStart=/data/wayon-tailscale/bin/tailscaled --state=/data/wayon-tailscale/state/tailscaled.state --statedir=/data/wayon-tailscale/state --socket=/run/wayon-tailscale/tailscaled.sock --tun=tailscale0 --port=41641 --no-logs-no-support
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=30
+TimeoutStopSec=15
+RuntimeDirectory=wayon-tailscale
+RuntimeDirectoryMode=0700
+UMask=0077
+Environment=GOMAXPROCS=2
+Environment=GOMEMLIMIT=64MiB
+Environment=TS_LOGS_DIR=/data/wayon-tailscale/state
+Nice=15
+CPUAffinity=0 1 2 3
+MemoryAccounting=true
+MemoryMax=128M
+TasksMax=64
+OOMScoreAdjust=500
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/data/wayon-tailscale/state /run/wayon-tailscale /run/xtables.lock
+LogRateLimitIntervalSec=60
+LogRateLimitBurst=30
+
+[Install]
+WantedBy=multi-user.target

@@ -16,13 +16,13 @@ test('WLP1 is exactly four binary bytes immediately and every 3 seconds', () => 
     let tick;
     const currentSocket = { readyState: 1, send: value => sent.push(value) };
     const context = vm.createContext({
-        socket: currentSocket, heartbeatTimer: 7, WebSocket: { OPEN: 1 },
+        socket: currentSocket, heartbeatTimer: 7, videoWatchdogTimer: 0, WebSocket: { OPEN: 1 },
         setInterval(callback, delay) { assert.equal(delay, 3000); tick = callback; return 8; },
         clearInterval(id) { cleared.push(id); },
     });
     vm.runInContext(source('stopHeartbeat') + source('startHeartbeat'), context);
     context.startHeartbeat(currentSocket);
-    assert.deepEqual(cleared, [7]);
+    assert.deepEqual(cleared, [7, 0]);
     assert.equal(sent.length, 1);
     tick();
     assert.equal(sent.length, 2);
@@ -41,13 +41,13 @@ test('WLP1 is exactly four binary bytes immediately and every 3 seconds', () => 
     assert.equal(sent.length, 2, 'replaced sockets must not send');
     context.stopHeartbeat();
     assert.equal(context.heartbeatTimer, 0);
-    assert.deepEqual(cleared, [7, 8]);
+    assert.deepEqual(cleared, [7, 0, 8, 0]);
 });
 
 test('heartbeat send failures remain contained', () => {
     let warnings = 0;
     const socket = { readyState: 1, send() { throw new Error('closed during send'); } };
-    const context = vm.createContext({ socket, heartbeatTimer: 0, WebSocket: { OPEN: 1 },
+    const context = vm.createContext({ socket, heartbeatTimer: 0, videoWatchdogTimer: 0, WebSocket: { OPEN: 1 },
         setInterval: () => 1, clearInterval() {}, console: { warn() { warnings++; } } });
     vm.runInContext(source('stopHeartbeat') + source('startHeartbeat'), context);
     assert.doesNotThrow(() => context.startHeartbeat(socket));

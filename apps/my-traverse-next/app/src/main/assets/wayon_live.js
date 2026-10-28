@@ -56,6 +56,8 @@
     let sessionRequestPending = false;
     let startupTimer = 0;
     let heartbeatTimer = 0;
+    let videoWatchdogTimer = 0;
+    let videoDelayed = false;
     let nativeRefreshSuspended = false;
     let impactRequestSequence = 0;
     let saveToastTimer = 0;
@@ -96,11 +98,11 @@
 
     const streams = {
         wide: {
-            decoder: null, frame: null, frameReceivedAt: 0, ready: false,
+            decoder: null, frame: null, frameReceivedAt: 0, lastDecodedAt: null, ready: false,
             keySeen: false, droppingUntilKey: false, lastTimestamp: -1,
         },
         driver: {
-            decoder: null, frame: null, frameReceivedAt: 0, ready: false,
+            decoder: null, frame: null, frameReceivedAt: 0, lastDecodedAt: null, ready: false,
             keySeen: false, droppingUntilKey: false, lastTimestamp: -1,
         },
     };
@@ -573,6 +575,11 @@
         try {
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, stream.frame);
             stream.ready = true;
+            if (!savedPlayback && camerasFresh(1000)) {
+                videoDelayed = false;
+                setStatus("LIVE", true);
+                if (wideExposureReady) hideMessage();
+            }
         } finally {
             stream.frame.close();
             stream.frame = null;
@@ -686,7 +693,7 @@
     }
 
     function updateCaptureControls() {
-        const ready = socket?.readyState === WebSocket.OPEN && streams.wide.ready && streams.driver.ready;
+        const ready = socket?.readyState === WebSocket.OPEN && camerasFresh(3000);
         const photoDisabled = !ready || photoCaptureBusy;
         const clipDisabled = !ready;
         const changed = photoButton.disabled !== photoDisabled || clip10Button.disabled !== clipDisabled
@@ -695,6 +702,34 @@
         clip10Button.disabled = clipDisabled;
         clip30Button.disabled = clipDisabled;
         if (changed) traceCapture("controls", { photoDisabled, clipDisabled });
+    }
+
+    function camerasFresh(maxAgeMs) {
+        const now = performance.now();
+        return [streams.wide, streams.driver].every(stream => stream.ready
+            && stream.lastDecodedAt !== null && now - stream.lastDecodedAt < maxAgeMs);
+    }
+
+    async function uploadPanoramaPhoto(blob, controller) {
+        const token = window.getWayonCloudViewToken?.() || "";
+        if (!token) throw new Error("Photo upload authentication unavailable");
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        try {
+            // Keep large JPEGs out of the live WebSocket's heartbeat queue.
+            const response = await fetch("https://wayon-cloud.hyuklee.workers.dev/api/live-capture", {
+                method: "POST", cache: "no-store", redirect: "error", signal: controller.signal,
+                // The server supplies photo/layout defaults and receipt time;
+                // these two headers are already allowed by its CORS policy.
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+                body: blob,
+            });
+            if (!response.ok) throw new Error(`Photo upload HTTP ${response.status}`);
+            const result = await response.json();
+            if (!result.ok || !result.id) throw new Error("Photo upload not acknowledged");
+            return result;
+        } finally {
+            clearTimeout(timeout);
+        }
     }
 
     function cancelPhotoCapture() {
@@ -749,7 +784,7 @@
             showSaveToast("Live 연결 후 저장할 수 있습니다.");
             return;
         }
-        if (!glState || !streams.wide.ready || !streams.driver.ready) {
+        if (!glState || !camerasFresh(1000)) {
             showSaveToast("두 카메라 준비 후 저장할 수 있습니다.");
             return;
         }
@@ -812,16 +847,21 @@
             traceCapture("photo-encode-start", { captureId });
             const blob = await jpegBlob(outputCanvas, controller.signal);
             traceCapture("photo-encode-done", { captureId, bytes: blob.size });
-            const payload = new Uint8Array(await blob.arrayBuffer());
             if (controller.signal.aborted || socket !== captureSocket || captureSocket.readyState !== WebSocket.OPEN) return;
-            if (sendClientControl(CONTROL_PHOTO, payload)) {
-                traceCapture("photo-queued", { captureId, bytes: payload.length });
-                showSaveToast("360° 사진 저장 요청됨 · 차량 응답 대기 중", 6000);
-            }
+            if (!camerasFresh(1000)) throw new Error("Camera frames expired while encoding photo");
+            traceCapture("photo-upload-start", { captureId, bytes: blob.size });
+            showSaveToast("360° 사진 저장 중", 20000);
+            await uploadPanoramaPhoto(blob, controller);
+            if (controller.signal.aborted || socket !== captureSocket) return;
+            traceCapture("photo-upload-saved", { captureId, bytes: blob.size });
+            handleCaptureStatus({ kind: "photo", captureState: "saved" });
         } catch (error) {
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted) {
+                if (photoCaptureController === controller) showSaveToast("사진 저장 응답이 없습니다. 갤러리에서 확인해 주세요.");
+                return;
+            }
             console.error("Wayon panorama capture failed", error);
-            showSaveToast("360° 사진 생성에 실패했습니다.");
+            showSaveToast("360° 사진 생성 또는 저장에 실패했습니다.");
         } finally {
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             if (framebuffer) gl.deleteFramebuffer(framebuffer);
@@ -1242,10 +1282,12 @@
 
     function closeDecoders() {
         cancelPhotoCapture();
+        videoDelayed = false;
         Object.values(streams).forEach((stream) => {
             if (stream.frame) stream.frame.close();
             stream.frame = null;
             stream.frameReceivedAt = 0;
+            stream.lastDecodedAt = null;
             stream.ready = false;
             stream.keySeen = false;
             stream.droppingUntilKey = false;
@@ -1264,9 +1306,11 @@
         if (stream.decoder) return stream.decoder;
         const decoder = new VideoDecoder({
             output(frame) {
+                if (stream.decoder !== decoder) { frame.close(); return; }
                 if (stream.frame) stream.frame.close();
                 stream.frame = frame;
                 stream.frameReceivedAt = performance.now();
+                stream.lastDecodedAt = stream.frameReceivedAt;
                 frameCounter += 1;
                 if (savedPlayback) {
                     clearStartupTimer();
@@ -1363,8 +1407,7 @@
         }
 
         if (data.state === "live") {
-            reconnectAttempts = 0;
-            setStatus("LIVE", true);
+            setStatus(camerasFresh(3000) ? "LIVE" : "카메라 준비 중", camerasFresh(3000));
             return;
         }
         terminalState = data.state || "error";
@@ -1423,6 +1466,8 @@
     function stopHeartbeat() {
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         heartbeatTimer = 0;
+        clearInterval(videoWatchdogTimer);
+        videoWatchdogTimer = 0;
     }
 
     function startHeartbeat(currentSocket) {
@@ -1437,6 +1482,29 @@
         };
         sendHeartbeat();
         heartbeatTimer = setInterval(sendHeartbeat, 3000);
+    }
+
+    function startVideoWatchdog(currentSocket, disconnected) {
+        const startedAt = performance.now();
+        videoWatchdogTimer = setInterval(() => {
+            if (socket !== currentSocket || savedPlayback || terminalState) return;
+            const now = performance.now();
+            const ages = [streams.wide, streams.driver].map(stream =>
+                now - (stream.lastDecodedAt ?? startedAt));
+            const oldest = Math.max(...ages);
+            if (oldest >= 3000 && !videoDelayed) {
+                videoDelayed = true;
+                setStatus("영상 수신 지연");
+                updateCaptureControls();
+                traceCapture("video-stale", { ageMs: Math.round(oldest) });
+            }
+            const hasFrames = streams.wide.lastDecodedAt !== null || streams.driver.lastDecodedAt !== null;
+            if (oldest >= (hasFrames ? 12000 : 30000)) {
+                currentSocket.close(4000, "video stalled");
+                // WebSocket close can itself wait on a broken transport.
+                disconnected({ code: 4000, reason: "video stalled" });
+            }
+        }, 1000);
     }
 
     function suspendNativeRefresh(suspended) {
@@ -1464,6 +1532,7 @@
             if (socket !== currentSocket) return;
             traceCapture("socket-open");
             startHeartbeat(currentSocket);
+            startVideoWatchdog(currentSocket, currentSocket.onclose);
             setStatus("카메라 연결 중");
             clearStartupTimer();
             startupTimer = setTimeout(() => {

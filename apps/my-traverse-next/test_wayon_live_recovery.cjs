@@ -22,6 +22,7 @@ function fixture() {
     const errors = [];
     const toasts = [];
     const events = [];
+    const uploads = [];
     const buttons = new Map();
     function button(id) {
         if (!buttons.has(id)) buttons.set(id, {
@@ -64,13 +65,14 @@ function fixture() {
     }, { get: (target, key) => key in target ? target[key] : () => {} });
     const context = vm.createContext({
         socket: null, heartbeatTimer: 0, startupTimer: 0, reconnectTimer: 0,
+        videoWatchdogTimer: 0, videoDelayed: false,
         intentionalClose: false, sessionRequestPending: false, terminalState: null,
         reconnectAttempts: 0, MAX_RECONNECT_ATTEMPTS: 6, receiveBuffer: new Uint8Array(),
         photoCaptureBusy: false, photoCaptureController: null, photoCaptureSequence: 0,
         Uint8Array, ArrayBuffer, DataView, Blob, AbortController, TextDecoder, WebSocket: FakeSocket,
         CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
         FRAME_METADATA: 0,
-        streams: { wide: { ready: false }, driver: { ready: false } },
+        streams: { wide: { ready: false, lastDecodedAt: null }, driver: { ready: false, lastDecodedAt: null } },
         wideExposureReady: false, wideFirstFrameAt: 0, driverFirstFrameAt: 0,
         nextWideExposureSampleAt: 0, wideExposureSamples: 0, wideMeasuredExposureGain: 1,
         WIDE_READY_TIMEOUT_MS: 3000, savedPlayback: null, glState: { gl, textures: { wide: {}, driver: {} } },
@@ -82,7 +84,12 @@ function fixture() {
         }) },
         overlay: { classList, setAttribute() {} }, status: { classList },
         pointers: new Map(), pinchStart: null, animationFrame: 0,
-        window: { Android: { requestWayonLiveSession() { nativeRequests++; } }, dispatchEvent: event => events.push(event) },
+        window: { Android: { requestWayonLiveSession() { nativeRequests++; } },
+            getWayonCloudViewToken: () => 'test-device-key', dispatchEvent: event => events.push(event) },
+        fetch: async (url, options) => {
+            uploads.push({ url, options });
+            return { ok: true, json: async () => ({ ok: true, id: 'test-photo' }) };
+        },
         setInterval: (callback, delay) => schedule(callback, delay, true),
         clearInterval: id => timers.delete(id), setTimeout: schedule, clearTimeout: id => timers.delete(id),
         performance: { now: () => time },
@@ -95,7 +102,8 @@ function fixture() {
         clearSavedPlayback() {}, cancelAnimationFrame() {}, hideSaveToast() {}, hideImpactPanel() {}, suspendNativeRefresh() {},
     });
     for (const name of ['resetStartupExposureState', 'clearStartupTimer', 'traceCapture', 'updateCaptureControls',
-        'cancelPhotoCapture', 'closeDecoders', 'stopHeartbeat', 'startHeartbeat', 'connect', 'requestSession',
+        'camerasFresh', 'uploadPanoramaPhoto', 'cancelPhotoCapture', 'closeDecoders', 'stopHeartbeat', 'startHeartbeat',
+        'startVideoWatchdog', 'connect', 'requestSession',
         'sendClientControl', 'jpegBlob', 'capturePanoramaPhoto', 'requestClip', 'uploadFrame', 'handleCaptureStatus', 'handleControl']) {
         vm.runInContext(source(name), context);
     }
@@ -118,6 +126,8 @@ function fixture() {
             context.clearStartupTimer();
             context.streams.wide.ready = true;
             context.streams.driver.ready = true;
+            context.streams.wide.lastDecodedAt = time;
+            context.streams.driver.lastDecodedAt = time;
             context.updateCaptureControls();
         }
         return socket;
@@ -140,7 +150,7 @@ function fixture() {
         encoders[index](value);
     }
     return { context, open, advance, complete, sockets, photoButton, clip10Button, clip30Button,
-        traces, errors, toasts, encoders, events, nativeRequests: () => nativeRequests, messageVisible: () => messageVisible };
+        traces, errors, toasts, encoders, events, uploads, nativeRequests: () => nativeRequests, messageVisible: () => messageVisible };
 }
 
 const controls = socket => socket.sent.filter(({ packet }) => packet.subarray(0, 4).toString() === 'WLC1');
@@ -173,9 +183,12 @@ test('late close from an old socket cannot cancel the new heartbeat or its activ
     assert.equal(f.context.socket, b);
     assert.equal(f.context.photoCaptureBusy, true);
     assert.equal(b.sent.length, 2);
+    f.context.streams.wide.lastDecodedAt = 3000;
+    f.context.streams.driver.lastDecodedAt = 3000;
     f.complete(0);
     await capture;
-    assert.equal(controls(b).length, 1);
+    assert.equal(f.uploads.length, 1);
+    assert.equal(controls(b).length, 0);
 });
 
 test('a never-called toBlob cannot strand the disabled photo button after full close/reopen', async () => {
@@ -202,7 +215,8 @@ test('a never-called toBlob cannot strand the disabled photo button after full c
     assert.equal(controls(b).length, 0);
     f.complete(1);
     await secondCapture;
-    assert.equal(controls(b).length, 1);
+    assert.equal(f.uploads.length, 1);
+    assert.equal(controls(b).length, 0);
     assert.equal(f.context.photoCaptureBusy, false);
     assert.equal(f.photoButton.disabled, false);
     assert.equal(f.errors.length, 0);
@@ -223,37 +237,49 @@ test('automatic reconnect cancels an unresolved encoder without submitting its o
     assert.equal(controls(b).length, 0);
 });
 
-test('late blob bytes from A cannot enter B or unlock B while a new photo is encoding', async () => {
+test('late HTTP reply from A cannot unlock B or claim a saved photo in the new session', async () => {
     const f = fixture();
     const a = f.open(true);
     const firstCapture = f.photoButton.click();
-    let resolveBytes;
-    f.complete(0, { size: 4, arrayBuffer: () => new Promise(resolve => { resolveBytes = resolve; }) });
+    let resolveUpload;
+    f.context.fetch = () => new Promise(resolve => { resolveUpload = resolve; });
+    f.complete(0);
     await Promise.resolve();
     const b = f.open(true);
     const secondCapture = f.photoButton.click();
-    resolveBytes(new ArrayBuffer(4));
+    resolveUpload({ ok: true, json: async () => ({ ok: true, id: 'old-photo' }) });
     await firstCapture;
+    assert.equal(f.events.length, 0);
     assert.equal(controls(a).length, 0);
     assert.equal(controls(b).length, 0);
     assert.equal(f.context.photoCaptureBusy, true);
     assert.equal(f.photoButton.disabled, true);
+    f.context.fetch = async () => ({ ok: true, json: async () => ({ ok: true, id: 'new-photo' }) });
     f.complete(1);
     await secondCapture;
-    assert.equal(controls(b).length, 1);
+    assert.equal(f.events.length, 1);
+    assert.equal(controls(b).length, 0);
 });
 
-test('normal photo event queues one unchanged WLC1 JPEG and distinguishes local queuing from server upload', async () => {
+test('photo uses authenticated HTTP and only acknowledged storage emits saved; WS stays heartbeat-only', async () => {
     const f = fixture();
     const socket = f.open(true);
     const capture = f.photoButton.click();
     f.complete(0);
     await capture;
     const packets = controls(socket);
-    assert.equal(packets.length, 1);
-    assert.equal(packets[0].packet.toString('hex'), '574c43310100000004ffd8ffd9');
-    assert.match(f.toasts.at(-1), /차량 응답 대기/);
-    assert.ok(f.traces.some(trace => trace.stage === 'photo-queued' && trace.bytes === 4));
+    assert.equal(packets.length, 0);
+    assert.equal(f.uploads.length, 1);
+    const { url, options } = f.uploads[0];
+    assert.equal(url, 'https://wayon-cloud.hyuklee.workers.dev/api/live-capture');
+    assert.equal(options.headers.Authorization, 'Bearer test-device-key');
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.headers['Content-Type'], 'image/jpeg');
+    assert.deepEqual(Object.keys(options.headers).sort(), ['Authorization', 'Content-Type'], 'existing CORS allowlist only');
+    assert.equal(options.headers['x-wayon-device-id'], undefined, 'server derives authenticated owner');
+    assert.equal(options.body.size, 4);
+    assert.match(f.toasts.at(-1), /저장됐습니다/);
+    assert.ok(f.traces.some(trace => trace.stage === 'photo-upload-saved' && trace.bytes === 4));
     assert.ok(f.traces.some(trace => trace.stage === 'photo-readpixels-start'));
     assert.ok(f.traces.some(trace => trace.stage === 'photo-encode-start'));
     assert.ok(f.traces.length < 15, 'diagnostics are bounded per action, not per frame or heartbeat');
@@ -320,6 +346,7 @@ test('reconnect resets exposure readiness and fresh frames can dismiss the loadi
     for (const at of [1000, 5000]) {
         for (const name of ['wide', 'driver']) {
             f.context.streams[name].frame = { close() {} };
+            f.context.streams[name].lastDecodedAt = at;
             f.context.uploadFrame(name, 0, at);
         }
     }
@@ -327,4 +354,74 @@ test('reconnect resets exposure readiness and fresh frames can dismiss the loadi
     assert.equal(f.context.streams.wide.ready, true);
     assert.equal(f.context.streams.driver.ready, true);
     assert.equal(f.photoButton.disabled, false);
+});
+
+test('stale frames disable saves and a dead OPEN socket detaches and retries after 12 seconds', () => {
+    const f = fixture();
+    const socket = f.open(true);
+    f.advance(4000);
+    assert.equal(f.photoButton.disabled, true);
+    assert.equal(f.clip30Button.disabled, true);
+    assert.equal(f.context.videoDelayed, true);
+    f.advance(8000);
+    assert.equal(f.context.socket, null);
+    assert.equal(socket.closes.at(-1).reason, 'video stalled');
+    assert.equal(f.context.heartbeatTimer, 0);
+    f.advance(1000);
+    assert.equal(f.nativeRequests(), 2);
+});
+
+test('a missing camera also triggers recovery, and the six-retry budget is not reset by LIVE status', () => {
+    const f = fixture();
+    for (let attempt = 0; attempt <= 6; attempt++) {
+        f.open(true);
+        f.context.handleControl(3, Buffer.from('{"state":"live"}'));
+        f.advance(6000);
+        f.context.streams.wide.lastDecodedAt = f.context.performance.now();
+        f.advance(6000);
+        assert.equal(f.context.socket, null);
+        assert.equal(f.context.reconnectAttempts, Math.min(attempt + 1, 6));
+        f.advance(1000);
+    }
+    assert.equal(f.context.heartbeatTimer, 0);
+    assert.equal(f.context.videoWatchdogTimer, 0);
+});
+
+test('expired photo and missing auth never upload, failure never emits a saved event', async () => {
+    for (const mode of ['stale', 'auth', 'http', 'ack']) {
+        const f = fixture();
+        f.open(true);
+        if (mode === 'auth') f.context.window.getWayonCloudViewToken = () => '';
+        if (mode === 'http') f.context.fetch = async () => ({ ok: false, status: 503 });
+        if (mode === 'ack') f.context.fetch = async () => ({ ok: true, json: async () => ({ ok: false }) });
+        const capture = f.photoButton.click();
+        if (mode === 'stale') f.advance(1100);
+        f.complete(0);
+        await capture;
+        assert.equal(f.uploads.length, 0);
+        assert.equal(f.events.length, 0);
+        assert.equal(f.context.photoCaptureBusy, false);
+    }
+});
+
+test('slow HTTP photo upload cannot queue behind WS heartbeats and times out without false success', async () => {
+    const f = fixture();
+    const socket = f.open(true);
+    f.context.fetch = (_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+    const capture = f.photoButton.click();
+    f.complete(0);
+    await Promise.resolve();
+    for (let second = 1; second <= 21; second++) {
+        for (const stream of Object.values(f.context.streams)) stream.lastDecodedAt = second * 1000;
+        f.advance(1000);
+    }
+    await capture;
+    assert.equal(f.context.socket, socket);
+    assert.equal(socket.sent.length, 8);
+    assert.ok(socket.sent.every(item => item.packet.toString() === 'WLP1'));
+    assert.equal(f.events.length, 0);
+    assert.equal(f.photoButton.disabled, false);
+    assert.match(f.toasts.at(-1), /응답이 없습니다/);
 });

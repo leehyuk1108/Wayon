@@ -1,6 +1,6 @@
 # Server-First Vehicle State
 
-## Current Behavior (Version 33)
+## Current Behavior (Version 34)
 
 The October 29 request supersedes the phone-cache behavior described below.
 Opening or resuming the app now clears the vehicle display and reads only the
@@ -28,6 +28,59 @@ requiring the larger `/api/json` response. Stored settings are not placed in the
 editable settings form; the settings tab reads actual settings on an explicit
 user entry or its read button. Automatic setup-tab navigation never starts that
 transaction.
+
+### Direct Control Buttons
+
+Version 34 removes the secondary open/close and lock/unlock chooser. Each visible
+button names the exact command it will send after the existing long press. A
+server-observed locked/closed state selects unlock/open; an unlocked/open state
+selects lock/close. The original observation time remains visible. This is a
+display selection, not proof that the vehicle is still in that state.
+
+Missing, partial, invalid-time, more-than-24-hour-old or implausibly future
+closure observations show explicit lock/close actions with neutral, unknown
+state. They never assert that the vehicle is locked or closed. Windows require
+all four readings before selecting an open action. No phone snapshot is restored.
+
+A long press captures its command at touch start. If a poll changes that command
+or disables/hides the button before completion, nothing is sent. Existing native
+authentication, cooldown and fresh engine/hood/driving checks remain in place.
+An acknowledged action's bounded pending display is not undone by repeatedly
+receiving observations older than that action; newer evidence or the existing
+expiry still clears it. This also applies to the shared engine display helper,
+but cannot authorize an engine command or bypass its native fresh read.
+
+Known limitation: a still-valid server observation can disagree with a physical
+change made elsewhere. The single-action home bar then shows the action for that
+observation until refresh. Read the explicit command label, not the icon as a
+live-state guarantee. There is no additional inverse-action chooser in v34.
+
+### Version 34 Verification
+
+2026-10-29, SM-F966N, wireless ADB:
+
+- Release build, 73 Kotlin tests and 55 JavaScript tests passed. Tests exercise
+  cached, unknown, partial, stale and future observations; hold-time command
+  changes, early release, disabled/hidden actions and exact mock bridge dispatch.
+  Older/undated acknowledgments cannot overwrite pending display before expiry.
+- Claude reviewed the pinned final diff and new tests statically. No code blocker
+  was found; the stale-observation action-direction limitation above remains.
+  Engine display also uses the bounded optimistic helper, while native engine
+  authorization and freshness rules remain unchanged.
+- Installed with the existing signer and `adb install -r` (`Success`), preserving
+  account/settings. Version `34 / 2.0-preview.25-direct-buttons`; local signed APK
+  and installed `base.apk` SHA256 both
+  `fc3e03a8198f363ff87682cd95ca5d66cf313821878d81f51a32000bc2c4c5fe`.
+  The packaged HTML SHA256 matches the source exactly.
+- Real cover-display screenshot shows all five command labels without overlap,
+  the original vehicle observation time and server-stored label. Cold-start
+  server GET took 1,116 ms; native selection 1,126 ms. The next periodic GET took
+  626 ms. These are request timings, not a guaranteed first-pixel latency.
+- No command or runtime-error entry appeared in the focused startup log. No
+  actual engine, door, trunk, window or horn command was sent; dispatch evidence
+  is mocked, not physical actuation. The phone was returned to HOME.
+- One final packaging attempt failed for low Mac disk space; a bounded-worker
+  retry completed successfully without deleting user files or unrelated caches.
 
 ### Version 33 Verification
 
@@ -90,9 +143,10 @@ read. Failed uploads retry on a later observation, not through an unbounded queu
   Switching account/key clears local cache, invalidates old response generations
   and prevents late callbacks or queued writes from belonging to the new account.
   Logged-out clients reject scoped account snapshots.
-- Cached closures do not pick a lock/unlock/open/close action. The existing choice
-  dialog remains available immediately. Cached module data does not populate the
-  editable settings screen.
+- In historical versions 31-33, cached closures did not pick a lock/unlock action
+  and the choice dialog remained available. Version 34 supersedes that behavior
+  as described above. Cached module data still does not populate the editable
+  settings screen.
 - Engine actions still require the existing native fresh-state, driving, hood,
   module and remote-start rules. Only an observed direct response in this process
   can use the existing 30-second shortcut. A server `source` string is not proof

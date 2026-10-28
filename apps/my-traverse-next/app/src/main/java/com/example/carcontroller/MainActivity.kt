@@ -2364,28 +2364,6 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             launch(Dispatchers.Main) { startForegroundVehicleRefresh() }
         }
 
-        @JavascriptInterface
-        fun showVehicleControlChoices(kind: String, buttonId: String) {
-            val choices = when (kind to buttonId) {
-                "doors" to "btnDoorToggle" -> listOf("잠그기" to "DOOR_LOCK", "잠금 해제" to "DOOR_UNLOCK")
-                "trunk" to "btnTrunkOpen" -> listOf("트렁크 열기" to "TRUNK_OPEN", "트렁크 닫기" to "TRUNK_CLOSE")
-                "windows" to "btnWindowOpen" -> listOf("창문 열기" to "WINDOW_OPEN", "창문 닫기" to "WINDOW_CLOSE")
-                "sunroof" to "btnSunroofOpen" -> listOf("선루프 열기" to "SUNROOF_OPEN", "선루프 닫기" to "SUNROOF_CLOSE")
-                else -> return
-            }
-            launch(Dispatchers.Main) {
-                if (!isActivityVisible || isFinishing) return@launch
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("차량 제어")
-                    .setItems(choices.map { it.first }.toTypedArray()) { _, index ->
-                        val (name, command) = choices[index]
-                        handleLongPress(command, name, buttonId)
-                    }
-                    .setNegativeButton("취소", null)
-                    .show()
-            }
-        }
-
         private fun executeGmoneVehicleControl(command: String, buttonId: String, extendedUi: Boolean = false) {
             // JavascriptInterface callbacks arrive on the WebView bridge thread.
             // Serialize acceptance and all control state on the main thread.

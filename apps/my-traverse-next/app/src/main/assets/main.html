@@ -6899,7 +6899,13 @@
         }
 
         .home-quick-action .button-text {
-            display: none;
+            display: block;
+            max-width: 100%;
+            font-size: 11px;
+            line-height: 1.2;
+            font-weight: 650;
+            text-align: center;
+            overflow-wrap: anywhere;
         }
 
         .home-quick-action.large-button .button-text {
@@ -7827,19 +7833,19 @@
                                     </div>
                                     <div class="home-sunroof-actions">
                                         <div class="action-button-grouped long-press" id="btnSunroofOpen"
-                                            data-cmd="SUNROOF_OPEN" data-name="선루프 열기" aria-disabled="true">
+                                            data-cmd="SUNROOF_OPEN" data-name="선루프 열기" aria-label="선루프 열기" aria-disabled="true">
                                             <div class="long-press-fill"></div>
                                             <span class="sunroof-action-icon" aria-hidden="true"><i data-lucide="arrow-up"></i></span>
                                             <span class="button-text">열기</span>
                                         </div>
                                         <div class="action-button-grouped long-press" id="btnSunroofTilt"
-                                            data-cmd="SUNROOF_TILT" data-name="선루프 틸트" aria-disabled="true">
+                                            data-cmd="SUNROOF_TILT" data-name="선루프 틸트" aria-label="선루프 틸트" aria-disabled="true">
                                             <div class="long-press-fill"></div>
                                             <span class="sunroof-action-icon" aria-hidden="true"><i data-lucide="move-up-right"></i></span>
                                             <span class="button-text">틸트</span>
                                         </div>
                                         <div class="action-button-grouped long-press" id="btnSunroofClose"
-                                            data-cmd="SUNROOF_CLOSE" data-name="선루프 닫기" aria-disabled="true" hidden>
+                                            data-cmd="SUNROOF_CLOSE" data-name="선루프 닫기" aria-label="선루프 닫기" aria-disabled="true" hidden>
                                             <div class="long-press-fill"></div>
                                             <span class="sunroof-action-icon" aria-hidden="true"><i data-lucide="arrow-down"></i></span>
                                             <span class="button-text">닫기</span>
@@ -9540,6 +9546,7 @@
         const GMONE_STATE_MISMATCH_CONFIRMATIONS = 4;
         const GMONE_REMOTE_START_FALLBACK_SECONDS = 20 * 60;
         const GMONE_ENGINE_STATUS_MAX_AGE_MS = 5 * 60 * 1000;
+        const GMONE_CLOSURE_DISPLAY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
         let gmoneSettingsBusy = false;
         let gmoneDiagnosticBusy = false;
         let windowPositionSensorsVisible = true;
@@ -10246,46 +10253,31 @@
             const known = typeof locked === 'boolean';
             doorLockStateKnown = known;
             btnDoorToggle.setAttribute('aria-disabled', vehicleCommandReady ? 'false' : 'true');
-            btnDoorToggle.dataset.controlChoices = known ? '' : 'doors';
             btnDoorToggle.classList.toggle('state-secure', known && locked);
             btnDoorToggle.classList.toggle('state-attention', known && !locked);
 
-            if (!known) {
-                btnDoorToggle.dataset.cmd = '';
-                btnDoorToggle.dataset.name = '';
-                btnDoorToggle.setAttribute('aria-label', '도어 제어 선택, 길게 누르기');
-                btnDoorToggle.title = '도어 제어 선택';
-                if (text) text.textContent = '도어';
-                renderHomeQuickIcon(icon, 'lock-keyhole');
-                if (state) state.textContent = '상태 확인 중';
-                return;
-            }
-
-            const command = locked ? 'DOOR_UNLOCK' : 'DOOR_LOCK';
-            const label = locked ? '잠금 해제' : '잠그기';
-            const commandName = locked ? '문 잠금해제' : '문 잠금';
+            const unlock = known && locked;
+            const command = unlock ? 'DOOR_UNLOCK' : 'DOOR_LOCK';
+            const label = unlock ? '잠금 해제' : '잠그기';
+            const commandName = unlock ? '문 잠금해제' : '문 잠금';
             btnDoorToggle.dataset.cmd = command;
             btnDoorToggle.dataset.name = commandName;
             btnDoorToggle.setAttribute('aria-label', `${commandName}, 길게 누르기`);
             btnDoorToggle.title = `${commandName}, 길게 누르기`;
-            btnDoorToggle.classList.toggle('vehicle-locked', locked);
+            btnDoorToggle.classList.toggle('vehicle-locked', known && locked);
             if (text) text.textContent = label;
-            renderHomeQuickIcon(icon, locked ? 'lock-keyhole' : 'lock-keyhole-open');
-            if (state) state.textContent = locked ? '잠김' : '잠금 해제';
+            renderHomeQuickIcon(icon, unlock ? 'lock-keyhole-open' : 'lock-keyhole');
+            if (state) state.textContent = known ? (locked ? '잠김' : '잠금 해제') : '상태 확인 중';
         }
 
         async function refreshDoorLockState(force = false) {
             if (!btnDoorToggle) return;
-            if (vehicleDataState !== 'ready') return;
-            const gmoneDoor = gmoneDetailsCurrent?.closures?.doors;
-            if (gmoneDoor && typeof gmoneDoor.active === 'boolean') {
-                const closures = effectiveGmoneClosures(
-                    gmoneDetailsCurrent.closures,
-                    gmoneDetailsSourceUpdatedAt(gmoneDetailsCurrent)
-                );
-                renderDoorLockState(!closures.doors.active);
+            const displayedDoor = displayedGmoneClosures(gmoneDetailsCurrent).doors;
+            if (displayedDoor && typeof displayedDoor.active === 'boolean') {
+                renderDoorLockState(!displayedDoor.active);
                 return;
             }
+            if (vehicleDataState !== 'ready') return;
             const token = getWayonCloudViewToken();
             if (!token) {
                 renderDoorLockState(null);
@@ -10309,6 +10301,11 @@
                 const vehicleLock = payload?.vehicleLock;
                 if (vehicleLock?.known !== true || typeof vehicleLock.locked !== 'boolean') {
                     throw new Error('잠금 상태 없음');
+                }
+                const observedAt = gmoneSourceEpoch(vehicleLock.occurredAt || vehicleLock.updatedAt);
+                if (observedAt === null || observedAt > Date.now() + 60 * 1000
+                    || Date.now() - observedAt > GMONE_CLOSURE_DISPLAY_MAX_AGE_MS) {
+                    throw new Error('잠금 상태 시각 확인 필요');
                 }
                 const effectiveDoorActive = resolveGmoneOptimisticState(
                     'doors',
@@ -12372,9 +12369,9 @@
             activeLongPress = {
                 button,
                 touchId: touch.identifier,
-                choices: button.dataset.controlChoices,
                 cmd: button.dataset.cmd,
                 name: button.dataset.name,
+                gmoneControl: button.dataset.gmoneControl,
             };
             button.classList.add('holding');
 
@@ -12385,13 +12382,11 @@
                 activeLongPress = null;
                 longPressTimer = null;
 
-                if (button.getAttribute('aria-disabled') === 'true') return;
-                if (requested.choices) {
-                    window.Android?.showVehicleControlChoices(requested.choices, button.id);
-                    return;
-                }
+                if (button.getAttribute('aria-disabled') === 'true' || button.hidden
+                    || requested.cmd !== button.dataset.cmd
+                    || requested.gmoneControl !== button.dataset.gmoneControl) return;
 
-                const gmoneControl = button.dataset.gmoneControl;
+                const gmoneControl = requested.gmoneControl;
                 if (gmoneControl) {
                     if (window.Android) {
                         window.Android.sendGmoneExtendedControl(gmoneControl, button.id);
@@ -13406,7 +13401,8 @@
                 pending.lastCheckedRevision = gmoneDetailsRevision;
                 pending.mismatchCount += 1;
             }
-            const confirmedMismatch = Date.now() - pending.createdAt >= GMONE_STATE_MISMATCH_GRACE_MS
+            const confirmedMismatch = sourceIsAfterCommand
+                && Date.now() - pending.createdAt >= GMONE_STATE_MISMATCH_GRACE_MS
                 && pending.mismatchCount >= GMONE_STATE_MISMATCH_CONFIRMATIONS;
             if (knownStates.length > 0 && confirmedMismatch) {
                 delete gmoneOptimisticControls[resource];
@@ -13438,15 +13434,24 @@
             return closures;
         }
 
+        function displayedGmoneClosures(details) {
+            const received = vehicleDataState === 'ready' || vehicleDataState === 'cached';
+            const observedAt = gmoneDetailsSourceUpdatedAt(details) || vehicleSnapshotTime;
+            const epoch = gmoneSourceEpoch(observedAt);
+            const recent = received && epoch !== null && epoch <= Date.now() + 60 * 1000
+                && Date.now() - epoch <= GMONE_CLOSURE_DISPLAY_MAX_AGE_MS;
+            // Only selects a labeled action; it never authorizes an engine command.
+            return effectiveGmoneClosures(recent ? details?.closures : null, recent ? observedAt : null);
+        }
+
         function renderBinarySmartControl({ state, openButton, closeButton, stateId, openLabel, closedLabel, icon }) {
             const known = !!state && typeof state.active === 'boolean';
             const isOpen = known && state.active;
-            setSmartControlAction(openButton, !isOpen, vehicleCommandReady);
-            setSmartControlAction(closeButton, isOpen, vehicleCommandReady && known);
-            openButton.dataset.controlChoices = known ? '' : (stateId === 'trunk-control-state' ? 'trunk' : 'sunroof');
+            setSmartControlAction(openButton, known && !isOpen, vehicleCommandReady);
+            setSmartControlAction(closeButton, !known || isOpen, vehicleCommandReady);
             setSmartControlText(stateId, known ? (isOpen ? openLabel : closedLabel) : '상태 확인 중');
 
-            const visibleButton = isOpen ? closeButton : openButton;
+            const visibleButton = !known || isOpen ? closeButton : openButton;
             [openButton, closeButton].forEach(button => {
                 button?.classList.remove('state-secure', 'state-attention');
             });
@@ -13454,8 +13459,7 @@
             visibleButton?.classList.toggle('state-attention', known && isOpen);
             const text = visibleButton?.querySelector('.button-text');
             if (text) {
-                const label = isOpen ? '닫기' : '열기';
-                text.textContent = known ? label : '제어';
+                text.textContent = !known || isOpen ? '닫기' : '열기';
             }
         }
 
@@ -13527,6 +13531,7 @@
         }
 
         function updateGmoneControlPanel(details) {
+            const displayedClosures = displayedGmoneClosures(details);
             if (vehicleDataState !== 'ready') details = null;
             const engine = effectiveGmoneEngineSnapshot(details);
             const remoteStart = engine.remoteStart;
@@ -13587,7 +13592,6 @@
             }
             const engineNeedsCheck = !engineKnown || vehicleDataState !== 'ready'
                 || (!engineRunning && settings?.all_function_stop == null);
-            btnEngineStart.dataset.controlChoices = '';
             if (engineNeedsCheck) {
                 engineEnabled = !drivingActive;
                 engineState = '요청 시 상태 확인';
@@ -13598,11 +13602,11 @@
             setSmartControlText('engine-control-state', engineState);
             setSmartControlText('engine-control-reason', engineReason);
 
-            const gmoneDoor = closures.doors;
+            const gmoneDoor = displayedClosures.doors;
             renderDoorLockState(gmoneDoor && typeof gmoneDoor.active === 'boolean' ? !gmoneDoor.active : null);
 
             renderBinarySmartControl({
-                state: closures.trunk,
+                state: displayedClosures.trunk,
                 openButton: btnTrunkOpen,
                 closeButton: btnTrunkClose,
                 stateId: 'trunk-control-state',
@@ -13612,28 +13616,27 @@
             });
 
             const windowStates = ['windowFrontLeft', 'windowFrontRight', 'windowRearLeft', 'windowRearRight']
-                .map(key => closures[key])
+                .map(key => displayedClosures[key])
                 .filter(state => state && typeof state.active === 'boolean');
             const openWindowCount = windowStates.filter(state => state.active).length;
             const windowsKnown = windowStates.length === 4;
-            setSmartControlAction(btnWindowOpen, openWindowCount === 0, vehicleCommandReady);
-            setSmartControlAction(btnWindowClose, openWindowCount > 0, vehicleCommandReady && windowsKnown);
-            btnWindowOpen.dataset.controlChoices = windowsKnown ? '' : 'windows';
+            setSmartControlAction(btnWindowOpen, windowsKnown && openWindowCount === 0, vehicleCommandReady);
+            setSmartControlAction(btnWindowClose, !windowsKnown || openWindowCount > 0, vehicleCommandReady);
             setSmartControlText(
                 'window-control-state',
                 windowsKnown ? (openWindowCount > 0 ? `${openWindowCount}개 열림` : '모두 닫힘') : '상태 확인 중'
             );
-            const windowButton = openWindowCount > 0 ? btnWindowClose : btnWindowOpen;
+            const windowButton = !windowsKnown || openWindowCount > 0 ? btnWindowClose : btnWindowOpen;
             [btnWindowOpen, btnWindowClose].forEach(button => {
                 button?.classList.remove('state-secure', 'state-attention');
             });
             windowButton?.classList.toggle('state-secure', windowsKnown && openWindowCount === 0);
             windowButton?.classList.toggle('state-attention', windowsKnown && openWindowCount > 0);
             const windowText = windowButton?.querySelector('.button-text');
-            if (windowText) windowText.textContent = windowsKnown ? (openWindowCount > 0 ? '닫기' : '열기') : '제어';
+            if (windowText) windowText.textContent = !windowsKnown || openWindowCount > 0 ? '닫기' : '열기';
 
             renderBinarySmartControl({
-                state: closures.sunroof,
+                state: displayedClosures.sunroof,
                 openButton: btnSunroofOpen,
                 closeButton: btnSunroofClose,
                 stateId: 'sunroof-control-state',
@@ -13641,8 +13644,8 @@
                 closedLabel: '닫힘',
                 icon: 'cloud-sun'
             });
-            const sunroofKnown = closures.sunroof && typeof closures.sunroof.active === 'boolean';
-            const sunroofOpen = sunroofKnown && closures.sunroof.active;
+            const sunroofKnown = displayedClosures.sunroof && typeof displayedClosures.sunroof.active === 'boolean';
+            const sunroofOpen = sunroofKnown && displayedClosures.sunroof.active;
             setSmartControlAction(btnSunroofTilt, !sunroofOpen, vehicleCommandReady);
             document.getElementById('btnQuickHorn')?.setAttribute('aria-disabled', vehicleCommandReady ? 'false' : 'true');
         }

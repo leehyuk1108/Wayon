@@ -1,6 +1,67 @@
-# Cache-First Vehicle State
+# Server-First Vehicle State
 
-## Flow
+## Current Behavior (Version 33)
+
+The October 29 request supersedes the phone-cache behavior described below.
+Opening or resuming the app now clears the vehicle display and reads only the
+authenticated, D1-only `GET /api/gmone/status`. It never displays or rewrites the
+phone's `VEHICLE_SNAPSHOT_V1`; that obsolete preference is removed on startup.
+No automatic direct GMOne vehicle read is started by opening the app.
+
+The lightweight endpoint is polled independently every 30 seconds. Trip/address
+feed completion and failures no longer decide whether vehicle data is ready.
+Stored server data retains its observation time and account binding and is
+labeled as server-stored information, not a new live observation. Unavailable,
+wrong-account or invalid-time responses cannot restore a previous phone snapshot.
+A transient periodic failure can retain the server response already displayed in
+the current session, with its original time.
+
+Manual home/widget refresh uses the existing server collector queue only, not
+simultaneous phone and collector requests. It can still wait for the vehicle and
+the collector's rate limit; that is separate from displaying stored server data.
+Collector completion forces a new status GET. Explicit diagnostics and native
+remote-engine safety checks retain their direct, fresh reads. No safety check is
+satisfied by a cached server source string.
+
+The status parser preserves top-level module/health/diagnostic fields without
+requiring the larger `/api/json` response. Stored settings are not placed in the
+editable settings form; the settings tab reads actual settings on an explicit
+user entry or its read button. Automatic setup-tab navigation never starts that
+transaction.
+
+### Version 33 Verification
+
+2026-10-29, SM-F966N, wireless ADB:
+
+- Release build, 73 Kotlin tests and 51 JavaScript tests passed. The real
+  `switchTab` function is tested for automatic versus user settings entry.
+  Claude reviewed the final batch statically; the device tests below were run
+  separately.
+- Installed with the existing signer and `adb install -r` (`Success`), retaining
+  account/settings. Version `33 / 2.0-preview.24-server-state`; local signed APK
+  and installed `base.apk` SHA256 both
+  `b38fe1f710fc9015b65e00f59e93c58615691b5e312cb68998090acd04d898f1`.
+- Final cold launches: server GET 2,065 / 3,501 / 2,145 ms; native selection
+  2,075 / 3,509 / 2,154 ms from startup. Activity launch 283 / 234 / 273 ms is
+  not a data-ready measurement. No automatic GMOne operations appeared in any
+  of the three startup logs.
+- Captures at 800 ms show no previously saved fuel/range. Captures started at
+  4.50 seconds (completed at 4.99 / 6.08 / 5.18 seconds) show the server state
+  with its original observation time and server-stored label. These bounds do
+  not establish an exact first-pixel time or a fixed network latency.
+- Hot resume: server GET 1,293 ms, native selection 1,303 ms. Independent
+  subsequent status reads at roughly 30-second intervals took 665 / 1,897 /
+  1,008 ms; no automatic direct vehicle read accompanied them.
+- Explicit first settings entry then issued one settings request (`8`, `59`,
+  followed by three `66` response polls). The actual settings screen changed
+  from reading to `20 settings read`; no settings were saved or changed.
+- Production API reads from the Mac took 482 / 615 / 552 ms, with unauthenticated
+  access still rejected. No server deployment or collector cadence change was
+  needed. Vehicle/engine/door/window commands were not issued.
+
+The historical measurements below refer to v31/v32, not v33.
+
+## Previous Flow
 
 Version 31 separates first paint from the slow GMOne read. Version 32 also clears
 the saved-info label when a direct reply replaces the cached display:

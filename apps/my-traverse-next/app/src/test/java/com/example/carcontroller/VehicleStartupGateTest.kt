@@ -86,4 +86,40 @@ class VehicleStartupGateTest {
         gate.complete(gen, true, "new-basic", 200, 4)
         assertEquals("new-basic", gate.value)
     }
+
+    @Test fun serverOnlyStartupFinishesAtServerResponseWithoutDirectWait() {
+        val gate = VehicleStartupGate<String>()
+        val gen = gate.begin(false, true)
+        assertTrue(gate.loading)
+        assertNull(gate.value)
+        gate.complete(gen, false, "server", 200)
+        assertEquals("server", gate.value)
+        assertFalse(gate.loading)
+        assertFalse(gate.refreshing)
+    }
+
+    @Test fun serverOnlyFailureNeverRestoresPreviousSession() {
+        val gate = VehicleStartupGate<String>()
+        val old = gate.begin(false, true)
+        gate.complete(old, false, "previous", 200)
+        val gen = gate.begin(false, true)
+        gate.complete(gen, false, null, null)
+        assertNull(gate.value)
+        assertFalse(gate.loading)
+        assertFalse(gate.refreshing)
+        assertFalse(gate.complete(old, false, "late-old-account", 300))
+        assertNull(gate.value)
+    }
+
+    @Test fun periodicServerFailureKeepsOnlyThisSessionsServerResponse() {
+        val gate = VehicleStartupGate<String>()
+        val gen = gate.begin(false, true)
+        gate.complete(gen, false, "server", 200)
+        gate.complete(gen, false, null, null)
+        assertEquals("server", gate.value)
+        gate.complete(gen, false, "older", 100)
+        assertEquals("server", gate.value)
+        gate.complete(gen, false, "newer", 300)
+        assertEquals("newer", gate.value)
+    }
 }

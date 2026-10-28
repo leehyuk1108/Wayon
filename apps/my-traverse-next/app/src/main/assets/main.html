@@ -8977,7 +8977,7 @@
                     ? '차량 정보 불러오는 중' : '차량 정보를 불러오지 못했어요';
             }
             if (state === 'cached') document.getElementById('home-vehicle-updated').textContent =
-                `저장된 정보 · ${formatHomeVehicleTime(updatedAt)}${refreshing ? ' · 갱신 중' : ''}`;
+                `서버 저장 정보 · ${formatHomeVehicleTime(updatedAt)}${refreshing ? ' · 갱신 중' : ''}`;
             if (state === 'ready') {
                 const updatedTime = new Date(updatedAt).getTime();
                 const formattedTime = formatHomeVehicleTime(updatedAt);
@@ -13232,7 +13232,7 @@
             const formattedTime = formatHomeVehicleTime(updatedAt);
             const updatedTime = new Date(updatedAt).getTime();
             updatedElement.textContent = vehicleDataState === 'cached'
-                ? `저장된 정보 · ${formatHomeVehicleTime(vehicleSnapshotTime || updatedAt)}${vehicleSnapshotRefreshing ? ' · 갱신 중' : ''}`
+                ? `서버 저장 정보 · ${formatHomeVehicleTime(vehicleSnapshotTime || updatedAt)}${vehicleSnapshotRefreshing ? ' · 갱신 중' : ''}`
                 : Number.isFinite(updatedTime) && Date.now() - updatedTime > 24 * 60 * 60 * 1000
                 ? `마지막 수집 ${formattedTime}` : formattedTime;
         }
@@ -14223,7 +14223,7 @@
         });
 
         btnSecretSettings.addEventListener('click', () => {
-            switchTab('tab-settings'); // ‼️ 이제 '설정' 탭으로 감
+            switchTab('tab-settings', true); // ‼️ 이제 '설정' 탭으로 감
             if (window.Android) {
                 window.Android.loadInitialApiUrl();
             }
@@ -14246,7 +14246,7 @@
         });
 
         btnGoToSettings.addEventListener('click', () => {
-            switchTab('tab-settings');
+            switchTab('tab-settings', true);
         });
 
         btnToggleBluetooth.addEventListener('click', () => {
@@ -15598,7 +15598,7 @@
         // === 9. 탭 스위칭 로직 (애니메이션 적용) ===
         const navItems = document.querySelectorAll('.nav-item');
 
-        function switchTab(targetTabId) {
+        function switchTab(targetTabId, userInitiated = false) {
             // ‼️ Focus Persistence 방지: 탭 전환 시 포커스 해제
             if (document.activeElement) {
                 document.activeElement.blur();
@@ -15637,6 +15637,8 @@
                     const detailsShell = targetTab.querySelector('.gmone-details-shell');
                     if (detailsShell) detailsShell.open = false;
                     targetTab.scrollTop = 0;
+                } else if (targetTabId === 'tab-settings' && userInitiated && vehicleCommandReady && !gmoneSettingsBusy && !Object.keys(gmoneSettingsCurrent).length) {
+                    window.Android?.refreshGmoneSettings();
                 }
 
                 // ‼️ Ghost Click 방지: 전환 직후 잠시 클릭 차단

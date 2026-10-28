@@ -88,4 +88,22 @@ class VehicleSnapshotPolicyTest {
         assertNull(VehicleSnapshotPolicy.upload(parsed, scope, now))
         assertNull(WayonCloudFeedParser.parse("{\"vehicleStatus\":null}").vehicleStatus)
     }
+
+    @Test fun storedEndpointPreservesTopLevelDetailsWithoutMergedFeed() {
+        val envelope = JSONObject().put("vehicleStatus", JSONObject().put("ok", true)
+            .put("source", "gmone-direct").put("updatedAt", time).put("clientScope", scope)
+            .put("data", status().data)
+            .put("module", JSONObject().put("settings", JSONObject().put("all_function_stop", 1)))
+            .put("health", JSONObject().put("dtcCount", 2))
+            .put("diagnostic", JSONObject().put("pollCount", 3)))
+        val parsed = WayonCloudFeedParser.parse(envelope.toString()).vehicleStatus!!
+        val details = parsed.data.getJSONObject("gmone_details")
+        assertEquals(1, details.getJSONObject("module").getJSONObject("settings").getInt("all_function_stop"))
+        assertEquals(2, details.getJSONObject("diagnostics").getInt("dtcCount"))
+        assertEquals(3, details.getJSONObject("refresh").getJSONObject("collector").getInt("pollCount"))
+        assertTrue(parsed.cached)
+        val observation = DirectVehicleObservation()
+        observation.record(parsed, scope, 100)
+        assertNull(observation.recent(scope, 101, now))
+    }
 }

@@ -101,7 +101,7 @@ context.gmoneDetailsCurrent = parked;
 context.renderedValues = ['preserved'];
 context.setVehicleDataState('cached', '2026-10-28 19:30:00', true);
 assert.equal(context.renderedValues[0], 'preserved', 'cached values must remain visible');
-assert.ok(element('home-vehicle-updated').textContent.includes('저장된 정보'));
+assert.ok(element('home-vehicle-updated').textContent.includes('서버 저장 정보'));
 assert.ok(element('home-vehicle-updated').textContent.includes('갱신 중'));
 assert.equal(element('retryVehicleData').hidden, true);
 assert.equal(element('btnDoorToggle').dataset.controlChoices, 'doors', 'cached lock must not choose an action');

@@ -197,7 +197,7 @@ object WayonCloudFeedParser {
         if (!status.optBooleanLike("ok")) return null
         val sources = status.optJSONObject("sources")
         val firebase = sources?.optJSONObject("firebase")
-        val gmone = sources?.optJSONObject("gmone")
+        val gmone = sources?.optJSONObject("gmone") ?: status.takeIf { sources == null }
         val firebaseData = firebase?.optJSONObject("data")
         val gmoneData = gmone?.optJSONObject("data")
         val firebaseTime = vehicleDataTimestamp(firebaseData, firebase?.optNullableString("updatedAt"))

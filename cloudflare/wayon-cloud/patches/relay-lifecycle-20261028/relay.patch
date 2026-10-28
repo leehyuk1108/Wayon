@@ -1,0 +1,111 @@
+--- a/worker.js
++++ b/worker.js
+@@ -568,6 +568,9 @@
+   constructor(state) {
+     this.state = state;
+   }
++  openSockets(role, exclude = null) {
++    return this.state.getWebSockets(role).filter(socket => socket !== exclude && socket.readyState === WebSocket.OPEN);
++  }
+   async fetch(request) {
+     const url = new URL(request.url);
+     if (request.method === "POST" && url.pathname === "/revoke-key") {
+@@ -577,7 +580,7 @@
+       return new Response(null, { status: 204 });
+     }
+     if (request.method === "POST" && url.pathname === "/notify-ambient") {
+-      const device = this.state.getWebSockets("device")[0];
++      const device = this.openSockets("device")[0];
+       if (!device) return new Response("device offline", { status: 409 });
+       try {
+         device.send("wayon-ambient-command-v1");
+@@ -598,13 +601,17 @@
+       if (!validSshPublicKey(publicKey) || !/^[0-9a-f]{32}$/i.test(authorizationId) || ttlSeconds < REMOTE_SSH_MAX_AGE_SECONDS || ttlSeconds > 120) {
+         return new Response("invalid authorization", { status: 400 });
+       }
+-      const device = this.state.getWebSockets("device")[0];
++      const device = this.openSockets("device")[0];
+       if (!device) return new Response("device offline", { status: 409 });
+-      device.send(`${REMOTE_SSH_AUTHORIZE_PREFIX}.${textToBase64Url(JSON.stringify({
+-        publicKey,
+-        authorizationId,
+-        ttlSeconds
+-      }))}`);
++      try {
++        device.send(`${REMOTE_SSH_AUTHORIZE_PREFIX}.${textToBase64Url(JSON.stringify({
++          publicKey,
++          authorizationId,
++          ttlSeconds
++        }))}`);
++      } catch {
++        return new Response("device unavailable", { status: 503 });
++      }
+       return new Response(null, { status: 204 });
+     }
+     if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
+@@ -625,14 +632,18 @@
+     server.serializeAttachment({ role });
+     this.state.acceptWebSocket(server, [role]);
+     if (role === "client") {
+-      const device = this.state.getWebSockets("device")[0];
++      const device = this.openSockets("device")[0];
+       if (!device) {
+         server.close(1013, "device offline");
+       } else {
+-        device.send("wayon-peer-open");
++        try {
++          device.send("wayon-peer-open");
++        } catch {
++          server.close(1013, "device unavailable");
++        }
+       }
+     } else {
+-      const client2 = this.state.getWebSockets("client")[0];
++      const client2 = this.openSockets("client")[0];
+       if (client2) server.send("wayon-peer-open");
+     }
+     const protocol = request.headers.get("x-wayon-relay-protocol") || "";
+@@ -644,9 +655,10 @@
+   }
+   webSocketMessage(socket, message) {
+     const role = socket.deserializeAttachment()?.role;
++    if (!["device", "client"].includes(role) || socket.readyState !== WebSocket.OPEN) return;
+     if (role === "client" && typeof message === "string") return;
+     const destination = role === "device" ? "client" : "device";
+-    for (const peer of this.state.getWebSockets(destination)) {
++    for (const peer of this.openSockets(destination)) {
+       try {
+         peer.send(message);
+       } catch {
+@@ -655,9 +667,10 @@
+   }
+   webSocketClose(socket) {
+     const role = socket.deserializeAttachment()?.role;
++    try { socket.close(1000, "relay closed"); } catch {}
+     if (role === "client") {
+-      if (this.state.getWebSockets("client").length === 0) {
+-        for (const device of this.state.getWebSockets("device")) {
++      if (this.openSockets("client", socket).length === 0) {
++        for (const device of this.openSockets("device")) {
+           try {
+             device.send("wayon-peer-close");
+           } catch {
+@@ -665,8 +678,8 @@
+         }
+       }
+     } else if (role === "device") {
+-      if (this.state.getWebSockets("device").length === 0) {
+-        for (const client of this.state.getWebSockets("client")) {
++      if (this.openSockets("device", socket).length === 0) {
++        for (const client of this.openSockets("client")) {
+           try {
+             client.close(1012, "device offline");
+           } catch {
+@@ -676,6 +689,7 @@
+     }
+   }
+   webSocketError(socket) {
++    try { socket.close(1011, "relay error"); } catch {}
+     this.webSocketClose(socket);
+   }
+ };

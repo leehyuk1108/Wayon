@@ -15,6 +15,10 @@ The Carrot device port is documented in
 `carrotpilot/WIP-FR:docs/my_traverse_carrot_20261028.md`. The deployed Cloud patch
 and regression tests are preserved under
 `cloudflare/wayon-cloud/patches/carrot-trip-coverage-20261028/`.
+The subsequent OPEN-socket/reconnect lifecycle patch is under
+`cloudflare/wayon-cloud/patches/relay-lifecycle-20261028/`; it preserves the
+existing auth and separate live/SSH namespaces. Both patches were applied to
+exact production exports, without deploying the unrelated dirty Worker source.
 
 Build with JDK 21 and the configured Android SDK:
 

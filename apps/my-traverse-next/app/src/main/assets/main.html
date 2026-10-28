@@ -6630,14 +6630,6 @@
             pointer-events: none;
         }
 
-        #retryVehicleData {
-            border: 0;
-            background: transparent;
-            color: #d4d4d8;
-            min-width: 44px;
-            min-height: 44px;
-        }
-
         body[data-vehicle-state="loading"] .home-fuel-track {
             opacity: .35;
         }
@@ -6899,13 +6891,7 @@
         }
 
         .home-quick-action .button-text {
-            display: block;
-            max-width: 100%;
-            font-size: 11px;
-            line-height: 1.2;
-            font-weight: 650;
-            text-align: center;
-            overflow-wrap: anywhere;
+            display: none;
         }
 
         .home-quick-action.large-button .button-text {
@@ -7691,7 +7677,6 @@
                             <div class="home-updated-row">
                                 <span>Updated from vehicle</span>
                                 <strong id="home-vehicle-updated">Waiting for update</strong>
-                                <button type="button" id="retryVehicleData" hidden aria-label="차량 정보 다시 불러오기" title="다시 불러오기"><i data-lucide="refresh-cw"></i></button>
                             </div>
                             <div class="home-fuel-track" aria-hidden="true">
                                 <span class="home-fuel-fill" id="home-fuel-fill"></span>
@@ -8971,8 +8956,6 @@
             vehicleSnapshotRefreshing = refreshing;
             document.body.dataset.vehicleState = state;
             document.querySelector('.home-vehicle-summary')?.setAttribute('aria-busy', String(state === 'loading'));
-            const retry = document.getElementById('retryVehicleData');
-            if (retry) retry.hidden = state !== 'unavailable' && !(state === 'cached' && !refreshing);
             if (state !== 'ready' && state !== 'cached') {
                 if (state === 'loading') wayonLiveStateCurrent = null;
                 latestWayonCloudVoltage = null;
@@ -8982,9 +8965,7 @@
                 document.getElementById('home-vehicle-updated').textContent = state === 'loading'
                     ? '차량 정보 불러오는 중' : '차량 정보를 불러오지 못했어요';
             }
-            if (state === 'cached') document.getElementById('home-vehicle-updated').textContent =
-                `서버 저장 정보 · ${formatHomeVehicleTime(updatedAt)}${refreshing ? ' · 갱신 중' : ''}`;
-            if (state === 'ready') {
+            if (state === 'ready' || state === 'cached') {
                 const updatedTime = new Date(updatedAt).getTime();
                 const formattedTime = formatHomeVehicleTime(updatedAt);
                 document.getElementById('home-vehicle-updated').textContent =
@@ -10266,7 +10247,7 @@
             btnDoorToggle.title = `${commandName}, 길게 누르기`;
             btnDoorToggle.classList.toggle('vehicle-locked', known && locked);
             if (text) text.textContent = label;
-            renderHomeQuickIcon(icon, unlock ? 'lock-keyhole-open' : 'lock-keyhole');
+            renderHomeQuickIcon(icon, known && !locked ? 'lock-keyhole-open' : 'lock-keyhole');
             if (state) state.textContent = known ? (locked ? '잠김' : '잠금 해제') : '상태 확인 중';
         }
 
@@ -13126,7 +13107,7 @@
             if (vehicleDataState !== 'ready' && vehicleDataState !== 'cached') {
                 strip.classList.remove('secure', 'warning', 'critical', 'active', 'running', 'driving', 'offline');
                 title.textContent = vehicleDataState === 'loading' ? 'LOADING' : 'UNAVAILABLE';
-                detail.textContent = vehicleDataState === 'loading' ? '차량 정보 불러오는 중' : '다시 불러오기를 눌러주세요';
+                detail.textContent = vehicleDataState === 'loading' ? '차량 정보 불러오는 중' : '차량 정보를 불러오지 못했어요';
                 detail.hidden = false;
                 if (kickerText) kickerText.textContent = 'VEHICLE STATUS';
                 iconContainer.innerHTML = '<i data-lucide="refresh-cw" aria-hidden="true"></i>';
@@ -13160,7 +13141,7 @@
             iconContainer.innerHTML = `<i data-lucide="${statusIcon}" aria-hidden="true"></i>`;
             window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
             if (kickerText) {
-                kickerText.textContent = vehicleDataState === 'cached' ? 'SAVED STATUS' : result.tone === 'driving'
+                kickerText.textContent = result.tone === 'driving'
                     ? 'LIVE STATUS'
                     : result.tone === 'critical'
                         ? 'ATTENTION'
@@ -13224,11 +13205,10 @@
                 ? `${Math.round(rangeNumber).toLocaleString()} km`
                 : '-- km';
             fillElement.style.width = fuelLevel ? `${fuelLevel.percent}%` : '0%';
-            const formattedTime = formatHomeVehicleTime(updatedAt);
-            const updatedTime = new Date(updatedAt).getTime();
-            updatedElement.textContent = vehicleDataState === 'cached'
-                ? `서버 저장 정보 · ${formatHomeVehicleTime(vehicleSnapshotTime || updatedAt)}${vehicleSnapshotRefreshing ? ' · 갱신 중' : ''}`
-                : Number.isFinite(updatedTime) && Date.now() - updatedTime > 24 * 60 * 60 * 1000
+            const observedAt = vehicleDataState === 'cached' ? vehicleSnapshotTime || updatedAt : updatedAt;
+            const formattedTime = formatHomeVehicleTime(observedAt);
+            const updatedTime = new Date(observedAt).getTime();
+            updatedElement.textContent = Number.isFinite(updatedTime) && Date.now() - updatedTime > 24 * 60 * 60 * 1000
                 ? `마지막 수집 ${formattedTime}` : formattedTime;
         }
 
@@ -14219,10 +14199,6 @@
         // 5. (수정) 설정 탭 버튼 리스너
         btnGoToControlTab.addEventListener('click', () => {
             switchTab('tab-control');
-        });
-
-        document.getElementById('retryVehicleData')?.addEventListener('click', () => {
-            window.Android?.refreshVehicleScreen();
         });
 
         btnSecretSettings.addEventListener('click', () => {

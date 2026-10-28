@@ -42,8 +42,8 @@ test('manual refresh selects one owner rather than sending both direct and colle
   assert.match(manual, /refreshServerVehicleStatus\(force = true\)/);
 });
 
-test('server provenance stays visible; editable settings have an explicit fresh reader', () => {
-  assert.equal((html.match(/서버 저장 정보 ·/g) || []).length, 2);
+test('home keeps its original appearance; editable settings still have an explicit fresh reader', () => {
+  assert.doesNotMatch(html, /서버 저장 정보|SAVED STATUS|retryVehicleData/);
   assert.match(html, /if \(meta.cached !== true\) renderGmoneSettings/);
   assert.match(html, /if \(targetTabId === 'tab-settings' && userInitiated && vehicleCommandReady && !gmoneSettingsBusy && !Object.keys\(gmoneSettingsCurrent\).length\) \{\s+window.Android\?\.refreshGmoneSettings\(\)/);
   for (const button of ['btnSecretSettings', 'btnGoToSettings']) {

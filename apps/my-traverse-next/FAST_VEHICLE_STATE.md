@@ -1,6 +1,6 @@
 # Server-First Vehicle State
 
-## Current Behavior (Version 34)
+## Current Behavior (Version 35)
 
 The October 29 request supersedes the phone-cache behavior described below.
 Opening or resuming the app now clears the vehicle display and reads only the
@@ -10,8 +10,9 @@ No automatic direct GMOne vehicle read is started by opening the app.
 
 The lightweight endpoint is polled independently every 30 seconds. Trip/address
 feed completion and failures no longer decide whether vehicle data is ready.
-Stored server data retains its observation time and account binding and is
-labeled as server-stored information, not a new live observation. Unavailable,
+Stored server data retains its observation time and account binding. Version 35
+restores the original home badge and timestamp format at the user's request;
+it does not retimestamp stored data as a new live observation. Unavailable,
 wrong-account or invalid-time responses cannot restore a previous phone snapshot.
 A transient periodic failure can retain the server response already displayed in
 the current session, with its original time.
@@ -31,8 +32,9 @@ transaction.
 
 ### Direct Control Buttons
 
-Version 34 removes the secondary open/close and lock/unlock chooser. Each visible
-button names the exact command it will send after the existing long press. A
+Version 34 removes the secondary open/close and lock/unlock chooser. Version 35
+restores the original icon-only home controls; command names remain in accessible
+labels and titles, not newly visible captions. A
 server-observed locked/closed state selects unlock/open; an unlocked/open state
 selects lock/close. The original observation time remains visible. This is a
 display selection, not proof that the vehicle is still in that state.
@@ -51,9 +53,32 @@ expiry still clears it. This also applies to the shared engine display helper,
 but cannot authorize an engine command or bypass its native fresh read.
 
 Known limitation: a still-valid server observation can disagree with a physical
-change made elsewhere. The single-action home bar then shows the action for that
-observation until refresh. Read the explicit command label, not the icon as a
-live-state guarantee. There is no additional inverse-action chooser in v34.
+change made elsewhere. The single-action home bar then selects the action for
+that observation until refresh. Its icon is not a live-state guarantee. There
+is no additional inverse-action chooser in v34/v35.
+
+### Design Restoration (Version 35)
+
+The user explicitly rejected unsolicited presentation changes. The home command
+bar is icon-only again, the door icon uses its original state mapping, and the
+home refresh button and server-storage/update-progress prefixes are removed.
+`SAVED STATUS` is replaced by the original status-dependent badge (`CHECK STATUS`
+in the normal case). The original vehicle observation timestamp, age warnings,
+unavailable state and health evaluation remain intact. No replacement badge,
+caption or control is added. Existing pull-to-refresh and periodic server reads,
+direct long-press dispatch and all native safety checks are unchanged.
+
+2026-10-29 verification: release build, 73 Kotlin tests and 57 JavaScript tests
+passed. Claude's pinned-diff review found no deployment blocker. SM-F966N was
+updated with the existing signer using `install -r` (`Success`) to
+`35 / 2.0-preview.26-restore-design`. Local and installed APK SHA256 both equal
+`1a3f93a04d1c6f57b204a2c547612b34a37176b6aeda4f810fa8203bc884c52a`.
+Packaged HTML matches the source. The actual cover-display screenshot confirms
+icon-only controls, the original `CHECK STATUS` badge, the observation timestamp
+without new prefixes and no home refresh button. Cold server GET took 2,283 ms;
+native selection took 2,289 ms. The focused startup log contains no command or
+runtime-error entry. No physical vehicle command was sent; the phone was
+returned to HOME. Server, collector and native control logic were not changed.
 
 ### Version 34 Verification
 

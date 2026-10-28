@@ -93,10 +93,8 @@ for (let i = 0; i < 3; i++) {
 }
 
 context.setVehicleDataState('unavailable');
-assert.equal(element('retryVehicleData').hidden, false);
 assert.equal(element('btnDoorToggle').attrs['aria-disabled'], 'false');
 context.setVehicleDataState('ready');
-assert.equal(element('retryVehicleData').hidden, true);
 
 const parked = {
     meta: {updatedAt: new Date().toISOString()},
@@ -106,17 +104,16 @@ const parked = {
 };
 context.gmoneDetailsCurrent = parked;
 context.renderedValues = ['preserved'];
-context.setVehicleDataState('cached', '2026-10-28 19:30:00', true);
+const cachedTime = new Date(Date.now() - 3600000).toISOString();
+context.setVehicleDataState('cached', cachedTime, true);
 assert.equal(context.renderedValues[0], 'preserved', 'cached values must remain visible');
-assert.ok(element('home-vehicle-updated').textContent.includes('서버 저장 정보'));
-assert.ok(element('home-vehicle-updated').textContent.includes('갱신 중'));
-assert.equal(element('retryVehicleData').hidden, true);
+assert.equal(element('home-vehicle-updated').textContent, cachedTime);
 assert.equal(element('btnDoorToggle').dataset.cmd, 'DOOR_UNLOCK', 'received server lock selects the labeled action');
 assert.ok(!element('btnDoorToggle').dataset.controlChoices);
 assert.equal(element('btnDoorToggle').querySelector('.button-text').textContent, '잠금 해제');
 assert.equal(element('engine-control-state').textContent, '요청 시 상태 확인');
-context.setVehicleDataState('cached', '2026-10-28 19:30:00', false);
-assert.equal(element('retryVehicleData').hidden, false);
+context.setVehicleDataState('cached', cachedTime, false);
+assert.equal(element('home-vehicle-updated').textContent, cachedTime);
 assert.equal(context.renderedValues[0], 'preserved', 'refresh failure must retain snapshot');
 const freshTime = new Date().toISOString();
 context.setVehicleDataState('ready', freshTime);
@@ -126,6 +123,9 @@ const oldTime = new Date(Date.now() - 2 * 86400000).toISOString();
 context.setVehicleDataState('ready', oldTime);
 assert.equal(element('home-vehicle-updated').textContent, `마지막 수집 ${oldTime}`,
     'an old direct response must retain the age warning');
+context.setVehicleDataState('cached', oldTime);
+assert.equal(element('home-vehicle-updated').textContent, `마지막 수집 ${oldTime}`,
+    'restoring the design must not retimestamp an old server observation');
 context.setVehicleDataState('ready', freshTime);
 context.updateGmoneControlPanel(parked);
 assert.equal(element('btnDoorToggle').dataset.cmd, 'DOOR_UNLOCK');

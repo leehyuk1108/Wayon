@@ -164,6 +164,10 @@ object VehicleRefreshScheduler {
                 .putString(PREF_KEY_LAST_PASSIVE_FEED_JSON, body)
                 .putLong(PREF_KEY_LAST_PASSIVE_FEED_AT_MS, System.currentTimeMillis())
                 .apply()
+            com.example.carcontroller.widget.MiniHomeWidgetStore.updateFromFeed(
+                context,
+                WayonCloudFeedParser.parse(body),
+            )
             Log.i("VehicleRefresh", "Passive Wayon data sync complete; no vehicle refresh requested")
         } finally {
             connection.disconnect()

@@ -1,0 +1,98 @@
+--- a/worker.js
++++ b/worker.js
+@@ -2226,6 +2226,8 @@
+       start_lat = excluded.start_lat, start_lon = excluded.start_lon,
+       end_lat = excluded.end_lat, end_lon = excluded.end_lon,
+       route_point_count = excluded.route_point_count, route_json = excluded.route_json,
++      health_json = CASE WHEN trips.report_json IS NOT excluded.report_json THEN '{}' ELSE trips.health_json END,
++      health_updated_at = CASE WHEN trips.report_json IS NOT excluded.report_json THEN NULL ELSE trips.health_updated_at END,
+       report_json = excluded.report_json, created_at = excluded.created_at
+     WHERE trips.device_id = excluded.device_id
+   `).bind(
+@@ -2575,19 +2577,43 @@
+   return (trips.results || []).map(trip => parseTripSummary(trip, env));
+ }
+ __name(fetchD1TripSummaries, "fetchD1TripSummaries");
+-function mergeServerTripsWithD1(serverTrips, d1Trips) {
+-  const d1ById = new Map(d1Trips.map((trip) => [String(trip.id || ""), trip]));
+-  return serverTrips.map((serverTrip) => {
+-    const d1Trip = d1ById.get(String(serverTrip.id || ""));
+-    if (!d1Trip) return serverTrip;
+-    return {
++function normalizeTripId(value) {
++  if (typeof value === "string") return value.trim() ? value : null;
++  return typeof value === "number" && Number.isSafeInteger(value) ? String(value) : null;
++}
++__name(normalizeTripId, "normalizeTripId");
++function mergeServerTripsWithD1(serverTrips, d1Trips, deviceId, limit) {
++  if (!validDeviceId(deviceId)) return [];
++  const owned = (trip) => normalizeTripId(trip?.id) !== null
++    && (trip.device_id ?? trip.deviceId) === deviceId
++    && (trip.deviceId == null || trip.deviceId === deviceId);
++  const d1ById = new Map(d1Trips.filter(owned).map((trip) => {
++    const id = normalizeTripId(trip.id);
++    return [id, { ...trip, id }];
++  }));
++  const mergedById = new Map(d1ById);
++  const serverIds = new Set();
++  for (const serverTrip of serverTrips) {
++    const id = normalizeTripId(serverTrip?.id);
++    if (!owned(serverTrip) || serverIds.has(id)) continue;
++    serverIds.add(id);
++    const d1Trip = d1ById.get(id);
++    mergedById.set(id, d1Trip ? {
+       ...d1Trip,
+       ...serverTrip,
++      id,
+       report: objectWithValues(d1Trip.report) ? d1Trip.report : serverTrip.report,
+       analysis: objectWithValues(d1Trip.analysis) ? d1Trip.analysis : serverTrip.analysis,
+       health: objectWithValues(serverTrip.health) ? serverTrip.health : d1Trip.health
+-    };
+-  });
++    } : { ...serverTrip, id });
++  }
++  const endedAt = (trip) => {
++    const time = Date.parse(trip.ended_at || trip.endedAt || "");
++    return Number.isFinite(time) ? time : -Infinity;
++  };
++  return [...mergedById.values()]
++    .sort((a, b) => endedAt(b) - endedAt(a) || a.id.localeCompare(b.id))
++    .slice(0, boundedLimit(limit, 100, 5e3));
+ }
+ __name(mergeServerTripsWithD1, "mergeServerTripsWithD1");
+ function finiteNumber(value) {
+@@ -3036,7 +3062,7 @@
+       ])
+     ]);
+     parsed.health = buildTripHealthSummary([...driveRecords || [], ...contextRecords || []], trip, parsed.analysis);
+-    await env.DB.prepare("UPDATE trips SET health_json = ?, health_updated_at = ? WHERE id = ? AND device_id = ?").bind(JSON.stringify(parsed.health), nowIso(), trip.id, trip.device_id).run();
++    await env.DB.prepare("UPDATE trips SET health_json = ?, health_updated_at = ? WHERE id = ? AND device_id = ? AND report_json IS ?").bind(JSON.stringify(parsed.health), nowIso(), trip.id, trip.device_id, trip.report_json ?? null).run();
+   } catch (error) {
+     parsed.health = { available: false, status: "temporarily_unavailable", detail: String(error?.message || error) };
+   }
+@@ -3362,12 +3388,14 @@
+     const d1Trip = await env.DB.prepare(`SELECT * FROM trips WHERE id = ? AND device_id = ?`).bind(parts[2], deviceId).first();
+     try {
+       const serverTrip = await fetchServerTrip(env, parts[2], deviceId);
++      if (normalizeTripId(serverTrip?.id) !== parts[2]) throw new Error("server_trip_id_mismatch");
+       const d1TripWithHealth = d1Trip ? await tripWithHealth(env, d1Trip) : null;
+       const merged = mergeServerTripsWithD1(
+         [serverTrip],
+-        d1TripWithHealth ? [d1TripWithHealth] : []
++        d1TripWithHealth ? [d1TripWithHealth] : [],
++        deviceId, 1
+       )[0];
+-      return historyJson(merged, "server+d1");
++      if (merged && merged.id === parts[2]) return historyJson(merged, "server+d1");
+     } catch (error) {
+       console.warn("Wayon server trip detail unavailable; using D1", error?.message || error);
+     }
+@@ -3381,7 +3409,7 @@
+       fetchServerTripList(env, requestedLimit, deviceId),
+       fetchD1TripSummaries(env, deviceId, requestedLimit)
+     ]);
+-    return historyJson({ trips: mergeServerTripsWithD1(serverTrips, d1Trips) }, "server+d1");
++    return historyJson({ trips: mergeServerTripsWithD1(serverTrips, d1Trips, deviceId, requestedLimit) }, "server+d1");
+   } catch (error) {
+     console.warn("Wayon server trip list unavailable; using D1", error?.message || error);
+   }

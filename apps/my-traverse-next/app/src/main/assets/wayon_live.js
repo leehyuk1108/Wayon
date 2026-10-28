@@ -60,6 +60,8 @@
     let impactRequestSequence = 0;
     let saveToastTimer = 0;
     let photoCaptureBusy = false;
+    let photoCaptureController = null;
+    let photoCaptureSequence = 0;
     let receiveBuffer = new Uint8Array(0);
     let metadata = null;
     let glState = null;
@@ -575,6 +577,7 @@
             stream.frame.close();
             stream.frame = null;
             stream.frameReceivedAt = 0;
+            updateCaptureControls();
         }
     }
 
@@ -674,6 +677,36 @@
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
+    function traceCapture(stage, extra = {}) {
+        console.info(`[WayonCapture] ${JSON.stringify({
+            stage, atMs: Math.round(performance.now()), busy: photoCaptureBusy,
+            socketState: socket?.readyState ?? null, bufferedBytes: socket?.bufferedAmount ?? 0,
+            wideReady: streams.wide.ready, driverReady: streams.driver.ready, ...extra,
+        })}`);
+    }
+
+    function updateCaptureControls() {
+        const ready = socket?.readyState === WebSocket.OPEN && streams.wide.ready && streams.driver.ready;
+        const photoDisabled = !ready || photoCaptureBusy;
+        const clipDisabled = !ready;
+        const changed = photoButton.disabled !== photoDisabled || clip10Button.disabled !== clipDisabled
+            || clip30Button.disabled !== clipDisabled;
+        photoButton.disabled = photoDisabled;
+        clip10Button.disabled = clipDisabled;
+        clip30Button.disabled = clipDisabled;
+        if (changed) traceCapture("controls", { photoDisabled, clipDisabled });
+    }
+
+    function cancelPhotoCapture() {
+        const controller = photoCaptureController;
+        photoCaptureController = null;
+        photoCaptureBusy = false;
+        if (controller) {
+            traceCapture("photo-cancel", { captureId: photoCaptureSequence });
+            controller.abort();
+        }
+    }
+
     function sendClientControl(commandType, payload = new Uint8Array(0)) {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             showSaveToast("Live 연결 후 저장할 수 있습니다.");
@@ -689,25 +722,43 @@
         return true;
     }
 
-    function jpegBlob(sourceCanvas) {
+    function jpegBlob(sourceCanvas, signal) {
         return new Promise((resolve, reject) => {
-            sourceCanvas.toBlob(
-                (blob) => blob ? resolve(blob) : reject(new Error("JPEG encoding failed")),
-                "image/jpeg",
-                1.0,
-            );
+            const onAbort = () => reject(new Error("Photo capture cancelled"));
+            if (signal.aborted) return onAbort();
+            signal.addEventListener("abort", onAbort, { once: true });
+            try {
+                sourceCanvas.toBlob((blob) => {
+                    signal.removeEventListener("abort", onAbort);
+                    if (signal.aborted) return;
+                    if (blob) resolve(blob);
+                    else reject(new Error("JPEG encoding failed"));
+                }, "image/jpeg", 1.0);
+            } catch (error) {
+                signal.removeEventListener("abort", onAbort);
+                reject(error);
+            }
         });
     }
 
     async function capturePanoramaPhoto() {
+        traceCapture("photo-click");
         if (photoCaptureBusy) return;
+        const captureSocket = socket;
+        if (!captureSocket || captureSocket.readyState !== WebSocket.OPEN) {
+            showSaveToast("Live 연결 후 저장할 수 있습니다.");
+            return;
+        }
         if (!glState || !streams.wide.ready || !streams.driver.ready) {
             showSaveToast("두 카메라 준비 후 저장할 수 있습니다.");
             return;
         }
 
+        const controller = new AbortController();
+        const captureId = ++photoCaptureSequence;
+        photoCaptureController = controller;
         photoCaptureBusy = true;
-        photoButton.disabled = true;
+        updateCaptureControls();
         showSaveToast("360° 사진 생성 중", 6000);
         const { gl } = glState;
         let framebuffer = null;
@@ -735,7 +786,9 @@
 
             drawPanorama(0, 0, Math.PI * 2, width, height, 1);
             const pixels = new Uint8Array(width * height * 4);
+            traceCapture("photo-readpixels-start", { captureId, width, height });
             gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            traceCapture("photo-readpixels-done", { captureId });
 
             const outputCanvas = document.createElement("canvas");
             outputCanvas.width = width;
@@ -756,10 +809,17 @@
             captureTexture = null;
             gl.activeTexture(gl.TEXTURE0);
             drawPanorama(yaw, pitch, viewFov, canvas.width, canvas.height);
-            const blob = await jpegBlob(outputCanvas);
+            traceCapture("photo-encode-start", { captureId });
+            const blob = await jpegBlob(outputCanvas, controller.signal);
+            traceCapture("photo-encode-done", { captureId, bytes: blob.size });
             const payload = new Uint8Array(await blob.arrayBuffer());
-            if (sendClientControl(CONTROL_PHOTO, payload)) showSaveToast("360° 사진 업로드 중", 6000);
+            if (controller.signal.aborted || socket !== captureSocket || captureSocket.readyState !== WebSocket.OPEN) return;
+            if (sendClientControl(CONTROL_PHOTO, payload)) {
+                traceCapture("photo-queued", { captureId, bytes: payload.length });
+                showSaveToast("360° 사진 저장 요청됨 · 차량 응답 대기 중", 6000);
+            }
         } catch (error) {
+            if (controller.signal.aborted) return;
             console.error("Wayon panorama capture failed", error);
             showSaveToast("360° 사진 생성에 실패했습니다.");
         } finally {
@@ -768,8 +828,12 @@
             if (captureTexture) gl.deleteTexture(captureTexture);
             gl.activeTexture(gl.TEXTURE0);
             drawPanorama(yaw, pitch, viewFov, canvas.width, canvas.height);
-            photoCaptureBusy = false;
-            photoButton.disabled = false;
+            if (photoCaptureController === controller) {
+                photoCaptureController = null;
+                photoCaptureBusy = false;
+                updateCaptureControls();
+            }
+            traceCapture("photo-finished", { captureId, cancelled: controller.signal.aborted });
         }
     }
 
@@ -807,6 +871,29 @@
         }
         return entries;
     }
+
+    window.loadWayonBlackboxArchive = async (request) => {
+        const response = await fetch(request.url, {
+            headers: { Authorization: `Bearer ${request.token}` },
+            cache: "no-store",
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const entries = parseStoredZip(await response.arrayBuffer());
+        const manifestBytes = entries.get("manifest.json");
+        if (!manifestBytes) throw new Error("Missing blackbox manifest");
+        const manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
+        if (manifest?.schema !== "wayon-drive-blackbox-package-v1") throw new Error("Unsupported blackbox package");
+        const video = manifest.video || {};
+        const videoBytes = entries.get(String(video.file || "road.ts"));
+        if (!videoBytes) throw new Error("Missing blackbox video stream");
+        const url = URL.createObjectURL(new Blob([videoBytes], { type: video.contentType || "video/mp4" }));
+        return {
+            url,
+            manifest,
+            startS: Math.max(0, Number(video.playbackStartS) || 0),
+            durationS: Math.max(0.1, Number(video.playbackDurationS) || 60),
+        };
+    };
 
     function splitAnnexBFrames(bytes) {
         const starts = [];
@@ -1154,6 +1241,7 @@
     }
 
     function closeDecoders() {
+        cancelPhotoCapture();
         Object.values(streams).forEach((stream) => {
             if (stream.frame) stream.frame.close();
             stream.frame = null;
@@ -1167,6 +1255,8 @@
             }
             stream.decoder = null;
         });
+        resetStartupExposureState();
+        updateCaptureControls();
     }
 
     function decoderFor(name) {
@@ -1242,6 +1332,10 @@
 
     function handleCaptureStatus(data) {
         const duration = Math.max(0, Math.round(Number(data.durationSeconds) || 0));
+        traceCapture("capture-status", {
+            captureState: String(data.captureState || "").slice(0, 32),
+            kind: String(data.kind || "").slice(0, 16), durationSeconds: duration,
+        });
         const label = data.kind === "photo" ? "360° 사진" : `${duration || ""}초 클립`.trim();
         if (data.captureState === "saved") {
             showSaveToast(`${label}이 Wayon Cloud에 저장됐습니다.`, 4200);
@@ -1336,7 +1430,7 @@
         const sendHeartbeat = () => {
             if (socket !== currentSocket || currentSocket.readyState !== WebSocket.OPEN) return;
             try {
-                currentSocket.send("WLP1");
+                currentSocket.send(new Uint8Array([0x57, 0x4c, 0x50, 0x31]));
             } catch (error) {
                 console.warn("Wayon Live heartbeat failed", error);
             }
@@ -1353,6 +1447,7 @@
 
     function connect(websocketUrl, protocol) {
         stopHeartbeat();
+        closeDecoders();
         if (socket) {
             intentionalClose = true;
             socket.close(1000, "replaced");
@@ -1367,17 +1462,16 @@
         currentSocket.binaryType = "arraybuffer";
         currentSocket.onopen = () => {
             if (socket !== currentSocket) return;
+            traceCapture("socket-open");
             startHeartbeat(currentSocket);
             setStatus("카메라 연결 중");
             clearStartupTimer();
             startupTimer = setTimeout(() => {
                 if (socket !== currentSocket || streams.wide.ready || streams.driver.ready) return;
-                intentionalClose = true;
-                stopHeartbeat();
-                currentSocket.close(1000, "video timeout");
-                if (socket === currentSocket) socket = null;
-                showMessage("차량 영상이 도착하지 않습니다. 다시 연결해 주세요.", true, false);
-                setStatus("영상 대기 시간 초과");
+                startupTimer = 0;
+                traceCapture("video-wait", { waitMs: 12000 });
+                showMessage("차량 영상이 지연되고 있습니다. 연결을 유지하며 기다립니다.", true, false);
+                setStatus("영상 수신 지연");
             }, 12000);
         };
         currentSocket.onmessage = async (event) => {
@@ -1395,10 +1489,12 @@
         currentSocket.onerror = () => {
             if (socket === currentSocket) setStatus("연결 오류");
         };
-        currentSocket.onclose = () => {
+        currentSocket.onclose = (event) => {
             if (socket !== currentSocket) return;
+            traceCapture("socket-close", { code: event?.code ?? null, reason: String(event?.reason || "").slice(0, 120) });
             stopHeartbeat();
             socket = null;
+            closeDecoders();
             clearStartupTimer();
             if (intentionalClose || !overlay.classList.contains("active")) return;
             if (terminalState === "busy" && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -1570,6 +1666,7 @@
     photoButton.addEventListener("click", capturePanoramaPhoto);
     clip10Button.addEventListener("click", () => requestClip(10));
     clip30Button.addEventListener("click", () => requestClip(30));
+    updateCaptureControls();
     playbackToggle.addEventListener("click", () => {
         if (!savedPlayback) return;
         if (savedPlayback.finished) {

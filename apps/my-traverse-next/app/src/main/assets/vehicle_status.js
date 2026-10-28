@@ -10,7 +10,9 @@
     const FUEL_WARNING_PERCENT = 10;
     const BATTERY_TEMPERATURE_WARNING_C = 55;
     const BATTERY_TEMPERATURE_CRITICAL_C = 65;
-    const VEHICLE_DETAILS_STALE_AFTER_SECONDS = 10 * 60;
+    const VEHICLE_DETAILS_STALE_AFTER_SECONDS = 24 * 60 * 60;
+    const LIVE_STALE_AFTER_SECONDS = 45;
+    const OFFROAD_LIVE_STALE_AFTER_SECONDS = 660;
 
     function number(value) {
         if (value === null || value === undefined || value === "") return null;
@@ -40,18 +42,22 @@
 
     function liveAgeSeconds(live, nowMs) {
         const parsed = Date.parse(live?.updatedAt || "");
-        return Number.isFinite(parsed) ? Math.max(0, (nowMs - parsed) / 1000) : null;
+        return Number.isFinite(parsed) && parsed <= nowMs + 60000 ? Math.max(0, (nowMs - parsed) / 1000) : null;
     }
 
     function detailsAgeSeconds(details, nowMs) {
-        const value = details?.meta?.updatedAt;
+        const meta = details?.meta || {};
+        const source = String(meta.source || "").toLowerCase();
+        const value = source.includes("gmone")
+            ? (meta.collectedAt || meta.updatedAt)
+            : meta.updatedAt;
         if (typeof value !== "string" || !value.trim()) return null;
         const text = value.trim();
         const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)
             ? `${text.replace(" ", "T")}+09:00`
             : text;
         const parsed = Date.parse(normalized);
-        return Number.isFinite(parsed) ? Math.max(0, (nowMs - parsed) / 1000) : null;
+        return Number.isFinite(parsed) && parsed <= nowMs + 60000 ? Math.max(0, (nowMs - parsed) / 1000) : null;
     }
 
     function speedDetail(live, suffix) {
@@ -120,18 +126,32 @@
 
         const closures = hasDetails ? details.closures || {} : {};
         const detailsAge = hasDetails ? detailsAgeSeconds(details, nowMs) : null;
+        const gmoneSource = String(details?.meta?.source || "").toLowerCase().includes("gmone");
+        // Offroad uploads normally arrive every 300 seconds; unknown mode keeps the tighter bound.
+        const liveMaxAge = live?.onroad === false ? OFFROAD_LIVE_STALE_AFTER_SECONDS : LIVE_STALE_AFTER_SECONDS;
+        const detailsMaxAge = gmoneSource ? VEHICLE_DETAILS_STALE_AFTER_SECONDS : liveMaxAge;
         const detailsStale = details?.meta?.stale === true
-            || (detailsAge !== null && detailsAge > VEHICLE_DETAILS_STALE_AFTER_SECONDS);
-        const voltage = number(details?.battery12v?.voltageV) ?? number(live?.voltageV);
-        const batteryTemperature = number(details?.battery12v?.temperatureC);
-        const failedDtc = number(details?.diagnostics?.alertCount)
-            ?? number(details?.diagnostics?.failedCount);
-        const oilLife = number(details?.maintenance?.oilLifePercent);
+            || (detailsAge !== null && detailsAge > detailsMaxAge);
+        const detailsFresh = hasDetails && !detailsStale && detailsAge !== null;
+        const liveAge = hasLive ? liveAgeSeconds(live, nowMs) : null;
+        const liveStale = live?.stale === true || (liveAge !== null && liveAge > liveMaxAge);
+        const liveFresh = hasLive && live.unavailable !== true && !liveStale && liveAge !== null;
+        // Legacy voltageV/deviceInput may describe a USB bench supply, not the vehicle battery.
+        const batteryVoltage = detailsFresh && gmoneSource ? number(details?.battery12v?.voltageV) : null;
+        const vehicleInput = live?.vehicleInput;
+        const inputVoltage = liveFresh && vehicleInput?.qualified === true && vehicleInput?.fresh === true
+            && vehicleInput?.kind === "vehicleInputEstimate" ? number(vehicleInput.voltageV) : null;
+        const voltage = batteryVoltage ?? inputVoltage;
+        const voltageLabel = batteryVoltage !== null ? "12V battery" : "Vehicle input estimate";
+        const batteryTemperature = detailsFresh && gmoneSource ? number(details?.battery12v?.temperatureC) : null;
+        const failedDtc = detailsFresh
+            ? number(details?.diagnostics?.alertCount) ?? number(details?.diagnostics?.failedCount) : null;
+        const oilLife = detailsFresh ? number(details?.maintenance?.oilLifePercent) : null;
         const criticalIssues = [];
         const warningIssues = [];
 
-        if (voltage !== null && voltage <= 11.5) criticalIssues.push(`12V battery ${format(voltage, 1)}V`);
-        else if (voltage !== null && voltage < 11.9) warningIssues.push(`12V battery ${format(voltage, 1)}V`);
+        if (voltage !== null && voltage <= 11.5) criticalIssues.push(`${voltageLabel} ${format(voltage, 1)}V`);
+        else if (voltage !== null && voltage < 11.9) warningIssues.push(`${voltageLabel} ${format(voltage, 1)}V`);
 
         if (batteryTemperature !== null && batteryTemperature >= BATTERY_TEMPERATURE_CRITICAL_C) {
             return report(
@@ -144,28 +164,28 @@
             warningIssues.push(`12V battery ${format(batteryTemperature)}°C`);
         }
 
-        const thermal = thermalSeverity(live?.thermalStatus);
+        const thermal = thermalSeverity(liveFresh ? live.thermalStatus : null);
         if (thermal === "critical") criticalIssues.push("Comma device overheated");
         else if (thermal === "warning") warningIssues.push("Comma device temperature high");
 
         if (failedDtc !== null && failedDtc > 0) {
             warningIssues.push(`${format(failedDtc)} diagnostic alert${failedDtc === 1 ? "" : "s"}`);
         }
-        if (!detailsStale && closures.doors?.active === true) warningIssues.push("Doors unlocked");
-        if (!detailsStale && closures.hood?.active === true) warningIssues.push("Hood open");
-        if (!detailsStale && closures.trunk?.active === true) warningIssues.push("Trunk open");
+        if (detailsFresh && closures.doors?.active === true) warningIssues.push("Doors unlocked");
+        if (detailsFresh && closures.hood?.active === true) warningIssues.push("Hood open");
+        if (detailsFresh && closures.trunk?.active === true) warningIssues.push("Trunk open");
 
         const openWindows = ["windowFrontLeft", "windowFrontRight", "windowRearLeft", "windowRearRight"]
             .filter((key) => closures[key]?.active === true).length;
-        if (!detailsStale && openWindows > 0) warningIssues.push(`${openWindows} window${openWindows === 1 ? "" : "s"} open`);
-        if (!detailsStale && closures.sunroof?.active === true) warningIssues.push("Sunroof open");
+        if (detailsFresh && openWindows > 0) warningIssues.push(`${openWindows} window${openWindows === 1 ? "" : "s"} open`);
+        if (detailsFresh && closures.sunroof?.active === true) warningIssues.push("Sunroof open");
 
         if (criticalIssues.length) {
             const detail = [...criticalIssues, ...warningIssues].join(" · ");
             return report("critical", "ATTENTION", detail, "triangle-alert");
         }
 
-        const tire = tireWarning(details);
+        const tire = detailsFresh ? tireWarning(details) : null;
         if (tire) {
             const tireKpa = number(String(tire).match(/(\d+) kPa/)?.[1]);
             const tirePsi = tireKpa === null ? null : Math.round(tireKpa * 0.1450377377);
@@ -178,7 +198,7 @@
         if (oilLife !== null && oilLife >= 0 && oilLife <= OIL_WARNING_PERCENT) {
             return report("warning", "SERVICE\nDUE", "Engine oil service required", "wrench");
         }
-        const fuel = fuelWarning(details);
+        const fuel = detailsFresh ? fuelWarning(details) : null;
         if (fuel) warningIssues.push(fuel);
 
         if (warningIssues.length) {
@@ -194,12 +214,14 @@
             return report("warning", "UPDATE\nDELAYED", "Lock status is not confirmed", "clock-alert");
         }
 
-        if (hasLive) {
-            const ageSeconds = liveAgeSeconds(live, nowMs);
-            const staleAfterSeconds = live.onroad === true ? 45 : 600;
-            if (ageSeconds !== null && ageSeconds > staleAfterSeconds) {
-                return report("warning", "UPDATE\nDELAYED", "Vehicle data may be outdated", "clock-alert");
-            }
+        if (liveStale) {
+            return report("warning", "UPDATE\nDELAYED", "Vehicle data may be outdated", "clock-alert");
+        }
+        if ((hasDetails && !detailsFresh) || (hasLive && !liveFresh)) {
+            return report("offline", "STATUS\nUNKNOWN", "Vehicle data freshness is not confirmed", "circle-help");
+        }
+
+        if (liveFresh) {
             if (live.onroad === true && (live.latitude == null || live.longitude == null || live.gpsFresh === false)) {
                 return report("warning", "LOCATION\nUNKNOWN", "Vehicle status received · GPS unavailable", "map-pin-off");
             }
@@ -237,6 +259,26 @@
             return report("driving", "ENGINE\nON", "Vehicle is awake", "power");
         }
 
+        const closureChecks = ["doors", "hood", "trunk", "sunroof", "windowFrontLeft", "windowFrontRight", "windowRearLeft", "windowRearRight"]
+            .map((key) => typeof closures[key]?.active === "boolean");
+        const tireChecks = ["frontLeftKpa", "frontRightKpa", "rearLeftKpa", "rearRightKpa"]
+            .map((key) => {
+                const pressure = number(details?.tires?.[key]);
+                return pressure !== null && pressure >= 100 && pressure <= 400;
+            });
+        const healthChecks = [...closureChecks, ...tireChecks, batteryVoltage !== null,
+            batteryTemperature !== null, failedDtc !== null, oilLife !== null,
+            number(details?.fuel?.levelLiters) !== null && number(details?.fuel?.capacityLiters) > 0,
+            number(details?.fuel?.rangeKm) !== null];
+        const healthKnown = detailsFresh && healthChecks.every(Boolean) && details?.vehicleState?.engineRunning === false;
+        if (!healthKnown) {
+            if (detailsFresh && healthChecks.some(Boolean)) {
+                return report("", "LIMITED\nDATA", "No issues in reported checks · Some vehicle data is unavailable", "circle-help");
+            }
+            const detail = inputVoltage === null ? "Vehicle health is not confirmed"
+                : `Vehicle input estimate ${format(inputVoltage, 1)}V · Vehicle health is not confirmed`;
+            return report("offline", "STATUS\nUNKNOWN", detail, "circle-help");
+        }
         return report("secure", "ALL\nGOOD", "", "check", "No issues detected");
     }
 
@@ -249,6 +291,8 @@
             batteryTemperatureWarningC: BATTERY_TEMPERATURE_WARNING_C,
             batteryTemperatureCriticalC: BATTERY_TEMPERATURE_CRITICAL_C,
             vehicleDetailsStaleAfterSeconds: VEHICLE_DETAILS_STALE_AFTER_SECONDS,
+            liveStaleAfterSeconds: LIVE_STALE_AFTER_SECONDS,
+            offroadLiveStaleAfterSeconds: OFFROAD_LIVE_STALE_AFTER_SECONDS,
         },
     };
 });

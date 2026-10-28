@@ -2,6 +2,8 @@ package com.example.carcontroller
 
 import java.io.IOException
 import java.net.URL
+import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,8 +37,20 @@ object GmoneAccountClient {
         val successMessage: String,
     )
     private data class Session(val login: JSONObject, val vehicleCount: Int)
+    private val sessions = GmoneSessionCache<Session>()
+    private val basicStatusReads = GmoneSingleFlight<VehicleStatus>()
+    private val supplementalReads = GmoneSingleFlight<JSONObject>()
+    private val resultPoller = GmoneResultPoller()
+    private val nextTicket = AtomicInteger()
+
+    private fun accountKey(email: String, password: String): String = MessageDigest.getInstance("SHA-256")
+        .digest((email.trim() + "\u0000" + password).toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+
+    fun clearSession() = sessions.clear()
 
     fun login(email: String, password: String): LoginResult {
+        clearSession()
         return LoginResult(authenticate(email, password).vehicleCount)
     }
 
@@ -91,8 +105,37 @@ object GmoneAccountClient {
         extendedControlSpec(command)
     }.isSuccess
 
-    fun fetchVehicleStatus(email: String, password: String, refreshDtc: Boolean = false): VehicleStatus {
+    fun fetchVehicleStatus(
+        email: String,
+        password: String,
+        refreshDtc: Boolean = false,
+        includeModuleDetails: Boolean = true,
+        canReadModuleDetails: () -> Boolean = { true },
+        onBasicStatus: ((VehicleStatus) -> Unit)? = null,
+    ): VehicleStatus {
         val session = authenticate(email, password)
+        val basic = basicStatusReads.read(accountKey(email, password) + ":" + refreshDtc) {
+            readBasicStatus(session, refreshDtc)
+        }
+        // Callers own their JSON; UI enrichment must not mutate another reader's snapshot.
+        val ownedBasic = basic.copy(data = JSONObject(basic.data.toString()))
+        onBasicStatus?.invoke(ownedBasic)
+        if (!includeModuleDetails || !canReadModuleDetails()) return ownedBasic
+        val settings = runCatching { readMultipackSettings(session.login) }.getOrNull()
+        val moduleInfo = if (canReadModuleDetails()) {
+            runCatching { readMultipackInfo(session.login) }.getOrNull()
+        } else null
+        val full = ownedBasic.copy(data = JSONObject(ownedBasic.data.toString()))
+        if (settings != null || moduleInfo != null) {
+            full.data.getJSONObject("gmone_details").put("module", JSONObject().apply {
+                settings?.let { put("settings", it) }
+                moduleInfo?.let { put("info", JSONObject().put("multipack_info", it)) }
+            })
+        }
+        return full
+    }
+
+    private fun readBasicStatus(session: Session, refreshDtc: Boolean): VehicleStatus {
         val initial = request(
             path = "/b1_connect_m",
             operation = STATUS_OPERATION,
@@ -105,16 +148,8 @@ object GmoneAccountClient {
         if (resultCode != 0) throw IOException(statusError(resultCode))
         val carStatus = body.optJSONObject("car_status") ?: throw IOException("차량 상태 값이 없습니다.")
         val timestamp = resolved.optLong("timestamp", System.currentTimeMillis())
-        val settings = runCatching { readMultipackSettings(session.login) }.getOrNull()
-        val moduleInfo = runCatching { readMultipackInfo(session.login) }.getOrNull()
         return VehicleStatus(
-            normalizeStatus(
-                carStatus,
-                timestamp,
-                body.optJSONArray("running_cycles_data"),
-                settings,
-                moduleInfo,
-            ),
+            normalizeStatus(carStatus, timestamp, body.optJSONArray("running_cycles_data"), null, null),
             formatKst(timestamp),
         )
     }
@@ -152,7 +187,7 @@ object GmoneAccountClient {
         )
         requireSuccess(resolved, "멀티팩 설정 저장")
 
-        val verified = readMultipackSettings(session.login)
+        val verified = readMultipackSettings(session.login, sharePending = false)
         val keys = safePatch.keys()
         while (keys.hasNext()) {
             val key = keys.next()
@@ -164,6 +199,10 @@ object GmoneAccountClient {
     }
 
     private fun authenticate(email: String, password: String): Session {
+        return sessions.get(accountKey(email, password)) { authenticateUncached(email, password) }
+    }
+
+    private fun authenticateUncached(email: String, password: String): Session {
         val payload = JSONObject()
             .put("header", JSONObject().put("id", LOGIN_OPERATION).put("ticket_id", 0).put("revision", 0))
             .put("login", JSONObject().put("email", email.trim()).put("password", password))
@@ -188,13 +227,21 @@ object GmoneAccountClient {
 
     private fun request(path: String, operation: Int, login: JSONObject, body: JSONObject): JSONObject {
         val payload = JSONObject()
-            .put("header", JSONObject().put("id", operation).put("ticket_id", 0).put("revision", 0))
+            .put("header", JSONObject().put("id", operation).put("ticket_id", nextTicket.getAndIncrement() and 255).put("revision", 0))
             .put("login", login)
             .put("body", body)
-        return post("$SERVER_URL$path", payload)
+        val response = post("$SERVER_URL$path", payload)
+        val auth = response.optJSONObject("login")
+        if (auth != null && auth.has("success") && auth.optInt("success", -1) != 0) {
+            sessions.invalidateIf { it.login === login }
+            // Do not automatically repeat a vehicle command after an ambiguous response.
+            throw IOException("멀티팩 인증이 만료되었습니다. 다시 요청해 주세요.")
+        }
+        return response
     }
 
     private fun post(url: String, payload: JSONObject): JSONObject {
+        val started = System.nanoTime()
         val connection = URL(url).openConnection() as HttpsURLConnection
         connection.requestMethod = "POST"
         connection.doOutput = true
@@ -223,6 +270,9 @@ object GmoneAccountClient {
                 .getOrElse { throw IOException("멀티팩 서버 응답을 해석할 수 없습니다.") }
         } finally {
             connection.disconnect()
+            runCatching {
+                android.util.Log.i("GmoneTiming", "operation=${payload.optJSONObject("header")?.optInt("id")} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+            }
         }
     }
 
@@ -231,36 +281,50 @@ object GmoneAccountClient {
         val ticket = body.optString("ticket_uuid")
         if (!body.optBoolean("wait_response", false) || ticket.isBlank()) return initial
 
-        repeat(10) {
-            Thread.sleep(3_000)
+        return resultPoller.await {
             val fetched = request(
                 path = "/b1_connect_m",
                 operation = RESULT_OPERATION,
                 login = login,
                 body = JSONObject().put("ticket_uuid", ticket),
             )
-            fetched.optJSONObject("body")?.optJSONObject("fetched_data")?.let { return it }
+            fetched.optJSONObject("body")?.optJSONObject("fetched_data")
         }
-        throw IOException("차량 상태 조회 시간이 초과되었습니다.")
     }
 
-    private fun readMultipackSettings(login: JSONObject): JSONObject {
-        val resolved = resolveResult(
-            login,
-            request("/b1_connect_m", READ_OPTIONS_OPERATION, login, JSONObject()),
-        )
-        val body = requireSuccess(resolved, "멀티팩 설정 조회")
-        return body.optJSONObject("multipack_option")
-            ?: throw IOException("멀티팩 설정값이 응답에 없습니다.")
+    private fun readMultipackSettings(login: JSONObject, sharePending: Boolean = true): JSONObject {
+        return readSupplemental(login, READ_OPTIONS_OPERATION, sharePending) {
+            val resolved = resolveResult(
+                login,
+                request("/b1_connect_m", READ_OPTIONS_OPERATION, login, JSONObject()),
+            )
+            val body = requireSuccess(resolved, "멀티팩 설정 조회")
+            body.optJSONObject("multipack_option")
+                ?: throw IOException("멀티팩 설정값이 응답에 없습니다.")
+        }
     }
 
     private fun readMultipackInfo(login: JSONObject): JSONObject {
-        val resolved = resolveResult(
-            login,
-            request("/b1_connect_m", READ_MODULE_INFO_OPERATION, login, JSONObject()),
-        )
-        val body = requireSuccess(resolved, "멀티팩 모듈 정보 조회")
-        return body.optJSONObject("multipack_info") ?: JSONObject()
+        return readSupplemental(login, READ_MODULE_INFO_OPERATION) {
+            val resolved = resolveResult(
+                login,
+                request("/b1_connect_m", READ_MODULE_INFO_OPERATION, login, JSONObject()),
+            )
+            val body = requireSuccess(resolved, "멀티팩 모듈 정보 조회")
+            body.optJSONObject("multipack_info") ?: JSONObject()
+        }
+    }
+
+    private fun readSupplemental(
+        login: JSONObject,
+        operation: Int,
+        sharePending: Boolean = true,
+        read: () -> JSONObject,
+    ): JSONObject {
+        val key = accountKey(login.getString("uuid"), login.getString("token_key")) + ":" + operation
+        // Verification after a write cannot reuse a read that began before the write.
+        val result = if (sharePending) supplementalReads.read(key, read) else read()
+        return JSONObject(result.toString())
     }
 
     private fun requireSuccess(response: JSONObject, action: String): JSONObject {

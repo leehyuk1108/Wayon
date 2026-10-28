@@ -7,7 +7,7 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="color-scheme" content="dark">
     <title>My Traverse Next</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
     <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
     <style>
@@ -5502,6 +5502,7 @@
 
         .drive-report-kicker {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             gap: 8px;
             margin-bottom: 9px;
@@ -5512,6 +5513,8 @@
         }
 
         .drive-report-confidence {
+            max-width: 100%;
+            overflow-wrap: anywhere;
             padding: 3px 6px;
             border-radius: 4px;
             color: rgba(255, 255, 255, 0.7);
@@ -5835,6 +5838,51 @@
             font-weight: 600;
         }
 
+        .drive-report-condition-heading {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 0 6px;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 12px;
+            font-weight: 720;
+        }
+
+        .drive-report-condition-heading small {
+            color: rgba(255, 255, 255, 0.38);
+            font-size: 9px;
+            font-weight: 600;
+        }
+
+        .drive-report-component-copy span {
+            display: block;
+            color: rgba(255, 255, 255, 0.72);
+            font-size: 12px;
+            font-weight: 670;
+        }
+
+        .drive-report-component-copy small {
+            display: block;
+            margin-top: 3px;
+            overflow: hidden;
+            color: rgba(255, 255, 255, 0.38);
+            font-size: 8px;
+            font-weight: 580;
+            line-height: 1.3;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .drive-report-signal-row.condition-score {
+            grid-template-columns: minmax(108px, 0.95fr) minmax(76px, 1fr) auto;
+            min-height: 59px;
+        }
+
+        .drive-report-signal-row.condition-good .drive-report-signal-track i { background: #72d99a; }
+        .drive-report-signal-row.condition-fair .drive-report-signal-track i { background: #f0bb5a; }
+        .drive-report-signal-row.condition-poor .drive-report-signal-track i { background: #ff746c; }
+
         .drive-report-sensor-note {
             display: flex;
             align-items: flex-start;
@@ -5963,6 +6011,206 @@
             margin-top: 3px;
             color: #f3bd59;
         }
+
+        .drive-blackbox-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .drive-blackbox-event {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .drive-blackbox-event:last-child { border-bottom: 0; }
+
+        .drive-blackbox-event summary {
+            display: grid;
+            grid-template-columns: 34px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 11px;
+            min-height: 68px;
+            padding: 9px 0;
+            list-style: none;
+        }
+
+        .drive-blackbox-event summary::-webkit-details-marker { display: none; }
+
+        .drive-blackbox-event-icon {
+            display: grid;
+            width: 34px;
+            height: 34px;
+            place-items: center;
+            border-radius: 7px;
+            color: #f0bb5a;
+            background: rgba(240, 187, 90, 0.1);
+        }
+
+        .drive-blackbox-event.high .drive-blackbox-event-icon,
+        .drive-blackbox-event.critical .drive-blackbox-event-icon {
+            color: #ff746c;
+            background: rgba(255, 116, 108, 0.11);
+        }
+
+        .drive-blackbox-event-copy {
+            min-width: 0;
+        }
+
+        .drive-blackbox-event-copy strong,
+        .drive-blackbox-event-copy span {
+            display: block;
+        }
+
+        .drive-blackbox-event-copy strong {
+            overflow: hidden;
+            color: #f3f3f3;
+            font-size: 13px;
+            font-weight: 700;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .drive-blackbox-event-copy span {
+            margin-top: 4px;
+            color: rgba(255, 255, 255, 0.44);
+            font-size: 9px;
+            font-weight: 620;
+        }
+
+        .drive-blackbox-package-state {
+            color: rgba(255, 255, 255, 0.42);
+            font-size: 9px;
+            font-style: normal;
+            font-weight: 650;
+        }
+
+        .drive-blackbox-event[open] .drive-blackbox-package-state { color: #79a9ff; }
+
+        .drive-blackbox-detail {
+            padding: 0 0 15px 45px;
+        }
+
+        .drive-blackbox-detail > p {
+            margin: 0 0 12px;
+            color: rgba(255, 255, 255, 0.62);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .drive-blackbox-cause {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 4px 10px;
+            padding: 9px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .drive-blackbox-cause strong {
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 11px;
+            font-weight: 680;
+        }
+
+        .drive-blackbox-cause em {
+            color: #f0bb5a;
+            font-size: 9px;
+            font-style: normal;
+            font-weight: 680;
+        }
+
+        .drive-blackbox-cause small {
+            grid-column: 1 / -1;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 9px;
+            line-height: 1.4;
+        }
+
+        .drive-blackbox-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1px;
+            margin-top: 10px;
+            overflow: hidden;
+            border-radius: 7px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .drive-blackbox-metric {
+            padding: 9px 10px;
+            background: #151516;
+        }
+
+        .drive-blackbox-metric span,
+        .drive-blackbox-metric strong { display: block; }
+        .drive-blackbox-metric span { color: rgba(255, 255, 255, 0.38); font-size: 8px; }
+        .drive-blackbox-metric strong { margin-top: 3px; color: rgba(255, 255, 255, 0.84); font-size: 11px; }
+
+        .drive-blackbox-play {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            min-height: 38px;
+            margin-top: 11px;
+            border: 0;
+            border-radius: 7px;
+            color: #eef4ff;
+            background: #315ea8;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .drive-blackbox-play:disabled {
+            color: rgba(255, 255, 255, 0.34);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .blackbox-player-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 5000;
+            display: none;
+            flex-direction: column;
+            background: #050506;
+        }
+
+        .blackbox-player-overlay.visible { display: flex; }
+
+        .blackbox-player-header {
+            display: grid;
+            grid-template-columns: 40px minmax(0, 1fr) 40px;
+            align-items: center;
+            min-height: 58px;
+            padding: env(safe-area-inset-top, 0) 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .blackbox-player-header button {
+            width: 38px;
+            height: 38px;
+            border: 0;
+            color: #f4f4f4;
+            background: transparent;
+            font-size: 18px;
+        }
+
+        .blackbox-player-title { min-width: 0; text-align: center; }
+        .blackbox-player-title strong,
+        .blackbox-player-title span { display: block; }
+        .blackbox-player-title strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+        .blackbox-player-title span { margin-top: 3px; color: rgba(255, 255, 255, 0.45); font-size: 9px; }
+
+        .blackbox-player-stage {
+            position: relative;
+            display: grid;
+            flex: 1;
+            min-height: 0;
+            place-items: center;
+            background: #000;
+        }
+
+        .blackbox-player-stage video { width: 100%; max-height: 100%; background: #000; }
+        .blackbox-player-status { position: absolute; color: rgba(255, 255, 255, 0.64); font-size: 12px; }
 
         .drive-report-moments {
             display: flex;
@@ -6380,6 +6628,18 @@
             background: transparent;
             opacity: 1 !important;
             pointer-events: none;
+        }
+
+        #retryVehicleData {
+            border: 0;
+            background: transparent;
+            color: #d4d4d8;
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        body[data-vehicle-state="loading"] .home-fuel-track {
+            opacity: .35;
         }
 
         .home-command-bar.controls-disabled .trunk-control-icon {
@@ -7425,6 +7685,7 @@
                             <div class="home-updated-row">
                                 <span>Updated from vehicle</span>
                                 <strong id="home-vehicle-updated">Waiting for update</strong>
+                                <button type="button" id="retryVehicleData" hidden aria-label="차량 정보 다시 불러오기" title="다시 불러오기"><i data-lucide="refresh-cw"></i></button>
                             </div>
                             <div class="home-fuel-track" aria-hidden="true">
                                 <span class="home-fuel-fill" id="home-fuel-fill"></span>
@@ -8460,6 +8721,13 @@
                 </div>
                 <div id="drive-report-automation-content"></div>
             </section>
+            <section class="drive-report-section" id="drive-report-blackbox-section">
+                <div class="drive-report-section-head">
+                    <h2 class="drive-report-section-title">이벤트 블랙박스</h2>
+                    <span class="drive-report-section-meta" id="drive-report-blackbox-count">0개</span>
+                </div>
+                <div class="drive-blackbox-list" id="drive-report-blackbox-events"></div>
+            </section>
             <section class="drive-report-section">
                 <div class="drive-report-section-head">
                     <h2 class="drive-report-section-title">주요 순간</h2>
@@ -8474,6 +8742,21 @@
                 </div>
                 <div id="drive-report-details"></div>
             </section>
+        </div>
+    </div>
+
+    <div class="blackbox-player-overlay" id="blackbox-player-overlay" aria-hidden="true">
+        <div class="blackbox-player-header">
+            <button type="button" id="btnCloseBlackboxPlayer" aria-label="이벤트 영상 닫기"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
+            <div class="blackbox-player-title">
+                <strong id="blackbox-player-title">이벤트 영상</strong>
+                <span id="blackbox-player-time">전후 30초</span>
+            </div>
+            <span></span>
+        </div>
+        <div class="blackbox-player-stage">
+            <video id="blackbox-player-video" controls playsinline preload="metadata"></video>
+            <span class="blackbox-player-status" id="blackbox-player-status">영상을 준비하고 있습니다.</span>
         </div>
     </div>
 
@@ -8666,6 +8949,32 @@
         const gmoneDiagnosticActionState = document.getElementById('gmone-diagnostic-action-state');
         let gmoneSettingsCurrent = {};
         let gmoneDetailsCurrent = null;
+        let vehicleCommandReady = false;
+        let vehicleDataState = 'loading';
+
+        function updateVehicleCommandReady(ready) {
+            vehicleCommandReady = ready === true;
+            updateGmoneControlPanel(gmoneDetailsCurrent);
+        }
+
+        function setVehicleDataState(state) {
+            vehicleDataState = state;
+            document.body.dataset.vehicleState = state;
+            document.querySelector('.home-vehicle-summary')?.setAttribute('aria-busy', String(state === 'loading'));
+            const retry = document.getElementById('retryVehicleData');
+            if (retry) retry.hidden = state !== 'unavailable';
+            if (state !== 'ready') {
+                if (state === 'loading') wayonLiveStateCurrent = null;
+                latestWayonCloudVoltage = null;
+                updateCarStatus('--', '--', '--', '--', '--', '', '--', '--', '');
+                updateGmoneDetails(null);
+                document.getElementById('val-mileage').textContent = '--';
+                document.getElementById('home-vehicle-updated').textContent = state === 'loading'
+                    ? '차량 정보 불러오는 중' : '차량 정보를 불러오지 못했어요';
+            }
+            renderVehicleReport(gmoneDetailsCurrent);
+            updateGmoneControlPanel(gmoneDetailsCurrent);
+        }
         let gmoneDetailsRevision = 0;
         const ambientZones = [...document.querySelectorAll('[data-ambient-zone]')];
         const ambientDuration = document.getElementById('ambient-duration');
@@ -8855,18 +9164,17 @@
             if (normalized === 'sending') stateElement.textContent = profileCommand ? '프로필을 차량에 전송 중' : '차량에 전송 중';
             else if (normalized === 'pending' || normalized === 'delivered') stateElement.textContent = '콤마 응답 대기 중';
             else if (normalized === 'acknowledged') {
+                // A Comma ACK confirms storage, not physical application by Navdy.
                 if (!profileCommand && ambientPendingMode?.mode === 'manual') {
-                    localStorage.setItem(AMBIENT_MANUAL_MODE_KEY, JSON.stringify({ expiresAt: ambientPendingMode.expiresAt }));
-                    stateElement.textContent = `${ambientDurationText(ambientPendingMode.durationSeconds)} 동안 수동 설정이 유지됩니다.`;
-                    renderAmbientModeSummary();
+                    stateElement.textContent = `콤마에 수동 설정 저장됨 (${ambientDurationText(ambientPendingMode.durationSeconds)}) · Navdy 적용 미확인`;
                 } else if (!profileCommand && ambientPendingMode?.mode === 'auto') {
                     localStorage.removeItem(AMBIENT_MANUAL_MODE_KEY);
-                    stateElement.textContent = '자동 제어로 전환했습니다.';
-                    renderAmbientModeSummary();
+                    stateElement.textContent = '콤마에 자동 제어 설정 저장됨 · Navdy 적용 미확인';
                 } else {
-                    stateElement.textContent = profileCommand ? '자동 동작을 저장했습니다.' : '차량에 전달됨';
+                    stateElement.textContent = profileCommand
+                        ? '콤마에 자동 동작 프로필 저장됨 · Navdy 적용 미확인'
+                        : '콤마에 설정 저장됨 · Navdy 적용 미확인';
                 }
-                stateElement.classList.add('success');
                 ambientPendingMode = null;
             } else if (normalized === 'failed' || normalized === 'expired') {
                 stateElement.textContent = normalized === 'expired' ? '설정 시간이 만료됨' : '전송 실패';
@@ -9845,8 +10153,6 @@
             if (!wayonCloudKeyActive) {
                 updateWayonCloudSnapshots("[]");
                 renderDoorLockState(null);
-            } else {
-                refreshDoorLockState(true);
             }
         }
 
@@ -9926,18 +10232,18 @@
             const state = document.getElementById('doors-control-state');
             const known = typeof locked === 'boolean';
             doorLockStateKnown = known;
-            btnDoorToggle.setAttribute('aria-disabled', known ? 'false' : 'true');
+            btnDoorToggle.setAttribute('aria-disabled', vehicleCommandReady ? 'false' : 'true');
+            btnDoorToggle.dataset.controlChoices = known ? '' : 'doors';
             btnDoorToggle.classList.toggle('state-secure', known && locked);
             btnDoorToggle.classList.toggle('state-attention', known && !locked);
 
             if (!known) {
                 btnDoorToggle.dataset.cmd = '';
                 btnDoorToggle.dataset.name = '';
-                btnDoorToggle.setAttribute('aria-label', '차량 잠금 상태 확인 중');
-                btnDoorToggle.title = '차량 잠금 상태 확인 중';
-                if (text) text.innerHTML = '<i class="fas fa-spinner"></i> 확인 중';
-                renderHomeQuickIcon(icon, 'loader-circle');
-                icon?.querySelector('svg')?.classList.add('home-icon-spinning');
+                btnDoorToggle.setAttribute('aria-label', '도어 제어 선택, 길게 누르기');
+                btnDoorToggle.title = '도어 제어 선택';
+                if (text) text.textContent = '도어';
+                renderHomeQuickIcon(icon, 'lock-keyhole');
                 if (state) state.textContent = '상태 확인 중';
                 return;
             }
@@ -9957,6 +10263,7 @@
 
         async function refreshDoorLockState(force = false) {
             if (!btnDoorToggle) return;
+            if (vehicleDataState !== 'ready') return;
             const gmoneDoor = gmoneDetailsCurrent?.closures?.doors;
             if (gmoneDoor && typeof gmoneDoor.active === 'boolean') {
                 const closures = effectiveGmoneClosures(
@@ -10278,6 +10585,10 @@
 
         function normalizeLiveCaptureItem(capture) {
             const capturedAt = capture?.capturedAt || capture?.captured_at || null;
+            let metadata = capture?.metadata_json;
+            if (typeof metadata === "string") {
+                try { metadata = JSON.parse(metadata); } catch (_) { metadata = null; }
+            }
             return {
                 ...capture,
                 id: String(capture?.id || ""),
@@ -10286,7 +10597,7 @@
                 capturedAtDisplay: snapshotDateTimeDisplay(capturedAt),
                 durationS: Number(capture?.durationS ?? capture?.duration_s ?? 0) || 0,
                 contentType: capture?.contentType || capture?.content_type || "",
-                cameraLayout: capture?.cameraLayout || capture?.camera_layout || "",
+                cameraLayout: metadata?.cameraLayout || capture?.cameraLayout || capture?.camera_layout || "",
                 sizeBytes: Number(capture?.sizeBytes ?? capture?.size_bytes ?? 0) || 0,
             };
         }
@@ -10404,6 +10715,8 @@
                     wayonLiveCaptures = (Array.isArray(payload?.captures) ? payload.captures : [])
                         .map(normalizeLiveCaptureItem)
                         .filter(capture => capture.id)
+                        // Road blackbox packages use the event player, not the dual-camera 360 decoder.
+                        .filter(capture => !(capture.kind === "clip" && capture.cameraLayout === "road_blackbox"))
                         .sort((a, b) => Date.parse(b.capturedAt || 0) - Date.parse(a.capturedAt || 0));
                     wayonLiveCapturesLoadedAt = Date.now();
                     renderLiveCaptureSummary();
@@ -11764,6 +12077,8 @@
         }
 
         function applyVehiclePreviewScenario(id) {
+            vehicleDataState = 'ready';
+            vehicleCommandReady = true;
             const scenario = String(id || 'secure').toLowerCase();
             const now = Date.now();
             const commandBar = document.querySelector('.home-command-bar');
@@ -11803,8 +12118,8 @@
             };
 
             const configure = {
-                driving: () => Object.assign(state, { engineRunning: true, onroad: true, openpilotActive: true, controlsDisabled: true }),
-                'manual-driving': () => Object.assign(state, { engineRunning: true, onroad: true, controlsDisabled: true }),
+                driving: () => Object.assign(state, { engineRunning: true, onroad: true, openpilotActive: true }),
+                'manual-driving': () => Object.assign(state, { engineRunning: true, onroad: true }),
                 'engine-on': () => Object.assign(state, { engineRunning: true }),
                 running: () => Object.assign(state, { engineRunning: true, remoteRunning: true }),
                 door: () => { state.doorOpen = true; },
@@ -11825,7 +12140,7 @@
                 'low-fuel': () => Object.assign(state, { fuelLiters: 5.8, fuelRange: 42 }),
                 stale: () => { state.updatedAt = now - 11 * 60 * 1000; },
                 offline: () => Object.assign(state, { unavailable: true, controlsDisabled: true }),
-                'location-missing': () => Object.assign(state, { onroad: true, locationMissing: true, controlsDisabled: true }),
+                'location-missing': () => Object.assign(state, { onroad: true, locationMissing: true }),
                 'start-blocked': () => { state.hoodOpen = true; },
                 'no-starts': () => { state.remainingStarts = 0; },
                 sending: () => { state.feedback = 'sending'; },
@@ -12044,14 +12359,24 @@
             activeLongPress = {
                 button,
                 touchId: touch.identifier,
+                choices: button.dataset.controlChoices,
+                cmd: button.dataset.cmd,
+                name: button.dataset.name,
             };
             button.classList.add('holding');
 
             longPressTimer = setTimeout(() => {
                 if (!activeLongPress || activeLongPress.button !== button) return;
+                const requested = activeLongPress;
                 button.classList.remove('holding');
                 activeLongPress = null;
                 longPressTimer = null;
+
+                if (button.getAttribute('aria-disabled') === 'true') return;
+                if (requested.choices) {
+                    window.Android?.showVehicleControlChoices(requested.choices, button.id);
+                    return;
+                }
 
                 const gmoneControl = button.dataset.gmoneControl;
                 if (gmoneControl) {
@@ -12063,8 +12388,8 @@
                     return;
                 }
 
-                const cmdKey = button.dataset.cmd;
-                const cmdName = button.dataset.name;
+                const cmdKey = requested.cmd;
+                const cmdName = requested.name;
 
                 if (window.Android) {
                     window.Android.handleLongPress(cmdKey, cmdName, button.id);
@@ -12790,6 +13115,18 @@
             const healthDetail = document.getElementById('home-card-health-detail');
             if (!strip || !iconContainer || !title || !detail) return;
 
+            if (vehicleDataState !== 'ready') {
+                strip.classList.remove('secure', 'warning', 'critical', 'active', 'running', 'driving', 'offline');
+                title.textContent = vehicleDataState === 'loading' ? 'LOADING' : 'UNAVAILABLE';
+                detail.textContent = vehicleDataState === 'loading' ? '차량 정보 불러오는 중' : '다시 불러오기를 눌러주세요';
+                detail.hidden = false;
+                if (kickerText) kickerText.textContent = 'VEHICLE STATUS';
+                iconContainer.innerHTML = '<i data-lucide="refresh-cw" aria-hidden="true"></i>';
+                window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
+                if (healthDetail) healthDetail.textContent = detail.textContent;
+                return;
+            }
+
             strip.classList.remove('secure', 'warning', 'critical', 'active', 'running', 'driving', 'offline');
             let reportDetails = details;
             if (details && typeof details === 'object') {
@@ -12849,42 +13186,40 @@
             return `${year}/${month}/${day}, ${hour}:${minute}`;
         }
 
-        function renderHomeFuelSummary(range, fuel, updatedAt, capacity = 82) {
+        const traverseFuelCapacityLiters = 82.1;
+
+        function validatedFuelLevel(fuel, capacity = traverseFuelCapacityLiters) {
+            const text = String(fuel ?? '').trim();
+            const tank = Number(capacity);
+            const match = text.match(/^(\d+(?:\.\d+)?)\s*(%|L)?$/i);
+            if (!match || !Number.isFinite(tank) || tank <= 0) return null;
+            const value = Number(match[1]);
+            const liters = match[2] === '%' ? tank * value / 100 : value;
+            if (!Number.isFinite(liters) || liters < 0 || liters > tank) return null;
+            return { liters, percent: liters / tank * 100, capacity: tank };
+        }
+
+        function renderHomeFuelSummary(range, fuel, updatedAt, capacity = traverseFuelCapacityLiters) {
             const levelElement = document.getElementById('home-fuel-level');
             const rangeElement = document.getElementById('home-range-value');
             const fillElement = document.getElementById('home-fuel-fill');
             const updatedElement = document.getElementById('home-vehicle-updated');
             if (!levelElement || !rangeElement || !fillElement || !updatedElement) return;
 
-            const fuelString = String(fuel ?? '').trim();
             const rangeString = String(range ?? '').trim();
             const rangeNumericText = rangeString.replace(/[^0-9.-]/g, '');
-            const fuelNumericText = fuelString.replace(/[^0-9.-]/g, '');
             const rangeNumber = rangeNumericText ? Number(rangeNumericText) : NaN;
-            const fuelNumber = fuelNumericText ? Number(fuelNumericText) : NaN;
-            const capacityNumber = Number(capacity);
-            const fuelIsPercent = fuelString.includes('%');
-            let percent = null;
-
-            if (Number.isFinite(fuelNumber)) {
-                if (fuelIsPercent) {
-                    percent = fuelNumber;
-                    levelElement.textContent = `${Math.round(fuelNumber)}%`;
-                } else {
-                    percent = Number.isFinite(capacityNumber) && capacityNumber > 0
-                        ? (fuelNumber / capacityNumber) * 100
-                        : (fuelNumber / 82) * 100;
-                    levelElement.textContent = `~${gmoneFormatNumber(fuelNumber, 1)} L`;
-                }
-            } else {
-                levelElement.textContent = '-- L';
-            }
+            const fuelLevel = validatedFuelLevel(fuel, capacity);
+            levelElement.textContent = fuelLevel ? `~${gmoneFormatNumber(fuelLevel.liters, 1)} L` : '-- L';
 
             rangeElement.textContent = Number.isFinite(rangeNumber)
                 ? `${Math.round(rangeNumber).toLocaleString()} km`
                 : '-- km';
-            fillElement.style.width = percent === null ? '0%' : `${Math.max(0, Math.min(100, percent))}%`;
-            updatedElement.textContent = formatHomeVehicleTime(updatedAt);
+            fillElement.style.width = fuelLevel ? `${fuelLevel.percent}%` : '0%';
+            const formattedTime = formatHomeVehicleTime(updatedAt);
+            const updatedTime = new Date(updatedAt).getTime();
+            updatedElement.textContent = Number.isFinite(updatedTime) && Date.now() - updatedTime > 24 * 60 * 60 * 1000
+                ? `마지막 수집 ${formattedTime}` : formattedTime;
         }
 
         function gmoneOptimisticSpec(command) {
@@ -13089,10 +13424,11 @@
         }
 
         function renderBinarySmartControl({ state, openButton, closeButton, stateId, openLabel, closedLabel, icon }) {
-            const known = state && typeof state.active === 'boolean';
+            const known = !!state && typeof state.active === 'boolean';
             const isOpen = known && state.active;
-            setSmartControlAction(openButton, !isOpen, known);
-            setSmartControlAction(closeButton, isOpen, known);
+            setSmartControlAction(openButton, !isOpen, vehicleCommandReady);
+            setSmartControlAction(closeButton, isOpen, vehicleCommandReady && known);
+            openButton.dataset.controlChoices = known ? '' : (stateId === 'trunk-control-state' ? 'trunk' : 'sunroof');
             setSmartControlText(stateId, known ? (isOpen ? openLabel : closedLabel) : '상태 확인 중');
 
             const visibleButton = isOpen ? closeButton : openButton;
@@ -13104,7 +13440,7 @@
             const text = visibleButton?.querySelector('.button-text');
             if (text) {
                 const label = isOpen ? '닫기' : '열기';
-                text.textContent = label;
+                text.textContent = known ? label : '제어';
             }
         }
 
@@ -13187,10 +13523,10 @@
             const remainingStarts = gmoneNumber(remoteStart.remainingStarts);
             const settings = gmoneSettings(details?.module || {});
             const drivingActive = controlDrivingActive || wayonLiveStateCurrent?.onroad === true;
-            const controlsUnavailable = !details || wayonLiveStateCurrent?.unavailable === true;
+            const controlsUnavailable = !vehicleCommandReady;
             document.querySelector('.home-command-bar')?.classList.toggle(
                 'controls-disabled',
-                drivingActive || controlsUnavailable,
+                controlsUnavailable,
             );
 
             btnEngineStart.hidden = remoteRunning;
@@ -13217,6 +13553,8 @@
                     engineState = '주행 중 사용 불가';
                 } else if (engineRunning) {
                     engineState = '일반 시동 켜짐';
+                } else if (settings?.all_function_stop == null) {
+                    engineState = '시동 조건 확인 중';
                 } else if (Number(settings?.all_function_stop) === 0) {
                     engineState = '멀티팩 기능 정지';
                 } else if (closures.hood?.active === true) {
@@ -13231,6 +13569,14 @@
                     engineReason = '';
                 }
             }
+            const engineNeedsCheck = !engineKnown || vehicleDataState !== 'ready'
+                || (!engineRunning && settings?.all_function_stop == null);
+            btnEngineStart.dataset.controlChoices = '';
+            if (engineNeedsCheck) {
+                engineEnabled = !drivingActive;
+                engineState = '요청 시 상태 확인';
+            }
+            engineEnabled = engineEnabled && vehicleCommandReady;
             setSmartControlAction(btnEngineStart, !remoteRunning, engineEnabled);
             setSmartControlAction(btnEngineStop, remoteRunning, engineEnabled);
             setSmartControlText('engine-control-state', engineState);
@@ -13254,8 +13600,9 @@
                 .filter(state => state && typeof state.active === 'boolean');
             const openWindowCount = windowStates.filter(state => state.active).length;
             const windowsKnown = windowStates.length === 4;
-            setSmartControlAction(btnWindowOpen, openWindowCount === 0, windowsKnown);
-            setSmartControlAction(btnWindowClose, openWindowCount > 0, windowsKnown);
+            setSmartControlAction(btnWindowOpen, openWindowCount === 0, vehicleCommandReady);
+            setSmartControlAction(btnWindowClose, openWindowCount > 0, vehicleCommandReady && windowsKnown);
+            btnWindowOpen.dataset.controlChoices = windowsKnown ? '' : 'windows';
             setSmartControlText(
                 'window-control-state',
                 windowsKnown ? (openWindowCount > 0 ? `${openWindowCount}개 열림` : '모두 닫힘') : '상태 확인 중'
@@ -13267,7 +13614,7 @@
             windowButton?.classList.toggle('state-secure', windowsKnown && openWindowCount === 0);
             windowButton?.classList.toggle('state-attention', windowsKnown && openWindowCount > 0);
             const windowText = windowButton?.querySelector('.button-text');
-            if (windowText) windowText.textContent = openWindowCount > 0 ? '닫기' : '열기';
+            if (windowText) windowText.textContent = windowsKnown ? (openWindowCount > 0 ? '닫기' : '열기') : '제어';
 
             renderBinarySmartControl({
                 state: closures.sunroof,
@@ -13280,7 +13627,8 @@
             });
             const sunroofKnown = closures.sunroof && typeof closures.sunroof.active === 'boolean';
             const sunroofOpen = sunroofKnown && closures.sunroof.active;
-            setSmartControlAction(btnSunroofTilt, !sunroofOpen, !!sunroofKnown);
+            setSmartControlAction(btnSunroofTilt, !sunroofOpen, vehicleCommandReady);
+            document.getElementById('btnQuickHorn')?.setAttribute('aria-disabled', vehicleCommandReady ? 'false' : 'true');
         }
 
         function updateGmoneDetails(rawDetails) {
@@ -13370,7 +13718,11 @@
                 metaElement.textContent = formatted === '--' ? '업데이트 대기 중' : `${formatted} 업데이트`;
                 metaElement.classList.toggle('stale', stale);
             }
-            renderHomeFuelSummary(fuel.rangeKm, fuel.levelLiters, updatedAt, fuel.capacityLiters);
+            const reportedFuel = validatedFuelLevel(fuel.levelLiters, fuel.capacityLiters);
+            const fuelPercent = gmoneNumber(fuel.levelPercent) ?? gmoneNumber(details.rawStatus?.fLvl);
+            const displayFuel = reportedFuel ? fuel.levelLiters
+                : fuelPercent !== null && fuelPercent >= 0 && fuelPercent <= 100 ? `${fuelPercent}%` : null;
+            renderHomeFuelSummary(fuel.rangeKm, displayFuel, updatedAt, fuel.capacityLiters);
 
             const closureLabels = {
                 doors: '도어 잠금 해제', hood: '후드 열림', trunk: '트렁크 열림', sunroof: '선루프 열림',
@@ -13515,7 +13867,8 @@
         // ‼️ (신규) 주차 위치 지도 업데이트 함수
         // ‼️ (New) Update Vehicle Status from Firebase (Range, Battery, Mileage, Fuel, LastUpdate, Oil, Tire)
         function updateCarStatus(range, battery, batteryLevel, mileage, fuel, lastUpdate, oil, tirePressure, tireListString) {
-            renderHomeFuelSummary(range, fuel, lastUpdate, 82);
+            const fuelLevel = validatedFuelLevel(fuel);
+            renderHomeFuelSummary(range, fuel, lastUpdate);
             // 1. Range & Fuel Logic (Format: "98% (566km)")
             let fuelPercent = '';
             let rangeText = '';
@@ -13527,17 +13880,7 @@
                 // Let's just show raw for now in Info tab.
             }
             // A. Calculate/Extract Fuel %
-            if (fuel && fuel !== '--') {
-                if (fuel.includes('%')) {
-                    fuelPercent = fuel;
-                } else {
-                    // Try parsing as Liters (Capacity ~82L for Traverse)
-                    const val = parseFloat(fuel.replace(/[^0-9.]/g, ''));
-                    if (!isNaN(val)) {
-                        fuelPercent = Math.round((val / 82) * 100) + '%';
-                    }
-                }
-            }
+            if (fuelLevel) fuelPercent = `${Math.round(fuelLevel.percent)}%`;
 
             // B. Range Text
             if (range && range !== '--') {
@@ -13698,20 +14041,17 @@
 
             // --- Fuel ---
             if (document.getElementById('info-fuel')) {
-                const fuelVal = fuel || "--";
-                const fuelNum = Number.parseFloat(String(fuelVal).replace(/[^\d.]/g, ''));
-                if (fuelVal !== '--' && Number.isFinite(fuelNum)) {
-                    const displayFuel = fuelNum.toLocaleString(undefined, { maximumFractionDigits: 1 });
-                    document.getElementById('info-fuel').innerHTML = `${displayFuel}L<span style="font-size:12px; color:#aaa; margin-left:2px;"> / 82L</span>`;
+                if (fuelLevel) {
+                    const displayFuel = fuelLevel.liters.toLocaleString(undefined, { maximumFractionDigits: 1 });
+                    document.getElementById('info-fuel').innerHTML = `${displayFuel}L<span style="font-size:12px; color:#aaa; margin-left:2px;"> / 82.1L</span>`;
                 } else {
-                    document.getElementById('info-fuel').textContent = "-- / 82L";
+                    document.getElementById('info-fuel').textContent = "-- / 82.1L";
                 }
 
-                // Progress Bar (Estimate: Max 82L)
                 const progFuel = document.getElementById('prog-fuel');
                 if (progFuel) {
-                    if (Number.isFinite(fuelNum)) {
-                        const percent = Math.min((fuelNum / 82) * 100, 100);
+                    if (fuelLevel) {
+                        const percent = fuelLevel.percent;
                         progFuel.style.width = percent + "%";
 
                         // ‼️ Dynamic Fuel Color
@@ -13862,6 +14202,10 @@
             switchTab('tab-control');
         });
 
+        document.getElementById('retryVehicleData')?.addEventListener('click', () => {
+            window.Android?.refreshVehicleScreen();
+        });
+
         btnSecretSettings.addEventListener('click', () => {
             switchTab('tab-settings'); // ‼️ 이제 '설정' 탭으로 감
             if (window.Android) {
@@ -13920,6 +14264,12 @@
         const tripDetailOverlay = document.getElementById('trip-detail-overlay');
         const btnCloseTripDetail = document.getElementById('btnCloseTripDetail');
         const btnTripDetailRecenter = document.getElementById('btnTripDetailRecenter');
+        const blackboxPlayerOverlay = document.getElementById('blackbox-player-overlay');
+        const blackboxPlayerVideo = document.getElementById('blackbox-player-video');
+        const blackboxPlayerStatus = document.getElementById('blackbox-player-status');
+        const blackboxPlayerTitle = document.getElementById('blackbox-player-title');
+        const blackboxPlayerTime = document.getElementById('blackbox-player-time');
+        const btnCloseBlackboxPlayer = document.getElementById('btnCloseBlackboxPlayer');
         let currentHistoryItems = [];
         let activeTripDetailIndex = -1;
         let tripHealthRetryTimer = null;
@@ -13933,6 +14283,8 @@
         let tripDetailMomentMarkers = [];
         let tripDetailInitialView = null;
         let tripDetailMapSettleTimer = null;
+        let blackboxPlaybackObjectUrl = null;
+        let blackboxPlaybackEndS = null;
 
         btnToggleHistory.addEventListener('click', () => {
             loadHistory();
@@ -14211,6 +14563,22 @@
             return Number.isFinite(number) ? number : fallback;
         }
 
+        function normalizeDriveAnalysis(value) {
+            const analysis = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+            const nested = analysis.legacyReport;
+            const nestedIsStructured = nested && typeof nested === "object" && !Array.isArray(nested) &&
+                nested.scores && typeof nested.scores === "object" &&
+                nested.automation && typeof nested.automation === "object" &&
+                nested.comfort && typeof nested.comfort === "object";
+            if (analysis.schemaVersion === "wayon-drive-report-v1-legacy" && nestedIsStructured) {
+                if (analysis.dataQuality?.partial === true) {
+                    return { ...nested, dataQuality: { ...nested.dataQuality, ...analysis.dataQuality } };
+                }
+                return nested;
+            }
+            return analysis;
+        }
+
         function reportValue(value, suffix = "", digits = 0) {
             const number = reportNumber(value);
             if (number === null) return "--";
@@ -14219,6 +14587,23 @@
 
         function reportConfidenceLabel(value) {
             return value === "high" ? "신뢰도 높음" : value === "medium" ? "신뢰도 보통" : value === "low" ? "신뢰도 낮음" : "분석 대기";
+        }
+
+        function reportAnalysisConfidence(analysis, confidence = analysis?.dataQuality?.confidence) {
+            const quality = analysis?.dataQuality || {};
+            if (quality.partial !== true) return reportConfidenceLabel(confidence);
+            const segmentCount = (value) => {
+                if (typeof value !== "number" && typeof value !== "string") return null;
+                if (typeof value === "string" && !value.trim()) return null;
+                const count = Number(value);
+                return Number.isSafeInteger(count) && count >= 0 ? count : null;
+            };
+            const read = segmentCount(quality.readSegments);
+            const unread = segmentCount(quality.unreadSegments);
+            const total = segmentCount(quality.totalSegments)
+                ?? (read !== null && unread !== null ? segmentCount(read + unread) : null);
+            if (read === null || total === null || total === 0 || read > total) return "부분 분석 · 범위 미상";
+            return `부분 분석 · ${read}/${total}구간`;
         }
 
         function reportLoadLabel(value) {
@@ -14256,6 +14641,46 @@
                 <div class="drive-report-signal-track"><i style="width:${percent.toFixed(0)}%"></i></div>
                 <strong class="drive-report-signal-result">${escapeHtml(result)}${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</strong>
             </div>`;
+        }
+
+        function reportConditionComponentRow(label, component, detail = "") {
+            if (!component?.available) return "";
+            const score = Math.max(0, Math.min(100, reportNumber(component.score, 0)));
+            const grade = score >= 80 ? "good" : score >= 60 ? "fair" : "poor";
+            const weight = Math.max(0, reportNumber(component.appliedWeightPercent, 0));
+            return `<div class="drive-report-signal-row condition-score condition-${grade}">
+                <div class="drive-report-component-copy"><span>${escapeHtml(label)}</span>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</div>
+                <div class="drive-report-signal-track"><i style="width:${score.toFixed(0)}%"></i></div>
+                <strong class="drive-report-signal-result">${Math.round(score)}점<small>반영 ${Math.round(weight)}%</small></strong>
+            </div>`;
+        }
+
+        function driveReportConditionMarkup(health) {
+            const components = health?.load?.components || {};
+            if (!Object.values(components).some(component => component?.available)) return "";
+            const hrv = health?.hrv || {};
+            const driving = components.drivingSmoothness || {};
+            const counts = driving.eventCounts || {};
+            const trip = components.tripDemand || {};
+            const metrics = trip.metrics || {};
+            const drivingDetail = `급출발 ${Math.round(reportNumber(counts.hardAccelerationCount, 0))} · 급제동 ${Math.round(reportNumber(counts.hardBrakingCount, 0))} · 정지충격 ${Math.round(reportNumber(counts.harshStopCount, 0))}`;
+            const tripParts = [
+                reportNumber(metrics.distanceKm) === null ? "" : `${reportNumber(metrics.distanceKm).toFixed(1)}km`,
+                reportNumber(metrics.durationMinutes) === null ? "" : `${Math.round(reportNumber(metrics.durationMinutes))}분`,
+                reportNumber(metrics.averageSpeedKmh) === null ? "" : `평균 ${Math.round(reportNumber(metrics.averageSpeedKmh))}`,
+                reportNumber(metrics.maximumSpeedKmh) === null ? "" : `최고 ${Math.round(reportNumber(metrics.maximumSpeedKmh))}`,
+            ].filter(Boolean).join(" · ");
+            const rows = [
+                reportConditionComponentRow("심박 안정도", components.heartRateStability, "기준 심박 대비 변화"),
+                reportConditionComponentRow("긴장 반응", components.stressResponse, "피부전도 EDA"),
+                reportConditionComponentRow("심박변이 회복", components.hrvRecovery, reportNumber(hrv.averageRmssdMs) === null ? "HRV" : `HRV ${Math.round(reportNumber(hrv.averageRmssdMs))}ms`),
+                reportConditionComponentRow("수면 상태", components.sleep, "운전 전 수면 점수"),
+                reportConditionComponentRow("에너지", components.energy, "운전 전 에너지 점수"),
+                reportConditionComponentRow("운전 부드러움", driving, drivingDetail),
+                reportConditionComponentRow("운전 강도", trip, tripParts || "거리·시간·속도"),
+            ].filter(Boolean).join("");
+            if (!rows) return "";
+            return `<div class="drive-report-condition-heading"><span>종합점수 구성</span><small>수집된 항목만 가중 반영</small></div><div class="drive-report-signal-list">${rows}</div>`;
         }
 
         function reportClock(value) {
@@ -14303,6 +14728,57 @@
             const comfort = reportNumber(analysis?.scores?.comfort);
             const harshStops = reportNumber(analysis?.comfort?.harshStopCount, 0);
             const oscillations = reportNumber(analysis?.comfort?.lowSpeedOscillationCount, 0);
+            const components = health?.load?.components || {};
+            const componentDefinitions = [
+                ["heartRateStability", "심박 안정도"],
+                ["stressResponse", "긴장 반응"],
+                ["hrvRecovery", "HRV 회복"],
+                ["sleep", "수면 상태"],
+                ["energy", "에너지 상태"],
+                ["drivingSmoothness", "주행 부드러움"],
+                ["tripDemand", "운전 강도"],
+            ];
+            const availableComponents = componentDefinitions.map(([key, label]) => {
+                const component = components[key] || {};
+                const score = component.available ? reportNumber(component.score) : null;
+                const weight = reportNumber(component.appliedWeightPercent, 0);
+                return score === null ? null : { key, label, score, loss: (100 - score) * weight };
+            }).filter(Boolean);
+            if (availableComponents.length) {
+                const drivingIssueText = () => {
+                    const counts = components.drivingSmoothness?.eventCounts || {};
+                    const issues = [
+                        ["급출발", counts.hardAccelerationCount],
+                        ["급제동", counts.hardBrakingCount],
+                        ["정지 충격", counts.harshStopCount],
+                        ["저속 출렁임", counts.lowSpeedOscillationCount],
+                    ].map(([label, value]) => [label, Math.max(0, Math.round(reportNumber(value, 0)))])
+                        .filter(([, value]) => value > 0)
+                        .map(([label, value]) => `${label} ${value}회`);
+                    return issues.length ? issues.slice(0, 3).join("·") : "주행 부드러움 저하";
+                };
+                const negativeText = (component) => {
+                    if (component.key === "drivingSmoothness") return drivingIssueText();
+                    if (component.key === "tripDemand") return "장거리·장시간 또는 고속 주행 부담";
+                    return `${component.label} ${Math.round(component.score)}점`;
+                };
+                const negatives = availableComponents.filter(component => component.score < 70)
+                    .sort((a, b) => b.loss - a.loss);
+                const positives = availableComponents.filter(component => component.score >= 80)
+                    .sort((a, b) => b.score - a.score);
+                if (negatives.length) {
+                    const reason = negatives.slice(0, 2).map(negativeText).join(", ");
+                    const positive = positives.find(component => !negatives.some(item => item.key === component.key));
+                    return `주요 감점 요인은 ${reason}입니다.${positive ? ` ${positive.label} 항목은 양호해 점수를 보완했습니다.` : ""}`;
+                }
+                if (positives.length >= 2) {
+                    return `${positives.slice(0, 3).map(component => component.label).join("·")} 항목이 양호했고, 뚜렷한 감점 요인이 없어 높은 점수입니다.`;
+                }
+                if (positives.length === 1) {
+                    return `${positives[0].label}은 양호했고 나머지 항목은 대체로 보통 범위여서 현재 점수가 산정됐습니다.`;
+                }
+                return "수집된 생체 상태와 차량 움직임이 전반적으로 보통 범위여서 현재 점수가 산정됐습니다.";
+            }
             const topMoment = Array.isArray(health?.topStressMoments) ? health.topStressMoments[0] : null;
             if (health?.available && topMoment) {
                 const hasEda = reportNumber(topMoment.edaAboveBaselineMicrosiemens) !== null;
@@ -14312,7 +14788,7 @@
                 return `심박은 수집되지 않았지만 피부전도 반응으로 추정한 운전자 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 낮은 신뢰도의 보조 지표로 확인해 주세요.`;
             }
             if (health?.available) {
-                return `주행 중 추정 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 심박 변화와 차량 움직임을 함께 분석했습니다.`;
+                return `주행 중 추정 부담은 ${reportLoadLabel(health?.load?.band)} 수준이었습니다. 심박·HRV·수면·에너지와 급가감속, 주행 거리·시간·속도를 함께 반영했습니다.`;
             }
             if (harshStops > 0) return `${harshStops}회의 정지에서 마지막 저속 구간의 충격이 크게 측정됐습니다. 심박 데이터가 연결되면 운전자 반응도 함께 비교됩니다.`;
             if (oscillations >= 4) return `저속 구간에서 가속과 감속 전환이 ${oscillations}회 측정됐습니다. 정체 주행의 승차감을 중점적으로 확인해 보세요.`;
@@ -14373,6 +14849,7 @@
             const meta = document.getElementById("drive-report-health-meta");
             if (!container || !meta) return;
             const sensorMarkup = driveReportSensorMarkup(health);
+            const conditionMarkup = driveReportConditionMarkup(health);
             if (!health?.available) {
                 meta.textContent = sensorMarkup ? "워치 보조 분석" : (health?.status === "not_configured" ? "연결 필요" : "측정 데이터 없음");
                 container.innerHTML = `<div class="drive-report-empty">이 주행 시간대의 워치 심박 데이터가 없습니다. 차량 분석은 정상적으로 표시되며, Health Bridge가 동기화되면 심박 기반 부담도가 추가됩니다.</div>${sensorMarkup}`;
@@ -14399,6 +14876,7 @@
                         <div class="drive-report-context-item"><i class="fas fa-heartbeat" aria-hidden="true"></i><div class="drive-report-context-copy"><span>심박</span><strong>미수집</strong></div><em>--</em></div>
                         <div class="drive-report-context-item"><i class="fas fa-shield-alt" aria-hidden="true"></i><div class="drive-report-context-copy"><span>분석 신뢰도</span><strong>${reportConfidenceLabel(health.confidence).replace("신뢰도 ", "")}</strong></div><em>EDA</em></div>
                     </div>
+                    ${conditionMarkup}
                     ${sensorMarkup}`;
                 return;
             }
@@ -14424,6 +14902,7 @@
                     <div class="drive-report-feature-side"><strong>${maximum === null ? "--" : Math.round(maximum)} bpm</strong><span>최고 심박</span></div>
                 </div>
                 ${contextItems ? `<div class="drive-report-context-row">${contextItems}</div>` : ""}
+                ${conditionMarkup}
                 ${heartRateChart(health)}
                 ${sensorMarkup}`;
         }
@@ -14463,6 +14942,136 @@
                     <div class="drive-report-compare-side"><span>MANUAL</span><strong>${manualAverage}</strong></div>
                 </div>
                 <div class="drive-report-insight"><i class="fas fa-wave-square" aria-hidden="true"></i><span>${escapeHtml(automationInsight(analysis, health))}</span></div>`;
+        }
+
+        function driveBlackboxEvents(analysis) {
+            const events = analysis?.blackbox?.events;
+            return Array.isArray(events) ? events : [];
+        }
+
+        function blackboxConfidenceLabel(value) {
+            if (value === "high") return "가능성 높음";
+            if (value === "medium") return "가능성 있음";
+            return "참고 후보";
+        }
+
+        function blackboxPackageLabel(event) {
+            const status = event?.package?.status;
+            if (status === "uploaded") return "영상 준비됨";
+            if (status === "stored") return "차량에 보관";
+            if (status === "unavailable") return "원본 없음";
+            if (status === "error") return "보존 실패";
+            return "처리 중";
+        }
+
+        function blackboxMetricMarkup(metrics) {
+            const definitions = [
+                ["속도", reportValue(metrics?.speedKph, " km/h", 1)],
+                ["실제 가속도", reportValue(metrics?.actualAccelerationMps2, " m/s²", 2)],
+                ["제어 명령", reportValue(metrics?.commandedAccelerationMps2, " m/s²", 2)],
+                ["롱컨 계획", reportValue(metrics?.plannedAccelerationMps2, " m/s²", 2)],
+                ["선행차 거리", reportValue(metrics?.leadDistanceM, " m", 1)],
+                ["상대속도", reportValue(metrics?.leadRelativeSpeedMps, " m/s", 2)],
+                ["계획 소스", String(metrics?.sunnypilotPlanSource || metrics?.planSource || "--")],
+                ["계획 지연", reportValue(metrics?.planAgeS, " s", 3)],
+            ];
+            return `<div class="drive-blackbox-metrics">${definitions.map(([label, value]) => `
+                <span class="drive-blackbox-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></span>
+            `).join("")}</div>`;
+        }
+
+        function closeBlackboxPlayer() {
+            if (blackboxPlayerVideo) {
+                blackboxPlayerVideo.pause();
+                blackboxPlayerVideo.removeAttribute("src");
+                blackboxPlayerVideo.load();
+            }
+            if (blackboxPlaybackObjectUrl) URL.revokeObjectURL(blackboxPlaybackObjectUrl);
+            blackboxPlaybackObjectUrl = null;
+            blackboxPlaybackEndS = null;
+            blackboxPlayerOverlay?.classList.remove("visible");
+            blackboxPlayerOverlay?.setAttribute("aria-hidden", "true");
+        }
+
+        async function openBlackboxPlayer(event) {
+            const captureId = String(event?.package?.captureId || "");
+            const token = getWayonCloudViewToken();
+            if (!captureId || !token || typeof window.loadWayonBlackboxArchive !== "function") return;
+            closeBlackboxPlayer();
+            blackboxPlayerTitle.textContent = event.title || "이벤트 영상";
+            blackboxPlayerTime.textContent = `${reportClock(event.time)} · 전후 30초`;
+            blackboxPlayerStatus.textContent = "영상과 차량 데이터를 불러오는 중";
+            blackboxPlayerStatus.style.display = "block";
+            blackboxPlayerOverlay.classList.add("visible");
+            blackboxPlayerOverlay.setAttribute("aria-hidden", "false");
+            try {
+                const playback = await window.loadWayonBlackboxArchive({
+                    url: liveCaptureUrl({ id: captureId }),
+                    token,
+                });
+                blackboxPlaybackObjectUrl = playback.url;
+                blackboxPlaybackEndS = playback.startS + playback.durationS;
+                blackboxPlayerVideo.src = playback.url;
+                blackboxPlayerVideo.onloadedmetadata = () => {
+                    blackboxPlayerVideo.currentTime = Math.min(playback.startS, Math.max(0, blackboxPlayerVideo.duration - 0.1));
+                    blackboxPlayerStatus.style.display = "none";
+                    blackboxPlayerVideo.play().catch(() => {});
+                };
+                blackboxPlayerVideo.ontimeupdate = () => {
+                    if (blackboxPlaybackEndS !== null && blackboxPlayerVideo.currentTime >= blackboxPlaybackEndS) {
+                        blackboxPlayerVideo.pause();
+                    }
+                };
+            } catch (error) {
+                console.error("Wayon blackbox playback failed", error);
+                blackboxPlayerStatus.textContent = "이벤트 영상을 재생할 수 없습니다.";
+            }
+        }
+
+        function renderDriveReportBlackbox(analysis) {
+            const section = document.getElementById("drive-report-blackbox-section");
+            const container = document.getElementById("drive-report-blackbox-events");
+            const count = document.getElementById("drive-report-blackbox-count");
+            if (!section || !container || !count) return;
+            const events = driveBlackboxEvents(analysis);
+            section.style.display = events.length ? "block" : "none";
+            count.textContent = `${events.length}개`;
+            if (!events.length) {
+                container.innerHTML = "";
+                return;
+            }
+            container.innerHTML = events.map((event, index) => {
+                const causes = Array.isArray(event.causeCandidates) ? event.causeCandidates : [];
+                const causeMarkup = causes.length ? causes.map(cause => `
+                    <div class="drive-blackbox-cause">
+                        <strong>${escapeHtml(cause.label || "원인 후보")}</strong>
+                        <em>${escapeHtml(blackboxConfidenceLabel(cause.confidence))}</em>
+                        <small>${escapeHtml((Array.isArray(cause.evidence) ? cause.evidence : []).join(" · ") || "추가 데이터 확인 필요")}</small>
+                    </div>`).join("") : `<div class="drive-report-empty">자동으로 특정된 원인 후보가 없습니다.</div>`;
+                const canPlay = event?.package?.status === "uploaded" && Boolean(event?.package?.captureId) && event?.package?.videoAvailable !== false;
+                return `<details class="drive-blackbox-event ${escapeHtml(event.severity || "medium")}">
+                    <summary>
+                        <span class="drive-blackbox-event-icon"><i class="fas fa-video" aria-hidden="true"></i></span>
+                        <span class="drive-blackbox-event-copy"><strong>${escapeHtml(event.title || "주행 이벤트")}</strong><span>${escapeHtml(reportClock(event.time))} · 전후 30초</span></span>
+                        <em class="drive-blackbox-package-state">${escapeHtml(blackboxPackageLabel(event))}</em>
+                    </summary>
+                    <div class="drive-blackbox-detail">
+                        <p>${escapeHtml(event.detail || "상세 설명 없음")}</p>
+                        ${causeMarkup}
+                        ${blackboxMetricMarkup(event.metrics || {})}
+                        <button type="button" class="drive-blackbox-play" data-blackbox-play="${index}" ${canPlay ? "" : "disabled"}>
+                            <i class="fas fa-play" aria-hidden="true"></i>${canPlay ? "전후 30초 영상 보기" : blackboxPackageLabel(event)}
+                        </button>
+                    </div>
+                </details>`;
+            }).join("");
+            container.querySelectorAll("[data-blackbox-play]").forEach(button => {
+                button.addEventListener("click", clickEvent => {
+                    clickEvent.preventDefault();
+                    clickEvent.stopPropagation();
+                    openBlackboxPlayer(events[Number(button.dataset.blackboxPlay)]);
+                });
+            });
         }
 
         function reportMoments(analysis, health) {
@@ -14554,12 +15163,12 @@
                     ["주의 분산 시간", reportDuration(attention.distractedS)],
                     ["주의 경고", reportValue(attention.alertCount, "회")],
                     ["시스템 알림", reportValue(system.alertCount, "회")],
-                    ["분석 신뢰도", reportConfidenceLabel(analysis?.dataQuality?.confidence)],
+                    [analysis?.dataQuality?.partial === true ? "분석 범위" : "분석 신뢰도", reportAnalysisConfidence(analysis)],
                 ])}</details>`;
         }
 
         function renderDriveReport(item) {
-            const analysis = item?.analysis && typeof item.analysis === "object" ? item.analysis : {};
+            const analysis = normalizeDriveAnalysis(item?.analysis);
             const health = item?.health && typeof item.health === "object" ? item.health : {};
             const healthReady = health.available === true;
             const estimatedLoad = healthReady ? reportNumber(health?.load?.estimatedLoad0To100) : null;
@@ -14574,12 +15183,12 @@
             const unit = document.getElementById("drive-report-score-unit");
             const state = document.getElementById("drive-report-score-state");
             const opUsage = reportNumber(analysis?.automation?.opUsagePercent);
-            const loadBand = healthReady ? health?.load?.band : comfortScore !== null ? (comfortScore >= 85 ? "low" : comfortScore >= 65 ? "moderate" : "high") : "";
+            const scoreBand = score === null ? "" : score >= 80 ? "low" : score >= 60 ? "moderate" : "high";
 
             kicker.textContent = healthReady ? "DRIVER CONDITION" : "DRIVE QUALITY";
-            confidence.textContent = reportConfidenceLabel(healthReady ? health.confidence : analysis?.dataQuality?.confidence);
+            confidence.textContent = reportAnalysisConfidence(analysis, healthReady ? health.confidence : analysis?.dataQuality?.confidence);
             scoreElement.textContent = score === null ? "--" : Math.round(score);
-            scoreElement.className = `drive-report-score ${loadBand || ""}`;
+            scoreElement.className = `drive-report-score ${scoreBand}`;
             unit.textContent = "점";
             state.textContent = healthReady ? reportConditionLabel(score) : (score === null ? "분석 중" : score >= 85 ? "주행 안정적" : score >= 65 ? "개선 여지" : "주의 필요");
             document.getElementById("drive-report-summary-text").textContent = driveReportSummaryText(analysis, health);
@@ -14587,12 +15196,13 @@
             document.getElementById("drive-report-op-bar-fill").style.width = `${Math.max(0, Math.min(100, opUsage ?? 0))}%`;
             renderDriveReportHealth(health);
             renderDriveReportAutomation(analysis, health);
+            renderDriveReportBlackbox(analysis);
             renderDriveReportMoments(analysis, health);
             renderDriveReportDetails(analysis);
         }
 
         function addTripMomentMarkers(map, item) {
-            const moments = reportMoments(item?.analysis || {}, item?.health || {}).slice(0, 5);
+            const moments = reportMoments(normalizeDriveAnalysis(item?.analysis), item?.health || {}).slice(0, 5);
             for (const moment of moments) {
                 const latitude = reportNumber(moment?.latitude);
                 const longitude = reportNumber(moment?.longitude);
@@ -14783,6 +15393,10 @@
         });
         tripDetailOverlay?.addEventListener('click', (event) => {
             if (event.target === tripDetailOverlay) closeTripDetail();
+        });
+        btnCloseBlackboxPlayer?.addEventListener('click', closeBlackboxPlayer);
+        blackboxPlayerOverlay?.addEventListener('click', (event) => {
+            if (event.target === blackboxPlayerOverlay) closeBlackboxPlayer();
         });
 
         function loadHistory() {

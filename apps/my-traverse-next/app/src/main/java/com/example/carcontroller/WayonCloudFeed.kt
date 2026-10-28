@@ -45,6 +45,8 @@ data class WayonCloudState(
         put("thermalStatus", thermalStatus)
         put("gpsFresh", gpsFresh)
         put("voltageV", voltageV)
+        put("vehicleInput", rawJson?.optJSONObject("vehicleInput"))
+        put("deviceInput", rawJson?.optJSONObject("deviceInput"))
         put("latitude", latitude)
         put("longitude", longitude)
         put("speedMps", speedMps)
@@ -220,6 +222,7 @@ object WayonCloudFeedParser {
         val details = data.optJSONObject("gmone_details")?.let { JSONObject(it.toString()) }
             ?: gmoneData?.optJSONObject("gmone_details")?.let { JSONObject(it.toString()) }
             ?: JSONObject()
+        normalizeFuelLevel(data, details)
         gmone?.optJSONObject("module")?.takeIf { it.length() > 0 }?.let { module ->
             if (!details.has("module")) details.put("module", JSONObject(module.toString()))
         }
@@ -249,6 +252,31 @@ object WayonCloudFeedParser {
             stale = if (preferFirebase) false else status.optBooleanLike("stale"),
             data = data,
         )
+    }
+
+    private fun normalizeFuelLevel(data: JSONObject, details: JSONObject) {
+        val raw = details.optJSONObject("rawStatus")
+        val fuel = details.optJSONObject("fuel")?.let { JSONObject(it.toString()) } ?: JSONObject()
+        val capacity = raw?.optDouble("fCap")?.takeIf { it.isFinite() && it > 0 }
+            ?: fuel.optDouble("capacityLiters").takeIf { it.isFinite() && it > 0 }
+        val percent = raw?.optDouble("fLvl")?.takeIf { it.isFinite() && it in 0.0..100.0 }
+            ?: fuel.optDouble("levelPercent").takeIf { it.isFinite() && it in 0.0..100.0 }
+        if (capacity != null && percent != null) {
+            val liters = capacity * percent / 100.0
+            data.put("fuel", String.format(Locale.US, "%.1f", liters))
+            fuel.put("capacityLiters", capacity)
+            fuel.put("levelPercent", percent)
+            fuel.put("levelLiters", liters)
+            details.put("fuel", fuel)
+        } else if (capacity != null) {
+            val reported = data.optString("fuel").toDoubleOrNull()
+            if (reported != null && reported > capacity) data.put("fuel", "--")
+            val detailed = fuel.optDouble("levelLiters")
+            if (detailed.isFinite() && detailed > capacity) {
+                fuel.remove("levelLiters")
+                details.put("fuel", fuel)
+            }
+        }
     }
 
     private fun JSONObject.copyEntriesTo(destination: JSONObject) {

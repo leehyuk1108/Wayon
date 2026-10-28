@@ -7,6 +7,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.Executors
 import javax.net.ssl.HttpsURLConnection
 import org.json.JSONObject
 
@@ -15,6 +16,9 @@ object RemoteStartImpactGuard {
     private const val KEY_REQUESTED_AT_MS = "requested_at_ms"
     private const val KEY_REQUEST_ID = "request_id"
     internal const val SUPPRESSION_WINDOW_MS = 45_000L
+    private val cloudMarkers = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "remote-start-impact-marker").apply { isDaemon = true }
+    }
 
     fun arm(context: Context, requestedAtMs: Long = System.currentTimeMillis()): String {
         val requestId = UUID.randomUUID().toString()
@@ -22,14 +26,18 @@ object RemoteStartImpactGuard {
             .putLong(KEY_REQUESTED_AT_MS, requestedAtMs)
             .putString(KEY_REQUEST_ID, requestId)
             .commit()
-        postCloudMarker(context, "arm", requestId)
+        // Local suppression is immediate; slow/offline Cloud must not delay control.
+        // One queue preserves arm/cancel ordering for the same request.
+        val app = context.applicationContext
+        cloudMarkers.execute { postCloudMarker(app, "arm", requestId) }
         return requestId
     }
 
     fun cancel(context: Context, requestId: String) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (prefs.getString(KEY_REQUEST_ID, null) == requestId) prefs.edit().clear().commit()
-        postCloudMarker(context, "cancel", requestId)
+        val app = context.applicationContext
+        cloudMarkers.execute { postCloudMarker(app, "cancel", requestId) }
     }
 
     fun shouldSuppress(

@@ -8978,6 +8978,13 @@
             }
             if (state === 'cached') document.getElementById('home-vehicle-updated').textContent =
                 `저장된 정보 · ${formatHomeVehicleTime(updatedAt)}${refreshing ? ' · 갱신 중' : ''}`;
+            if (state === 'ready') {
+                const updatedTime = new Date(updatedAt).getTime();
+                const formattedTime = formatHomeVehicleTime(updatedAt);
+                document.getElementById('home-vehicle-updated').textContent =
+                    Number.isFinite(updatedTime) && Date.now() - updatedTime > 24 * 60 * 60 * 1000
+                        ? `마지막 수집 ${formattedTime}` : formattedTime;
+            }
             renderVehicleReport(gmoneDetailsCurrent);
             updateGmoneControlPanel(gmoneDetailsCurrent);
         }

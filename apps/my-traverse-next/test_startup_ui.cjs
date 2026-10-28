@@ -109,7 +109,15 @@ assert.equal(element('engine-control-state').textContent, '요청 시 상태 확
 context.setVehicleDataState('cached', '2026-10-28 19:30:00', false);
 assert.equal(element('retryVehicleData').hidden, false);
 assert.equal(context.renderedValues[0], 'preserved', 'refresh failure must retain snapshot');
-context.setVehicleDataState('ready');
+const freshTime = new Date().toISOString();
+context.setVehicleDataState('ready', freshTime);
+assert.equal(element('home-vehicle-updated').textContent, freshTime,
+    'a direct response must clear the saved/refreshing label after details render');
+const oldTime = new Date(Date.now() - 2 * 86400000).toISOString();
+context.setVehicleDataState('ready', oldTime);
+assert.equal(element('home-vehicle-updated').textContent, `마지막 수집 ${oldTime}`,
+    'an old direct response must retain the age warning');
+context.setVehicleDataState('ready', freshTime);
 context.updateGmoneControlPanel(parked);
 assert.equal(element('btnDoorToggle').dataset.cmd, 'DOOR_UNLOCK');
 assert.equal(element('btnDoorToggle').dataset.controlChoices, '');

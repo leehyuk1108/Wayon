@@ -2,7 +2,8 @@
 
 ## Flow
 
-Version 31 separates first paint from the slow GMOne read:
+Version 31 separates first paint from the slow GMOne read. Version 32 also clears
+the saved-info label when a direct reply replaces the cached display:
 
 1. Show the last sanitized, account/key-bound phone snapshot without networking.
 2. Fetch authenticated `GET /api/gmone/status` independently of `/api/json`.
@@ -72,8 +73,38 @@ Android uploads never acknowledge the collector's separate refresh queue.
   The signer matches v30, so the intended install is `adb install -r`, not a data
   reset or uninstall. The final APK was built after the reviewed corrections.
 
-Phone wireless ADB disconnected before v31 installation. Actual v31 cold-start
-latency, phone POST acknowledgement and installed APK identity remain pending;
-unit tests and a successful build must not be represented as device verification.
+## Phone Verification
+
+2026-10-28, SM-F966N, Android 17:
+
+- Installed v31 and final v32 with `adb install -r`; both returned `Success`.
+  Existing account/settings remained usable. Final version is
+  `32 / 2.0-preview.23-fast-state`, installed APK SHA256:
+  `b5357c27ea60159311fbf6c9828479e6f7ec99db2ed0b54e407899bb3532518a`.
+  The same hash was read back over USB and wireless ADB; the v30 signer is kept.
+- The first v31 direct basic/full replies produced two actual server ACKs. An
+  authenticated production GET then returned the new account-scoped Android row,
+  replacing the September row. Final v32 observation also produced two ACKs;
+  GET returned `updatedAt=2026-10-28T12:07:32.000Z`,
+  `receivedAt=2026-10-28T12:07:34.223Z`, source `gmone-direct-android`.
+- Three final-v32 cold launches selected local saved state in 7, 8 and 7 ms
+  after the native refresh began. Screen captures started 1.50 seconds after
+  launch and finished at 1.91, 1.77 and 1.76 seconds; all visibly contained saved
+  fuel/range and the controls. These are capture bounds, not exact first-pixel
+  times. Activity launch times alone (451, 388, 342 ms) are not data-ready times.
+- Three earlier v31 cold observations reached direct basic data in 3.734,
+  4.810 and 3.714 seconds. Repeated rapid launches later received GMOne's
+  "another request is being processed" error. Saved data remained visible;
+  this does not prove live vehicle requests always succeed or become faster.
+- After spacing requests and reconnecting over wireless ADB, final v32 selected
+  cache in 5 ms and direct basic/full in 11.067/11.700 seconds. The actual screen
+  showed the new values/time without the leftover saved-info label. The slow
+  remote read now runs behind the already-visible saved state.
+- The label regression was reproduced by a failing test before the seven-line
+  fix. Final release build, 69 Kotlin tests and 46 JavaScript tests passed.
+  Claude reviewed the final text diff, with no blocking finding. No new server
+  deployment was required for v32.
+
 No remote engine, lock, window or diagnostic-clear command was issued in testing.
+Control dispatch and safety rules were covered by tests, not physical actuation.
 No Comma, model, vehicle-control or Navdy source was changed for this feature.

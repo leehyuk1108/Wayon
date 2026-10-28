@@ -251,7 +251,7 @@ class TestReadOnlyProtocol:
     def fail(_request, timeout):
       raise error.HTTPError("https://example.invalid/data.json?auth=secret", 401, "unauthorized", {}, None)
 
-    monkeypatch.setattr("openpilot.tools.gmone_collector.gmone_collector.request.urlopen", fail)
+    monkeypatch.setattr("openpilot.tools.gmone_collector.gmone_collector._open_request", fail)
     with pytest.raises(ProtocolError) as exc_info:
       _json_request("https://example.invalid/data.json?auth=secret", None, method="GET")
     assert "secret" not in str(exc_info.value)
@@ -262,6 +262,15 @@ class TestReadOnlyProtocol:
 
 
 class TestOfficialFirebaseFallback:
+  @pytest.fixture(autouse=True)
+  def fixed_clock(self, monkeypatch):
+    from datetime import UTC, datetime
+    class Clock(datetime):
+      @classmethod
+      def now(cls, tz=None):
+        return datetime.fromtimestamp(1787011000, tz or UTC)
+    monkeypatch.setattr("openpilot.tools.gmone_collector.gmone_collector.datetime", Clock)
+
   def test_passive_collection_never_requests_the_vehicle(self, tmp_path):
     class PassiveClient:
       authenticated = True

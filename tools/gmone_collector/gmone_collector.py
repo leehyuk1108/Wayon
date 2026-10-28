@@ -90,9 +90,10 @@ class AuthenticationError(CollectorError):
 
 
 class ProtocolError(CollectorError):
-  def __init__(self, message: str, status_code: int | None = None):
+  def __init__(self, message: str, status_code: int | None = None, error_code: str | None = None):
     super().__init__(message)
     self.status_code = status_code
+    self.error_code = error_code
 
 
 def _as_number(value: Any) -> float | None:
@@ -449,6 +450,15 @@ def _redacted_url(url: str) -> str:
   return parse.urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
 
+class _NoRedirect(request.HTTPRedirectHandler):
+  def redirect_request(self, req, fp, code, msg, headers, newurl):
+    return None
+
+
+def _open_request(req, timeout):
+  return request.build_opener(_NoRedirect()).open(req, timeout=timeout)
+
+
 def _json_request(
   url: str,
   payload: dict[str, Any] | None = None,
@@ -469,15 +479,25 @@ def _json_request(
     },
   )
   try:
-    with request.urlopen(req, timeout=timeout) as response:
-      body = response.read()
+    with _open_request(req, timeout=timeout) as response:
+      body = response.read(512 * 1024 + 1)
+      if len(body) > 512 * 1024:
+        raise ProtocolError("JSON response exceeds size limit")
   except error.HTTPError as exc:
-    raise ProtocolError(f"HTTP {exc.code} from {_redacted_url(url)}", status_code=exc.code) from exc
-  except error.URLError as exc:
-    raise ProtocolError(f"Network error contacting {_redacted_url(url)}: {exc.reason}") from exc
+    error_code = None
+    if exc.code == 409:
+      try:
+        detail = json.loads(exc.read(4097))
+        if isinstance(detail, dict) and detail.get("error") == "snapshot_not_newer":
+          error_code = "snapshot_not_newer"
+      except (ValueError, OSError):
+        pass
+    raise ProtocolError(f"HTTP {exc.code} from {_redacted_url(url)}", status_code=exc.code, error_code=error_code) from exc
+  except (error.URLError, TimeoutError, OSError) as exc:
+    raise ProtocolError(f"Network error contacting {_redacted_url(url)}") from exc
   try:
     decoded = json.loads(body)
-  except json.JSONDecodeError as exc:
+  except (json.JSONDecodeError, UnicodeDecodeError) as exc:
     raise ProtocolError(f"Non-JSON response from {_redacted_url(url)}") from exc
   if not isinstance(decoded, dict):
     raise ProtocolError(f"Unexpected response type from {_redacted_url(url)}")
@@ -657,6 +677,9 @@ class OfficialFirebaseClient:
         raise
       self.clear_session()
       self.authenticate(email, password)
+      if expected_user_uuid is not None and self._local_id != expected_user_uuid:
+        self.clear_session()
+        raise AuthenticationError("GMOne and official Firebase account identifiers do not match")
       return fetch()
 
 

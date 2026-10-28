@@ -129,6 +129,8 @@ data class WayonVehicleStatus(
     val updatedAt: String?,
     val stale: Boolean,
     val data: JSONObject,
+    val cached: Boolean = false,
+    val clientScope: String? = null,
 )
 
 data class WayonCloudFeed(
@@ -251,6 +253,8 @@ object WayonCloudFeedParser {
             updatedAt = preferredUpdatedAt,
             stale = if (preferFirebase) false else status.optBooleanLike("stale"),
             data = data,
+            cached = true,
+            clientScope = status.optNullableString("clientScope") ?: gmone?.optNullableString("clientScope"),
         )
     }
 

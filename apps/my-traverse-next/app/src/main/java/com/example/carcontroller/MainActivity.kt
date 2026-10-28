@@ -258,15 +258,23 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     private val wayonAddressCache = ConcurrentHashMap<String, String>()
     private val vehicleStartup = VehicleStartupGate<WayonVehicleStatus>()
     private var gmoneStatusJob: Job? = null
+    private var vehicleCacheJob: Job? = null
+    private val directVehicleObservation = DirectVehicleObservation()
     @Volatile private var displayedVehicleStatus: WayonVehicleStatus? = null
     private var vehicleStartupTimeout: Job? = null
     private var vehicleRefreshStartedMs = 0L
     @Volatile private var vehicleControlInFlight = false
 
+    private fun vehicleSnapshotScope(): String = VehicleSnapshotPolicy.scope(
+        gmoneAccountStore.account()?.email, loadWayonCloudKeyFromPrefs(),
+    )
+
     private fun startForegroundVehicleRefresh() {
         if (!isPageLoaded || !isActivityVisible || vehiclePreviewActive) return
         gmoneStatusJob?.cancel()
         gmoneStatusJob = null
+        vehicleCacheJob?.cancel()
+        directVehicleObservation.clear()
         vehicleStartupTimeout?.cancel()
         wayonCloudRefreshJob?.cancel()
         wayonCloudRefreshJob = null
@@ -276,8 +284,29 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         vehicleRefreshStartedMs = SystemClock.elapsedRealtime()
         displayedVehicleStatus = null
         latestVehicleStatusEpochMs = 0L
-        runJs("setVehicleDataState('loading')")
+        val scope = vehicleSnapshotScope()
+        val cached = VehicleSnapshotPolicy.decode(prefs.getString(VehicleSnapshotPolicy.PREF_KEY, null),
+            scope, System.currentTimeMillis())
+        if (cached != null && (direct || cloud)) {
+            vehicleStartup.offerCached(generation, cached, VehicleSnapshotPolicy.epoch(cached), VehicleSnapshotPolicy.rank(cached))
+            renderVehicleSnapshot()
+        } else {
+            runJs("setVehicleDataState('loading')")
+        }
         updateGmoneAccountUi()
+        if (cloud) {
+            val key = loadWayonCloudKeyFromPrefs()!!
+            vehicleCacheJob = launch(Dispatchers.IO) {
+                val status = runCatching {
+                    WayonCloudFeedParser.parse(fetchWayonCloudGet(
+                        "${BuildConfig.WAYON_CLOUD_URL}/api/gmone/status", key,
+                    )).vehicleStatus
+                }.getOrNull()
+                withContext(Dispatchers.Main) {
+                    receiveVehicleSnapshot(generation, false, status, scope)
+                }
+            }
+        }
         if (direct) {
             lastDirectGmoneSyncTimeMs = System.currentTimeMillis()
             refreshGmoneAccountInternal(showResult = false)
@@ -286,7 +315,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         if (!direct && !cloud) runJs("setVehicleDataState('unavailable')")
         vehicleStartupTimeout = launch {
             delay(20_000)
-            if (generation == vehicleStartup.generation && vehicleStartup.loading) {
+            if (generation == vehicleStartup.generation && vehicleStartup.refreshing) {
                 receiveVehicleSnapshot(generation, true, null)
                 receiveVehicleSnapshot(generation, false, null)
             }
@@ -294,21 +323,32 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         startWayonCloudAutoRefresh()
     }
 
-    private fun receiveVehicleSnapshot(generation: Int, direct: Boolean, status: WayonVehicleStatus?) {
-        if (!isActivityVisible) return
-        val usable = status?.takeUnless { it.stale || it.data.length() == 0 }
-        val epoch = usable?.let {
-            parseVehicleStatusEpoch(it.data.optString("last_update").ifBlank { it.updatedAt.orEmpty() })
+    private fun receiveVehicleSnapshot(generation: Int, direct: Boolean, status: WayonVehicleStatus?, scope: String = vehicleSnapshotScope()) {
+        if (!isActivityVisible || generation != vehicleStartup.generation || scope != vehicleSnapshotScope()) return
+        val usable = status?.takeIf {
+            VehicleSnapshotPolicy.usable(it, System.currentTimeMillis()) &&
+                (direct || (gmoneAccountStore.account() == null && it.clientScope == null) || it.clientScope == scope)
         }
-        if (!vehicleStartup.complete(generation, direct, usable, epoch) || vehicleStartup.loading) return
+        if (direct && usable != null) directVehicleObservation.record(usable, scope, SystemClock.elapsedRealtime())
+        if (!vehicleStartup.complete(generation, direct, usable, usable?.let(VehicleSnapshotPolicy::epoch),
+                usable?.let(VehicleSnapshotPolicy::rank) ?: 0) || vehicleStartup.loading) return
+        renderVehicleSnapshot()
+    }
+
+    private fun renderVehicleSnapshot() {
         val selected = vehicleStartup.value
         if (selected != null) {
             if (selected !== displayedVehicleStatus) {
+                // Set provenance before any details can reach the control handlers.
+                runJs("setVehicleDataState('cached', ${jsQuote(selected.updatedAt)}, ${vehicleStartup.refreshing})")
                 applyWayonVehicleStatus(selected)
                 displayedVehicleStatus = selected
-                Log.i("VehicleStartup", "ready generation=$generation elapsedMs=${SystemClock.elapsedRealtime() - vehicleRefreshStartedMs} source=${selected.source}")
+                VehicleSnapshotPolicy.encode(vehicleSnapshotScope(), selected, System.currentTimeMillis())?.let {
+                    prefs.edit().putString(VehicleSnapshotPolicy.PREF_KEY, it).apply()
+                }
+                Log.i("VehicleStartup", "${if (selected.cached) "cached" else "ready"} generation=${vehicleStartup.generation} elapsedMs=${SystemClock.elapsedRealtime() - vehicleRefreshStartedMs}")
             }
-            runJs("setVehicleDataState('ready')")
+            runJs("setVehicleDataState('${if (selected.cached) "cached" else "ready"}', ${jsQuote(selected.updatedAt)}, ${vehicleStartup.refreshing})")
         } else {
             runJs("setVehicleDataState('unavailable')")
         }
@@ -902,14 +942,17 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         isActivityVisible = false
         stopWayonCloudAutoRefresh()
         gmoneStatusJob?.cancel()
+        vehicleCacheJob?.cancel()
         wayonCloudRefreshJob?.cancel()
-        runJs("setVehicleDataState('loading')")
+        vehicleStartup.begin(false, false)
+        directVehicleObservation.clear()
         vehicleStartupTimeout?.cancel()
         runJs("stopWayonLiveView()")
     }
 
     override fun onDestroy() {
         gmoneStatusJob?.cancel()
+        vehicleCacheJob?.cancel()
         vehicleStartupTimeout?.cancel()
         stopWayonCloudAutoRefresh()
         wayonCloudRefreshJob?.cancel()
@@ -1200,7 +1243,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
     private fun saveWayonCloudKeyToPrefs(key: String) {
         wayonCloudHistoryJson = null
         wayonCloudFullHistoryLoaded = false
-        prefs.edit().putString(PREF_KEY_WAYON_CLOUD_KEY, key).apply()
+        prefs.edit().putString(PREF_KEY_WAYON_CLOUD_KEY, key).remove(VehicleSnapshotPolicy.PREF_KEY).apply()
         WayonPushRegistrar.registerCurrentToken(this)
         VehicleRefreshScheduler.initialize(this)
         if (WayonCloudMode.isEnabled(this)) {
@@ -1283,6 +1326,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         if (!cloudRefreshPolicy.begin(SystemClock.elapsedRealtime(), automatic)) return
 
         val generation = vehicleStartup.generation
+        val scope = vehicleSnapshotScope()
         wayonCloudRefreshJob = launch(Dispatchers.IO) {
             try {
                 val parsed = withCachedWayonLocation(
@@ -1290,7 +1334,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 )
                 // Vehicle/control state must not wait for geocoding or trip addresses.
                 withContext(Dispatchers.Main) {
-                    if (generation == vehicleStartup.generation && isActivityVisible) {
+                    if (generation == vehicleStartup.generation && scope == vehicleSnapshotScope() && isActivityVisible) {
                         applyWayonCloudFeed(parsed, "주소 확인 중")
                     }
                 }
@@ -1302,7 +1346,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 val feed = withResolvedWayonAddresses(parsed)
                 cloudRefreshPolicy.success()
                 withContext(Dispatchers.Main) {
-                    if (generation != vehicleStartup.generation || !isActivityVisible) return@withContext
+                    if (generation != vehicleStartup.generation || scope != vehicleSnapshotScope() || !isActivityVisible) return@withContext
                     applyWayonCloudFeed(feed, stateLocation)
                     if (showResult) showJsStatus("Wayon Cloud 데이터를 불러왔습니다.", "success")
                 }
@@ -1311,7 +1355,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 Log.w("MainActivity", "Wayon Cloud refresh failed", error)
                 cloudRefreshPolicy.failure(SystemClock.elapsedRealtime())
                 withContext(Dispatchers.Main) {
-                    if (generation != vehicleStartup.generation || !isActivityVisible) return@withContext
+                    if (generation != vehicleStartup.generation || scope != vehicleSnapshotScope() || !isActivityVisible) return@withContext
                     receiveVehicleSnapshot(generation, false, null)
                     runJs("markWayonCloudUnavailable(${jsQuote("Wayon Cloud 정보 수신 실패")})")
                     if (showResult) {
@@ -1678,7 +1722,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             if (meta.optString("source").isBlank()) meta.put("source", status.source)
             meta.put("stale", status.stale)
             details.put("meta", meta)
-            applyDtcNotificationPreferences(details)
+            meta.put("cached", status.cached)
+            if (!status.cached) applyDtcNotificationPreferences(details)
         }
         runJs(
             gmoneDetails?.let { "updateGmoneDetails(${jsQuote(it.toString())})" }
@@ -1694,8 +1739,9 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         lastBatteryLevel = batteryLevel
         lastTire = tirePressure
         lastTime = lastUpdate
-        updateWidgetData(fuel, range, oil, battery, batteryLevel, lastUpdate, mileage, tirePressureAll)
-        WearSync.syncStatus(
+        if (!status.cached) {
+            updateWidgetData(fuel, range, oil, battery, batteryLevel, lastUpdate, mileage, tirePressureAll)
+            WearSync.syncStatus(
             context = this,
             range = range,
             battery = battery,
@@ -1706,7 +1752,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             oil = oil,
             tirePressure = tirePressure,
             tirePressureAll = tirePressureAll,
-        )
+            )
+        }
         if (statusEpochMs != null) {
             latestVehicleStatusEpochMs = maxOf(latestVehicleStatusEpochMs, statusEpochMs)
         }
@@ -1990,8 +2037,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             saveWayonCloudKeyToPrefs(cleanKey)
             showJsStatus("Wayon Cloud Key가 저장되었습니다.", "success")
             runJs("updateWayonCloudKeyInput(${jsQuote(cleanKey)})")
-            refreshWayonCloudFeed(showResult = true)
-            startWayonCloudAutoRefresh()
+            launch(Dispatchers.Main) { startForegroundVehicleRefresh() }
         }
 
         @JavascriptInterface
@@ -2070,10 +2116,13 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             launch(Dispatchers.IO) {
                 try {
                     val result = GmoneAccountClient.login(email, password)
-                    gmoneAccountStore.save(email, password)
                     launch(Dispatchers.Main) {
+                        gmoneAccountStore.save(email, password)
+                        prefs.edit().remove(VehicleSnapshotPolicy.PREF_KEY).apply()
+                        runJs("updateGmoneSettings('{}')")
                         updateGmoneAccountUi("로그인됨 · 차량 ${result.vehicleCount}대")
                         showJsStatus("멀티팩 계정에 로그인했습니다.", "success")
+                        startForegroundVehicleRefresh()
                         refreshGmoneSettingsInternal(showResult = false)
                     }
                 } catch (error: Exception) {
@@ -2091,10 +2140,14 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
 
         @JavascriptInterface
         fun logoutGmone() {
-            GmoneAccountClient.clearSession()
-            gmoneAccountStore.clear()
-            updateGmoneAccountUi("로그아웃됨")
-            showJsStatus("멀티팩 계정에서 로그아웃했습니다.", "success")
+            launch(Dispatchers.Main) {
+                GmoneAccountClient.clearSession()
+                gmoneAccountStore.clear()
+                prefs.edit().remove(VehicleSnapshotPolicy.PREF_KEY).apply()
+                startForegroundVehicleRefresh()
+                updateGmoneAccountUi("로그아웃됨")
+                showJsStatus("멀티팩 계정에서 로그아웃했습니다.", "success")
+            }
         }
 
         private fun refreshGmoneAccountInternal(
@@ -2119,6 +2172,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             }
             if (gmoneStatusJob?.isActive == true) return
             val generation = vehicleStartup.generation
+            val scope = vehicleSnapshotScope()
+            val cloudKey = loadWayonCloudKeyFromPrefs()
             gmoneStatusJob = launch(Dispatchers.IO) {
                 val requestContext = coroutineContext
                 try {
@@ -2127,21 +2182,20 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                         onBasicStatus = { basic ->
                             requestContext.ensureActive()
                             launch(Dispatchers.Main) {
-                                receiveVehicleSnapshot(generation, true, WayonVehicleStatus(
-                                    "gmone-direct-android", basic.updatedAt, false, basic.data,
-                                ))
+                                if (generation == vehicleStartup.generation && scope == vehicleSnapshotScope() && isActivityVisible) {
+                                    val fresh = WayonVehicleStatus("gmone-direct-android", basic.updatedAt, false, basic.data)
+                                    VehicleSnapshotSync.enqueue(this@MainActivity, cloudKey, scope, fresh)
+                                    receiveVehicleSnapshot(generation, true, fresh, scope)
+                                }
                             }
                         },
                     )
                     withContext(Dispatchers.Main) {
-                        if (generation != vehicleStartup.generation || !isActivityVisible) return@withContext
+                        if (generation != vehicleStartup.generation || scope != vehicleSnapshotScope() || !isActivityVisible) return@withContext
+                        val fresh = WayonVehicleStatus("gmone-direct-android", result.updatedAt, false, result.data)
+                        VehicleSnapshotSync.enqueue(this@MainActivity, cloudKey, scope, fresh)
                         receiveVehicleSnapshot(generation, true,
-                            WayonVehicleStatus(
-                                source = "gmone-direct-android",
-                                updatedAt = result.updatedAt,
-                                stale = false,
-                                data = result.data,
-                            ),
+                            fresh, scope,
                         )
                         if (showResult) {
                             updateGmoneAccountUi("차량 조회 완료")
@@ -2151,7 +2205,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 } catch (error: Exception) {
                     if (error is CancellationException) throw error
                     Log.w("GmoneAccount", "Direct vehicle refresh failed: ${error.message}")
-                    withContext(Dispatchers.Main) { receiveVehicleSnapshot(generation, true, null) }
+                    withContext(Dispatchers.Main) { receiveVehicleSnapshot(generation, true, null, scope) }
                     if (showResult) {
                         launch(Dispatchers.Main) {
                             updateGmoneAccountUi(error.message ?: "차량 조회 실패")
@@ -2177,13 +2231,18 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 showJsStatus("멀티팩 로그인이 필요합니다.", "danger")
                 return
             }
+            val generation = vehicleStartup.generation
+            val scope = vehicleSnapshotScope()
+            val key = loadWayonCloudKeyFromPrefs()
             launch(Dispatchers.IO) {
                 try {
                     val result = GmoneAccountClient.fetchVehicleStatus(account.email, password, refreshDtc = true)
                     launch(Dispatchers.Main) {
-                        applyWayonVehicleStatus(
-                            WayonVehicleStatus("gmone-direct-android", result.updatedAt, false, result.data),
-                        )
+                        if (generation == vehicleStartup.generation && scope == vehicleSnapshotScope() && isActivityVisible) {
+                            val fresh = WayonVehicleStatus("gmone-direct-android", result.updatedAt, false, result.data)
+                            VehicleSnapshotSync.enqueue(this@MainActivity, key, scope, fresh)
+                            receiveVehicleSnapshot(generation, true, fresh, scope)
+                        }
                         runJs("updateGmoneDiagnosticActionState('refresh', false, ${jsQuote("최신 고장코드를 불러왔습니다")})")
                         showJsStatus("고장코드를 새로고침했습니다.", "success", 3000)
                     }
@@ -2206,14 +2265,19 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 return
             }
             runJs("updateGmoneDiagnosticActionState('clear', true, ${jsQuote("고장코드 삭제 중")})")
+            val generation = vehicleStartup.generation
+            val scope = vehicleSnapshotScope()
+            val key = loadWayonCloudKeyFromPrefs()
             launch(Dispatchers.IO) {
                 try {
                     GmoneAccountClient.clearDiagnosticCodes(account.email, password)
                     val result = GmoneAccountClient.fetchVehicleStatus(account.email, password, refreshDtc = true)
                     launch(Dispatchers.Main) {
-                        applyWayonVehicleStatus(
-                            WayonVehicleStatus("gmone-direct-android", result.updatedAt, false, result.data),
-                        )
+                        if (generation == vehicleStartup.generation && scope == vehicleSnapshotScope() && isActivityVisible) {
+                            val fresh = WayonVehicleStatus("gmone-direct-android", result.updatedAt, false, result.data)
+                            VehicleSnapshotSync.enqueue(this@MainActivity, key, scope, fresh)
+                            receiveVehicleSnapshot(generation, true, fresh, scope)
+                        }
                         runJs("updateGmoneDiagnosticActionState('clear', false, ${jsQuote("삭제 후 재조회 완료")})")
                         showJsStatus("고장코드를 삭제하고 다시 확인했습니다.", "success", 3500)
                     }
@@ -2364,11 +2428,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
                 try {
                     Log.i("VehicleCommand", "accepted command=$command loading=${vehicleStartup.loading}")
                     if (command == "VEHICLE_START" || command == "VEHICLE_STOP") {
-                        val recent = displayedVehicleStatus?.takeIf { status ->
-                            val receivedAt = parseVehicleStatusEpoch(status.updatedAt)
-                            status.source == "gmone-direct-android" && receivedAt != null &&
-                                System.currentTimeMillis() - receivedAt in 0L..30_000L
-                        }
+                        val recent = directVehicleObservation.recent(vehicleSnapshotScope(),
+                            SystemClock.elapsedRealtime(), System.currentTimeMillis())
                         val data = recent?.data ?: GmoneAccountClient.fetchVehicleStatus(
                             account.email, password, includeModuleDetails = false,
                         ).data

@@ -8951,19 +8951,23 @@
         let gmoneDetailsCurrent = null;
         let vehicleCommandReady = false;
         let vehicleDataState = 'loading';
+        let vehicleSnapshotTime = '';
+        let vehicleSnapshotRefreshing = false;
 
         function updateVehicleCommandReady(ready) {
             vehicleCommandReady = ready === true;
             updateGmoneControlPanel(gmoneDetailsCurrent);
         }
 
-        function setVehicleDataState(state) {
+        function setVehicleDataState(state, updatedAt = '', refreshing = false) {
             vehicleDataState = state;
+            vehicleSnapshotTime = updatedAt;
+            vehicleSnapshotRefreshing = refreshing;
             document.body.dataset.vehicleState = state;
             document.querySelector('.home-vehicle-summary')?.setAttribute('aria-busy', String(state === 'loading'));
             const retry = document.getElementById('retryVehicleData');
-            if (retry) retry.hidden = state !== 'unavailable';
-            if (state !== 'ready') {
+            if (retry) retry.hidden = state !== 'unavailable' && !(state === 'cached' && !refreshing);
+            if (state !== 'ready' && state !== 'cached') {
                 if (state === 'loading') wayonLiveStateCurrent = null;
                 latestWayonCloudVoltage = null;
                 updateCarStatus('--', '--', '--', '--', '--', '', '--', '--', '');
@@ -8972,6 +8976,8 @@
                 document.getElementById('home-vehicle-updated').textContent = state === 'loading'
                     ? '차량 정보 불러오는 중' : '차량 정보를 불러오지 못했어요';
             }
+            if (state === 'cached') document.getElementById('home-vehicle-updated').textContent =
+                `저장된 정보 · ${formatHomeVehicleTime(updatedAt)}${refreshing ? ' · 갱신 중' : ''}`;
             renderVehicleReport(gmoneDetailsCurrent);
             updateGmoneControlPanel(gmoneDetailsCurrent);
         }
@@ -13115,7 +13121,7 @@
             const healthDetail = document.getElementById('home-card-health-detail');
             if (!strip || !iconContainer || !title || !detail) return;
 
-            if (vehicleDataState !== 'ready') {
+            if (vehicleDataState !== 'ready' && vehicleDataState !== 'cached') {
                 strip.classList.remove('secure', 'warning', 'critical', 'active', 'running', 'driving', 'offline');
                 title.textContent = vehicleDataState === 'loading' ? 'LOADING' : 'UNAVAILABLE';
                 detail.textContent = vehicleDataState === 'loading' ? '차량 정보 불러오는 중' : '다시 불러오기를 눌러주세요';
@@ -13152,7 +13158,7 @@
             iconContainer.innerHTML = `<i data-lucide="${statusIcon}" aria-hidden="true"></i>`;
             window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
             if (kickerText) {
-                kickerText.textContent = result.tone === 'driving'
+                kickerText.textContent = vehicleDataState === 'cached' ? 'SAVED STATUS' : result.tone === 'driving'
                     ? 'LIVE STATUS'
                     : result.tone === 'critical'
                         ? 'ATTENTION'
@@ -13218,7 +13224,9 @@
             fillElement.style.width = fuelLevel ? `${fuelLevel.percent}%` : '0%';
             const formattedTime = formatHomeVehicleTime(updatedAt);
             const updatedTime = new Date(updatedAt).getTime();
-            updatedElement.textContent = Number.isFinite(updatedTime) && Date.now() - updatedTime > 24 * 60 * 60 * 1000
+            updatedElement.textContent = vehicleDataState === 'cached'
+                ? `저장된 정보 · ${formatHomeVehicleTime(vehicleSnapshotTime || updatedAt)}${vehicleSnapshotRefreshing ? ' · 갱신 중' : ''}`
+                : Number.isFinite(updatedTime) && Date.now() - updatedTime > 24 * 60 * 60 * 1000
                 ? `마지막 수집 ${formattedTime}` : formattedTime;
         }
 
@@ -13512,6 +13520,7 @@
         }
 
         function updateGmoneControlPanel(details) {
+            if (vehicleDataState !== 'ready') details = null;
             const engine = effectiveGmoneEngineSnapshot(details);
             const remoteStart = engine.remoteStart;
             syncGmoneRemoteCountdown(remoteStart);
@@ -13812,7 +13821,7 @@
             const module = details.module || {};
             const firmware = gmoneFirmware(module);
             const settings = gmoneSettings(module);
-            renderGmoneSettings(settings, details);
+            if (meta.cached !== true) renderGmoneSettings(settings, details);
             const settingLabels = {
                 all_function_stop: '전체 기능 정지', auto_door_lock: '자동 도어 잠금',
                 door_lock_speed: '도어 잠금 속도', door_unlock_gear: '기어 연동 잠금 해제',

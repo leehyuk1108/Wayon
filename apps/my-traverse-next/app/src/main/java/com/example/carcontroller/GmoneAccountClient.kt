@@ -147,7 +147,7 @@ object GmoneAccountClient {
         val resultCode = body.optInt("success", -1)
         if (resultCode != 0) throw IOException(statusError(resultCode))
         val carStatus = body.optJSONObject("car_status") ?: throw IOException("차량 상태 값이 없습니다.")
-        val timestamp = resolved.optLong("timestamp", System.currentTimeMillis())
+        val timestamp = resolved.optLong("timestamp", 0L)
         return VehicleStatus(
             normalizeStatus(carStatus, timestamp, body.optJSONArray("running_cycles_data"), null, null),
             formatKst(timestamp),
@@ -709,6 +709,7 @@ object GmoneAccountClient {
     }
 
     private fun formatKst(timestamp: Long): String {
+        if (timestamp <= 0L) return ""
         val millis = if (timestamp < 10_000_000_000L) timestamp * 1000 else timestamp
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.KOREA).apply {
             timeZone = TimeZone.getTimeZone("Asia/Seoul")

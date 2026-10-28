@@ -4,11 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VehicleStartupGateTest {
-    @Test fun olderCloudWaitsForDirectSnapshot() {
+    @Test fun cloudPaintsBeforeDirectAndNeverReplacesNewerSnapshot() {
         val gate = VehicleStartupGate<String>()
         val generation = gate.begin(true, true)
         gate.complete(generation, false, "old", 100)
-        assertTrue(gate.loading)
+        assertFalse(gate.loading)
+        assertTrue(gate.refreshing)
+        assertEquals("old", gate.value)
         gate.complete(generation, true, "new", 200)
         assertFalse(gate.loading)
         assertEquals("new", gate.value)
@@ -58,5 +60,30 @@ class VehicleStartupGateTest {
         assertNull(gate.value)
         gate.complete(generation, true, "login-after-launch", 300)
         assertEquals("login-after-launch", gate.value)
+    }
+
+    @Test fun localCachePaintsWithoutCompletingRequests() {
+        val gate = VehicleStartupGate<String>()
+        val generation = gate.begin(true, true)
+        gate.offerCached(generation, "local", 100)
+        assertFalse(gate.loading)
+        assertTrue(gate.refreshing)
+        gate.complete(generation, true, null, null)
+        gate.complete(generation, false, null, null)
+        assertEquals("local", gate.value)
+        assertFalse(gate.refreshing)
+    }
+
+    @Test fun equalTimePrefersFreshBasicOverFullCache() {
+        val gate = VehicleStartupGate<String>()
+        val gen = gate.begin(true, true)
+        gate.offerCached(gen, "full-cache", 100, 2)
+        gate.complete(gen, true, "basic-direct", 100, 4)
+        assertEquals("basic-direct", gate.value)
+        gate.complete(gen, true, "full-direct", 100, 6)
+        gate.complete(gen, false, "full-server", 100, 2)
+        assertEquals("full-direct", gate.value)
+        gate.complete(gen, true, "new-basic", 200, 4)
+        assertEquals("new-basic", gate.value)
     }
 }

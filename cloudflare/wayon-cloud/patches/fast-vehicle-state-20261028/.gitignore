@@ -1,0 +1,5 @@
+.runtime/
+*.log
+worker.js
+*.sqlite*
+.wrangler/

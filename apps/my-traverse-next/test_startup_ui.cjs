@@ -38,6 +38,7 @@ const context = vm.createContext({
     document: { body: { dataset: {} }, getElementById: element, querySelector: element },
     window: {}, vehicleCommandReady: false, vehicleDataState: 'loading', gmoneDetailsCurrent: null,
     wayonLiveStateCurrent: null, latestWayonCloudVoltage: '12.8',
+    formatHomeVehicleTime: value => value,
     controlDrivingActive: false, gmoneOptimisticControls: { engine: null },
     gmoneNumber: value => value == null ? null : Number(value),
     gmoneFormatNumber: String, gmoneRemoteTimeLabel: () => '10:00',
@@ -96,6 +97,19 @@ const parked = {
     module: { settings: { all_function_stop: 1 } },
     closures: { doors: { active: false }, hood: { active: false } },
 };
+context.gmoneDetailsCurrent = parked;
+context.renderedValues = ['preserved'];
+context.setVehicleDataState('cached', '2026-10-28 19:30:00', true);
+assert.equal(context.renderedValues[0], 'preserved', 'cached values must remain visible');
+assert.ok(element('home-vehicle-updated').textContent.includes('저장된 정보'));
+assert.ok(element('home-vehicle-updated').textContent.includes('갱신 중'));
+assert.equal(element('retryVehicleData').hidden, true);
+assert.equal(element('btnDoorToggle').dataset.controlChoices, 'doors', 'cached lock must not choose an action');
+assert.equal(element('engine-control-state').textContent, '요청 시 상태 확인');
+context.setVehicleDataState('cached', '2026-10-28 19:30:00', false);
+assert.equal(element('retryVehicleData').hidden, false);
+assert.equal(context.renderedValues[0], 'preserved', 'refresh failure must retain snapshot');
+context.setVehicleDataState('ready');
 context.updateGmoneControlPanel(parked);
 assert.equal(element('btnDoorToggle').dataset.cmd, 'DOOR_UNLOCK');
 assert.equal(element('btnDoorToggle').dataset.controlChoices, '');

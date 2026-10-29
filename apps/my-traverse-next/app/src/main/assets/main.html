@@ -11440,6 +11440,10 @@
                                 ? { ...layer, paint: { ...(layer.paint || {}), ...paintOverrides[layer.id] } }
                                 : layer);
                         return { ...style, layers };
+                    })
+                    .catch(error => {
+                        openFreeMapNoLabelsStylePromise = null;
+                        throw error;
                     });
             }
 
@@ -11447,53 +11451,83 @@
         }
 
         function addNoLabelDarkBaseMap(leafletMap) {
-            const heroMap = heroMapElement();
-            const markSurfaceReady = () => heroMap?.classList.add("map-surface-ready");
+            const container = leafletMap.getContainer();
+            const surface = container?.closest('.hero-map');
+            const startedAt = performance.now();
+            let removed = false;
+            let surfaceReady = false;
+            leafletMap.once("unload", () => { removed = true; });
+            const markSurfaceReady = (source) => {
+                if (removed || !container?.isConnected || surfaceReady) return;
+                surfaceReady = true;
+                surface?.classList.add("map-surface-ready");
+                console.info(`[MapStartup] surface=${source} readyMs=${Math.round(performance.now() - startedAt)}`);
+            };
             const fallbackLayer = L.tileLayer(
                 "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
                 {
                     maxZoom: 16,
                     attribution: "Tiles &copy; Esri",
                 }
-            ).addTo(leafletMap);
+            );
+            let fallbackHasTiles = false;
+            fallbackLayer.on("tileload", () => { fallbackHasTiles = true; });
+            fallbackLayer.on("load", () => {
+                if (fallbackHasTiles) markSurfaceReady("raster");
+            });
+            fallbackLayer.addTo(leafletMap);
 
             if (typeof L.maplibreGL !== "function") {
-                fallbackLayer.once("load", markSurfaceReady);
                 return fallbackLayer;
             }
 
-            let fallbackReady = false;
-            fallbackLayer.once("load", () => {
-                fallbackReady = true;
-            });
-            const fallbackRevealTimer = setTimeout(markSurfaceReady, 5000);
-
+            let vectorLayer = null;
             openFreeMapNoLabelsStyle()
                 .then(style => {
-                    if (!leafletMap.getContainer()?.isConnected) return;
+                    if (removed || !container?.isConnected) return;
 
-                    const vectorLayer = L.maplibreGL({
+                    vectorLayer = L.maplibreGL({
                         style,
                         interactive: false,
                         attributionControl: false,
-                    }).addTo(leafletMap);
+                    });
+                    vectorLayer.addTo(leafletMap);
                     const vectorMap = vectorLayer.getMaplibreMap();
+                    const vectorContainer = vectorLayer.getContainer();
+                    // Keep the ready raster visible until the vector tiles have rendered.
+                    vectorContainer.style.opacity = "0";
+                    let vectorSettled = false;
+                    const detachStartupListeners = () => {
+                        vectorMap.off("load", revealVectorMap);
+                        vectorMap.off("idle", revealVectorMap);
+                        vectorMap.off("error", keepRasterMap);
+                    };
                     const revealVectorMap = () => {
-                        clearTimeout(fallbackRevealTimer);
+                        if (removed || vectorSettled || !leafletMap.hasLayer(vectorLayer)) return;
+                        vectorSettled = true;
+                        detachStartupListeners();
+                        vectorContainer.style.opacity = "1";
                         if (leafletMap.hasLayer(fallbackLayer)) {
                             leafletMap.removeLayer(fallbackLayer);
                         }
-                        markSurfaceReady();
+                        markSurfaceReady("vector");
+                        console.info(`[MapStartup] vectorReadyMs=${Math.round(performance.now() - startedAt)}`);
                     };
-                    vectorMap.once("load", revealVectorMap);
-                    vectorMap.once("idle", revealVectorMap);
+                    const keepRasterMap = () => {
+                        if (removed || vectorSettled) return;
+                        vectorSettled = true;
+                        detachStartupListeners();
+                        leafletMap.removeLayer(vectorLayer);
+                        console.warn("No-label vector map failed to initialize; keeping raster fallback.");
+                    };
+                    vectorMap.on("load", revealVectorMap);
+                    vectorMap.on("idle", revealVectorMap);
+                    vectorMap.on("error", keepRasterMap);
+                    if (vectorMap.loaded()) revealVectorMap();
                 })
                 .catch(error => {
-                    clearTimeout(fallbackRevealTimer);
-                    if (fallbackReady) {
-                        markSurfaceReady();
-                    } else {
-                        fallbackLayer.once("load", markSurfaceReady);
+                    if (!removed && vectorLayer && leafletMap.hasLayer(vectorLayer)) {
+                        leafletMap.removeLayer(vectorLayer);
                     }
                     console.warn("No-label vector map unavailable; using raster fallback.", error);
                 });
@@ -11581,7 +11615,7 @@
 
         function ensureHeroLeafletMap() {
             const element = heroLeafletElement();
-            if (!element || heroLeafletMap || typeof L === "undefined") {
+            if (!element || heroLeafletMap || !latestVehicleLocation || typeof L === "undefined") {
                 return heroLeafletMap;
             }
 
@@ -11600,7 +11634,12 @@
             });
 
             heroMapElement()?.classList.remove("map-surface-ready");
-            heroLeafletMap.setView([0, 0], heroMapZoom);
+            setHeroVehicleView(
+                heroLeafletMap,
+                L.latLng(latestVehicleLocation.lat, latestVehicleLocation.lon),
+                false,
+                !isHeroMapFocused()
+            );
             addNoLabelDarkBaseMap(heroLeafletMap);
             heroLeafletMap.on("move zoom resize", syncHeroVehicleOverlay);
             heroLeafletMap.on("dragstart zoomstart", () => {

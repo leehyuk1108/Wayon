@@ -75,3 +75,27 @@ Use JDK 17 or the JDK bundled with Android Studio:
 ```bash
 ./gradlew :app:assembleDebug
 ```
+
+## Map Startup (v36)
+
+The home map waits for vehicle coordinates before requesting tiles, instead of
+first requesting `(0, 0)`. Ready raster tiles dismiss the loading shield without
+waiting for the vector style or a five-second timer. The vector container stays
+transparent until ready; a failed style or WebGL initialization leaves the raster
+usable. The vendored Leaflet adapter tolerates cleanup after a failed GL
+constructor. Trip-detail readiness cannot dismiss the home map's shield.
+
+Vehicle-state polling, coordinate freshness, command guards, layout and final
+vector styling are unchanged. `[MapStartup]` console events contain elapsed
+rendering times only, not coordinates or credentials.
+
+Validation on 2026-10-30: 68 JavaScript tests (11 map cases), 73 Kotlin tests and
+the release build pass. Run `node --test test_*.cjs` and
+`./gradlew :app:testReleaseUnitTest :app:assembleRelease`.
+In a Chrome comparison with cached raster tiles and an injected three-second
+style delay, the old map became visible at 4091 ms (tiles ready at 71 ms), versus
+57 ms (tiles ready at 57 ms) with the fix. Both final vector canvases contained
+254525 non-uniform pixels at 494x516; final styling was also visually checked.
+Actual source-request failure and GL-constructor failure retained six raster
+tiles without an unhandled JavaScript error. These are browser rendering tests,
+not measurements of the phone's entire cold startup or the vehicle-feed latency.

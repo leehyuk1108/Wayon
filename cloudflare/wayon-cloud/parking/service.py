@@ -93,10 +93,14 @@ def prepare_bundle(payload):
     frames = payload["frames"]
     if not isinstance(frames, list) or not 2 <= len(frames) <= MAX_FRAMES:
         raise ValueError("need_2_to_12_frames")
+    preserve_provenance = any(isinstance(f, dict) and "phase" in f for f in frames)
     prepared, seen, total = [], set(), 0
     for frame in frames:
-        if not isinstance(frame, dict) or set(frame) != {"capturedAt", "camera", "imageBase64"}:
+        required = {"capturedAt", "camera", "imageBase64"}
+        if not isinstance(frame, dict) or not required <= set(frame) <= required | {"phase"}:
             raise ValueError("invalid_frame")
+        if "phase" in frame and frame["phase"] not in ("approach", "parked"):
+            raise ValueError("invalid_frame_phase")
         captured = timestamp(frame["capturedAt"])
         if not -120 <= captured - parked <= 60:
             raise ValueError("frame_outside_parking_window")
@@ -119,7 +123,9 @@ def prepare_bundle(payload):
                 # Normalize orientation and remove metadata; never synthesize detail.
                 clean = ImageOps.exif_transpose(im).convert("RGB")
                 digest = hashlib.sha256(clean.tobytes() + str(clean.size).encode()).hexdigest()
-                if digest in seen:
+                # Keep tagged capture records even when their pixels repeat across
+                # phases. validate_result still requires distinct image evidence.
+                if digest in seen and not preserve_provenance:
                     continue
                 seen.add(digest)
                 output = io.BytesIO()
@@ -127,9 +133,11 @@ def prepare_bundle(payload):
                 prepared.append({"capturedAt": datetime.fromtimestamp(captured, timezone.utc).isoformat(),
                                  "camera": frame["camera"], "width": clean.width, "height": clean.height,
                                  "sha256": digest, "bytes": output.getvalue()})
+                if "phase" in frame:
+                    prepared[-1]["phase"] = frame["phase"]
         except (OSError, Image.DecompressionBombError, SyntaxError) as exc:
             raise ValueError("invalid_image") from exc
-    if len(prepared) < 2:
+    if len(seen) < 2:
         raise ValueError("need_two_distinct_frames")
     prepared.sort(key=lambda f: f["capturedAt"])
     if timestamp(prepared[-1]["capturedAt"]) - timestamp(prepared[0]["capturedAt"]) > 120:
@@ -158,8 +166,10 @@ def validate_result(result, count, frames=None):
             if len(indices) < 2 or not text or not text.strip() or reading["alternatives"]:
                 raise ValueError("uncorroborated_reading")
             if frames is not None:
-                times = [timestamp(frames[i]["capturedAt"]) for i in indices]
-                if max(times) - min(times) < 0.5:
+                sources = [(timestamp(frames[i]["capturedAt"]), frames[i].get("sha256", i)) for i in indices]
+                if len({digest for _, digest in sources}) < 2:
+                    raise ValueError("uncorroborated_reading")
+                if not any(a[1] != b[1] and abs(a[0] - b[0]) >= 0.5 for a in sources for b in sources):
                     raise ValueError("insufficient_temporal_evidence")
         elif text is not None:
             raise ValueError("ambiguous_text_must_be_null")
@@ -189,10 +199,20 @@ def codex_args(executable, job, model=None):
     return args + ["-"]
 
 
+def model_prompt(frames):
+    provenance = [{"frameIndex": i, "capturedAt": f["capturedAt"], "camera": f["camera"],
+                   "phase": f.get("phase", "unspecified"), "sha256": f["sha256"]} for i, f in enumerate(frames)]
+    return (f"Transcribe parking signage from the {len(frames)} attached chronological frames, indexed 0 to {len(frames) - 1}. "
+            "Frame phase is capture provenance, not sign location. Approach signs are nearby clues along the approach, "
+            "not the exact parked location; parked frames also do not prove the exact bay. "
+            "Unspecified phase must not be inferred. Matching sha256 values are duplicate images, not independent corroboration. "
+            "Use only the images as visual evidence; return the schema JSON, no tools. Do not guess unreadable characters. "
+            "Per-attachment capture provenance: " + json.dumps(provenance))
+
+
 def run_codex(executable, job, count, model=None, timeout=150):
-    prompt = (f"Transcribe parking signage from the {count} attached chronological frames, indexed 0 to {count - 1}. "
-              "These are nearby visual clues, not proof of the exact parked bay. "
-              "Use only the images; return the schema JSON, no tools. Do not guess unreadable characters.")
+    frames = json.loads((job / "manifest.json").read_text(encoding="utf-8"))["frames"]
+    prompt = model_prompt(frames)
     env = {k: v for k, v in os.environ.items() if k.upper() not in
            {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_BASE_URL"}}
     # The installed CLI manages OAuth refresh in its original auth store. Never copy token files.
@@ -228,7 +248,6 @@ def run_codex(executable, job, count, model=None, timeout=150):
     answer = job / "answer.json"
     if not answer.exists() or answer.stat().st_size > 32_768:
         raise RuntimeError("missing_or_oversized_answer")
-    frames = json.loads((job / "manifest.json").read_text(encoding="utf-8"))["frames"]
     result = validate_result(json.loads(answer.read_text(encoding="utf-8")), count, frames)
     return {"analysis": result, "usage": usage, "provider": "codex-chatgpt-oauth",
             "verification": "machine_read_not_human_verified"}

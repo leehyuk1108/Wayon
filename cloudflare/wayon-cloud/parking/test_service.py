@@ -242,7 +242,7 @@ class CollectorTests(StoreFixture):
     def test_private_credentials_and_https_origin(self):
         from cloud_collector import Collector
         from types import SimpleNamespace
-        root = Path(self.tmp.name)
+        root = Path(self.tmp.name).resolve()
         credentials = root / 'credentials.json'
         credentials.write_text(json.dumps({'endpoint': 'https://example.invalid', 'token': 'test'}))
         service = SimpleNamespace(root=root / 'data', config={'cloud': {

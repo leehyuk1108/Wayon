@@ -1,5 +1,6 @@
 """Read only new exterior snapshot bursts from the existing owner-authorized API."""
 import base64
+from collections import Counter, defaultdict
 import json
 import logging
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from service import MAX_FRAME, identifier, timestamp
+from service import MAX_FRAME, MAX_FRAMES, identifier, timestamp
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -17,17 +18,60 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+def capture_time(frame, not_before, now):
+    identifier(frame["id"])
+    identifier(frame["deviceId"])
+    captured = timestamp(frame["capturedAt"])
+    if (frame["camera"] != "wide" or frame.get("impact")
+            or not not_before <= captured <= now or now - captured > 7200):
+        raise ValueError("ineligible_snapshot")
+    return captured
+
+
+def explicit_group(frames, not_before, now):
+    parsed = []
+    for frame in frames:
+        captured = capture_time(frame, not_before, now)
+        parking = frame["parking"]
+        if not isinstance(parking, dict) or set(parking) != {"version", "eventId", "parkedAt", "index", "count", "phase"}:
+            raise ValueError("invalid_parking_metadata")
+        if (type(parking["version"]) is not int or parking["version"] != 1
+                or type(parking["count"]) is not int or not 2 <= parking["count"] <= MAX_FRAMES
+                or type(parking["index"]) is not int or not 0 <= parking["index"] < parking["count"]
+                or parking["phase"] not in ("approach", "parked")):
+            raise ValueError("invalid_parking_metadata")
+        identity = (frame["deviceId"], identifier(parking["eventId"]),
+                    timestamp(parking["parkedAt"]), parking["count"])
+        parsed.append((parking["index"], captured, parking["phase"], identity, frame))
+    parsed.sort(key=lambda row: row[0])
+    identity = parsed[0][3]
+    if (len(parsed) != identity[3] or any(row[3] != identity for row in parsed)
+            or [row[0] for row in parsed] != list(range(identity[3]))
+            or any(a[1] >= b[1] or (a[2] == "parked" and b[2] == "approach")
+                   for a, b in zip(parsed, parsed[1:]))
+            or parsed[-1][2] != "parked" or parsed[-1][1] != identity[2]
+            or parsed[-1][1] - parsed[0][1] > 120 or now - identity[2] < 120):
+        raise ValueError("incomplete_or_inconsistent_parking_group")
+    return [row[4] for row in parsed]
+
+
 def groups(snapshots, not_before, now):
-    exterior = []
+    exterior, explicit = [], defaultdict(list)
+    ids = Counter(f["id"] for f in snapshots if isinstance(f, dict) and isinstance(f.get("id"), str))
     for frame in snapshots:
+        if not isinstance(frame, dict):
+            continue
+        # Presence, not truthiness: malformed metadata must never become legacy.
+        if "parking" in frame:
+            try:
+                key = (identifier(frame["deviceId"]), identifier(frame["parking"]["eventId"]))
+                explicit[key].append(frame)
+            except (KeyError, TypeError, ValueError):
+                pass
+            continue
         try:
-            captured = timestamp(frame["capturedAt"])
-            identifier(frame["id"])
-            identifier(frame["deviceId"])
-            if frame["camera"] != "wide" or frame.get("impact"):
-                continue
-            if not_before <= captured <= now and now - captured <= 7200:
-                exterior.append((frame["deviceId"], captured, frame["id"], frame))
+            captured = capture_time(frame, not_before, now)
+            exterior.append((frame["deviceId"], captured, frame["id"], frame))
         except (KeyError, TypeError, ValueError):
             continue
     exterior.sort(key=lambda row: row[:3])
@@ -37,9 +81,18 @@ def groups(snapshots, not_before, now):
             grouped.append([])
         grouped[-1].append(frame)
     # Accept only a complete three-shot burst. An interrupted upload is not a batch.
-    return [g for g in grouped if len(g) == 3 and now - timestamp(g[-1]["capturedAt"]) >= 120
-            and 2 <= timestamp(g[-1]["capturedAt"]) - timestamp(g[0]["capturedAt"]) <= 5
-            and all(timestamp(b["capturedAt"]) - timestamp(a["capturedAt"]) >= 0.5 for a, b in zip(g, g[1:]))]
+    complete = [g for g in grouped if len(g) == 3 and now - timestamp(g[-1]["capturedAt"]) >= 120
+                and 2 <= timestamp(g[-1]["capturedAt"]) - timestamp(g[0]["capturedAt"]) <= 5
+                and all(timestamp(b["capturedAt"]) - timestamp(a["capturedAt"]) >= 0.5 for a, b in zip(g, g[1:]))]
+    for frames in explicit.values():
+        try:
+            # Validate every listed member before filtering: stale or corrupt rows
+            # claiming this session must not be discarded to manufacture completeness.
+            complete.append(explicit_group(frames, not_before, now))
+        except (KeyError, TypeError, ValueError):
+            continue
+    complete = [g for g in complete if all(ids[f["id"]] == 1 for f in g)]
+    return sorted(complete, key=lambda g: (g[0]["deviceId"], timestamp(g[0]["capturedAt"]), g[0]["id"]))
 
 
 class Collector:
@@ -81,7 +134,8 @@ class Collector:
         self.deferred = {key: value for key, value in self.deferred.items() if value[0] > now - 7200}
         snapshots = [f for f in listing.get("snapshots", []) if isinstance(f, dict) and f.get("deviceId") == self.device]
         for group in groups(snapshots, self.not_before, now):
-            event = "snapshot-" + group[0]["id"]
+            parking = group[0].get("parking")
+            event = parking["eventId"] if parking else "snapshot-" + group[0]["id"]
             if self.deferred.get(event, (0, 0))[0] > now:
                 continue
             with self.service.lock:
@@ -95,11 +149,14 @@ class Collector:
                 frames = []
                 for snapshot in group:
                     raw = self.get("/api/ai/images/" + quote(snapshot["id"], safe=""), MAX_FRAME)
-                    frames.append({"capturedAt": snapshot["capturedAt"], "camera": "wide",
-                                   "imageBase64": base64.b64encode(raw).decode()})
+                    frame = {"capturedAt": snapshot["capturedAt"], "camera": "wide",
+                             "imageBase64": base64.b64encode(raw).decode()}
+                    if parking:
+                        frame["phase"] = snapshot["parking"]["phase"]
+                    frames.append(frame)
                 # The API's parkedAt is a burst reference, NOT the actual gear-P timestamp.
                 payload = {"eventId": event, "deviceId": group[0]["deviceId"],
-                           "parkedAt": group[-1]["capturedAt"], "frames": frames}
+                           "parkedAt": parking["parkedAt"] if parking else group[-1]["capturedAt"], "frames": frames}
                 job_id, created = self.service.submit(payload)
                 self.mark(group, event, "received")
                 logging.info("cloud_burst_received id=%s frames=%d created=%s", job_id, len(frames), created)

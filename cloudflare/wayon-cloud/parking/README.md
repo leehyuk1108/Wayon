@@ -7,10 +7,11 @@ vehicle control code is changed.
 
 ## Flow
 
-1. Comma's existing offroad camera guard and lease permit a snapshot. With
-   `parking_multiframe_enabled` in its private cloud config, the first successful
-   snapshot after uploader startup or an onroad-to-offroad transition has three
-   wide frames, at least one second apart. Later hourly snapshots stay single.
+1. The explicit parking contract carries up to six approach captures and three
+   parked wide captures from Comma, spanning at most 120 seconds of actual capture
+   time. The collector also supports older three-shot parked bursts without
+   explicit metadata. Comma capture/ring changes and Cloudflare metadata transport
+   are separate components; this directory implements the server consumer only.
 2. Wide images retain their native width up to 1928 pixels, without upscaling,
    and use JPEG quality 92 with 4:4:4 chroma. Existing brightness correction
    remains. Driver images stay at most 960 pixels and JPEG quality 72; only one
@@ -18,20 +19,84 @@ vehicle control code is changed.
 3. Existing Cloudflare snapshot storage and its owner-authorized read API carry
    the photos. No Worker replacement, new public endpoint, firewall rule or
    inbound connection to the server is needed.
-4. The collector polls every 60 seconds, for the configured device only and only
-   photos captured after activation. It waits two minutes for uploads to finish
-   and accepts exactly three wide photos within five seconds. Interrupted
-   one/two-photo uploads are not analyzed. Consumed snapshot IDs persist eight
-   days, including after restart or list truncation. Failed groups do not block
-   later groups, and transfer retries are bounded.
+4. The collector polls every 60 seconds, for the configured device only. Every
+   member must be captured at/after activation and within the last two hours.
+   It waits two minutes after the final parked capture before accepting a complete
+   explicit group. Legacy bursts still require exactly three wide photos within
+   five seconds. Partial or inconsistent groups are not analyzed. Consumed
+   snapshot IDs persist eight days, including after restart or list truncation.
+   Failed groups do not block later groups, and transfer retries are bounded.
 5. One Codex CLI job analyzes the group with the server owner's existing ChatGPT
    OAuth login. Shell, browser, apps, MCP, image-generation and other agent tools
    are disabled. The CLI is pinned by deployment, with a 150-second deadline,
    bounded queue and a maximum of 24 new jobs per rolling day.
 6. Results and source frames are stored privately for seven days. Results keep
-   capture times, dimensions, hashes and per-frame sign boxes. Ambiguous readings
+   capture times, optional approach/parked phase, dimensions, hashes and per-frame sign boxes. Ambiguous readings
    have null text. Bare numbers do not imply a floor, and every result has
    `exactParkingSpotKnown: false` and `machine_read_not_human_verified`.
+
+## Explicit group contract
+
+Each wide entry from `GET /api/ai/snapshots` may have this optional metadata:
+
+```json
+{
+  "id": "snapshot-id",
+  "deviceId": "device-id",
+  "camera": "wide",
+  "capturedAt": "2026-10-30T12:00:00Z",
+  "parking": {
+    "version": 1,
+    "eventId": "parking-event-id",
+    "parkedAt": "2026-10-30T12:01:00Z",
+    "index": 0,
+    "count": 3,
+    "phase": "approach"
+  }
+}
+```
+
+- IDs use the existing ASCII identifier syntax `[A-Za-z0-9][A-Za-z0-9_.-]{0,95}`.
+  Version, index and count must be integers, not booleans or floats. The wire
+  bound is 2-12 frames, with exactly one of every index `0..count-1` and unique
+  snapshot IDs. Comma's sender budget remains six approach plus three parked.
+- All members must agree on device, event ID, count and the `parkedAt` instant.
+  ISO timestamps require timezones; equivalent offsets represent the same
+  instant. Listing order is irrelevant, but index order must have strictly
+  increasing, distinct actual `capturedAt` times within a 120-second span.
+- Zero or more approach frames must precede all parked frames. At least one
+  parked frame is required. `parkedAt` equals the **last parked snapshot capture
+  time, not measured gear-P time**. It is neither upload time nor a substitute
+  timestamp for earlier approach images.
+- A corrupt, stale, future or out-of-window member claiming the same device and
+  event invalidates that listed group. Partial sessions are never combined across
+  events/devices or filled from legacy snapshots. Reused event IDs with conflicting
+  parked references are rejected, not split into apparently complete sessions.
+- A present but malformed `parking` value (including null) never falls back to
+  the legacy heuristic. Repeated snapshot IDs, even repeated identical listing
+  rows, fail closed. Only entries with no `parking` key are eligible for legacy
+  grouping (three frames, 0.5-second minimum gaps, at most 2.5 seconds per gap,
+  total span 2-5 seconds, and the same wait/window limits).
+  Cloud ingestion must reject invalid supplied metadata, never silently strip
+  it into a legacy entry. The server cannot reconstruct omitted provenance.
+  A nine-frame group's three-photo parked tail is still incomplete, not legacy.
+- Explicit jobs preserve the supplied event ID. Legacy jobs retain
+  `snapshot-<first snapshot ID>`. The existing persistent consumed-ID table,
+  retention and retry limits are unchanged. The collector does not cache partial
+  groups between polls; all members must be visible together in the listing.
+
+The local `POST /events` frame object still requires `capturedAt`, `camera` and
+`imageBase64`, and now optionally accepts `phase: "approach" | "parked"`.
+Existing manual road/wide requests without phase keep their sorting and image
+deduplication behavior. Missing phase stays unspecified, never assumed parked.
+For requests containing phase, all capture records survive image normalization,
+even when identical pixels recur across phases. Their phase and real capture time
+are included in the manifest, signature, result and model attachment provenance.
+Every request still needs two distinct decoded images. A readable claim requires
+evidence from two distinct image hashes at least 0.5 seconds apart; duplicates
+cannot corroborate one another. One-frame or uncertain clues may be ambiguous
+with null text. Approach signs are nearby route clues, never proof of the exact
+parked location; parked-phase images also do not establish an exact bay.
 
 ## Server installation
 
@@ -69,18 +134,24 @@ Stop only this task before upgrading its source, and start it after tests pass.
 
 ## Tests and limits
 
-Run `python -m unittest discover -s code -p test_service.py -v` in the venv.
+Run `python -B -m unittest discover -s code -p 'test_*.py' -v` in the venv.
+`test_explicit_parking.py` uses synthetic images and mocked cloud/model calls;
+it covers corrupt/partial/mismatched groups, ordering, timezone and clock
+boundaries, provenance, consumed IDs, retry spacing and failure recovery.
+The existing HTTP test uses an ephemeral loopback server only.
 Comma tests are `openpilot/system/test_parking_snapshot.py` together with the
 existing camera and uploader tests, under the target's Python environment.
 
 - Recognition uses ChatGPT account quotas; it is not a free/unlimited API.
   Expired/revoked OAuth or usage limits produce a failed job, never a successful
   old result. Re-authenticate through the official CLI when necessary.
-- The current uploader has no explicit cloud burst ID. Grouping is a strict
-  time heuristic, not authenticated capture provenance. The API field
-  `parkedAt` is the last photo's capture time, **not a measured gear-P time**.
-- Three stationary frames help reject transient noise, but are not independent
-  viewpoints. There is no moving/pre-parking frame buffer in this implementation.
+- Explicit metadata describes claimed capture provenance, not cryptographic
+  attestation. Legacy grouping remains a strict time heuristic. This server
+  change alone neither enables Comma's approach buffer nor deploys the matching
+  cloud metadata transport; those require separate verification.
+- Stationary frames may not be independent viewpoints. A complete group can
+  remain unavailable if the 100-entry listing truncates its members or they age
+  past the two-hour window. Missing frames are never synthesized or borrowed.
 - Better compression cannot recover letters that are out of view, blurred or
   too small. Results must not be used to infer an unobserved floor or bay.
 - The model supplies boxes and transcription. Schema and repeated-frame checks

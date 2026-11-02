@@ -13,10 +13,13 @@
 
   async function api(path, body, method = 'POST') {
     const csrfToken = window.TraverseWeb?.csrfToken() || session?.csrfToken;
-    const response = await fetch(path, {method, credentials:'same-origin', cache:'no-store',
-      headers: {'content-type':'application/json', ...(csrfToken ? {'x-csrf-token':csrfToken} : {})},
-      ...(body === undefined ? {} : {body:JSON.stringify(body)}),
-    });
+    let response;
+    try {
+      response = await fetch(path, {method, credentials:'same-origin', cache:'no-store',
+        headers: {'content-type':'application/json', ...(csrfToken ? {'x-csrf-token':csrfToken} : {})},
+        ...(body === undefined ? {} : {body:JSON.stringify(body)}),
+      });
+    } catch { throw new Error('서버 연결을 확인해 주세요.'); }
     if (response.status === 401 && path !== '/api/login') lock();
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.message || '요청을 처리하지 못했습니다.');
@@ -165,7 +168,7 @@
   window.addEventListener('pageshow', event => {
     if (!event.persisted) return;
     if (session) window.TraverseWeb.refreshSession();
-    else restore().catch(lock);
+    else restore().catch(error => { lock(); document.getElementById('pwa-error').textContent = error.message; });
   });
-  restore().catch(() => { lock(); document.getElementById('pwa-error').textContent = '서버 연결을 확인해 주세요.'; });
+  restore().catch(error => { lock(); document.getElementById('pwa-error').textContent = error.message || '서버 연결을 확인해 주세요.'; });
 })();

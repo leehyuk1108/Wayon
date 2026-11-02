@@ -16,7 +16,7 @@ const mf=new Miniflare({modules:true,scriptPath:new URL('../output/bundle/worker
     const path=new URL(request.url).pathname;
     if (path==='/api/state') return Response.json({state:{device_id:'fixture-owner',onroad:0},vehicleStatus:null,vehicleLock:null,healthTimeline:[]});
     if (path==='/api/mobile/web-trips') return Response.json({trips:[]});
-    if (path==='/api/snapshots') return Response.json({snapshots:[]});
+    if (path==='/api/mobile/web-snapshots') return Response.json({snapshots:[]});
     return Response.json({ok:true,state:{onroad:false},protocol:'test-protocol',websocketUrl:'wss://wayon-cloud.hyuklee.workers.dev/api/live/stream'});
   }}});
 let cookie,csrf;

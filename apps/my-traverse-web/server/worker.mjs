@@ -1,6 +1,7 @@
 import {SESSION_SECONDS, digest, equal, randomToken, json, readJson, readBytes, sameOrigin, sessionCookie, sessionFor, encrypt, decrypt, rateLimit} from './security.mjs';
 import {internalNotify, pushRoute} from './push.mjs';
 import {accountLogin, executeCommand, COMMAND_SPECS, CommandError} from './commands.mjs';
+import {databaseLimitResponse} from './database-error.mjs';
 
 const UPSTREAM = 'https://wayon-cloud.hyuklee.workers.dev';
 const GET_PATHS = new Set(['json','state','gmone/status','gmone/refresh','trips','snapshots','snapshot','live-captures','live-capture','impacts','ambient/status']);
@@ -83,7 +84,7 @@ async function composedFeed(env) {
   const [state,trips,snapshots]=await Promise.all([
     upstreamJson(env,'/api/state'),
     history('/api/mobile/web-trips?limit=25','trips',25),
-    history('/api/snapshots?limit=24','snapshots',24),
+    history('/api/mobile/web-snapshots?limit=24','snapshots',24),
   ]);
   if (!state.state || typeof state.state !== 'object' || Array.isArray(state.state) ||
       state.state.device_id !== env.DEVICE_ID ||
@@ -316,6 +317,8 @@ function secure(response) {
 export default {async fetch(request,env,ctx) {
   try { return secure(await handle(request,env,ctx)); }
   catch (error) {
+    const limit = databaseLimitResponse(error);
+    if (limit) return secure(json(limit.body,503,limit.headers));
     if (error instanceof UpstreamError) return secure(json(upstreamFailure(error),502));
     return secure(json({error:'request_failed',message:MESSAGE},400));
   }

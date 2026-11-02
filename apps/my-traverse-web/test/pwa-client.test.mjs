@@ -19,7 +19,7 @@ function element() {
   };
 }
 
-function harness(sessionResponse = fixtureSession) {
+function harness(sessionResponse = fixtureSession, sessionStatus = 200) {
   const login = element(), actions = element(), body = element(), created = [login, actions];
   const events = {}, calls = [], routes = new Map(), notices = [];
   let starts = 0, stops = 0, rechecks = 0, token = '', replacements = 0;
@@ -37,7 +37,7 @@ function harness(sessionResponse = fixtureSession) {
   };
   const document = {body, createElement:() => created.shift(), querySelector:() => element(), querySelectorAll:() => [],
     getElementById:id => id === 'pwa-error' ? login.querySelector('#pwa-error') : null};
-  routes.set('/api/session', async () => ({ok:true, status:200, json:async () => sessionResponse}));
+  routes.set('/api/session', async () => ({ok:sessionStatus === 200, status:sessionStatus, json:async () => sessionResponse}));
   const context = {window, document,
     navigator:{userAgent:'fixture', serviceWorker:{register:async () => registration, ready:Promise.resolve(), addEventListener() {}}},
     Notification:{permission:'granted'}, location:{replace:() => { replacements++; }},
@@ -73,6 +73,42 @@ test('wrong web login does not repeatedly stop the bridge and displays the serve
   assert.equal(h.counts.stops, stops);
   assert.equal(h.login.querySelector('#pwa-error').textContent, 'Wrong fixture password');
   assert.equal(h.login.querySelector('button').disabled, false);
+});
+
+test('database outage is visible on restore and login without logout or subscription deletion', async () => {
+  const message = 'Database daily limit fixture; retry after reset.';
+  const h = harness({message, code:'database_daily_limit'}, 503);
+  let unsubscribed = 0;
+  h.setUnsubscribe(async () => { unsubscribed++; });
+  await tick();
+  assert.equal(h.login.querySelector('#pwa-error').textContent, message);
+  assert.equal(h.login.hidden, false);
+  assert.equal(h.counts.starts, 0);
+  h.reply('/api/login', {ok:true});
+  await h.login.querySelector('form').handlers.submit({preventDefault() {}});
+  assert.equal(h.login.querySelector('#pwa-error').textContent, message);
+  assert.equal(h.login.querySelector('button').disabled, false);
+  assert.equal(unsubscribed, 0);
+  assert.equal(h.counts.replacements, 0);
+  assert.ok(!h.calls.some(call => /logout|unsubscribe|command/.test(call.path)));
+  // A server recovery reuses the existing cookie; no credential clearing is required.
+  h.reply('/api/session', fixtureSession);
+  h.events.pageshow({persisted:true}); await tick();
+  assert.equal(h.login.hidden, true);
+  assert.equal(h.counts.starts, 1);
+});
+
+test('WebKit transport failures show Korean guidance without logging out or deleting subscriptions', async () => {
+  const h = harness({authenticated:false}); await tick();
+  let unsubscribed = 0; h.setUnsubscribe(async () => { unsubscribed++; });
+  for (const path of ['/api/session','/api/login']) h.routes.set(path,async () => {throw new TypeError('Load failed');});
+  h.events.pageshow({persisted:true}); await tick();
+  assert.equal(h.login.querySelector('#pwa-error').textContent,'서버 연결을 확인해 주세요.');
+  await h.login.querySelector('form').handlers.submit({preventDefault() {}});
+  assert.equal(h.login.querySelector('#pwa-error').textContent,'서버 연결을 확인해 주세요.');
+  assert.equal(h.login.querySelector('button').disabled,false);
+  assert.equal(h.counts.starts,0); assert.equal(unsubscribed,0);
+  assert.ok(!h.calls.some(c => /logout|unsubscribe|command/.test(c.path)));
 });
 
 test('successful logout locks before push cleanup; a cleanup failure cannot leave the app unlocked', async () => {

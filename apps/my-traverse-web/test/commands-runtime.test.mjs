@@ -88,7 +88,7 @@ test.before(async () => {
         assert.equal(url.search, '?limit=25');
         return Response.json({trips:Array.from({length:25}, (_,i)=>({id:'trip-'+i,device_id:DEVICE}))});
       }
-      if (url.pathname === '/api/snapshots') {
+      if (url.pathname === '/api/mobile/web-snapshots') {
         assert.equal(url.search, '?limit=24');
         return Response.json({snapshots:Array.from({length:24}, (_,i)=>({id:'snapshot-'+i,device_id:DEVICE}))});
       }
@@ -234,7 +234,7 @@ test('workerd composes the UI feed from authenticated lightweight endpoints for 
     const result = await call('/api/wayon/json', undefined, {'accept-encoding': encoding});
     assert.equal(result.status, 200); assert.equal(result.body.state.device_id, DEVICE);
     assert.equal(feedReads, 1); assert.deepEqual(ops(), []);
-    assert.deepEqual(wayonCalls.sort(), ['/api/mobile/web-trips?limit=25','/api/snapshots?limit=24','/api/state']);
+    assert.deepEqual(wayonCalls.sort(), ['/api/mobile/web-snapshots?limit=24','/api/mobile/web-trips?limit=25','/api/state']);
     assert.equal(result.body.snapshots.length, 24); assert.equal(result.body.trips.length, 25);
     assert.equal(result.body.generatedAt, null); assert.equal(result.body.vehicleStatus.stale, true);
     assert.equal(result.body.vehicleStatus.updatedAt, '2020-01-01T00:00:00Z');
@@ -323,10 +323,10 @@ test('workerd composition requires real state and explicitly marks unavailable o
     ['/api/state',{}],['/api/state',{...feed(),state:null}],
     ['/api/state',{...feed(),state:{device_id:'OTHER_DEVICE'}}],
     ['/api/state',{state:feed().state}],['/api/mobile/web-trips?limit=25',{}],
-    ['/api/mobile/web-trips?limit=25',{trips:null}],['/api/snapshots?limit=24',{}],
-    ['/api/snapshots?limit=24',{snapshots:null}],
+    ['/api/mobile/web-trips?limit=25',{trips:null}],['/api/mobile/web-snapshots?limit=24',{}],
+    ['/api/mobile/web-snapshots?limit=24',{snapshots:null}],
   ];
-  for (const path of ['/api/state','/api/mobile/web-trips?limit=25','/api/snapshots?limit=24']) {
+  for (const path of ['/api/state','/api/mobile/web-trips?limit=25','/api/mobile/web-snapshots?limit=24']) {
     cases.push([path,new Response('PRIVATE_COMPONENT_FAILURE',{status:503})]);
     cases.push([path,new Response('PRIVATE_NON_JSON')]);
   }
@@ -353,7 +353,7 @@ test('workerd composition requires real state and explicitly marks unavailable o
 test('workerd optional history failures never fabricate empty history or replace actual vehicle freshness',async()=>{
   await reset(); const original=feed();
   feedReply=async()=>Response.json(original);
-  cloudReply=async path=>path.startsWith('/api/mobile/web-trips') || path.startsWith('/api/snapshots')
+  cloudReply=async path=>path.startsWith('/api/mobile/web-trips') || path.startsWith('/api/mobile/web-snapshots')
     ? new Response('PRIVATE_HISTORY_FAILURE',{status:503}) : undefined;
   const result=await call('/api/wayon/json');
   assert.equal(result.status,200); assert.deepEqual(result.body.state,original.state);

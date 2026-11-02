@@ -1,0 +1,19 @@
+body[data-pwa="locked"] > :not(#pwa-login):not(script) { visibility: hidden !important; }
+#pwa-login { position: fixed; inset: 0; z-index: 100000; background: #0b0b0b; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+#pwa-login[hidden] { display: none; }
+#pwa-login form { width: 100%; max-width: 340px; }
+#pwa-login img { display: block; width: 140px; height: 140px; object-fit: contain; margin: 0 auto 16px; }
+#pwa-login h1 { font-size: 27px; letter-spacing: 0; text-align: center; margin: 0 0 32px; }
+#pwa-login label { display: block; font-size: 14px; margin-bottom: 8px; }
+#pwa-login input { box-sizing: border-box; width: 100%; background: #191919; color: #fff; border: 1px solid #444; border-radius: 6px; font-size: 17px; padding: 14px; }
+#pwa-login button, .pwa-actions button { border: 0; border-radius: 6px; background: #ededed; color: #111; min-height: 44px; padding: 12px 16px; font: inherit; cursor: pointer; }
+#pwa-login button { width: 100%; margin-top: 16px; }
+#pwa-login button:disabled, .pwa-actions button:disabled { opacity: .5; }
+#pwa-error { color: #ff8e86; min-height: 24px; font-size: 14px; margin-top: 12px; }
+.pwa-actions { padding: 16px 0; border-top: 1px solid #333; }
+.pwa-actions h4 { font-size: 16px; margin: 0 0 12px; }
+.pwa-actions .pwa-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.pwa-actions #pwa-push-status { color: #aaa; font-size: 13px; margin: 12px 0; overflow-wrap: anywhere; }
+.home-map-hero #btnSecretSettings { width: 44px; height: 44px; display: grid; place-items: center; color: #ddd; }
+.home-map-hero #btnSecretSettings svg { width: 20px; height: 20px; }
+@supports (padding-top: env(safe-area-inset-top)) { body { padding-top: env(safe-area-inset-top); } }

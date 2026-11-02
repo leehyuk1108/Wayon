@@ -1,0 +1,14 @@
+{
+  "name": "my-traverse-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "pretest": "npm run build && wrangler deploy --config wrangler.jsonc --dry-run --outdir output/bundle",
+    "test": "node --test test/*.test.mjs server/*.test.mjs test_bridge.cjs",
+    "dev": "wrangler dev --config wrangler.jsonc",
+    "deploy": "npm run build && wrangler deploy --config wrangler.local.json"
+  },
+  "dependencies": { "web-push": "3.6.7" },
+  "devDependencies": { "wrangler": "4.45.0", "sharp": "0.34.4" }
+}

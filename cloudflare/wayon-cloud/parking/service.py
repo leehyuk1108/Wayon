@@ -269,6 +269,8 @@ class Service:
         # A stopped inference is never silently retried or published as successful.
         self.db.execute("UPDATE jobs SET status='failed',error='service_restarted' WHERE status IN ('queued','running')")
         self.db.commit()
+        from parking_notify import configure
+        self.parking_notify = configure(self)
 
     def retry(self, job_id):
         with self.lock:
@@ -344,6 +346,11 @@ class Service:
             (job / "result.json").write_text(encoded, encoding="utf-8")
             with self.lock:
                 self.db.execute("UPDATE jobs SET status='completed',result=? WHERE id=?", (encoded, job_id))
+                if self.parking_notify is not None:
+                    try:
+                        self.parking_notify.enqueue_completed(job_id, manifest, result)
+                    except Exception:
+                        logging.warning("parking_notify_enqueue_failed")
                 self.db.commit()
             logging.info("job_completed id=%s frames=%d", job_id, len(manifest["frames"]))
         except Exception as exc:
@@ -409,7 +416,10 @@ def handler(service):
                 return self.reply(401, {"error": "unauthorized"})
             if self.path == "/health":
                 alive = service.worker is not None and service.worker.is_alive()
+                notifier = service.parking_notify
+                notify_alive = notifier is not None and notifier.thread is not None and notifier.thread.is_alive()
                 return self.reply(200 if alive else 503, {"ok": alive, "workerAlive": alive, "service": "parking-codex-v1", "maxFrames": MAX_FRAMES,
+                                        "parkingNotifyConfigured": notifier is not None, "parkingNotifyAlive": notify_alive,
                                         "queued": service.queue.qsize(), "authMode": "chatgpt-oauth"})
             if re.fullmatch(r"/jobs/[a-f0-9]{32}", self.path):
                 result = service.get(self.path[6:])
@@ -485,6 +495,8 @@ def main():
     logging.basicConfig(level=logging.INFO, handlers=[log], format="%(asctime)s %(levelname)s %(message)s")
     service.worker = threading.Thread(target=service.work, daemon=True)
     service.worker.start()
+    if service.parking_notify is not None:
+        service.parking_notify.start()
     if config.get("cloud", {}).get("enabled") is True:
         from cloud_collector import start
         collector = start(service)

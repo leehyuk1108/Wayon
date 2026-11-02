@@ -13143,19 +13143,6 @@
             const healthDetail = document.getElementById('home-card-health-detail');
             if (!strip || !iconContainer || !title || !detail) return;
 
-            if (vehicleDataState !== 'ready' && vehicleDataState !== 'cached') {
-                strip.classList.remove('secure', 'warning', 'critical', 'active', 'running', 'driving', 'offline');
-                title.textContent = vehicleDataState === 'loading' ? 'LOADING' : 'UNAVAILABLE';
-                detail.textContent = vehicleDataState === 'loading' ? '차량 정보 불러오는 중' : '차량 정보를 불러오지 못했어요';
-                detail.hidden = false;
-                if (kickerText) kickerText.textContent = 'VEHICLE STATUS';
-                iconContainer.innerHTML = '<i data-lucide="refresh-cw" aria-hidden="true"></i>';
-                window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
-                if (healthDetail) healthDetail.textContent = detail.textContent;
-                return;
-            }
-
-            strip.classList.remove('secure', 'warning', 'critical', 'active', 'running', 'driving', 'offline');
             let reportDetails = details;
             if (details && typeof details === 'object') {
                 const engine = effectiveGmoneEngineSnapshot(details);
@@ -13175,6 +13162,17 @@
                 tone: '', title: 'CHECKING', detail: '', icon: 'fa-ellipsis',
                 healthDetail: 'Waiting for vehicle data',
             };
+            strip.classList.remove('secure', 'warning', 'critical', 'active', 'running', 'driving', 'offline');
+            if (vehicleDataState !== 'ready' && vehicleDataState !== 'cached' && !result.operatingState) {
+                title.textContent = vehicleDataState === 'loading' ? 'LOADING' : 'UNAVAILABLE';
+                detail.textContent = vehicleDataState === 'loading' ? '차량 정보 불러오는 중' : '차량 정보를 불러오지 못했어요';
+                detail.hidden = false;
+                if (kickerText) kickerText.textContent = 'VEHICLE STATUS';
+                iconContainer.innerHTML = '<i data-lucide="refresh-cw" aria-hidden="true"></i>';
+                window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
+                if (healthDetail) healthDetail.textContent = detail.textContent;
+                return;
+            }
             if (result.tone) strip.classList.add(result.tone);
             const statusIcon = result.icon || 'check';
             iconContainer.innerHTML = `<i data-lucide="${statusIcon}" aria-hidden="true"></i>`;

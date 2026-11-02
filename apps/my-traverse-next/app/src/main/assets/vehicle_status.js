@@ -45,6 +45,11 @@
         return Number.isFinite(parsed) && parsed <= nowMs + 60000 ? Math.max(0, (nowMs - parsed) / 1000) : null;
     }
 
+    function liveMaxAgeSeconds(live) {
+        return live?.onroad === false
+            ? OFFROAD_LIVE_STALE_AFTER_SECONDS : LIVE_STALE_AFTER_SECONDS;
+    }
+
     function detailsAgeSeconds(details, nowMs) {
         const meta = details?.meta || {};
         const source = String(meta.source || "").toLowerCase();
@@ -103,7 +108,7 @@
         return null;
     }
 
-    function evaluate(details, live, nowMs = Date.now(), impact = null) {
+    function evaluateReport(details, live, nowMs, impact) {
         if (impact && typeof impact === "object") {
             const receivedAt = number(impact.receivedAtMs);
             const detectedAt = Date.parse(impact.detectedAt || "");
@@ -128,7 +133,7 @@
         const detailsAge = hasDetails ? detailsAgeSeconds(details, nowMs) : null;
         const gmoneSource = String(details?.meta?.source || "").toLowerCase().includes("gmone");
         // Offroad uploads normally arrive every 300 seconds; unknown mode keeps the tighter bound.
-        const liveMaxAge = live?.onroad === false ? OFFROAD_LIVE_STALE_AFTER_SECONDS : LIVE_STALE_AFTER_SECONDS;
+        const liveMaxAge = liveMaxAgeSeconds(live);
         const detailsMaxAge = gmoneSource ? VEHICLE_DETAILS_STALE_AFTER_SECONDS : liveMaxAge;
         const detailsStale = details?.meta?.stale === true
             || (detailsAge !== null && detailsAge > detailsMaxAge);
@@ -280,6 +285,45 @@
             return report("offline", "STATUS\nUNKNOWN", detail, "circle-help");
         }
         return report("secure", "ALL\nGOOD", "", "check", "No issues detected");
+    }
+
+    function evaluate(details, live, nowMs = Date.now(), impact = null) {
+        const health = evaluateReport(details, live, nowMs, impact);
+        const age = liveAgeSeconds(live, nowMs);
+        if (!live || live.unavailable === true || live.stale === true
+            || age === null || age > liveMaxAgeSeconds(live)) return health;
+
+        // Operating state does not depend on GPS or a separate GMOne health snapshot.
+        let operating;
+        let operatingState;
+        if (live.onroad === true) {
+            const opDetail = live.openpilotActive === true ? "Openpilot engaged"
+                : live.openpilotEnabled === true ? "Openpilot enabled" : "Openpilot disengaged";
+            operating = report("driving", "DRIVING", speedDetail(live, opDetail), "navigation");
+            operatingState = "driving";
+        } else if (live.ignition === true) {
+            operating = report("driving", "ENGINE\nON", "Vehicle is awake", "power");
+            operatingState = "engineOn";
+        } else {
+            return health;
+        }
+
+        // Keep urgent warnings prominent, but never lose the confirmed operating state.
+        if (health.tone === "critical") {
+            const stateLabel = operatingState === "driving" ? "Driving" : "Engine on";
+            return { ...health, operatingState, detail: `${stateLabel} · ${health.detail}` };
+        }
+        if (operatingState === "engineOn" && health.title === "REMOTE\nSTART") {
+            return { ...health, operatingState };
+        }
+        const notice = ["warning", "offline"].includes(health.tone) ? health.detail : "";
+        return {
+            ...operating,
+            operatingState,
+            tone: notice ? "warning" : operating.tone,
+            detail: notice ? `${operating.detail} · ${notice}` : operating.detail,
+            healthDetail: notice ? health.healthDetail : operating.healthDetail,
+        };
     }
 
     return {

@@ -7,6 +7,7 @@ class WayonApplication : Application() {
         super.onCreate()
         WayonImpactNotifications.ensureChannel(this)
         WayonPowerNotifications.ensureChannel(this)
+        WayonParkingSignNotifications.ensureChannel(this)
         VehicleRefreshScheduler.initialize(this)
         if (BuildConfig.FIREBASE_CONFIGURED &&
             !BuildConfig.APPLICATION_ID.endsWith(".source")

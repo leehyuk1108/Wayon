@@ -186,7 +186,9 @@ test('fresh warnings, driving, remote start, offline and impact priority are ret
     const driving = evaluate(null, live({ onroad: true, latitude: 37, longitude: 127, gpsFresh: true, openpilotActive: true, speedKph: 50 }));
     assert.equal(driving.title, 'DRIVING');
     assert.equal(driving.detail, '50 km/h · Openpilot engaged');
-    assert.equal(evaluate(null, live({ onroad: true, gpsFresh: false })).title, 'LOCATION\nUNKNOWN');
+    const withoutGps = evaluate(null, live({ onroad: true, gpsFresh: false }));
+    assert.equal(withoutGps.title, 'DRIVING');
+    assert.match(withoutGps.detail, /GPS unavailable/);
     assert.equal(evaluate(null, live({ thermalStatus: 'red' })).tone, 'critical');
     assert.equal(evaluate(null, live({ ignition: true })).title, 'ENGINE\nON');
     assert.equal(evaluate(details(), live({ unavailable: true })).title, 'VEHICLE\nOFFLINE');

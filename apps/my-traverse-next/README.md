@@ -1,5 +1,23 @@
 # My Traverse Next
 
+## Parking Sign Notifications (v39)
+
+Version `39 / 2.0-preview.30-parking-sign` adds the `wayon_parking_sign` FCM
+receiver and the private `wayon_parking_sign_alerts` notification channel. The
+server publishes only corroborated readable floor/zone/pillar/bay clues, not an
+exact parking-space assertion. Unreadable results remain silent.
+
+Background notification delivery uses the existing visible FCM path; foreground
+delivery uses the native receiver with bounded IDs/text, strict timestamp
+validation, ten-minute expiry and persistent event deduplication. Notification
+permission and channel settings are respected. Tapping opens the existing app;
+this change does not add a result page or alter the home screen.
+
+Release JVM tests: 81 passed. Existing JavaScript tests: 76 passed. All 26
+non-generated APK assets match installed v38 byte-for-byte; only the two generated
+DEX profile assets differ. Device installation and live push receipt must be
+verified separately from these source/build checks.
+
 This is the separately installable next-generation My Traverse UI project.
 
 - Package: `com.example.carcontroller.next`
@@ -99,3 +117,31 @@ style delay, the old map became visible at 4091 ms (tiles ready at 71 ms), versu
 Actual source-request failure and GL-constructor failure retained six raster
 tiles without an unhandled JavaScript error. These are browser rendering tests,
 not measurements of the phone's entire cold startup or the vehicle-feed latency.
+
+## Driving Status (v38)
+
+Version `38 / 2.0-preview.29-driving-status` separates the confirmed operating
+state from the vehicle-health headline. Fresh Comma onroad data displays
+`DRIVING` even without GPS or while the separate GMOne snapshot is loading.
+Fresh ignition-only data displays `ENGINE ON`; parked remote-start countdowns
+retain `REMOTE START`. Ordinary warnings remain in the existing detail line and
+warning badge. Critical alerts retain their headline and add the operating state
+to their detail, rather than hiding either fact.
+
+The existing freshness limits remain unchanged: 45 seconds for onroad/unknown
+mode and 660 seconds for offroad heartbeats. Missing, unavailable or stale live
+data cannot gain a confirmed operating state. No vehicle commands, command
+authorization, server polling, layout, or Comma code were changed.
+
+Validation: `node --test test_*.cjs` passes 76 JavaScript cases, including eight
+new policy/actual-renderer tests. Release JVM tests pass 76 cases and the release
+APK builds. Offline Chromium checks cover 15 scenarios at 320, 390 and 768 pixels
+with no page errors or status-text overlap. Synthetic onroad display checks are
+not evidence of a real vehicle drive or command execution.
+
+The Fold7 was updated in place with the existing signer on 2026-11-02. Version
+38, app UID and all 19 recorded permission grants were verified. Installed APK
+SHA-256: `259c06fbbf5ea7835fc139b6ce05676e69b3340f7e72173b4bbdb9c3d528ebba`.
+The real parked home screen and authenticated server-state receipt were checked;
+no simulated state was injected into the phone or vehicle. Actual driving
+transition verification remains outstanding.

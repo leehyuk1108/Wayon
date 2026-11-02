@@ -44,6 +44,7 @@ class WayonMessagingService : FirebaseMessagingService() {
             "wayon_door_lock" -> WayonDoorLockNotifications.show(this, message.data)
             "wayon_parking_unlocked" -> WayonParkingNotifications.show(this, message.data)
             "wayon_automatic_shutdown" -> WayonPowerNotifications.show(this, message.data)
+            "wayon_parking_sign" -> WayonParkingSignNotifications.show(this, message.data)
         }
     }
 }

@@ -2,6 +2,7 @@
 (() => {
   let session = null;
   let registration = null;
+  let authRevision = 0;
   const login = document.createElement('section');
   login.id = 'pwa-login';
   login.innerHTML = `<form><img src="/app-icon-v2-192.png" alt=""><h1>My Traverse</h1>
@@ -11,16 +12,19 @@
   document.body.append(login);
 
   async function api(path, body, method = 'POST') {
+    const csrfToken = window.TraverseWeb?.csrfToken() || session?.csrfToken;
     const response = await fetch(path, {method, credentials:'same-origin', cache:'no-store',
-      headers: {'content-type':'application/json', ...(session?.csrfToken ? {'x-csrf-token':session.csrfToken} : {})},
+      headers: {'content-type':'application/json', ...(csrfToken ? {'x-csrf-token':csrfToken} : {})},
       ...(body === undefined ? {} : {body:JSON.stringify(body)}),
     });
-    const result = await response.json();
+    if (response.status === 401 && path !== '/api/login') lock();
+    const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.message || '요청을 처리하지 못했습니다.');
     return result;
   }
 
   function lock() {
+    authRevision++;
     session = null;
     window.TraverseWeb?.stop();
     document.body.dataset.pwa = 'locked';
@@ -28,7 +32,9 @@
   }
 
   async function restore() {
+    const revision = authRevision;
     const result = await api('/api/session', undefined, 'GET');
+    if (revision !== authRevision) return;
     if (!result.authenticated) { lock(); return; }
     session = result;
     login.hidden = true;
@@ -126,16 +132,25 @@
   actions.querySelector('#pwa-logout').addEventListener('click', async () => {
     try {
       await api('/api/logout', {});
-      const subscription = await registration?.pushManager.getSubscription();
-      if (subscription) await subscription.unsubscribe();
-      lock(); location.replace('/');
+      lock();
+      try {
+        const subscription = await registration?.pushManager.getSubscription();
+        if (subscription) await subscription.unsubscribe();
+      } finally { location.replace('/'); }
     } catch (error) { window.showStatus?.(error.message, 'danger'); }
   });
   window.addEventListener('traverse-auth-expired', lock);
   window.addEventListener('traverseweb:sessionlost', lock);
+  window.addEventListener('traverseweb:sessionupdated', event => {
+    if (session) session = {...session, csrfToken:event.detail.csrfToken};
+  });
   navigator.serviceWorker?.addEventListener('message', event => {
     if (event.data?.type === 'refresh') window.Android?.refreshWayonCloudData();
   });
-  window.addEventListener('pageshow', event => { if (event.persisted) restore().catch(lock); });
+  window.addEventListener('pageshow', event => {
+    if (!event.persisted) return;
+    if (session) window.TraverseWeb.refreshSession();
+    else restore().catch(lock);
+  });
   restore().catch(() => { lock(); document.getElementById('pwa-error').textContent = '서버 연결을 확인해 주세요.'; });
 })();

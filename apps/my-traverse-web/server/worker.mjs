@@ -1,10 +1,27 @@
 import {SESSION_SECONDS, digest, equal, randomToken, json, readJson, readBytes, sameOrigin, sessionCookie, sessionFor, encrypt, decrypt, rateLimit} from './security.mjs';
 import {internalNotify, pushRoute} from './push.mjs';
-import {accountLogin, executeCommand, COMMAND_SPECS} from './commands.mjs';
+import {accountLogin, executeCommand, COMMAND_SPECS, CommandError} from './commands.mjs';
 
 const UPSTREAM = 'https://wayon-cloud.hyuklee.workers.dev';
 const GET_PATHS = new Set(['json','state','gmone/status','gmone/refresh','trips','snapshots','snapshot','live-captures','live-capture','impacts','ambient/status']);
 const MESSAGE = '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const UPSTREAM_MESSAGES = Object.freeze({
+  upstream_binding:'차량 정보 서비스 연결 설정을 확인해 주세요.',
+  upstream_credentials:'차량 정보 서비스 인증 설정이 누락되었습니다.',
+  upstream_request:'차량 정보 서비스 요청을 구성하지 못했습니다.',
+  upstream_transport:'차량 정보 서비스와 통신을 완료하지 못했습니다.',
+  upstream_timeout:'차량 정보 서비스 응답 대기 시간이 초과되었습니다.',
+  upstream_auth:'차량 정보 서비스가 서버 인증을 거부했습니다.',
+  upstream_http:'차량 정보 서비스가 정상 HTTP 응답을 반환하지 않았습니다.',
+  upstream_response:'차량 정보 서비스 응답을 전달하지 못했습니다.',
+});
+class UpstreamError extends Error {
+  constructor(code, upstreamStatus) { super(code); this.code=code; this.upstreamStatus=upstreamStatus; }
+}
+function upstreamFailure(error) {
+  return {ok:false,error:error.code,code:error.code,message:UPSTREAM_MESSAGES[error.code],
+    ...(Number.isInteger(error.upstreamStatus) ? {upstreamStatus:error.upstreamStatus} : {})};
+}
 const commandsEnabled=env=>env.COMMANDS_ENABLED==='1' && /^[a-f0-9]{64}$/.test(env.GMONE_UUID_HASH || '') && /^[a-f0-9]{64}$/.test(env.GMONE_VEHICLE_HASH || '');
 async function accountMatches(account,env) {
   return typeof account?.uuid==='string' && typeof account?.vehicleId==='string' &&
@@ -12,17 +29,69 @@ async function accountMatches(account,env) {
 }
 
 export async function upstream(env, path, options = {}) {
-  const headers = new Headers(options.headers);
-  headers.set('authorization', `Bearer ${env.WAYON_DEVICE_KEY}`);
-  headers.set('user-agent','MyTraverse-PWA/1');
-  return env.WAYON.fetch(new Request(UPSTREAM + path, {...options,headers,redirect:'manual',signal:AbortSignal.timeout(15000)}));
+  if (typeof env.WAYON?.fetch !== 'function') throw new UpstreamError('upstream_binding');
+  if (typeof env.WAYON_DEVICE_KEY !== 'string' || !env.WAYON_DEVICE_KEY.trim()) throw new UpstreamError('upstream_credentials');
+  let request;
+  try {
+    const headers = new Headers(options.headers);
+    headers.set('authorization', `Bearer ${env.WAYON_DEVICE_KEY}`);
+    headers.set('user-agent','MyTraverse-PWA/1');
+    request=new Request(UPSTREAM + path, {...options,headers,redirect:'manual',signal:AbortSignal.timeout(15000)});
+  } catch { throw new UpstreamError('upstream_request'); }
+  let response;
+  try { response=await env.WAYON.fetch(request); }
+  catch (error) {
+    throw new UpstreamError(request.signal.aborted || error?.name === 'TimeoutError' ? 'upstream_timeout' : 'upstream_transport');
+  }
+  if (!(response instanceof Response)) throw new UpstreamError('upstream_response');
+  if (!response.ok) {
+    try { await response.body?.cancel(); } catch { /* Never expose an upstream error body. */ }
+    throw new UpstreamError([401,403].includes(response.status) ? 'upstream_auth' : 'upstream_http',response.status);
+  }
+  return response;
 }
 
 function cleanResponse(response) {
-  const headers = new Headers(response.headers);
-  for (const name of [...headers.keys()]) if (name.startsWith('access-control-') || name === 'set-cookie') headers.delete(name);
-  headers.set('cache-control','no-store'); headers.set('x-content-type-options','nosniff');
-  return new Response(response.body,{status:response.status,headers});
+  try {
+    const headers = new Headers(response.headers);
+    for (const name of [...headers.keys()]) if (name.startsWith('access-control-') || name === 'set-cookie') headers.delete(name);
+    headers.set('cache-control','no-store'); headers.set('x-content-type-options','nosniff');
+    return new Response(response.body,{status:response.status,headers});
+  } catch { throw new UpstreamError('upstream_response'); }
+}
+
+async function upstreamJson(env,path) {
+  const response=await upstream(env,path);
+  try {
+    const payload=await response.json();
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid_payload');
+    return payload;
+  } catch { throw new UpstreamError('upstream_response'); }
+}
+
+async function composedFeed(env) {
+  // Avoid Wayon's full-route export. Preserve actual state and observation clocks.
+  const history=async(path,key,limit)=>{
+    try {
+      const payload=await upstreamJson(env,path);
+      if (!Array.isArray(payload[key])) throw new UpstreamError('upstream_response');
+      return {items:payload[key].slice(0,limit)};
+    } catch (error) {
+      return {items:null,error:upstreamFailure(error instanceof UpstreamError ? error : new UpstreamError('upstream_response'))};
+    }
+  };
+  const [state,trips,snapshots]=await Promise.all([
+    upstreamJson(env,'/api/state'),
+    history('/api/mobile/web-trips?limit=25','trips',25),
+    history('/api/snapshots?limit=24','snapshots',24),
+  ]);
+  if (!state.state || typeof state.state !== 'object' || Array.isArray(state.state) ||
+      state.state.device_id !== env.DEVICE_ID ||
+      !['vehicleStatus','vehicleLock','healthTimeline'].every(key=>Object.hasOwn(state,key))) throw new UpstreamError('upstream_response');
+  return json({generatedAt:state.generatedAt ?? null,state:state.state,
+    vehicleStatus:state.vehicleStatus,vehicleLock:state.vehicleLock,healthTimeline:state.healthTimeline,
+    trips:trips.items,snapshots:snapshots.items,
+    historyErrors:{...(trips.error ? {trips:trips.error} : {}),...(snapshots.error ? {snapshots:snapshots.error} : {})}});
 }
 
 async function sessionInfo(session,env) {
@@ -47,7 +116,24 @@ async function accountRoute(request, env, session) {
   if (typeof email !== 'string' || email.length > 254 || typeof password !== 'string' || !password || password.length > 256) return json({message:'계정을 확인해 주세요.'},400);
   // This personal gateway must never attach a different vehicle account to its owner's cloud data.
   if (!await equal(await digest(email.trim().toLowerCase()),env.ACCOUNT_FINGERPRINT)) return json({message:'이 웹앱에 등록된 차량 계정이 아닙니다.'},403);
-  const account = await accountLogin(email,password);
+  let account;
+  try { account = await accountLogin(email,password); }
+  catch (error) {
+    if (!(error instanceof CommandError)) throw error;
+    const failures = {
+      invalid_credentials:[400,'계정과 비밀번호 입력 형식을 확인해 주세요.'],
+      login_rejected:[401,'멀티팩 로그인이 거부되었습니다. 계정과 비밀번호를 확인해 주세요.'],
+      invalid_login_response:[502,'멀티팩 로그인 응답의 계정 정보를 확인하지 못했습니다.'],
+      single_vehicle_required:[403,'등록 차량이 정확히 한 대인 멀티팩 계정만 연결할 수 있습니다.'],
+      transport_error:[502,'멀티팩 서버와 통신을 완료하지 못했습니다. 잠시 후 다시 로그인해 주세요.'],
+      upstream_http_error:[502,'멀티팩 서버가 정상 HTTP 응답을 반환하지 않았습니다.'],
+      invalid_response:[502,'멀티팩 서버 응답 형식을 확인하지 못했습니다.'],
+      response_too_large:[502,'멀티팩 서버 응답이 허용 크기를 초과했습니다.'],
+    };
+    const code=Object.hasOwn(failures,error.code) ? error.code : 'account_login_failed';
+    const [status,message]=failures[code] || [502,'멀티팩 로그인 처리를 완료하지 못했습니다.'];
+    return json({ok:false,state:'blocked',code,message},status);
+  }
   if (!await accountMatches(account,env)) return json({message:'등록된 차량 계정과 일치하지 않습니다.'},403);
   await env.DB.prepare('UPDATE sessions SET account=?,email=? WHERE id=?')
     .bind(await encrypt(account,env.ACCOUNT_ENCRYPTION_KEY),email.trim(),session.id).run();
@@ -70,25 +156,30 @@ async function command(request, env, session) {
   let lease=now+180000;
   const lock = await env.DB.prepare('UPDATE command_lock SET until_ms=? WHERE id=1 AND until_ms < ? RETURNING id').bind(lease,now).first();
   if (!lock) return json({message:'다른 명령을 처리 중입니다.'},429);
+  let executionStarted=false, dispatchPossible=false, cooldownUntilMs=0;
   try {
     const claim = await env.DB.prepare('INSERT OR IGNORE INTO command_claims(id,session_id,command,created) VALUES(?,?,?,?)')
       .bind(requestId,session.id,cmd,now).run();
     if (!claim.meta.changes) return json({error:'request_conflict'},409);
     const account = await decrypt(session.account,env.ACCOUNT_ENCRYPTION_KEY);
     if (!await accountMatches(account,env)) throw new Error('account_binding_mismatch');
-    const feedResponse = await upstream(env,'/api/json');
-    if (!feedResponse.ok) throw new Error('state_unavailable');
-    const liveState = await feedResponse.json();
+    const liveState = await upstreamJson(env,'/api/state');
     if (liveState?.state?.device_id !== env.DEVICE_ID) throw new Error('device_binding_mismatch');
-    const result = await executeCommand({command:cmd,account,liveState,
+    let markerAttempted=false;
+    executionStarted=true;
+    dispatchPossible=true;
+    let result = await executeCommand({command:cmd,account,liveState,
       beforeSend: async () => {
         const current=await sessionFor(request,env);
         if (!current || current.account !== session.account) throw new Error('account_revoked');
         if (cmd === 'VEHICLE_START') {
+          markerAttempted=true;
           const marker = await upstream(env,'/api/mobile/impact-suppression',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'arm',requestId})});
           if (!marker.ok) throw new Error('impact_guard_unavailable');
           await marker.body?.cancel();
         }
+        const finalFeed=await upstreamJson(env,'/api/state');
+        if (finalFeed?.state?.device_id !== env.DEVICE_ID) throw new Error('device_binding_mismatch');
         const renewed=Date.now()+180000;
         const owned=await env.DB.prepare('UPDATE command_lock SET until_ms=? WHERE id=1 AND until_ms=? AND until_ms>? RETURNING id')
           .bind(renewed,lease,Date.now()).first();
@@ -96,16 +187,39 @@ async function command(request, env, session) {
         lease=renewed;
         const finalSession=await sessionFor(request,env);
         if (!finalSession || finalSession.account !== session.account) throw new Error('account_revoked');
+        return {liveState:finalFeed};
       },
     });
+    dispatchPossible=result.dispatched !== false;
+    if (result.state === 'unknown' && dispatchPossible) {
+      cooldownUntilMs=Date.now()+180000;
+      result={...result,cooldownUntilMs,retryAfterMs:180000};
+    }
     await env.DB.prepare('UPDATE command_claims SET result=? WHERE id=?').bind(JSON.stringify(result),requestId).run();
+    if (result.code === 'session_expired') {
+      await env.DB.prepare('UPDATE sessions SET account=NULL,email=NULL WHERE id=? AND account=?')
+        .bind(session.id,session.account).run();
+    }
+    // Only definite non-dispatch can release this request's suppression marker.
+    if (markerAttempted && result.dispatched === false && result.state !== 'unknown') {
+      try {
+        const cancelled=await upstream(env,'/api/mobile/impact-suppression',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'cancel',requestId})});
+        await cancelled.body?.cancel();
+      } catch { /* Best effort: the persisted command result remains definitive. */ }
+    }
     return json(result);
-  } catch {
-    const result={ok:false,state:'unknown',message:'명령 완료를 확인하지 못했습니다. 재전송하지 않고 차량 상태를 확인해 주세요.'};
+  } catch (error) {
+    const unsent=!executionStarted && error instanceof UpstreamError;
+    if (dispatchPossible) cooldownUntilMs=Date.now()+180000;
+    const result=unsent
+      ? {...upstreamFailure(error),state:'blocked',command:cmd,dispatched:false,vehicleConfirmed:false,retryable:false,failureStage:'cloud-preflight',
+        message:'차량 명령을 보내지 않았습니다. '+UPSTREAM_MESSAGES[error.code]}
+      : {ok:false,state:'unknown',message:'명령 완료를 확인하지 못했습니다. 재전송하지 않고 차량 상태를 확인해 주세요.',
+        ...(cooldownUntilMs ? {cooldownUntilMs,retryAfterMs:180000} : {})};
     await env.DB.prepare('UPDATE command_claims SET result=? WHERE id=? AND result IS NULL').bind(JSON.stringify(result),requestId).run();
-    return json(result,409);
+    return json(result,unsent ? 502 : 409);
   } finally {
-    await env.DB.prepare('UPDATE command_lock SET until_ms=? WHERE id=1 AND until_ms=?').bind(Date.now()+3000,lease).run();
+    await env.DB.prepare('UPDATE command_lock SET until_ms=? WHERE id=1 AND until_ms=?').bind(cooldownUntilMs || Date.now()+3000,lease).run();
   }
 }
 
@@ -159,6 +273,7 @@ export async function handle(request, env, ctx) {
   }
   if (path.startsWith('/api/wayon/')) {
     const suffix=path.slice('/api/wayon/'.length);
+    if (suffix==='json' && request.method==='GET') return composedFeed(env);
     if (suffix==='live-capture' && request.method==='POST') {
       if (request.headers.get('content-type') !== 'image/jpeg') return json({error:'jpeg_required'},415);
       if (!await rateLimit(env,'photo:'+session.id,6,60)) return json({error:'rate_limited'},429);
@@ -176,7 +291,8 @@ export async function handle(request, env, ctx) {
       const value=url.searchParams.get(key);
       if (value && value.length<=1500) query.set(key,value);
     }
-    return cleanResponse(await upstream(env, '/api/'+suffix+(query.size?'?'+query:''),{method:request.method}));
+    const upstreamPath=suffix==='trips' ? '/api/mobile/web-trips' : '/api/'+suffix;
+    return cleanResponse(await upstream(env, upstreamPath+(query.size?'?'+query:''),{method:request.method}));
   }
   return json({error:'not_found'},404);
 }
@@ -199,5 +315,8 @@ function secure(response) {
 
 export default {async fetch(request,env,ctx) {
   try { return secure(await handle(request,env,ctx)); }
-  catch { return secure(json({error:'request_failed',message:MESSAGE},400)); }
+  catch (error) {
+    if (error instanceof UpstreamError) return secure(json(upstreamFailure(error),502));
+    return secure(json({error:'request_failed',message:MESSAGE},400));
+  }
 }};

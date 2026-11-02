@@ -13,9 +13,9 @@
  * Store typed credentials, if retained, ONLY in the parent's encrypted server
  * session. Never serialize accountLogin's return to the PWA, logs or a plain cookie.
  *
- * liveState is the ENTIRE trusted Wayon GET /api/json feed. Its state row must
+ * liveState is the trusted Wayon GET /api/state payload (also /api/json-compatible). Its state row must
  * include updated_at, device_id, onroad, enabled, speed_mps and raw_json (JSON
- * string of wayon-telemetry-v2). Require fresh row AND raw timestamps and matching
+ * string of wayon-telemetry-v2 or wayon-telemetry-v3). Require fresh row AND raw timestamps and matching
  * device/onroad/enabled fields. Current moving/engaged signals always block.
  * A known offroad heartbeat does not require CAN, gear or available vehicle data;
  * onroad needs known stationary data. No generatedAt/vehicleStatus/
@@ -33,10 +33,14 @@
  * executeCommand always performs its OWN op21 read for engines, never accepts a
  * caller-supplied GMOne snapshot or merged/display cache as preflight evidence.
  * GMOne timestamps describe a server reply, NOT a proven sensor observation time.
+ * An engine reply at most 2000ms ahead at receipt may wait once for local time
+ * to catch up. No timestamp is changed; all original freshness limits still apply.
  *
  * executeCommand({command, account, liveState, beforeSend?, now=Date.now, sleep?}, fetchFn=fetch)
  * invokes beforeSend() only AFTER guards, immediately before op19; rejection
- * blocks dispatch. Recheck ages/session after the hook (e.g. impact marker).
+ * blocks dispatch. The hook may return {liveState} with a newly queried trusted
+ * feed; it is snapshotted and fully revalidated before op19. Recheck ages/session
+ * after the hook (e.g. impact marker).
  * returns {ok, state, message, command, code, dispatched, vehicleConfirmed:false,
  * retryable:false, failureStage, resultCode?}. state: blocked (no op19),
  * server_responded (protocol success, NOT physical confirmation), or unknown
@@ -48,16 +52,18 @@ export const ACCOUNT_TTL_MS = 15 * 60 * 1000;
 export const COMMAND_FRESHNESS_MS = 30_000;
 export const CLOUD_FRESHNESS_MS = Object.freeze({onroad: 45_000, offroad: 600_000});
 const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_SERVER_FUTURE_WAIT_MS = 2000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const BASE_URL = "https://mp.gmone.co.kr:28354";
 
-// Initial PWA scope intentionally excludes panic, sunroof, DTC and settings writes.
+// Original Android remote controls only; no DTC, settings writes or timers.
 export const COMMAND_SPECS = Object.freeze(Object.fromEntries(Object.entries({
   DOOR_LOCK: [1, 0], DOOR_UNLOCK: [1, 1], DRIVER_DOOR_UNLOCK: [1, 2],
   VEHICLE_START: [0, 2], VEHICLE_STOP: [0, 0],
   WINDOW_OPEN: [5, 1], WINDOW_CLOSE: [5, 0],
   TRUNK_OPEN: [2, 1], TRUNK_CLOSE: [2, 0],
   MAIN_LIGHT_ON: [4, 1], MAIN_LIGHT_OFF: [4, 0],
+  PANIC: [3, 1], SUNROOF_OPEN: [6, 1], SUNROOF_CLOSE: [6, 0], SUNROOF_TILT: [6, 3],
 }).map(([key, [control_type, request_option]]) => [key, Object.freeze({control_type, request_option})])));
 
 export class CommandError extends Error {
@@ -94,7 +100,7 @@ function cloudBlockReason(state, now) {
   if (typeof row.raw_json !== "string" || row.raw_json.length > MAX_RESPONSE_BYTES) return "motion_unknown";
   let raw;
   try { raw = JSON.parse(row.raw_json); } catch { return "motion_unknown"; }
-  if (!object(raw) || raw.schemaVersion !== "wayon-telemetry-v2") return "motion_unknown";
+  if (!object(raw) || !["wayon-telemetry-v2", "wayon-telemetry-v3"].includes(raw.schemaVersion)) return "motion_unknown";
   if (!fresh(isoTime(raw.updatedAt), now, maxAge)) return "live_state_not_fresh";
   const vehicle = raw.vehicle, controls = raw.openpilot;
   if (!boundedString(row.device_id, 128) || row.device_id !== raw.deviceId ||
@@ -121,6 +127,12 @@ function isoTime(value) {
 function number(value) {
   if (typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value)) value = Number(value);
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+// Match integer wire fields without JSON/JS coercion or precision loss.
+function integer(value) {
+  if (typeof value === "string" && /^(?:0|-?[1-9]\d*)$/.test(value)) value = Number(value);
+  return Number.isSafeInteger(value) ? value : null;
 }
 
 function binary(value) {
@@ -192,14 +204,22 @@ async function boundedJson(response) {
 }
 
 function checkSession(response) {
-  if (Object.hasOwn(response, "login") && (!object(response.login) ||
-      (Object.hasOwn(response.login, "success") && response.login.success !== 0))) fail("session_expired");
+  if (!Object.hasOwn(response, "login")) return;
+  if (!object(response.login)) fail("invalid_auth_response");
+  if (Object.hasOwn(response.login, "success")) {
+    const success = integer(response.login.success);
+    if (success === null) fail("invalid_auth_response");
+    if (success !== 0) fail("session_expired");
+  }
 }
 
-function operationBody(response) {
+function operationBody(response, allowMissingSuccess = false) {
   checkSession(response);
-  if (!object(response.body) || !Number.isInteger(response.body.success)) fail("invalid_response");
-  return response.body;
+  if (!object(response.body)) fail("invalid_response");
+  if (!Object.hasOwn(response.body, "success") && allowMissingSuccess) return response.body;
+  const success = integer(response.body.success);
+  if (success === null) fail("invalid_response");
+  return {...response.body, success};
 }
 
 class Protocol {
@@ -214,7 +234,9 @@ class Protocol {
   async post(operation, body, login, timeoutMs = REQUEST_TIMEOUT_MS) {
     if (![8, 19, 21, 66].includes(operation)) fail("unsupported_operation");
     try {
-      const response = await this.fetchFn(`${BASE_URL}/${operation === 8 ? "b1_init" : "b1_connect_m"}`, {
+      // workerd's native fetch cannot receive this Protocol instance as its receiver.
+      const fetchFn = this.fetchFn;
+      const response = await fetchFn(`${BASE_URL}/${operation === 8 ? "b1_init" : "b1_connect_m"}`, {
         method: "POST", redirect: "manual", cache: "no-store", credentials: "omit",
         signal: AbortSignal.timeout(Math.max(1, Math.min(REQUEST_TIMEOUT_MS, Math.floor(timeoutMs)))),
         headers: {"content-type": "application/json", accept: "application/json"},
@@ -230,8 +252,8 @@ class Protocol {
   }
 
   async resolve(initial) {
-    const body = operationBody(initial);
-    if (![0, 13].includes(body.success)) fail("upstream_rejected");
+    const body = operationBody(initial, true);
+    if (body.success !== undefined && ![0, 13].includes(body.success)) fail("upstream_rejected");
     if (body.wait_response !== true) {
       if (body.success !== 0 || (body.wait_response != null && body.wait_response !== false)) fail("invalid_response");
       return initial;
@@ -246,11 +268,12 @@ class Protocol {
       if (this.now() < started || this.now() >= deadline) break;
       const next = await this.post(66, {ticket_uuid: ticket}, undefined, deadline - this.now());
       if (this.now() < started || this.now() >= deadline) break;
-      const poll = operationBody(next);
+      const poll = operationBody(next, true);
       // 66's code 2 means pending; nested code 2 means the original operation failed.
-      if (![0, 2, 13].includes(poll.success)) fail("invalid_poll_result");
+      // Missing outer success is only an envelope, never evidence of completion.
+      if (poll.success !== undefined && ![0, 2, 13].includes(poll.success)) fail("invalid_poll_result");
       if (poll.fetched_data != null) {
-        if (poll.success !== 0 || !object(poll.fetched_data)) fail("invalid_poll_result");
+        if ((poll.success !== undefined && poll.success !== 0) || !object(poll.fetched_data)) fail("invalid_poll_result");
         const resolved = operationBody(poll.fetched_data);
         if (resolved.success !== 0) fail("upstream_rejected");
         if (resolved.wait_response != null && resolved.wait_response !== false) fail("invalid_poll_result");
@@ -264,9 +287,9 @@ class Protocol {
     const requestedAtMs = this.now();
     const response = await this.resolve(await this.post(21, {refresh_dtc: false, last_received_time: 0}));
     if (!object(response.body.car_status)) fail("gmone_status_missing");
-    const timestamp = response.timestamp;
+    const timestamp = integer(response.timestamp);
     return {source: "gmone-direct", accountUuid: this.account.uuid, requestedAtMs,
-      receivedAtMs: this.now(), serverResponseAtMs: typeof timestamp === "number"
+      receivedAtMs: this.now(), serverResponseAtMs: timestamp !== null
         ? (timestamp < 1e11 ? timestamp * 1000 : timestamp) : null,
       rawStatus: response.body.car_status};
   }
@@ -281,7 +304,7 @@ export async function accountLogin(email, password, fetchFn = fetch) {
   const client = new Protocol(null, fetchFn, Date.now, sleepMs);
   const response = await client.post(8, {}, {email: email.trim(), password});
   const login = response.login;
-  if (login?.success !== 0 || response.body?.success !== 0) fail("login_rejected");
+  if (!object(login) || !object(response.body) || integer(login.success) !== 0 || integer(response.body.success) !== 0) fail("login_rejected");
   const uuid = boundedString(login.user_info_uuid, 128) ? login.user_info_uuid : login.user_info?.user_uuid;
   if (!boundedString(uuid, 128) || !boundedString(login.token_key, 4096) || !object(login.car_info)) fail("invalid_login_response");
   const vehicles = Object.keys(login.car_info);
@@ -331,6 +354,16 @@ export async function executeCommand({command, account, liveState, beforeSend, n
     if (engineCommand(command)) {
       stage = "preflight";
       gmoneStatus = await client.engineStatus();
+      const waitStarted = now();
+      if (!time(waitStarted) || !time(gmoneStatus.receivedAtMs) ||
+          gmoneStatus.receivedAtMs < gmoneStatus.requestedAtMs || waitStarted < gmoneStatus.receivedAtMs ||
+          gmoneStatus.serverResponseAtMs - gmoneStatus.receivedAtMs > MAX_SERVER_FUTURE_WAIT_MS) fail("gmone_status_not_fresh");
+      // Wait for a small observed server lead, never grant clock-skew tolerance.
+      if (time(gmoneStatus.serverResponseAtMs) && gmoneStatus.serverResponseAtMs > waitStarted) {
+        await sleep(gmoneStatus.serverResponseAtMs - waitStarted);
+        const afterWait = now();
+        if (!time(afterWait) || afterWait < waitStarted || afterWait < gmoneStatus.serverResponseAtMs) fail("gmone_status_not_fresh");
+      }
     }
     // A pending status read may have outlived either the telemetry or the session.
     stage = "guard";
@@ -339,7 +372,11 @@ export async function executeCommand({command, account, liveState, beforeSend, n
     if (beforeSend !== undefined) {
       stage = "before-send";
       if (typeof beforeSend !== "function") fail("before_send_invalid");
-      try { if (await beforeSend() === false) fail("before_send_failed"); }
+      try {
+        const prepared = await beforeSend();
+        if (prepared === false) fail("before_send_failed");
+        if (object(prepared) && Object.hasOwn(prepared, "liveState")) liveState = structuredClone(prepared.liveState);
+      }
       catch { fail("before_send_failed"); }
       stage = "guard";
       guard = validateCommandGuard({command, account, liveState, gmoneStatus}, now());
@@ -352,7 +389,7 @@ export async function executeCommand({command, account, liveState, beforeSend, n
     const resolved = await client.resolve(initial);
     const body = resolved.body, spec = COMMAND_SPECS[command];
     for (const key of ["control_type", "request_option"]) {
-      if (Object.hasOwn(body, key) && body[key] !== spec[key]) fail("command_response_mismatch");
+      if (Object.hasOwn(body, key) && integer(body[key]) !== spec[key]) fail("command_response_mismatch");
     }
     return {...outcome(command, "server_responded", "command_accepted", true, null), resultCode: 0};
   } catch (error) {

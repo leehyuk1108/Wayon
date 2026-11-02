@@ -16,11 +16,12 @@ const NOW = 1_800_000_000_000;
 const ACCOUNT = Object.freeze({version: 1, uuid: "TEST_USER", token: "TEST_TOKEN_NOT_REAL",
   vehicleId: "TEST_VEHICLE", vehicleCount: 1, issuedAtMs: NOW - 1000, expiresAtMs: NOW + ACCOUNT_TTL_MS - 1000});
 const RAW = Object.freeze({eng: 0, hood: 0, rvsRmng: 2, rvsRmngTmVld: false});
-function parked(now = NOW) {
+const SCHEMAS = ["wayon-telemetry-v2", "wayon-telemetry-v3"];
+function parked(now = NOW, schemaVersion = SCHEMAS[0]) {
   const updatedAt = new Date(now).toISOString();
   return {generatedAt: new Date(NOW).toISOString(), state: {
     device_id: "TEST_DEVICE", updated_at: updatedAt, onroad: 1, enabled: 0, speed_mps: 0,
-    raw_json: JSON.stringify({schemaVersion: "wayon-telemetry-v2", deviceId: "TEST_DEVICE", updatedAt,
+    raw_json: JSON.stringify({schemaVersion, deviceId: "TEST_DEVICE", updatedAt,
       onroad: true, enabled: false, vehicleSpeedMps: 0, vehicleSpeedSource: "vEgoCluster",
       vehicle: {available: true, speedMps: 0, rawSpeedMps: 0, speedSource: "vEgoCluster", standstill: true,
         gear: "park", can: {valid: true, timeout: false}}, openpilot: {available: true, enabled: false, active: false}}),
@@ -30,13 +31,13 @@ function mutateRaw(feed, mutate) {
   const raw = JSON.parse(feed.state.raw_json);
   mutate(raw); feed.state.raw_json = JSON.stringify(raw); return feed;
 }
-function offroad(now = NOW) {
-  const feed = parked(now);
+function offroad(now = NOW, schemaVersion = SCHEMAS[0]) {
+  const feed = parked(now, schemaVersion);
   feed.state.onroad = 0;
   return mutateRaw(feed, raw => {
     raw.onroad = false; raw.vehicleSpeedSource = "offroad";
     raw.vehicle = {available: false, reason: "offroad"};
-    raw.openpilot = {available: false};
+    raw.openpilot = {available: false, reason: "offroad", state: "disabled", enabled: false, active: false};
   });
 }
 const observation = (raw = RAW, now = NOW) => ({source: "gmone-direct", accountUuid: ACCOUNT.uuid,
@@ -88,10 +89,11 @@ const assertUnknown = (result, f, code) => {
   }
 };
 
-test("explicit, immutable PWA subset matches the tracked Android protocol", async () => {
+test("all 15 immutable remote commands match the tracked Android protocol", async () => {
   const expected = {DOOR_LOCK: [1, 0], DOOR_UNLOCK: [1, 1], DRIVER_DOOR_UNLOCK: [1, 2],
     VEHICLE_START: [0, 2], VEHICLE_STOP: [0, 0], WINDOW_OPEN: [5, 1], WINDOW_CLOSE: [5, 0],
-    TRUNK_OPEN: [2, 1], TRUNK_CLOSE: [2, 0], MAIN_LIGHT_ON: [4, 1], MAIN_LIGHT_OFF: [4, 0]};
+    TRUNK_OPEN: [2, 1], TRUNK_CLOSE: [2, 0], MAIN_LIGHT_ON: [4, 1], MAIN_LIGHT_OFF: [4, 0],
+    PANIC: [3, 1], SUNROOF_OPEN: [6, 1], SUNROOF_CLOSE: [6, 0], SUNROOF_TILT: [6, 3]};
   assert.deepEqual(Object.keys(COMMAND_SPECS).sort(), Object.keys(expected).sort());
   const android = await readFile(new URL("../../my-traverse-next/app/src/main/java/com/example/carcontroller/GmoneAccountClient.kt", import.meta.url), "utf8");
   for (const [command, [type, option]] of Object.entries(expected)) {
@@ -138,7 +140,8 @@ test("invalid typed credentials cannot issue any request", async () => {
 
 test("login rejects ambiguous vehicle selection and malformed auth, without retry", async () => {
   for (const mutate of [
-    r => { r.login.success = 1; }, r => { r.body.success = 1; }, r => { r.login.success = "0"; },
+    r => { r.login.success = 1; }, r => { r.body.success = 1; }, r => { r.login.success = "00"; },
+    r => { r.login = null; }, r => { delete r.login.success; }, r => { delete r.body.success; },
     r => { r.login.token_key = ""; }, r => { r.login.token_key = "x".repeat(4097); },
     r => { r.login.user_info_uuid = "x".repeat(129); }, r => { r.login.car_info = []; },
     r => { r.login.car_info = {}; }, r => { r.login.car_info.extra = {}; },
@@ -180,7 +183,7 @@ test("every allowed command sends the pinned operation19 pair once", async () =>
 
 test("unsupported commands and attempted protocol/body overrides cannot send", async () => {
   for (const command of [undefined, null, 19, {}, ["DOOR_LOCK"], "toString", "__proto__", "constructor", "lock",
-    "PANIC", "SUNROOF_OPEN", "SUNROOF_CLOSE", "SUNROOF_TILT", "CLEAR_DTC", "WRITE_OPTIONS", "DRIVE", "BRAKE"]) {
+    "CLEAR_DTC", "WRITE_OPTIONS", "DRIVE", "BRAKE", "AUTO_START", "SUNROOF_TIMER"]) {
     const f = fixture();
     assertBlocked(await executeCommand(f.input(command, {command}), f.request), "unsupported_command");
     assert.deepEqual(ops(f), []);
@@ -216,9 +219,9 @@ test("all commands deny current moving/engaged signals and unknown onroad data",
     s => { s.openpilot.active = true; }, s => { delete s.openpilot.active; },
     s => { s.deviceId = "OTHER_DEVICE"; }, s => { delete s.enabled; },
   ];
-  for (const command of Object.keys(COMMAND_SPECS)) {
+  for (const schema of SCHEMAS) for (const command of Object.keys(COMMAND_SPECS)) {
     for (const mutate of mutations) {
-      const liveState = mutateRaw(parked(), mutate); const f = fixture();
+      const liveState = mutateRaw(parked(NOW, schema), mutate); const f = fixture();
       assertBlocked(await executeCommand(f.input(command, {liveState}), f.request));
       assert.deepEqual(ops(f), []);
     }
@@ -282,11 +285,83 @@ test("stop never stops an ordinary running engine, even with engineRunning:true"
 });
 
 test("stale, future and missing GMOne timestamps block; caller cache cannot bypass op21", async () => {
-  for (const timestamp of [NOW - 30_001, NOW + 1, 0, -1, null, "1800000000"]) {
+  for (const timestamp of [NOW - 30_001, NOW + 2001, 0, -1, null, "1800000000.0", "01800000000", true, false]) {
     const f = fixture(() => status(RAW, timestamp));
     assertBlocked(await executeCommand(f.input("VEHICLE_START", {gmoneStatus: observation()}), f.request), "gmone_status_not_fresh");
     assert.deepEqual(ops(f), [21]);
   }
+});
+
+test("near-future engine replies wait once up to 2000ms before guards and the hook", async () => {
+  for (const command of ["VEHICLE_START", "VEHICLE_STOP"]) for (const lead of [1, 554, 2000]) {
+    const reply = status({...RAW, eng: command === "VEHICLE_STOP" ? 1 : 0,
+      rvsRmngTmVld: command === "VEHICLE_STOP"}, NOW + lead);
+    const original = structuredClone(reply);
+    let hooks = 0;
+    const f = fixture(p => p.header.id === 21 ? reply : commandSuccess(command));
+    const result = await executeCommand(f.input(command, {beforeSend: async () => {
+      hooks++; assert.equal(f.now(), NOW + lead); assert.deepEqual(ops(f), [21]);
+    }}), f.request);
+    assert.equal(result.state, "server_responded"); assert.equal(result.vehicleConfirmed, false);
+    assert.deepEqual(f.waits, [lead]); assert.equal(hooks, 1); assert.deepEqual(ops(f), [21, 19]);
+    assert.deepEqual(reply, original);
+  }
+});
+
+test("future wait keeps the original status ticket and beforeSend can still prevent dispatch", async () => {
+  const f = fixture(p => p.header.id === 21 ? pending("ORIGINAL_STATUS")
+    : fetched(status(RAW, f.now() + 554)));
+  let hooks = 0;
+  const result = await executeCommand(f.input("VEHICLE_START", {beforeSend: async () => {
+    hooks++; assert.equal(f.now(), NOW + 250 + 554); return false;
+  }}), f.request);
+  assertBlocked(result, "before_send_failed"); assert.equal(hooks, 1);
+  assert.deepEqual(f.waits, [250, 554]); assert.deepEqual(ops(f), [21, 66]);
+  assert.equal(f.calls[1].body.ticket_uuid, "ORIGINAL_STATUS");
+});
+
+test("future wait does not renew session, live feed or original 30s status freshness", async () => {
+  for (const scenario of ["session", "row", "raw", "status"]) {
+    const f = fixture(() => {
+      if (scenario === "status") f.advance(29_500);
+      return status(RAW, f.now() + 554);
+    });
+    const input = f.input("VEHICLE_START", {beforeSend: async () => assert.fail("blocked before hook")});
+    if (scenario === "session") input.account = {...ACCOUNT, expiresAtMs: NOW + 554};
+    if (scenario === "row") input.liveState.state.updated_at = new Date(NOW - 44_500).toISOString();
+    if (scenario === "raw") mutateRaw(input.liveState, raw => { raw.updatedAt = new Date(NOW - 44_500).toISOString(); });
+    const result = await executeCommand(input, f.request);
+    assertBlocked(result, scenario === "session" ? "account_invalid_or_expired"
+      : scenario === "status" ? "gmone_status_not_fresh" : "live_state_not_fresh");
+    assert.deepEqual(f.waits, [554]); assert.deepEqual(ops(f), [21]);
+  }
+});
+
+test("a server lead above 2000ms at receipt rejects without waiting or calling the hook", async () => {
+  for (const lead of [2001, 30_000]) {
+    const f = fixture(() => status(RAW, NOW + lead));
+    const result = await executeCommand(f.input("VEHICLE_START", {
+      beforeSend: async () => assert.fail("excessive lead must block"),
+    }), f.request);
+    assertBlocked(result, "gmone_status_not_fresh");
+    assert.deepEqual(f.waits, []); assert.deepEqual(ops(f), [21]);
+  }
+});
+
+test("early wake, clock rollback and wait overshoot never permit a stale or future reply", async () => {
+  for (const elapsed of [0, 553, -1, 30_001]) {
+    const f = fixture(() => status(RAW, NOW + 554));
+    let waits = 0;
+    const result = await executeCommand(f.input("VEHICLE_START", {
+      sleep: async ms => { waits++; assert.equal(ms, 554); f.advance(elapsed); },
+      beforeSend: async () => assert.fail("invalid wait must block"),
+    }), f.request);
+    assertBlocked(result, "gmone_status_not_fresh");
+    assert.equal(waits, 1); assert.deepEqual(ops(f), [21]);
+  }
+  const f = fixture(() => { f.advance(-1); return status(RAW, NOW + 554); });
+  assertBlocked(await executeCommand(f.input("VEHICLE_START"), f.request), "gmone_status_not_fresh");
+  assert.deepEqual(f.waits, []); assert.deepEqual(ops(f), [21]);
 });
 
 test("status response failures never fall back to cache, REST or op19", async () => {
@@ -386,11 +461,11 @@ test("all ambiguous immediate command failures remain unknown and never retry/au
     () => new Response("LEAK_FROM_UPSTREAM", {status: 307, headers: {location: "https://evil.test"}}),
     () => new Response("not json"), () => [], () => null, () => ({}),
     () => ({login: {success: 1}, body: {success: 0}}), () => ({login: null, body: {success: 0}}),
-    () => ({body: {success: 2}}), () => ({body: {success: "0"}}),
+    () => ({body: {success: 2}}), () => ({body: {success: "00"}}),
     () => ({body: {success: 0, wait_response: "true"}}), () => ({body: {success: 13}}),
     () => pending(""), () => pending("x".repeat(257)),
     () => ({body: {success: 0, control_type: 99}}), () => ({body: {success: 0, request_option: 1}}),
-    () => ({body: {success: 0, control_type: "1"}}), () => ({body: {success: 0, request_option: null}}),
+    () => ({body: {success: 0, control_type: "01"}}), () => ({body: {success: 0, request_option: null}}),
   ]) {
     const f = fixture(respond);
     assertUnknown(await executeCommand(f.input(), f.request), f);
@@ -400,7 +475,7 @@ test("all ambiguous immediate command failures remain unknown and never retry/au
 
 test("malformed/nested rejected/auth-expired poll results never imply command success", async () => {
   for (const invalid of [
-    {login: {success: 1}, body: {success: 2}}, {body: {success: 7}}, {body: {success: "0"}},
+    {login: {success: 1}, body: {success: 2}}, {body: {success: 7}}, {body: {success: "00"}},
     {body: {success: 0, fetched_data: []}}, {body: {success: 0, fetched_data: "bad"}},
     {body: {success: 2, fetched_data: commandSuccess("DOOR_LOCK")}},
     fetched({body: {success: 2}}), fetched({login: {success: 1}, body: {success: 0}}),
@@ -419,6 +494,103 @@ test("optional echo omission matches Android protocol but is not physical confir
   const f = fixture(() => ({body: {success: 0}}));
   const result = await executeCommand(f.input(), f.request);
   assert.equal(result.state, "server_responded"); assert.equal(result.vehicleConfirmed, false);
+});
+
+test("Android missing-success pending envelopes poll only the original ticket", async () => {
+  const polls = [{body: {}}, {body: {wait_response: true, ticket_uuid: "DO_NOT_SWITCH"}},
+    {body: {fetched_data: commandSuccess("DOOR_LOCK")}}];
+  const f = fixture(p => {
+    if (p.header.id === 19) return {body: {wait_response: true, ticket_uuid: "ORIGINAL"}};
+    assert.equal(p.header.id, 66); assert.deepEqual(p.body, {ticket_uuid: "ORIGINAL"});
+    return polls.shift();
+  });
+  const result = await executeCommand(f.input(), f.request);
+  assert.equal(result.state, "server_responded"); assert.equal(result.vehicleConfirmed, false);
+  assert.deepEqual(ops(f), [19, 66, 66, 66]);
+});
+
+test("missing-success envelopes also support fresh engine preflight, not cached status", async () => {
+  const f = fixture(p => {
+    if (p.header.id === 21) return {body: {wait_response: true, ticket_uuid: "STATUS_ONLY"}};
+    if (p.header.id === 66) {
+      assert.equal(p.body.ticket_uuid, "STATUS_ONLY");
+      return {body: {fetched_data: status(RAW, String(f.now()))}};
+    }
+    return commandSuccess("VEHICLE_START");
+  });
+  assert.equal((await executeCommand(f.input("VEHICLE_START"), f.request)).state, "server_responded");
+  assert.deepEqual(ops(f), [21, 66, 19]);
+});
+
+test("empty envelopes reach the same deadline/count without implying success or retry", async () => {
+  for (const stalledClock of [false, true]) {
+    const f = fixture(p => p.header.id === 19
+      ? {body: {wait_response: true, ticket_uuid: "TEST_TICKET"}} : {body: {}});
+    const input = f.input("DOOR_LOCK", stalledClock ? {sleep: async () => {}} : {});
+    assertUnknown(await executeCommand(input, f.request), f, "result_timeout");
+    assert.ok(f.calls.length <= 21);
+    if (stalledClock) assert.equal(f.calls.length, 21);
+    else assert.equal(f.now(), NOW + 30_000);
+  }
+});
+
+test("missing success cannot authorize a direct or nested result; explicit bad auth stays denied", async () => {
+  for (const response of [{body: {}}, {body: {wait_response: false}},
+    {body: {wait_response: true}}, {body: {wait_response: "true", ticket_uuid: "TEST_TICKET"}}]) {
+    const f = fixture(() => response);
+    assertUnknown(await executeCommand(f.input(), f.request), f);
+    assert.deepEqual(ops(f), [19]);
+  }
+  for (const response of [{body: {fetched_data: {body: {}}}},
+    {body: {fetched_data: {body: {success: null}}}},
+    {body: {success: 13, fetched_data: commandSuccess("DOOR_LOCK")}},
+    {login: null, body: {}}, {login: {success: null}, body: {}}, {login: {success: "1"}, body: {}},
+    {body: null}, {body: []}, {body: {success: false}}]) {
+    const f = fixture(p => p.header.id === 19 ? pending() : response);
+    assertUnknown(await executeCommand(f.input(), f.request), f);
+    assert.deepEqual(ops(f), [19, 66]);
+  }
+});
+
+test("canonical integer strings support login, status, success and exact command echoes", async () => {
+  const login = fixture(() => {
+    const reply = loginReply(); reply.login.success = "0"; reply.body.success = "0"; return reply;
+  });
+  assert.equal((await accountLogin("x@y.test", "TEST_PASSWORD", login.request)).uuid, ACCOUNT.uuid);
+  for (const timestamp of [String(NOW), String(NOW / 1000)]) {
+    const f = fixture(p => p.header.id === 21
+      ? {...status(RAW, timestamp), login: {success: "0"}}
+      : {login: {success: "0"}, body: {success: "0", control_type: "0", request_option: "2"}});
+    assert.equal((await executeCommand(f.input("VEHICLE_START"), f.request)).state, "server_responded");
+  }
+  let polls = 0;
+  const f = fixture(p => p.header.id === 19 ? {body: {...pending().body, success: "13"}}
+    : ++polls === 1 ? {body: {success: "2"}}
+      : {body: {success: "0", fetched_data: {body: {success: "0", control_type: "1", request_option: "0"}}}});
+  assert.equal((await executeCommand(f.input(), f.request)).state, "server_responded");
+  assert.deepEqual(ops(f), [19, 66, 66]);
+});
+
+test("integer wire fields reject coercion, noncanonical strings and precision loss", async () => {
+  const invalid = [null, true, false, "", " ", " 0", "0 ", "00", "01", "-0", "+0", "0.0", "0e0", "0x0",
+    "NaN", "Infinity", "9007199254740993", 9007199254740992, 0.5, [], {}];
+  for (const value of invalid) {
+    for (const field of ["success", "request_option"]) {
+      const f = fixture(() => ({body: {success: 0, [field]: value}}));
+      assertUnknown(await executeCommand(f.input(), f.request), f);
+      assert.deepEqual(ops(f), [19]);
+    }
+    const f = fixture(() => status(RAW, value));
+    assertBlocked(await executeCommand(f.input("VEHICLE_START"), f.request), "gmone_status_not_fresh");
+    assert.deepEqual(ops(f), [21]);
+    for (const part of ["login", "body"]) {
+      const login = fixture(() => { const reply = loginReply(); reply[part].success = value; return reply; });
+      await assert.rejects(accountLogin("x@y.test", "TEST_PASSWORD", login.request), {code: "login_rejected"});
+      assert.deepEqual(ops(login), [8]);
+    }
+    const auth = fixture(() => ({login: {success: value}, body: {success: 0}}));
+    assertUnknown(await executeCommand(auth.input(), auth.request), auth, "invalid_auth_response");
+  }
 });
 
 test("streamed oversized and interrupted responses are bounded and cancelled", async () => {
@@ -477,15 +649,84 @@ test("no invented P-gear or active-CAN requirement for a known stationary car", 
 });
 
 test("offroad cannot hide explicit current moving or engaged evidence", async () => {
-  for (const mutate of [r => { r.vehicleSpeedMps = 1; }, r => { r.openpilot.enabled = true; },
+  for (const schema of SCHEMAS) for (const mutate of [r => { r.vehicleSpeedMps = 1; }, r => { r.openpilot.enabled = true; },
     r => { r.openpilot.active = true; }, r => { r.vehicle = {available: true, speedMps: 1}; },
     r => { r.vehicle = {available: true, standstill: false}; }]) {
     const f = fixture();
-    assertBlocked(await executeCommand(f.input("DOOR_LOCK", {liveState: mutateRaw(offroad(), mutate)}), f.request));
+    assertBlocked(await executeCommand(f.input("DOOR_LOCK", {liveState: mutateRaw(offroad(NOW, schema), mutate)}), f.request));
     assert.deepEqual(ops(f), []);
   }
   const f = fixture(), feed = offroad(); feed.state.speed_mps = 1;
   assertBlocked(await executeCommand(f.input("DOOR_LOCK", {liveState: feed}), f.request), "vehicle_not_stationary");
+});
+
+test("exact v3 uploader fields authorize the same 15 commands onroad and offroad", async () => {
+  for (const feed of [parked, offroad]) for (const command of Object.keys(COMMAND_SPECS)) {
+    const liveState = mutateRaw(feed(NOW, "wayon-telemetry-v3"), raw => {
+      raw.timestamps = {generatedAt: new Date(NOW).toISOString(), services: {}};
+      raw.connections = {vehicleCan: {state: raw.onroad ? "ok" : "inactive"}};
+      raw.systemState = raw.onroad ? "parked" : "offroad";
+      raw.deviceInput = {voltageV: null};
+    });
+    const f = fixture(p => p.header.id === 21
+      ? status({...RAW, rvsRmngTmVld: command === "VEHICLE_STOP"}) : commandSuccess(command));
+    const result = await executeCommand(f.input(command, {liveState}), f.request);
+    assert.equal(result.state, "server_responded"); assert.equal(result.vehicleConfirmed, false);
+    assert.deepEqual(ops(f), command.startsWith("VEHICLE_") ? [21, 19] : [19]);
+  }
+});
+
+test("v2/v3 retain independent age, device, motion and engagement checks for every command", async () => {
+  for (const schema of SCHEMAS) for (const feed of [parked, offroad]) {
+    const maxAge = feed === parked ? CLOUD_FRESHNESS_MS.onroad : CLOUD_FRESHNESS_MS.offroad;
+    const rawChange = mutate => state => mutateRaw(state, mutate);
+    const cases = [
+      [state => { state.state.updated_at = new Date(NOW - maxAge - 1).toISOString(); }, "live_state_not_fresh"],
+      [state => { state.state.updated_at = new Date(NOW + 1).toISOString(); }, "live_state_not_fresh"],
+      [rawChange(raw => { raw.updatedAt = new Date(NOW - maxAge - 1).toISOString(); }), "live_state_not_fresh"],
+      [rawChange(raw => { raw.updatedAt = new Date(NOW + 1).toISOString(); }), "live_state_not_fresh"],
+      [rawChange(raw => { delete raw.updatedAt; }), "live_state_not_fresh"],
+      [state => { state.state.device_id = "OTHER_DEVICE"; }, "motion_unknown"],
+      [rawChange(raw => { raw.deviceId = "OTHER_DEVICE"; }), "motion_unknown"],
+      [rawChange(raw => { raw.onroad = !raw.onroad; }), "motion_unknown"],
+      [rawChange(raw => { raw.enabled = true; }), "motion_unknown"],
+      [state => { state.state.enabled = 1; }, "motion_unknown"],
+      [state => { state.state.onroad = null; }, "motion_unknown"],
+      [rawChange(raw => { delete raw.onroad; }), "motion_unknown"],
+      [rawChange(raw => { delete raw.enabled; }), "motion_unknown"],
+      [state => { state.state.speed_mps = 0.01; }, "vehicle_not_stationary"],
+      [rawChange(raw => { raw.vehicleSpeedMps = -0.01; }), "vehicle_not_stationary"],
+      [rawChange(raw => { raw.vehicle.speedMps = 0.01; }), "vehicle_not_stationary"],
+      [rawChange(raw => { raw.vehicle.rawSpeedMps = -0.01; }), "vehicle_not_stationary"],
+      [rawChange(raw => { raw.vehicle.standstill = false; }), "vehicle_not_stationary"],
+      [rawChange(raw => { raw.openpilot.enabled = true; }), "controls_active"],
+      [rawChange(raw => { raw.openpilot.active = true; }), "controls_active"],
+      [state => { state.state.enabled = 1; mutateRaw(state, raw => { raw.enabled = true; }); }, "controls_active"],
+    ];
+    for (const command of Object.keys(COMMAND_SPECS)) for (const [mutate, code] of cases) {
+      const liveState = mutateRaw(feed(NOW, schema), raw => {
+        raw.timestamps = {generatedAt: new Date(NOW).toISOString()};
+        raw.connections = {vehicleCan: {state: "ok"}}; raw.systemState = "parked";
+      });
+      mutate(liveState);
+      const f = fixture();
+      assertBlocked(await executeCommand(f.input(command, {liveState,
+        beforeSend: async () => assert.fail("invalid telemetry must not reach hook")}), f.request), code);
+      assert.deepEqual(ops(f), []);
+    }
+  }
+});
+
+test("unknown or near-match schema versions cannot authorize any command", async () => {
+  for (const schemaVersion of [undefined, null, true, 3, "wayon-telemetry-v1", "wayon-telemetry-v4",
+    "wayon-telemetry-v3 ", "WAYON-TELEMETRY-V3", "wayon-telemetry-v3.0", "display-cache"]) {
+    for (const command of Object.keys(COMMAND_SPECS)) {
+      const liveState = mutateRaw(offroad(), raw => { raw.schemaVersion = schemaVersion; });
+      const f = fixture();
+      assertBlocked(await executeCommand(f.input(command, {liveState}), f.request), "motion_unknown");
+      assert.deepEqual(ops(f), []);
+    }
+  }
 });
 
 test("display cache, generatedAt and missing default-filled state cannot authorize", async () => {
@@ -541,6 +782,34 @@ test("beforeSend failure blocks physical command and strips exception details", 
     const result = await executeCommand(f.input("VEHICLE_START", {beforeSend}), f.request);
     assertBlocked(result); assert.equal(result.failureStage, "before-send");
     assert.deepEqual(ops(f), [21]); assert.doesNotMatch(JSON.stringify(result), /LEAK_FROM_UPSTREAM/);
+  }
+});
+
+test("beforeSend fresh feed is revalidated after an advancing engine preflight", async () => {
+  for (const change of ["moving", "engaged", "unknown", "stale", "valid"]) {
+    const f = fixture(p => {
+      if (p.header.id === 21) { f.advance(20_000); return status(RAW, f.now()); }
+      return commandSuccess("VEHICLE_START");
+    });
+    const beforeSend = async () => {
+      const liveState = parked(f.now());
+      if (change === "moving") liveState.state.speed_mps = 1;
+      if (change === "engaged") mutateRaw(liveState, raw => { raw.openpilot.active = true; });
+      if (change === "unknown") return {liveState: null};
+      if (change === "stale") liveState.state.updated_at = new Date(f.now() - 45_001).toISOString();
+      return {liveState};
+    };
+    const result = await executeCommand(f.input("VEHICLE_START", {beforeSend}), f.request);
+    assert.equal(result.state, change === "valid" ? "server_responded" : "blocked");
+    assert.deepEqual(ops(f), change === "valid" ? [21, 19] : [21]);
+  }
+});
+
+test("malformed authentication remains denied but is not classified as known session expiry", async () => {
+  for (const login of [null, false, "0", {success: null}, {success: false}, {success: "00"}]) {
+    const f = fixture(() => ({login, ...status()}));
+    assertBlocked(await executeCommand(f.input("VEHICLE_START"), f.request), "invalid_auth_response");
+    assert.deepEqual(ops(f), [21]);
   }
 });
 

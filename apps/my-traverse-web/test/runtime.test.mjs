@@ -13,6 +13,10 @@ const mf=new Miniflare({modules:true,scriptPath:new URL('../output/bundle/worker
     ACCOUNT_ENCRYPTION_KEY:'t'.repeat(48),WAYON_DEVICE_KEY:'fixture-device-key',DEVICE_ID:'fixture-owner',MY_TRAVERSE_WEB_PUSH_TOKEN:'fixture-webhook'},
   serviceBindings:{ASSETS:()=>new Response('<!doctype html><title>Test</title><script>window.test=true</script>',{headers:{'content-type':'text/html'}}),WAYON:async request=>{
     upstreamCalls.push({path:new URL(request.url).pathname,method:request.method,auth:request.headers.get('authorization')});
+    const path=new URL(request.url).pathname;
+    if (path==='/api/state') return Response.json({state:{device_id:'fixture-owner',onroad:0},vehicleStatus:null,vehicleLock:null,healthTimeline:[]});
+    if (path==='/api/mobile/web-trips') return Response.json({trips:[]});
+    if (path==='/api/snapshots') return Response.json({snapshots:[]});
     return Response.json({ok:true,state:{onroad:false},protocol:'test-protocol',websocketUrl:'wss://wayon-cloud.hyuklee.workers.dev/api/live/stream'});
   }}});
 let cookie,csrf;

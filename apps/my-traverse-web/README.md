@@ -31,9 +31,13 @@ D1 database. Existing installations also need the `push_claims.result` column.
 - Command support is deliberately off unless `COMMANDS_ENABLED=1` and verified
   `GMONE_UUID_HASH` and `GMONE_VEHICLE_HASH` pins are present. Both account and
   fixed Comma device identity are checked; email alone is insufficient.
-- Commands require a separate short-lived GMOne account session. Only the
-  explicit eleven-command allowlist is implemented. Native Bluetooth, panic,
-  sunroof, module writes and timed ventilation are not implemented in the PWA.
+- Commands require a separate 15-minute GMOne account session. The explicit
+  15-command allowlist covers locks, remote start/stop, windows, trunk, lights,
+  panic and sunroof. Native Bluetooth, module writes and timed ventilation are
+  not implemented in the PWA. GMOne passwords are not retained for auto-login.
+- Foreground restoration and periodic session checks refresh command grants
+  without restarting live video. Expired account grants do not disable ordinary
+  vehicle viewing; an expired web login locks the web app.
 - Source tests use mock commands only. Server acceptance is not evidence that a
   vehicle physically completed a command. Unknown results are never replayed.
 - Service-worker caching is limited to icons, never vehicle data or API replies.
@@ -59,3 +63,5 @@ notifications. Existing home-screen artwork may require removal and re-addition
 after an icon change. Recheck notification permission afterward.
 
 See `docs/my_traverse_iphone_pwa_20261102.md` for actual validation and limits.
+The follow-up account/control verification is recorded in
+`docs/my_traverse_web_controls_20261102.md`.

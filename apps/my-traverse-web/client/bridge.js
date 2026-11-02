@@ -4,6 +4,8 @@
 
   const API = "/api/wayon/";
   const POLL_MS = 15000;
+  const SESSION_POLL_MS = 60000;
+  const UNKNOWN_COMMAND_COOLDOWN_MS = 180000;
   const MAX_SNAPSHOT_AGE = 7 * 86400000;
   const COMMANDS = new Set([
     "VEHICLE_START", "VEHICLE_STOP", "DOOR_LOCK", "DOOR_UNLOCK", "DRIVER_DOOR_UNLOCK",
@@ -13,6 +15,9 @@
   let generation = 0;
   let active = false;
   let session = null;
+  let sessionJob = null;
+  let sessionTimer = null;
+  let sessionRevision = 0;
   let account = null;
   let feed = null;
   let vehicle = null;
@@ -22,13 +27,19 @@
   let tripsJob = null;
   let accountBusy = false;
   let commandBusy = false;
+  let pendingCommand = null;
   let lastCommandAt = -Infinity;
+  let uncertainCommandUntil = 0;
+  let commandCooldownTimer = null;
   let refreshBusy = false;
   let liveActive = false;
   let liveRequest = 0;
   let pollTimer = null;
   const timers = new Set();
   const requests = new Set();
+  const controlMasks = new Map();
+  const uiHooks = new Map();
+  let uiDepth = 0;
 
   const object = value => value && typeof value === "object" && !Array.isArray(value) ? value : null;
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -88,7 +99,8 @@
   const notice = (message, type = "info") => emit("showStatus", message, type, 4000);
   const allowed = name => active && session?.authenticated === true && !!session.csrfToken
     && session.capabilities?.[name] === true && (name !== "commands"
-      || (account?.loggedIn === true && !accountBusy && session.capabilities.supportedCommands.length > 0));
+      || (account?.loggedIn === true && !accountBusy && Date.now() >= uncertainCommandUntil
+        && session.capabilities.supportedCommands.length > 0));
   const current = id => active && id === generation;
   function later(fn, delay) {
     const id = root.setTimeout(() => { timers.delete(id); return fn(); }, delay);
@@ -97,6 +109,29 @@
   }
   function cancelTimer(id) { root.clearTimeout(id); timers.delete(id); }
   function aborted() { const error = new Error("Request superseded"); error.name = "AbortError"; return error; }
+  function expireSession() {
+    stop();
+    root.dispatchEvent(new CustomEvent("traverseweb:sessionlost"));
+  }
+  function scheduleCommandCooldown() {
+    cancelTimer(commandCooldownTimer);
+    commandCooldownTimer = null;
+    if (!active || uncertainCommandUntil <= Date.now()) return;
+    commandCooldownTimer = later(() => {
+      commandCooldownTimer = null;
+      if (!active) return;
+      emit("updateVehicleCommandReady", allowed("commands"));
+      syncControls();
+    }, uncertainCommandUntil - Date.now());
+  }
+  function holdUncertainCommand() {
+    // A fresh snapshot is not proof that an uncertain command completed. Keep
+    // the full cooldown across in-page account/session restarts; never replay.
+    uncertainCommandUntil = Math.max(uncertainCommandUntil, Date.now() + UNKNOWN_COMMAND_COOLDOWN_MS);
+    scheduleCommandCooldown();
+    emit("updateVehicleCommandReady", false);
+    syncControls();
+  }
 
   async function request(path, method = "GET", body, id = generation) {
     if (!current(id)) throw aborted();
@@ -113,14 +148,22 @@
         signal: controller.signal, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       if (!current(id)) throw aborted();
-      if (response.status === 401) {
-        stop();
-        root.dispatchEvent(new CustomEvent("traverseweb:sessionlost"));
+      const payload = response.status === 204 ? {} : await response.json().catch(() => null);
+      if (!current(id)) throw aborted();
+      const accountRejected = path === "/api/account" && method === "POST"
+        && payload?.code === "login_rejected" && payload.state === "blocked" && payload.error !== "unauthorized";
+      if (response.status === 401 && !accountRejected) {
+        expireSession();
         throw aborted();
       }
-      if (!response.ok) throw new Error(`Request failed (HTTP ${response.status}).`);
-      const payload = response.status === 204 ? {} : await response.json();
-      if (!current(id)) throw aborted();
+      if (!response.ok) {
+        const message = typeof payload?.message === "string" ? payload.message.slice(0, 500) : null;
+        const code = typeof payload?.code === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(payload.code) ? payload.code : null;
+        const error = new Error(message || `\uc694\uccad\uc744 \ucc98\ub9ac\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. (HTTP ${response.status}${code ? `, ${code}` : ""})`);
+        error.payload = object(payload);
+        error.status = response.status;
+        throw error;
+      }
       if (!object(payload)) throw new Error("Invalid server response.");
       return payload;
     } finally {
@@ -170,7 +213,10 @@
       details.meta = { source, updatedAt: updatedAt || timestamp(data.last_update), collectedAt: timestamp(gmone?.collectedAt), stale, cached: true };
       data.gmone_details = details;
     }
-    return { data, source, updatedAt: updatedAt || timestamp(data.last_update), stale, time };
+    const engineTime = epoch(sourceData.gmone_details?.meta?.updatedAt)
+      ?? epoch(sourceData.gmone_details?.refresh?.timing?.response_received_at) ?? gmoneTime ?? time;
+    return { data, source, updatedAt: updatedAt || timestamp(data.last_update), stale, time,
+      engineTime, engineStale: boolean(gmone?.stale) === true || stale };
   }
   function tire(value) {
     if (typeof value !== "string" || value.length > 512 || /[^0-9A-Za-z\uac00-\ud7a3\s.,:;/_-]/.test(value)) return "--";
@@ -278,10 +324,147 @@
     emit("updateSavedLocation", address, gpsTime, latest?.distance || "-- km", latest?.duration || "--:--:--",
       latest?.avgSpeed || "-- km/h", latest?.topSpeed || "-- km/h");
   }
+  function restoreControlMasks() {
+    for (const [button, previous] of controlMasks) {
+      if (previous.aria === null) button.removeAttribute("aria-disabled");
+      else button.setAttribute("aria-disabled", previous.aria);
+      if (previous.disabled !== undefined) button.disabled = previous.disabled;
+    }
+    controlMasks.clear();
+  }
+  function selectObservedEngineButton() {
+    const startButton = root.document.getElementById?.("btnEngineStart");
+    const stopButton = root.document.getElementById?.("btnEngineStop");
+    if (!startButton || !stopButton) return;
+    const details = vehicle?.data?.gmone_details;
+    const observedAt = vehicle?.engineTime;
+    const age = observedAt == null ? Infinity : Date.now() - observedAt;
+    const seconds = integer(details?.remoteStart?.remainingTimeRaw, 86400);
+    const remaining = seconds === null ? 0 : Math.max(0, seconds - Math.floor(Math.max(0, age) / 1000));
+    const running = active && !vehicle?.engineStale && age >= -60000 && age <= 300000
+      && details?.vehicleState?.engineRunning === true && details?.remoteStart?.remainingTimeValid === true && remaining > 0;
+    // Selection only: keep the original enable/drive checks, cached provenance,
+    // and final backend guards. No optimistic engine state or synthetic countdown.
+    startButton.hidden = running;
+    stopButton.hidden = !running;
+    stopButton.classList.toggle("remote-running", running);
+    stopButton.classList.toggle("large-button", running);
+    stopButton.classList.toggle("state-attention", running);
+    const timer = root.document.getElementById?.("engine-timer");
+    if (timer) {
+      timer.style.display = running ? "block" : "none";
+      timer.textContent = running ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : "";
+    }
+  }
+  function syncControls() {
+    restoreControlMasks();
+    selectObservedEngineButton();
+    for (const button of root.document.querySelectorAll?.("[data-cmd], [data-gmone-control]") || []) {
+      const key = button.dataset.gmoneControl || button.dataset.cmd;
+      if (allowed("commands") && session.capabilities.supportedCommands.includes(key)) continue;
+      controlMasks.set(button, { aria: button.getAttribute("aria-disabled"), disabled: button.disabled });
+      button.setAttribute("aria-disabled", "true");
+      if (typeof button.disabled === "boolean") button.disabled = true;
+    }
+  }
+  function renderHistorySpeedAvailability() {
+    const items = typeof root.normalizeHistoryItems === "function"
+      ? root.normalizeHistoryItems(history.slice()) : history;
+    const speeds = items.map(item => {
+      const match = typeof item.topSpeed === "string" && item.topSpeed.match(/^(\d+(?:\.\d+)?) km\/h$/);
+      return match ? bounded(match[1], 0, 3600) : null;
+    });
+    // Android's list parser converts missing metrics to zero. Preserve its
+    // numeric rendering, but restore unknown maxima after that renderer runs.
+    for (const card of root.document.querySelectorAll?.("#history-list-container .trip-history-item") || []) {
+      const index = integer(card.dataset.historyIndex);
+      if (index === null || index >= speeds.length || speeds[index] !== null) continue;
+      const value = card.querySelector(".list-stats-box .grid-item:last-child .grid-value");
+      if (value) value.textContent = "-- km/h";
+    }
+    const total = root.document.getElementById?.("total-top-speed");
+    if (total && !speeds.some(value => value !== null)) total.textContent = "-- km / h";
+  }
+  function installUiHooks() {
+    const originalHistory = root.loadHistory;
+    if (typeof originalHistory === "function" && uiHooks.get("loadHistory") !== originalHistory) {
+      const wrapped = function (...args) {
+        const result = originalHistory.apply(this, args);
+        renderHistorySpeedAvailability();
+        return result;
+      };
+      uiHooks.set("loadHistory", wrapped);
+      root.loadHistory = wrapped;
+    }
+    for (const name of ["updateGmoneControlPanel", "updateGmoneExtendedControls", "updateGmoneExtendedControlState",
+      "renderDoorLockState", "updateRemoteCountdownDisplays"]) {
+      const original = root[name];
+      if (typeof original !== "function" || uiHooks.get(name) === original) continue;
+      const wrapped = function (...args) {
+        if (!uiDepth) restoreControlMasks();
+        uiDepth++;
+        try { return original.apply(this, args); }
+        finally { if (--uiDepth === 0) syncControls(); }
+      };
+      uiHooks.set(name, wrapped);
+      root[name] = wrapped;
+    }
+  }
+  function applySession(next) {
+    const capabilities = { ...object(next.capabilities) };
+    capabilities.supportedCommands = Array.isArray(capabilities.supportedCommands)
+      ? capabilities.supportedCommands.filter(name => typeof name === "string" && COMMANDS.has(name)) : [];
+    const rawAccount = object(next.account) || { loggedIn: capabilities.commands === true, email: next.email };
+    const nextAccount = { loggedIn: rawAccount.loggedIn === true, email: text(rawAccount.email) || "", message: text(rawAccount.message) || "" };
+    const accountChanged = !account || account.loggedIn !== nextAccount.loggedIn || account.email !== nextAccount.email
+      || account.message !== nextAccount.message;
+    session = { authenticated: true, csrfToken: text(next.csrfToken), capabilities };
+    account = nextAccount;
+    if (accountChanged) {
+      renderAccount();
+      if (vehicle) renderVehicle();
+    } else emit("updateVehicleCommandReady", allowed("commands"));
+    syncControls();
+    root.dispatchEvent(new CustomEvent("traverseweb:sessionupdated", {
+      detail: { authenticated: true, csrfToken: session.csrfToken },
+    }));
+  }
+  function scheduleSessionCheck() {
+    cancelTimer(sessionTimer);
+    sessionTimer = null;
+    if (active && !root.document.hidden) sessionTimer = later(refreshSession, SESSION_POLL_MS);
+  }
+  function refreshSession() {
+    if (!active) return Promise.resolve(false);
+    if (accountBusy) { scheduleSessionCheck(); return Promise.resolve(false); }
+    if (sessionJob) return sessionJob;
+    const id = generation, revision = sessionRevision;
+    const job = (async () => {
+      try {
+        const next = await request("/api/session", "GET", undefined, id);
+        if (revision !== sessionRevision) return false;
+        if (next.authenticated !== true) { expireSession(); return false; }
+        applySession(next);
+        return true;
+      } catch (_) {
+        if (current(id) && revision === sessionRevision) {
+          session.capabilities.commands = false;
+          emit("updateVehicleCommandReady", false);
+          syncControls();
+        }
+        return false;
+      } finally {
+        if (current(id)) { sessionJob = null; scheduleSessionCheck(); }
+      }
+    })();
+    sessionJob = job;
+    return job;
+  }
   function renderAccount() {
     emit("updateGmoneAccountState", account?.loggedIn === true, account?.email || "",
-      account?.message || (account?.loggedIn ? "Account connected" : "Account login required"), accountBusy);
+      account?.message || (account?.loggedIn ? "\ub85c\uadf8\uc778\ub428" : "\ub85c\uadf8\uc778 \ud544\uc694"), accountBusy);
     emit("updateVehicleCommandReady", allowed("commands") && !accountBusy);
+    syncControls();
   }
   function render() {
     if (!active) return;
@@ -290,6 +473,7 @@
     // Gallery remains usable even when the separate telemetry portion is missing.
     emit("updateWayonCloudSnapshots", JSON.stringify(Array.isArray(feed?.snapshots) ? feed.snapshots : []));
     emit("onWayonCloudDataUpdated");
+    syncControls();
   }
   function schedulePoll() {
     cancelTimer(pollTimer);
@@ -341,7 +525,7 @@
     })();
     return tripsJob;
   }
-  async function refreshVehicle() {
+  async function refreshVehicle({ afterCommand = false } = {}) {
     if (!active) return false;
     if (refreshBusy || commandBusy) { notice("A vehicle request is already in progress."); return false; }
     const id = generation;
@@ -351,7 +535,7 @@
       if (result.ok === false) throw new Error("Vehicle refresh was not accepted.");
       const requestedAt = epoch(result.requestedAt);
       if (requestedAt === null) throw new Error("Refresh acknowledgement is missing its timestamp.");
-      notice("Vehicle refresh requested; waiting for the vehicle.");
+      if (!afterCommand) notice("Vehicle refresh requested; waiting for the vehicle.");
       const deadline = Date.now() + 90000;
       const poll = async () => {
         if (!current(id)) return;
@@ -359,8 +543,17 @@
           const status = await request(API + "gmone/refresh", "GET", undefined, id);
           if (status.pending === false && (epoch(status.completedAt) ?? -Infinity) >= requestedAt) {
             refreshBusy = false;
+            // Do not coalesce the post-collector read with an older in-flight
+            // cache request that began before the new observation was collected.
+            if (afterCommand && feedJob) await feedJob;
+            if (!current(id)) return;
             await refreshFeed();
-            if (current(id)) notice("Vehicle refresh completed.", "success");
+            if (current(id)) {
+              if (afterCommand) notice(vehicle?.engineTime >= requestedAt
+                ? "\ucc28\ub7c9 \uc0c1\ud0dc\ub97c \ub2e4\uc2dc \uc870\ud68c\ud588\uc2b5\ub2c8\ub2e4. \uc218\uc9d1 \uc2dc\uac01\uacfc \uc2e4\uc81c \ucc28\ub7c9 \uc0c1\ud0dc\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694."
+                : "\uc0c8 \ucc28\ub7c9 \uc0c1\ud0dc\uac00 \uc544\uc9c1 \uc218\uc9d1\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4. \uc2e4\uc81c \ucc28\ub7c9 \uc0c1\ud0dc\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694.");
+              else notice("Vehicle refresh completed.", "success");
+            }
           } else if (Date.now() < deadline) later(poll, 2500);
           else { refreshBusy = false; notice("Vehicle response is delayed; the next refresh will check again."); }
         } catch (error) { if (current(id)) { refreshBusy = false; notice(error.message, "danger"); } }
@@ -369,27 +562,59 @@
       return true;
     } catch (error) { if (current(id)) { refreshBusy = false; notice(error.message, "danger"); } return false; }
   }
+  function refreshAfterEngineCommand(id) {
+    const deadline = Date.now() + 90000;
+    const attempt = () => {
+      if (!current(id)) return;
+      if (refreshBusy || commandBusy) {
+        if (Date.now() < deadline) later(attempt, 2500);
+        else notice("\ucc28\ub7c9 \uc0c1\ud0dc \uc870\ud68c\uac00 \uc9c0\uc5f0\ub418\uace0 \uc788\uc2b5\ub2c8\ub2e4. \uc2e4\uc81c \ucc28\ub7c9 \uc0c1\ud0dc\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694.");
+        return;
+      }
+      return refreshVehicle({ afterCommand: true });
+    };
+    later(attempt, 250);
+  }
   async function command(commandName, buttonId, extended = false) {
     const feedback = (state, success = null) => extended
       ? emit("updateGmoneExtendedControlState", buttonId, state === "sending", success)
       : emit("setButtonFeedback", buttonId, state, commandName);
+    if (commandBusy) {
+      if (pendingCommand?.buttonId !== buttonId) feedback("cooldown", false);
+      notice("\ub2e4\ub978 \ucc28\ub7c9 \uba85\ub839\uc744 \ubcf4\ub0b4\uae30 \uc804\uc5d0 \uc7a0\uc2dc \uae30\ub2e4\ub824 \uc8fc\uc138\uc694.");
+      return false;
+    }
+    if (Date.now() < uncertainCommandUntil) {
+      feedback("cooldown", false);
+      const seconds = Math.ceil((uncertainCommandUntil - Date.now()) / 1000);
+      notice(`\uacb0\uacfc\ub97c \ud655\uc778\ud558\uc9c0 \ubabb\ud55c \uba85\ub839\uc774 \uc788\uc5b4 ${seconds}\ucd08 \ub3d9\uc548 \ucd94\uac00 \uba85\ub839\uc744 \ubcf4\ub0b4\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4. \ucc28\ub7c9 \uc0c1\ud0dc\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694.`);
+      return false;
+    }
     if (!allowed("commands") || !COMMANDS.has(commandName) || !session.capabilities.supportedCommands.includes(commandName)) {
       feedback("danger", false); notice("\ud604\uc7ac \uc0ac\uc6a9\ud560 \uc218 \uc5c6\ub294 \ucc28\ub7c9 \uba85\ub839\uc785\ub2c8\ub2e4. \ub85c\uadf8\uc778 \uc0c1\ud0dc\uc640 \uc9c0\uc6d0 \uae30\ub2a5\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694.", "danger"); return false;
     }
-    if (commandBusy || Date.now() - lastCommandAt < 3000) {
+    if (Date.now() - lastCommandAt < 3000) {
       feedback("cooldown", false); notice("\ub2e4\ub978 \ucc28\ub7c9 \uba85\ub839\uc744 \ubcf4\ub0b4\uae30 \uc804\uc5d0 \uc7a0\uc2dc \uae30\ub2e4\ub824 \uc8fc\uc138\uc694."); return false;
     }
     const id = generation;
     commandBusy = true;
+    pendingCommand = { buttonId, clear: () => feedback("") };
     lastCommandAt = Date.now();
     feedback("sending");
     try {
       const requestId = root.crypto.randomUUID();
-      const result = await request("/api/command", "POST", { command: commandName, requestId, confirmed: true }, id);
+      const result = await request("/api/command", "POST", { command: commandName, requestId, confirmed: true }, id)
+        .catch(error => {
+          // A structured rejection is definitive even on HTTP 4xx. Never accept
+          // an HTTP error's claimed success, mismatched command or ambiguous body.
+          if (error.payload?.ok === false && error.payload.state === "blocked") return error.payload;
+          throw error;
+        });
       if (result.command !== commandName || (Object.hasOwn(result, "requestId") && result.requestId !== requestId)) {
         throw new Error("Command response does not match the request.");
       }
       if (["account_invalid_or_expired", "session_expired"].includes(result.code)) {
+        sessionRevision++;
         session.capabilities.commands = false;
         account = { ...account, loggedIn: false, message: "\uba40\ud2f0\ud329 \uc778\uc99d\uc774 \ub9cc\ub8cc\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \ub85c\uadf8\uc778\ud574 \uc8fc\uc138\uc694." };
         renderAccount();
@@ -407,25 +632,34 @@
       // label and optimistic engine/closure changes until a new status arrives.
       feedback("");
       notice("\uba40\ud2f0\ud329 \uc11c\ubc84\uc758 \uba85\ub839 \ucc98\ub9ac \uc751\ub2f5\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4. \uc2e4\uc81c \ucc28\ub7c9 \ub3d9\uc791\uc740 \ubcc4\ub3c4\ub85c \ud655\uc778\ud574 \uc8fc\uc138\uc694.");
-      [250, 7500, 15000, 25000, 40000].forEach(delay => later(() => { if (current(id)) refreshFeed(); }, delay));
+      if (commandName === "VEHICLE_START" || commandName === "VEHICLE_STOP") refreshAfterEngineCommand(id);
+      else [250, 7500, 15000, 25000, 40000].forEach(delay => later(() => { if (current(id)) refreshFeed(); }, delay));
       return true;
     } catch (error) {
-      if (current(id)) { feedback(""); notice("\uba85\ub839 \uc644\ub8cc\ub97c \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. \uc7ac\uc804\uc1a1\ud558\uc9c0 \ub9d0\uace0 \ucc28\ub7c9 \uc0c1\ud0dc\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694.", "danger"); }
+      if (current(id)) {
+        feedback("");
+        holdUncertainCommand();
+        notice("\uba85\ub839 \uc644\ub8cc\ub97c \ud655\uc778\ud558\uc9c0 \ubabb\ud574 180\ucd08 \ub3d9\uc548 \ucd94\uac00 \uba85\ub839\uc744 \ucc28\ub2e8\ud569\ub2c8\ub2e4. \uc7ac\uc804\uc1a1\ud558\uc9c0 \ub9d0\uace0 \ucc28\ub7c9 \uc0c1\ud0dc\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694.", "danger");
+      }
       return false;
-    } finally { if (current(id)) commandBusy = false; }
+    } finally { if (current(id)) { commandBusy = false; pendingCommand = null; syncControls(); } }
   }
   async function changeAccount(method, credentials) {
     if (!active || accountBusy || commandBusy) { notice("Account changes are unavailable while a request is in progress.", "danger"); return false; }
     const id = generation;
+    sessionRevision++;
     accountBusy = true;
     renderAccount();
     try {
       const result = await request("/api/account", method, credentials, id);
       if (typeof result.loggedIn !== "boolean") throw new Error("Invalid account response.");
-      // Account mutations are authoritative; start drops old reads and cached UI
-      // before displaying anything for the newly selected backend account.
-      await start({ ...session, capabilities: { ...session.capabilities, commands: result.loggedIn },
-        account: { loggedIn: result.loggedIn, email: text(result.email) || "", message: text(result.message) || "" } });
+      // Only a fresh session can grant commands. Account replacement still
+      // invalidates reads from the previous account; ordinary rechecks do not.
+      session.capabilities.commands = false;
+      account = { loggedIn: result.loggedIn, email: text(result.email) || "", message: text(result.message) || "" };
+      const next = await request("/api/session", "GET", undefined, id);
+      if (next.authenticated !== true) { expireSession(); return false; }
+      await start({ ...next, account: { ...object(next.account), message: account.message } });
       return result.loggedIn === (method === "POST");
     } catch (error) {
       if (current(id)) {
@@ -485,12 +719,15 @@
   function stop() {
     active = false;
     generation++;
+    sessionRevision++;
+    pendingCommand?.clear();
+    pendingCommand = null;
     liveRequest++;
     for (const controller of requests) controller.abort();
     requests.clear();
     for (const timer of timers) root.clearTimeout(timer);
     timers.clear();
-    session = account = feed = vehicle = feedJob = tripsJob = pollTimer = null;
+    session = account = feed = vehicle = feedJob = tripsJob = pollTimer = sessionJob = sessionTimer = commandCooldownTimer = null;
     history = [];
     fullHistory = accountBusy = commandBusy = refreshBusy = liveActive = false;
     lastCommandAt = -Infinity;
@@ -499,7 +736,7 @@
     emit("closeSnapshotHistory");
     emit("closeBlackboxPlayer");
     emit("updateVehicleCommandReady", false);
-    emit("updateGmoneAccountState", false, "", "Account login required", false);
+    emit("updateGmoneAccountState", false, "", "\ub85c\uadf8\uc778 \ud544\uc694", false);
     emit("setVehicleDataState", "unavailable", "", false);
     emit("updateGmoneDetails", null);
     emit("markWayonCloudUnavailable", "Session is not active.");
@@ -509,8 +746,10 @@
     emit("updateWayonCloudSnapshots", "[]");
     emit("updateWayonCloudKeyInput", "");
     emit("onWayonCloudHistoryUpdated");
+    syncControls();
   }
   async function start(provided) {
+    installUiHooks();
     stop();
     active = true;
     const id = generation;
@@ -518,13 +757,10 @@
       const next = provided || await request("/api/session", "GET", undefined, id);
       if (!current(id)) return false;
       if (next.authenticated !== true) { stop(); return false; }
-      const capabilities = { ...object(next.capabilities) };
-      capabilities.supportedCommands = Array.isArray(capabilities.supportedCommands)
-        ? capabilities.supportedCommands.filter(name => typeof name === "string" && COMMANDS.has(name)) : [];
-      session = { authenticated: true, csrfToken: text(next.csrfToken), capabilities };
-      account = object(next.account) || { loggedIn: session.capabilities.commands === true, email: text(next.email) || "" };
+      applySession(next);
       emit("updateWayonCloudKeyInput", "session");
-      renderAccount();
+      scheduleSessionCheck();
+      scheduleCommandCooldown();
       emit("setVehicleDataState", "loading", "", true);
       return await refreshFeed();
     } catch (error) { if (current(id)) { stop(); notice(error.message, "danger"); } return false; }
@@ -545,7 +781,7 @@
       return changeAccount("POST", { email: email.trim(), password });
     },
     logoutGmone: () => changeAccount("DELETE"),
-    refreshGmoneAccount: refreshVehicle,
+    async refreshGmoneAccount() { if (!await refreshSession()) return false; return refreshVehicle(); },
     handleClick: (key, name, buttonId) => command(key, buttonId),
     handleLongPress: (key, name, buttonId) => command(key, buttonId),
     sendGmoneExtendedControl: (key, buttonId) => command(key, buttonId, true),
@@ -590,11 +826,11 @@
     toggleBluetoothTest: () => unsupported("\uc548\ub4dc\ub85c\uc774\ub4dc \ube14\ub8e8\ud22c\uc2a4 \ud14c\uc2a4\ud2b8"),
     checkBluetoothStatusForDebug: () => unsupported("\uc548\ub4dc\ub85c\uc774\ub4dc \ube14\ub8e8\ud22c\uc2a4 \uc0c1\ud0dc \ud655\uc778"),
   };
-  root.TraverseWeb = Object.freeze({ start, stop, render, csrfToken: () => active ? session?.csrfToken || "" : "" });
+  root.TraverseWeb = Object.freeze({ start, stop, render, refreshSession, csrfToken: () => active ? session?.csrfToken || "" : "" });
   root.document.addEventListener("visibilitychange", () => {
     if (!active) return;
-    if (root.document.hidden) cancelTimer(pollTimer);
-    else if (!liveActive) refreshFeed();
+    if (root.document.hidden) { cancelTimer(pollTimer); cancelTimer(sessionTimer); }
+    else { refreshSession(); if (!liveActive) refreshFeed(); }
   });
-  root.addEventListener("online", () => { if (active && !liveActive) refreshFeed(); });
+  root.addEventListener("online", () => { if (active) { refreshSession(); if (!liveActive) refreshFeed(); } });
 })(window);

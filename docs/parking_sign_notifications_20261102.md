@@ -79,7 +79,22 @@ After the user reconnected the phone, the following device checks completed:
   the unlocked-and-focused precondition was not met. No lock or permission
   settings were bypassed or changed.
 
+The user then reopened My Traverse for a separate foreground retest:
+
+- Fresh checks immediately before sending and after receiving both confirmed
+  the phone was unlocked and MainActivity was the focused window.
+- A new labelled `TEST-D56` message traversed the same Windows -> Cloud -> FCM
+  path. At 12:32:15 KST, the installed v39 process logged
+  `WayonParkingSign: Parking sign notification posted`.
+- The matching Android notification record and actual notification-shade
+  screenshot both showed the Korean test title and `TEST-D56` body on the
+  dedicated channel. Repeating the same request returned `cloud_duplicate`
+  and retained one matching event notification.
+- This completes foreground and locked/background delivery verification.
+  The phone locked again after this check, so notification-tap navigation
+  remains unverified.
+
 The new notification content was explicitly synthetic, not an OCR result.
-Foreground reception, notification-tap navigation and new real readable parking
-sign accuracy remain unverified. Private device captures and receipts are kept
+Notification-tap navigation and new real readable parking sign accuracy remain
+unverified. Private device captures and receipts are kept
 outside Git, with unrelated notification contents excluded from text evidence.

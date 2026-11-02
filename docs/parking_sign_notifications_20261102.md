@@ -58,7 +58,28 @@ a nearby clue rather than the parked vehicle's exact position.
 - One explicitly labelled test traversed Windows -> Cloud -> FCM with one
   accepted recipient. It is synthetic notification content, not an OCR result.
 
-At this verification point the phone's wireless ADB connection had dropped.
-v39 installation and physical phone notification display remain unverified.
-The signed v39 APK is retained locally for the next authorized device connection.
-No new real readable parking sign was available to verify recognition accuracy.
+The initial build/deployment stopped at a disconnected wireless ADB session.
+After the user reconnected the phone, the following device checks completed:
+
+- Updated the existing My Traverse Next installation from v38 to v39 using
+  `install -r --no-incremental`; installation returned `Success`.
+- Pulled the installed APK and verified its SHA-256 against the signed release:
+  `f76713daa71075dab5024f85b2bdf3c1439477f1b764a74d9c49c445cb13696c`.
+  The original signer, application UID and existing granted permission state
+  were retained. Notification permission remained granted.
+- A new explicitly labelled test traversed the Windows sender, production
+  Cloud endpoint and FCM. Android posted exactly one notification on the
+  `wayon_parking_sign_alerts` channel with importance 4. The actual notification
+  shade screenshot showed the Korean test title and `TEST-B12` clue.
+- Repeating the identical server request returned `cloud_duplicate`; the phone
+  retained one matching notification. No app crash appeared in the crash buffer.
+- The phone had automatically locked before delivery, so this proves locked/
+  background receipt and visible notification-shade rendering, not foreground
+  application handling. A separate bounded foreground probe sent nothing because
+  the unlocked-and-focused precondition was not met. No lock or permission
+  settings were bypassed or changed.
+
+The new notification content was explicitly synthetic, not an OCR result.
+Foreground reception, notification-tap navigation and new real readable parking
+sign accuracy remain unverified. Private device captures and receipts are kept
+outside Git, with unrelated notification contents excluded from text evidence.

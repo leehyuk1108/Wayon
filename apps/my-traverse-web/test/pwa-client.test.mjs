@@ -35,7 +35,7 @@ function harness(sessionResponse = fixtureSession) {
     },
     showStatus:(...args) => notices.push(args), addEventListener:(name, fn) => { events[name] = fn; },
   };
-  const document = {body, createElement:() => created.shift(), querySelector:() => element(),
+  const document = {body, createElement:() => created.shift(), querySelector:() => element(), querySelectorAll:() => [],
     getElementById:id => id === 'pwa-error' ? login.querySelector('#pwa-error') : null};
   routes.set('/api/session', async () => ({ok:true, status:200, json:async () => sessionResponse}));
   const context = {window, document,

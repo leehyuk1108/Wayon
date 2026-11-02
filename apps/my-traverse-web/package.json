@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "check:layout": "node scripts/check-iphone-layout.mjs",
     "pretest": "npm run build && wrangler deploy --config wrangler.jsonc --dry-run --outdir output/bundle",
     "test": "node --test test/*.test.mjs server/*.test.mjs test_bridge.cjs",
     "dev": "wrangler dev --config wrangler.jsonc",

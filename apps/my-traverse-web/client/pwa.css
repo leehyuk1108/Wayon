@@ -16,4 +16,106 @@ body[data-pwa="locked"] > :not(#pwa-login):not(script) { visibility: hidden !imp
 .pwa-actions #pwa-push-status { color: #aaa; font-size: 13px; margin: 12px 0; overflow-wrap: anywhere; }
 .home-map-hero #btnSecretSettings { width: 44px; height: 44px; display: grid; place-items: center; color: #ddd; }
 .home-map-hero #btnSecretSettings svg { width: 20px; height: 20px; }
-@supports (padding-top: env(safe-area-inset-top)) { body { padding-top: env(safe-area-inset-top); } }
+
+/* The frame and footer share one dynamic viewport. Insets have one owner each. */
+:root {
+  --pwa-safe-top: env(safe-area-inset-top, 0px);
+  --pwa-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --pwa-safe-left: env(safe-area-inset-left, 0px);
+  --pwa-safe-right: env(safe-area-inset-right, 0px);
+}
+html { height: 100%; background: #0b0b0c; }
+body { height: 100vh; height: 100dvh; min-height: 0; padding: 0; }
+body > .app-frame { flex: 1 1 0; height: auto; min-height: 0; }
+.status-bar-padding { padding-top: var(--pwa-safe-top); }
+.main-content { flex: 1 1 0; min-height: 0; }
+.tab-panel { min-height: 0; overscroll-behavior-y: contain; }
+.footer-nav {
+  padding: 4px max(20px, var(--pwa-safe-right)) var(--pwa-safe-bottom) max(20px, var(--pwa-safe-left));
+  background: #101011;
+  box-shadow: none;
+}
+.footer-nav .nav-item { height: 52px; min-width: 44px; }
+
+/* Let the map take spare height, without stretching controls or clipping small phones. */
+#tab-control:not(.finder-open) .controls-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-height: 100%;
+  padding: 0;
+}
+#tab-control:not(.finder-open) #dashboard-card.home-dashboard {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  margin: 0;
+  min-width: 0;
+}
+#tab-control:not(.finder-open) .home-map-hero {
+  height: auto;
+  min-height: 240px;
+  flex: 1 0 240px;
+}
+.home-vehicle-summary, .home-command-bar, .home-feature-section { flex-shrink: 0; }
+.home-vehicle-summary { padding: 16px 20px; }
+.home-updated-row { font-size: .6875rem; flex-wrap: wrap; gap: 4px 12px; }
+.home-updated-row strong { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.home-fuel-row { flex-wrap: wrap; gap: 8px 16px; }
+.home-fuel-label { font-size: .8125rem; }
+.home-fuel-value { font-size: 1.3125rem; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; max-width: 100%; }
+.home-feature-section { padding: 20px 0 12px; }
+.home-feature-heading strong { font-size: .875rem; letter-spacing: 0; }
+.home-feature-heading span { display: none; }
+.home-feature-rail { padding-bottom: 0; scroll-snap-type: x proximity; }
+.home-feature-card {
+  flex-basis: clamp(164px, 48vw, 220px);
+  min-height: 136px;
+  gap: 18px;
+  padding: 16px;
+}
+.home-feature-copy { min-width: 0; }
+.home-feature-copy strong, .home-sunroof-title strong { font-size: .875rem; line-height: 1.25; letter-spacing: 0; overflow-wrap: anywhere; }
+.home-feature-copy span, .home-sunroof-state {
+  font-size: .75rem;
+  line-height: 1.4;
+  color: #b2b3b8;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.home-sunroof-card { flex-basis: 220px; }
+.home-sunroof-actions .action-button-grouped { min-height: 44px; }
+.home-sunroof-actions .button-text { font-size: .75rem !important; }
+.home-status-title { letter-spacing: 0; }
+.home-map-hero #btnSecretSettings { right: 8px; }
+.finder-map-close { left: calc(var(--pwa-safe-left) + 18px); top: calc(var(--pwa-safe-top) + 56px); }
+.finder-map-controls { right: calc(var(--pwa-safe-right) + 18px); top: calc(var(--pwa-safe-top) + 56px); }
+/* Overscanned tiles must not scroll their absolute-positioned finder controls. */
+#tab-control.finder-open .hero-map { overflow: clip; }
+input, textarea { -webkit-user-select: text; user-select: text; }
+#tab-settings input:not([type="range"]):not([type="checkbox"]),
+#tab-settings select { font-size: 16px; }
+:is(button, [role="button"], input, select):focus-visible { outline: 2px solid #f1f1f2; outline-offset: 3px; }
+
+/* A short viewport (landscape or keyboard) must scroll instead of losing fields. */
+#pwa-login {
+  overflow-y: auto;
+  align-items: safe center;
+  padding: max(24px, var(--pwa-safe-top)) max(24px, var(--pwa-safe-right)) max(24px, var(--pwa-safe-bottom)) max(24px, var(--pwa-safe-left));
+}
+@media (orientation: landscape) {
+  .main-content { margin-left: var(--pwa-safe-left); margin-right: var(--pwa-safe-right); }
+}
+@media (max-width: 370px) {
+  .home-vehicle-summary { padding-left: 16px; padding-right: 16px; }
+  .home-fuel-value { font-size: 1.125rem; }
+}
+@media (max-height: 600px) {
+  #tab-control:not(.finder-open) .home-map-hero { min-height: 220px; flex-basis: 220px; }
+  #pwa-login { align-items: start; }
+  #pwa-login img { width: 64px; height: 64px; margin-bottom: 12px; }
+  #pwa-login h1 { font-size: 24px; margin-bottom: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-feature-card, .nav-item, .home-fuel-fill { transition: none; }
+}

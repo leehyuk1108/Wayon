@@ -65,3 +65,22 @@ after an icon change. Recheck notification permission afterward.
 See `docs/my_traverse_iphone_pwa_20261102.md` for actual validation and limits.
 The follow-up account/control verification is recorded in
 `docs/my_traverse_web_controls_20261102.md`.
+
+## iPhone Layout
+
+Web-only layout overrides load after the original Android stylesheet. The home
+map fills spare height; short viewports scroll without shrinking controls. The
+frame uses the dynamic viewport, with one top inset and a bottom navigation inset.
+The original Android assets and command/authentication logic are not changed.
+
+Run `npm run build`, then `npm run check:layout` with
+`TRAVERSE_PLAYWRIGHT_MODULE` pointing to an installed Playwright module and,
+optionally, `TRAVERSE_BROWSER_EXECUTABLE` pointing to Chrome. Install Playwright's
+WebKit browser first. The script renders local built assets with synthetic
+telemetry, rejects every non-GET request and closes its local server afterward.
+Only public map tile hosts are allowed outside localhost. Screenshots and the
+report go to ignored `output/playwright/iphone/`.
+
+This checks WebKit/Chromium geometry, injected safe areas, scrolling, navigation,
+finder, larger rem text and a reduced login viewport. It is not an actual iOS
+Simulator, VoiceOver, software keyboard, Dynamic Type or physical vehicle test.

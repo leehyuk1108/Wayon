@@ -16,10 +16,13 @@ html = html.replace('<head>', `<head>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#0b0b0b">
-    <link rel="stylesheet" href="/pwa.css">
     <script src="/bridge.js"></script>
     <script src="/pwa.js" defer></script>`)
   .replaceAll('https://wayon-cloud.hyuklee.workers.dev/api/', '/api/wayon/');
+// Web overrides must follow the native stylesheet, including its media queries.
+html = html.replace('</head>', '    <link rel="stylesheet" href="/pwa.css">\n</head>')
+  .replace('initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover',
+    'initial-scale=1.0, viewport-fit=cover');
 html = html.replace('<body', '<body data-pwa="locked"');
 await writeFile(root + 'public/index.html', html);
 await unlink(root + 'public/main.html');

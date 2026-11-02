@@ -78,6 +78,21 @@
     window.lucide?.createIcons();
   }
 
+  for (const item of document.querySelectorAll('.footer-nav .nav-item')) {
+    item.setAttribute('role', 'button');
+    item.tabIndex = 0;
+    item.setAttribute('aria-label', item.querySelector('span')?.textContent.trim() || 'Navigation');
+    const syncCurrent = () => {
+      if (item.classList.contains('active')) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    };
+    syncCurrent();
+    new MutationObserver(syncCurrent).observe(item, {attributes: true, attributeFilter: ['class']});
+    item.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); item.click(); }
+    });
+  }
+
   // Android-only configuration stays out of the web settings; original DOM IDs remain available.
   for (const id of ['api-input-container','wayon-cloud-key-input-container','toggleAutoRefresh']) {
     document.getElementById(id)?.closest('.control-group-card')?.setAttribute('hidden','');

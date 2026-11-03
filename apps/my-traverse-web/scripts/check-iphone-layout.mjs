@@ -36,6 +36,7 @@ const feed = {vehicleStatus:{ok:true, source:'gmone', updatedAt:now, stale:false
 const sizes = [
   ['small',320,568,0,0,0], ['se',375,667,0,0,0], ['iphone',390,844,47,34,0],
   ['pro',393,852,59,34,0], ['max',430,932,59,34,0], ['max-large',440,956,62,34,0],
+  ['standalone',402,874,62,34,0],
   ['landscape',844,390,0,21,47], ['se-landscape',667,375,0,0,0], ['desktop',1280,900,0,0,0],
 ];
 const reports = [], failures = [];
@@ -51,7 +52,14 @@ try {
         const request = route.request(), url = new URL(request.url());
         if (request.method() !== 'GET') { mutationRequests++; await route.abort(); return; }
         if (url.origin === origin && url.pathname === '/pwa.css') {
-          const css = await readFile(resolve(root,'public/pwa.css'),'utf8');
+          let css = await readFile(resolve(root,'public/pwa.css'),'utf8');
+          if (name === 'standalone') {
+            // Exercise the real standalone rule with WebKit's reported short-dvh defect.
+            // This fixture is not an iPhone shell; physical mirroring is verified separately.
+            assert.ok(css.includes('@media (display-mode: standalone)'));
+            css = css.replace('@media (display-mode: standalone)', '@media all')
+              .replaceAll('100dvh', `calc(100vh - ${top}px)`);
+          }
           await route.fulfill({contentType:'text/css',body:css + `\n:root { --pwa-safe-top:${top}px; --pwa-safe-bottom:${bottom}px; --pwa-safe-left:${side}px; --pwa-safe-right:${side}px; }`});
           return;
         }
@@ -82,8 +90,18 @@ try {
         });
         assert.equal(metrics.overflow, 0, 'horizontal page overflow');
         assert.ok(Math.abs(metrics.nav.b-height) < 1, 'nav reaches viewport bottom');
+        assert.equal(metrics.nav.h,45+Math.max(8,bottom-14),'compact navigation retains home-gesture clearance');
         assert.equal(metrics.spacer.h, top, 'one top inset');
         assert.equal(metrics.bodyPadding, '0px');
+        const compact = await page.evaluate(() => {
+          const el=s=>document.querySelector(s);
+          return {title:parseFloat(getComputedStyle(el('.home-status-title')).fontSize),
+            command:el('.home-command-bar').getBoundingClientRect().height,
+            card:el('.home-feature-card').getBoundingClientRect().width};
+        });
+        assert.equal(compact.title,42,'compact title does not scale with viewport width');
+        assert.equal(compact.command,60,'compact dock keeps usable touch targets');
+        assert.equal(compact.card,160,'compact service cards');
         assert.ok(metrics.map.h >= 220, 'usable minimum map');
         assert.ok(metrics.main.x >= side && metrics.main.r <= width-side, 'landscape safe margins');
         const alignment = await page.evaluate(() => {
@@ -102,7 +120,7 @@ try {
         const bottomRail = await page.locator('.home-feature-rail').boundingBox();
         assert.ok(bottomRail.y+bottomRail.height <= metrics.nav.y+1, 'cards reachable by scrolling');
         await page.locator('#tab-control').evaluate(el => {el.scrollTop=0;});
-        if (['iphone','max','small','landscape'].includes(name)) {
+        if (['iphone','max','small','landscape','standalone'].includes(name)) {
           await page.waitForSelector('.hero-map.map-surface-ready', {timeout:15000});
           await page.screenshot({path:resolve(output,`${engine}-${name}.png`)});
         }

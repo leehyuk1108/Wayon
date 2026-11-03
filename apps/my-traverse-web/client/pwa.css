@@ -26,16 +26,20 @@ body[data-pwa="locked"] > :not(#pwa-login):not(script) { visibility: hidden !imp
 }
 html { height: 100%; background: #0b0b0c; }
 body { height: 100vh; height: 100dvh; min-height: 0; padding: 0; }
+/* Installed WebKit apps can subtract the status bar from dvh, leaving a bottom gap. */
+@media (display-mode: standalone) {
+  body { height: 100vh; }
+}
 body > .app-frame { flex: 1 1 0; height: auto; min-height: 0; }
 .status-bar-padding { padding-top: var(--pwa-safe-top); }
 .main-content { flex: 1 1 0; min-height: 0; }
 .tab-panel { min-height: 0; overscroll-behavior-y: contain; }
 .footer-nav {
-  padding: 4px max(20px, var(--pwa-safe-right)) var(--pwa-safe-bottom) max(20px, var(--pwa-safe-left));
+  padding: 0 max(20px, var(--pwa-safe-right)) max(8px, calc(var(--pwa-safe-bottom) - 14px)) max(20px, var(--pwa-safe-left));
   background: #101011;
   box-shadow: none;
 }
-.footer-nav .nav-item { height: 52px; min-width: 44px; }
+.footer-nav .nav-item { height: 44px; min-width: 44px; }
 
 /* Let the map take spare height, without stretching controls or clipping small phones. */
 #tab-control:not(.finder-open) .controls-section {
@@ -58,24 +62,28 @@ body > .app-frame { flex: 1 1 0; height: auto; min-height: 0; }
   flex: 1 0 240px;
 }
 .home-vehicle-summary, .home-command-bar, .home-feature-section { flex-shrink: 0; }
-.home-vehicle-summary { padding: 16px 20px; }
+.home-vehicle-summary { padding: 12px 20px; }
 .home-updated-row { font-size: .6875rem; flex-wrap: wrap; gap: 4px 12px; }
 .home-updated-row strong { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .home-fuel-row { flex-wrap: wrap; gap: 8px 16px; }
-.home-fuel-label { font-size: .8125rem; }
-.home-fuel-value { font-size: 1.3125rem; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; max-width: 100%; }
-.home-feature-section { padding: 20px 0 12px; }
-.home-feature-heading strong { font-size: .875rem; letter-spacing: 0; }
+.home-fuel-label { font-size: .75rem; }
+.home-fuel-value { font-size: 1.125rem; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; max-width: 100%; }
+.home-command-bar { min-height: 60px; }
+.home-quick-icon svg { width: 22px; height: 22px; }
+.trunk-control-icon { width: 24px; height: 25px; }
+.window-control-icon { width: 24px; height: 21px; }
+.home-feature-section { padding: 16px 0 10px; }
+.home-feature-heading strong { font-size: .8125rem; letter-spacing: 0; }
 .home-feature-heading span { display: none; }
 .home-feature-rail { padding-bottom: 0; scroll-snap-type: x proximity; }
 .home-feature-card {
-  flex-basis: clamp(164px, 48vw, 220px);
-  min-height: 136px;
-  gap: 18px;
-  padding: 16px;
+  flex-basis: 160px;
+  min-height: 112px;
+  gap: 14px;
+  padding: 14px;
 }
 .home-feature-copy { min-width: 0; }
-.home-feature-copy strong, .home-sunroof-title strong { font-size: .875rem; line-height: 1.25; letter-spacing: 0; overflow-wrap: anywhere; }
+.home-feature-copy strong, .home-sunroof-title strong { font-size: .8125rem; line-height: 1.25; letter-spacing: 0; overflow-wrap: anywhere; }
 .home-feature-copy span, .home-sunroof-state {
   font-size: .75rem;
   line-height: 1.4;
@@ -86,7 +94,8 @@ body > .app-frame { flex: 1 1 0; height: auto; min-height: 0; }
 .home-sunroof-card { flex-basis: 220px; }
 .home-sunroof-actions .action-button-grouped { min-height: 44px; }
 .home-sunroof-actions .button-text { font-size: .75rem !important; }
-.home-status-title { letter-spacing: 0; }
+.home-status-button { top: 18px; }
+.home-status-title { font-size: 2.625rem; line-height: .9; letter-spacing: 0; overflow-wrap: anywhere; }
 .home-map-hero #btnSecretSettings { right: 8px; }
 .finder-map-close { left: calc(var(--pwa-safe-left) + 18px); top: calc(var(--pwa-safe-top) + 56px); }
 .finder-map-controls { right: calc(var(--pwa-safe-right) + 18px); top: calc(var(--pwa-safe-top) + 56px); }

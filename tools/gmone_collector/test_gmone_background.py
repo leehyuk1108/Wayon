@@ -104,13 +104,15 @@ def test_corrupt_state_does_not_reset_request_budget(tmp_path):
     state(tmp_path)
 
 
-def test_restart_does_not_repeat_active_and_hourly_stays_bounded(tmp_path):
+def test_restart_retains_bounded_failed_attempt_retry(tmp_path):
   s = state(tmp_path)
   assert s.reserve_active(NOW)
   s = state(tmp_path)
   assert not s.reserve_active(NOW+30)
-  assert not s.reserve_active(NOW+3599)
-  assert s.reserve_active(NOW+3600)
+  assert not s.reserve_active(NOW+299)
+  assert s.reserve_active(NOW+300)
+  assert s.reserve_active(NOW+600)
+  assert not state(tmp_path).reserve_active(NOW+900)
 
 
 def test_fresh_passive_data_prevents_unnecessary_active_read(tmp_path):
@@ -119,9 +121,10 @@ def test_fresh_passive_data_prevents_unnecessary_active_read(tmp_path):
   assert not s.reserve_active(NOW)
 
 
-def test_each_manual_request_once_and_request_burst_limited(tmp_path):
+def test_completed_manual_request_not_repeated_and_request_burst_limited(tmp_path):
   s = state(tmp_path)
   assert s.reserve_active(NOW, bg.iso(NOW-1))
+  s.observe_refresh({"pending": False, "requestedAt": bg.iso(NOW-1), "completedAt": bg.iso(NOW+1)})
   assert not state(tmp_path).reserve_active(NOW+300, bg.iso(NOW-1))
   assert not s.reserve_active(NOW+10, bg.iso(NOW+9))
   assert s.reserve_active(NOW+300, bg.iso(NOW+299))
@@ -180,7 +183,7 @@ def test_active_read_failure_keeps_prior_data(tmp_path):
   c=collector(tmp_path)
   c.state.offer({"fLvl":42},NOW-7200,"gmone-official-cache",NOW)
   c.cloud=lambda *a,**kw:{"deviceId":"test-device","ok":True,"pending":False}
-  c.client=SimpleNamespace(authenticated=True,vin="v",user_uuid="u",read_car_status=lambda **kw:{"login":{"success":0},"body":{"success":3},"timestamp":NOW*1000})
+  c.client=SimpleNamespace(authenticated=True,vin="v",user_uuid="u",login=lambda *a:None,read_car_status=lambda **kw:{"login":{"success":0},"body":{"success":3},"timestamp":NOW*1000})
   c.cache=SimpleNamespace(read_cached_status=lambda *a,**kw:{})
   c.step()
   assert c.state.data["latestEpoch"] == NOW-7200
@@ -278,7 +281,7 @@ def test_active_start_excludes_slow_preflight_and_cache(tmp_path):
     clock[0] += 1
     return {"login":{"success":0},"body":{"success":0,"car_status":{"fLvl":42}},"timestamp":clock[0]*1000}
   c.cache = SimpleNamespace(read_cached_status=cache)
-  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",read_car_status=read)
+  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",login=lambda *a:None,read_car_status=read)
   c.step()
   assert sent[0]["refreshStartedAt"] == bg.iso(NOW+150)
   assert sent[0]["vehicleUpdatedAt"] == bg.iso(NOW+151)
@@ -292,7 +295,7 @@ def test_history_cursor_comes_only_from_server_and_survives_restart(tmp_path):
     assert kw["last_received_time"] == 0
     return {"login":{"success":0},"timestamp":NOW*1000,"body":{"success":0,"car_status":{"fLvl":42},
       "running_cycles_data":[{"time":20},{"time":10},{"time":True},{"time":-3}]}}
-  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",read_car_status=read)
+  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",login=lambda *a:None,read_car_status=read)
   c.step()
   c = collector(tmp_path)
   c.now = lambda: NOW+3600
@@ -302,7 +305,7 @@ def test_history_cursor_comes_only_from_server_and_survives_restart(tmp_path):
   def next_read(**kw):
     called.append(kw["last_received_time"])
     return {"login":{"success":0},"body":{"success":3}}
-  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",read_car_status=next_read)
+  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",login=lambda *a:None,read_car_status=next_read)
   c.step()
   assert called == [20]
 
@@ -319,7 +322,7 @@ def test_http_400_reserves_budget_without_losing_cursor_or_session(tmp_path):
   c.cloud = lambda *a,**kw: {"ok":True,"pending":False}
   c.cache = SimpleNamespace(read_cached_status=lambda *a,**kw:{})
   def read(**kw): raise bg.protocol.ProtocolError("HTTP 400",400)
-  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",read_car_status=read)
+  c.client = SimpleNamespace(authenticated=True,vin="v",user_uuid="u",login=lambda *a:None,read_car_status=read)
   c.step()
   assert state(tmp_path).data["historyCursor"] == 20
   assert state(tmp_path).data["activeCount"] == 1
@@ -351,6 +354,8 @@ def test_authenticated_async_data_without_repeated_login_is_uploaded(tmp_path,mo
   def post(url, payload, **kw):
     operation = payload["header"]["id"]
     operations.append(operation)
+    if operation == 8:
+      return {"login":{"success":0,"user_info_uuid":"u","token_key":"token","car_info":{"v":{}}},"body":{"success":0}}
     if operation == 21:
       return {"login":{"success":0},"body":{"success":13,"wait_response":True,"ticket_uuid":"ticket"},"timestamp":NOW*1000}
     assert operation == 66
@@ -362,7 +367,7 @@ def test_authenticated_async_data_without_repeated_login_is_uploaded(tmp_path,mo
   c.cache = SimpleNamespace(read_cached_status=lambda *a,**kw:{})
   c.cloud = lambda path,body=None: (sent.append(body) if body else None) or {"ok":True,"pending":False}
   c.step()
-  assert operations == [21,66]
+  assert operations == [8,21,66]
   assert sent[0]["status"]["fuel"] == "42"
   assert sent[0]["source"] == "gmone-direct"
   assert "collectionError" not in c.health

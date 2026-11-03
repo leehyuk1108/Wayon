@@ -25,6 +25,19 @@ Cloud device ID and application-derived scope.
   removes it. Check the Cloud device identity before every upload cycle.
 - GMOne login and official-cache failures back off to one hour. Cloud outages
   do not reset GMOne authentication or initiate new direct vehicle reads.
+- Every budgeted direct read acquires a current official session. A failed
+  request remains pending, with at most three attempts, at least five minutes
+  apart, within its one-hour lifetime. Retries count toward the existing daily
+  limit; a restart does not reset attempts or the daily budget.
+- Attempt reservation is separate from completion. Only the Cloud refresh ACK
+  completes a manual request. Legacy `handledRequest` values are not treated as
+  proof of success. A pending direct snapshot is uploaded before another vehicle
+  read and is not overwritten by passive cache data. Its original observation
+  and request timestamps are retained, including across upload failures.
+- Authentication recovery and passive polling do not clear a failed-read
+  diagnosis. The current error clears after direct delivery; the last failure
+  timestamp/code remains in health/state and sanitized logs. Credentials and
+  account/vehicle identifiers are not added to these diagnostics.
 
 ## Windows Installation
 

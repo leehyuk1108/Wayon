@@ -30,6 +30,7 @@ POLL_SECONDS = 60
 ACTIVE_INTERVAL = 3600
 ACTIVE_MIN_GAP = 300
 ACTIVE_DAILY_LIMIT = 36
+ACTIVE_MAX_ATTEMPTS = 3
 
 
 def failure_code(exc):
@@ -123,28 +124,56 @@ class State:
     observed = epoch(observed)
     if observed is None or not -120 <= now - observed <= MAX_AGE or not isinstance(raw, dict) or not raw:
       return False
+    direct_refresh = source == "gmone-direct" and request_started is not None
+    if direct_refresh and not (request_started <= observed <= request_started + 120 and
+                               0 <= now - request_started <= 120):
+      return False
+    # Do not replace the only proof of a completed direct read with a passive cache.
+    if not direct_refresh and self.data.get("pending", {}).get("refreshStartedAt"):
+      return False
     status = _without_sensitive_fields(protocol.normalize_car_status(raw, observed, data_source=source))
     # The source observation time, never receipt time, determines freshness/order.
     status["collector_last_success"] = status["last_update"]
     digest = hashlib.sha256(json.dumps(status, sort_keys=True, allow_nan=False).encode()).hexdigest()
-    if observed < self.data.get("latestEpoch", 0):
+    if observed < self.data.get("latestEpoch", 0) and not direct_refresh:
       return False
     if observed == self.data.get("latestEpoch") and digest == self.data.get("latestDigest"):
       return False
     pending = {"schemaVersion": "wayon-gmone-v1", "clientScope": self.data["scope"],
                "source": source, "vehicleUpdatedAt": iso(observed), "collectedAt": iso(now), "status": status}
-    if source == "gmone-direct" and request_started is not None:
+    if direct_refresh:
       pending["refreshStartedAt"] = iso(request_started)
-    self.data.update(latestEpoch=observed, latestDigest=digest, pending=pending)
+    if observed >= self.data.get("latestEpoch", 0):
+      self.data.update(latestEpoch=observed, latestDigest=digest)
+    self.data["pending"] = pending
     self.save()
     return True
+
+  def observe_refresh(self, refresh):
+    requested = parse_iso(refresh.get("requestedAt"))
+    completed = parse_iso(refresh.get("completedAt"))
+    if (refresh.get("pending") is False and requested is not None and completed is not None and
+        completed >= requested > self.data.get("completedRequest", 0)):
+      self.data["completedRequest"] = requested
+      job = self.data.get("activeJob")
+      if job and job.get("requestedAt") is not None and job["requestedAt"] <= requested:
+        job["status"] = "completed"
+      self.save()
 
   def reserve_active(self, now, requested_at=None):
     requested = parse_iso(requested_at)
     manual = (requested is not None and 0 <= now - requested <= 3600
-              and requested > self.data.get("handledRequest", 0))
+              and requested > self.data.get("completedRequest", 0))
+    job = self.data.get("activeJob") or {}
+    same_request = manual and job.get("requestedAt") == requested
+    retry = (not manual and job.get("requestedAt") is None and
+             job.get("status") in ("started", "failed") and
+             0 <= now - job.get("firstAt", 0) <= ACTIVE_INTERVAL and
+             job.get("attempts", 0) < ACTIVE_MAX_ATTEMPTS)
     periodic = now - max(self.data.get("lastActive", 0), self.data.get("latestEpoch", 0)) >= ACTIVE_INTERVAL
-    if not (manual or periodic) or now - self.data.get("lastActive", 0) < ACTIVE_MIN_GAP:
+    if (not (manual or retry or periodic) or now - self.data.get("lastActive", 0) < ACTIVE_MIN_GAP or
+        self.data.get("pending", {}).get("refreshStartedAt") or
+        (same_request and job.get("attempts", 0) >= ACTIVE_MAX_ATTEMPTS)):
       return False
     if now - self.data.get("budgetStart", 0) >= 86400:
       self.data.update(budgetStart=now, activeCount=0)
@@ -152,11 +181,23 @@ class State:
       return False
     self.data["activeCount"] = self.data.get("activeCount", 0) + 1
     self.data["lastActive"] = now
-    if manual:
-      self.data["handledRequest"] = requested
-    # Persist before the external read: a crash/restart must not repeat it.
+    if not (same_request or retry):
+      job = {"requestedAt": requested if manual else None, "firstAt": now, "attempts": 0}
+    job.update(attempts=job["attempts"] + 1, startedAt=now, status="started")
+    self.data["activeJob"] = job
+    # Reserve the attempt, not completion, before any network call or restart.
     self.save()
     return True
+
+  def start_read(self, now):
+    self.data["lastActive"] = now
+    self.data["activeJob"]["startedAt"] = now
+    self.save()
+
+  def failed_read(self, now, code):
+    self.data["activeJob"]["status"] = "failed"
+    self.data["lastReadFailure"] = {"at": iso(now), "code": code}
+    self.save()
 
   def upload(self, post, now):
     pending = self.data.get("pending")
@@ -182,6 +223,11 @@ class State:
     self.data.pop("pending", None)
     self.data.update(uploadFailures=0, nextUpload=0, lastDelivered=now,
                      lastDelivery="superseded" if result.get("superseded") else "stored")
+    if pending.get("refreshStartedAt"):
+      self.data["lastDirectDelivery"] = now
+      job = self.data.get("activeJob")
+      if job and pending["refreshStartedAt"] == iso(job["startedAt"]):
+        job["status"] = "delivered"
     self.save()
     return self.data["lastDelivery"]
 
@@ -198,6 +244,8 @@ class StatusClient(protocol.GmoneClient):
     response = super()._post(path, operation, login, body)
     auth = response.get("login") or {}
     if operation != 8 and "success" in auth and auth["success"] != 0:
+      self.auth_diagnostic = {"operation": operation,
+                              "code": auth["success"] if type(auth["success"]) is int else -1}
       raise protocol.AuthenticationError("authenticated_request_rejected")
     if operation == 66:
       result = response.get("body") or {}
@@ -229,6 +277,11 @@ class Collector:
     self.client = StatusClient()
     self.cache = protocol.OfficialFirebaseClient(firebase_key)
     self.health = {"version": 1}
+    if state.data.get("lastReadFailure"):
+      failure = state.data["lastReadFailure"]
+      self.health["lastCollectionFailure"] = failure
+      if (parse_iso(failure.get("at")) or 0) > state.data.get("lastDirectDelivery", 0):
+        self.health.update(collectionError="StatusReadError", collectionFailure=failure["code"])
     self.next_cache = self.next_login = 0
     self.login_failures = self.cache_failures = 0
     self.cloud_verified = False
@@ -246,6 +299,31 @@ class Collector:
       self.cloud_verified = True
     return result
 
+  def upload_pending(self):
+    pending = self.state.data.get("pending") or {}
+    try:
+      delivery = self.state.upload(lambda body: self.cloud("/api/gmone/status", body), self.now())
+      if delivery not in ("idle", "expired"):
+        self.health.update(delivery=delivery, deliveryAt=iso(self.now()))
+        self.health.pop("uploadError", None)
+        self.health.pop("uploadFailure", None)
+        if pending.get("refreshStartedAt"):
+          self.health["lastReadDeliveredAt"] = iso(self.now())
+          self.health.pop("collectionError", None)
+          self.health.pop("collectionFailure", None)
+        LOG.info("snapshot %s source=%s", delivery, pending.get("source"))
+        return bool(pending.get("refreshStartedAt"))
+    except Exception as exc:
+      self.health["uploadError"] = type(exc).__name__
+      self.health["uploadFailure"] = failure_code(exc)
+    return False
+
+  def read_failed(self, code, error="StatusReadError"):
+    self.state.failed_read(self.now(), code)
+    self.health.update(collectionError=error, collectionFailure=code,
+                       lastCollectionFailure=self.state.data["lastReadFailure"])
+    LOG.warning("status read failed: %s attempt=%s", code, self.state.data["activeJob"]["attempts"])
+
   def step(self):
     now = self.now()
     self.health["checkedAt"] = iso(now)
@@ -253,25 +331,20 @@ class Collector:
     self.cloud_verified = False
     try:
       refresh = self.cloud("/api/gmone/refresh")
+      self.state.observe_refresh(refresh)
       self.health.pop("cloudError", None)
     except Exception as exc:
       self.health["cloudError"] = type(exc).__name__
       refresh = None
-    try:
-      delivery = self.state.upload(lambda body: self.cloud("/api/gmone/status", body), now) if refresh is not None else "idle"
-      if delivery != "idle":
-        self.health.update(delivery=delivery, deliveryAt=iso(now))
-        self.health.pop("uploadError", None)
-        self.health.pop("uploadFailure", None)
-        LOG.info("snapshot %s", delivery)
-    except Exception as exc:
-      self.health["uploadError"] = type(exc).__name__
-      self.health["uploadFailure"] = failure_code(exc)
+    delivered = self.upload_pending() if refresh is not None else False
     if now < self.next_login:
       return
+    active_attempt = False
     try:
+      logged_in = False
       if not self.client.authenticated:
         self.client.login(self.email, self.password)
+        logged_in = True
         self.login_failures = 0
       if now >= self.next_cache:
         self.next_cache = now + POLL_SECONDS
@@ -290,7 +363,14 @@ class Collector:
           self.next_cache = self.now() + min(3600, 60 * 2 ** self.cache_failures)
       # Never wake a vehicle while the upload server is unreachable.
       active_start = self.now()
-      if refresh is not None and self.state.reserve_active(active_start, refresh.get("requestedAt") if refresh.get("pending") else None):
+      if refresh is not None and not delivered and self.state.reserve_active(active_start, refresh.get("requestedAt") if refresh.get("pending") else None):
+        active_attempt = True
+        # Other official clients can replace the session between hourly reads.
+        # Acquire a current session only for an already budgeted status attempt.
+        if not logged_in:
+          self.client.login(self.email, self.password)
+        active_start = self.now()
+        self.state.start_read(active_start)
         self.health["activeAttemptAt"] = iso(active_start)
         for key in ("resultDiagnostic", "resultTimedOut", "resultPolls", "activeResult"):
           self.health.pop(key, None)
@@ -322,33 +402,36 @@ class Collector:
               self.state.data["historyCursor"] = max(self.state.data.get("historyCursor", 0), max(cursors))
               self.state.save()
           self.health["statusResponseBytes"] = len(json.dumps(response).encode())
-          self.state.offer(body.get("car_status"), response.get("timestamp"), "gmone-direct", self.now(), active_start)
+          if self.state.offer(body.get("car_status"), response.get("timestamp"), "gmone-direct", self.now(), active_start):
+            self.state.data["activeJob"]["status"] = "collected"
+            self.state.save()
+          else:
+            self.read_failed("invalid_or_old_status")
+        else:
+          self.read_failed("result_timeout" if timing.get("result_timed_out") else
+                           "status_result_" + str(self.health["activeResult"]))
         LOG.info("status read completed code=%s", self.health["activeResult"])
-      self.health.pop("collectionError", None)
-      self.health.pop("collectionFailure", None)
     except protocol.AuthenticationError:
       self.client.clear_session()
       self.cache.clear_session()
       self.login_failures = min(6, self.login_failures + 1)
       self.next_login = now + min(3600, 60 * 2 ** self.login_failures)
       self.health["collectionError"] = "AuthenticationError"
+      if active_attempt:
+        self.read_failed("AuthenticationError", "AuthenticationError")
+      if hasattr(self.client, "auth_diagnostic"):
+        self.health["lastAuthenticationFailure"] = {"at": iso(self.now()), **self.client.auth_diagnostic}
     except Exception as exc:
       self.health["collectionError"] = type(exc).__name__
       self.health["collectionFailure"] = failure_code(exc)
       self.health["lastCollectionFailure"] = {"at": iso(self.now()), "code": failure_code(exc)}
+      if active_attempt:
+        self.read_failed(failure_code(exc), type(exc).__name__)
       if not self.client.authenticated:
         self.login_failures = min(6, self.login_failures + 1)
         self.next_login = now + min(3600, 60 * 2 ** self.login_failures)
-    try:
-      delivery = self.state.upload(lambda body: self.cloud("/api/gmone/status", body), self.now()) if refresh is not None else "idle"
-      if delivery != "idle":
-        self.health.update(delivery=delivery, deliveryAt=iso(self.now()))
-        self.health.pop("uploadError", None)
-        self.health.pop("uploadFailure", None)
-        LOG.info("snapshot %s", delivery)
-    except Exception as exc:
-      self.health["uploadError"] = type(exc).__name__
-      self.health["uploadFailure"] = failure_code(exc)
+    if refresh is not None:
+      self.upload_pending()
 
 
 def main():

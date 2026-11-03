@@ -90,7 +90,9 @@ try {
         });
         assert.equal(metrics.overflow, 0, 'horizontal page overflow');
         assert.ok(Math.abs(metrics.nav.b-height) < 1, 'nav reaches viewport bottom');
-        assert.equal(metrics.nav.h,45+Math.max(8,bottom-14),'compact navigation retains home-gesture clearance');
+        assert.equal(metrics.nav.h,45+Math.max(8,bottom),'compact navigation retains the full home-gesture inset');
+        const lastNav=await page.locator('.footer-nav .nav-item').first().boundingBox();
+        assert.ok(height-lastNav.y-lastNav.height>=bottom,'navigation targets stay above the home indicator');
         assert.equal(metrics.spacer.h, top, 'one top inset');
         assert.equal(metrics.bodyPadding, '0px');
         const compact = await page.evaluate(() => {
@@ -108,10 +110,27 @@ try {
           const left=s=>document.querySelector(s).getBoundingClientRect().left;
           const settings=document.querySelector('#btnSecretSettings').getBoundingClientRect();
           const hero=document.querySelector('.home-map-hero').getBoundingClientRect();
-          return {fuel:left('.home-fuel-track'), command:left('.home-command-bar'), heading:left('.home-feature-heading strong'), settingsRight:hero.right-settings.right};
+          const status=document.querySelector('.home-status-button').getBoundingClientRect();
+          const badge=document.querySelector('.home-status-kicker').getBoundingClientRect();
+          return {fuel:left('.home-fuel-track'), command:left('.home-command-bar'), heading:left('.home-feature-heading strong'),
+            settingsRight:hero.right-settings.right, settingsTop:settings.top-hero.top, statusTop:status.top-hero.top,
+            headerGap:settings.left-status.right, headerCenters:Math.abs(badge.top+badge.height/2-settings.top-settings.height/2)};
         });
         assert.ok(Math.abs(alignment.fuel-alignment.command)<1 && Math.abs(alignment.heading-alignment.command)<1, 'consistent section margins');
         assert.ok(Math.abs(alignment.settingsRight-8)<1, 'settings inset is applied once');
+        assert.equal(alignment.settingsTop,20,'settings moved down without duplicating safe top');
+        assert.equal(alignment.statusTop,30,'status badge and title moved down together');
+        assert.ok(alignment.headerGap>=0 && alignment.headerCenters<2,'badge and settings align without overlap');
+        for (const selector of ['body','.tab-panel','.home-feature-rail','#pwa-login']) {
+          assert.equal(await page.locator(selector).first().evaluate(el=>getComputedStyle(el).touchAction),'manipulation','disable browser double-tap on '+selector);
+        }
+        const viewport=await page.locator('meta[name="viewport"]').getAttribute('content');
+        assert.doesNotMatch(viewport,/user-scalable\s*=\s*no|maximum-scale\s*=/i,'keep pinch zoom available');
+        assert.equal(await page.locator('.snapshot-viewer-stage').evaluate(el=>getComputedStyle(el).touchAction),'none','preserve the photo viewer custom gestures');
+        const fuelLabel=await page.locator('.home-fuel-label').boundingBox();
+        await page.touchscreen.tap(fuelLabel.x+fuelLabel.width/2,fuelLabel.y+fuelLabel.height/2);
+        await page.touchscreen.tap(fuelLabel.x+fuelLabel.width/2,fuelLabel.y+fuelLabel.height/2);
+        assert.equal(await page.evaluate(()=>visualViewport.scale),1,'two fixture taps do not zoom the page');
         if (metrics.panel.scroll <= metrics.panel.h+1) {
           assert.ok(metrics.nav.y-metrics.rail.b <= 14, 'no dead space before navigation');
           assert.ok(metrics.nav.y >= metrics.rail.b, 'rail does not overlap navigation');
@@ -137,6 +156,10 @@ try {
         await page.locator('.nav-item[data-target="tab-control"]').click();
         await page.locator('#home-card-finder').click();
         await page.waitForSelector('#tab-control.finder-open');
+        await page.waitForFunction(() => {
+          const style=getComputedStyle(document.querySelector('#btnCloseVehicleFinder'));
+          return style.opacity==='1' && new DOMMatrixReadOnly(style.transform).m42===0;
+        });
         const finder=await page.locator('.home-map-hero').boundingBox();
         assert.equal(finder.width,width); assert.equal(finder.height,height);
         await page.locator('#btnCloseVehicleFinder').click({trial:true});

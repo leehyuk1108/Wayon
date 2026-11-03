@@ -46,7 +46,7 @@ Comma or Navdy for this presentation change.
 
 ## Deployment
 
-Final PWA version: `7eae6173-d7bf-4f40-8d04-6f29397a078f`.
+Initial compact PWA version: `7eae6173-d7bf-4f40-8d04-6f29397a078f`.
 Only `/pwa.css` changed among production assets. Both browser engines pass all
 ten cases (20 total), with zero mutation requests, after the final footer change.
 CSS/JS bytes and nonce-normalized HTML match the local build; Worker settings
@@ -59,3 +59,41 @@ still needs a cold reload on the phone: the mirroring app-switcher dismissal
 gesture did not consistently close the PWA, so the user was asked to reopen it.
 Do not describe the desktop standalone fixture as proof of that final physical
 footer spacing, or claim physical keyboard/rotation checks that were not run.
+
+## Follow-up: Safe Insets and Taps
+
+The user reopened the compact version and requested slightly higher bottom tabs,
+a lower status badge/settings button, and no accidental double-tap page zoom.
+
+- Restore the full bottom safe-area inset, keeping the 44px navigation targets.
+  On a 34px-inset iPhone, this raises the tabs by 14px versus the initial compact
+  version. The background still reaches the screen edge; no fake home indicator
+  is drawn. The operating system controls the real indicator's visibility.
+- Move the status group from 18px to 30px below the map's top, and the settings
+  target from 8px to 20px. Preserve their alignment and the single top inset.
+  Keep the existing smaller title, cards, icons and command dock.
+- Use `touch-action: manipulation` on the page and nested scrolling surfaces.
+  This suppresses browser double-tap zoom while retaining pan/pinch gestures:
+  https://webkit.org/blog/5610/more-responsive-tapping-on-ios/
+  Keep the scalable viewport and the original map/photo gesture handlers. Do
+  not add global touch-event cancellation or touch any vehicle-command handler.
+- Extend the isolated layout checks with exact top offsets, badge/settings
+  alignment, full bottom clearance, computed gesture policy, a scalable viewport,
+  unchanged custom photo gestures and two synthetic taps without page scaling.
+  A synthetic tap check is not a physical iPhone gesture test.
+- An initial run passed 19/20 layouts; the finder check caught its existing
+  transition at translateY(-6px). Wait for its opacity/transform to settle before
+  measuring, rather than relaxing geometry assertions or changing the UI.
+
+Follow-up deployment: `b6b3459c-bb7a-436c-b118-d3f9de1e59cd`, 100% active.
+Only `/pwa.css` was uploaded. Production CSS/JS bytes, nonce-normalized HTML and
+Worker bindings match; Wayon remains on `6ba010db-cb2e-419d-9fab-79369da18d6b`
+with the same worker hash. Android source and server/bridge code are unchanged.
+
+Final checks: 337 functional tests passed with zero skips; WebKit/Chromium passed
+all 20 layout cases with zero mutation requests. The standalone WebKit screenshot
+was inspected for top alignment and bottom clearance. Actual iPhone Mirroring
+reconnected, but the existing app retained the old page. App-switcher gestures
+did not dismiss it reliably; a user cold reopen was requested. Physical final
+spacing, home-indicator visibility and double-tap/pinch behavior remain pending,
+not proved by the desktop fixture.

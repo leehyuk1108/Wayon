@@ -26,6 +26,8 @@ body[data-pwa="locked"] > :not(#pwa-login):not(script) { visibility: hidden !imp
 }
 html { height: 100%; background: #0b0b0c; }
 body { height: 100vh; height: 100dvh; min-height: 0; padding: 0; }
+/* Disable browser double-tap zoom, retaining panning and pinch-to-zoom. */
+body, .tab-panel, .home-feature-rail, #pwa-login { touch-action: manipulation; }
 /* Installed WebKit apps can subtract the status bar from dvh, leaving a bottom gap. */
 @media (display-mode: standalone) {
   body { height: 100vh; }
@@ -35,7 +37,7 @@ body > .app-frame { flex: 1 1 0; height: auto; min-height: 0; }
 .main-content { flex: 1 1 0; min-height: 0; }
 .tab-panel { min-height: 0; overscroll-behavior-y: contain; }
 .footer-nav {
-  padding: 0 max(20px, var(--pwa-safe-right)) max(8px, calc(var(--pwa-safe-bottom) - 14px)) max(20px, var(--pwa-safe-left));
+  padding: 0 max(20px, var(--pwa-safe-right)) max(8px, var(--pwa-safe-bottom)) max(20px, var(--pwa-safe-left));
   background: #101011;
   box-shadow: none;
 }
@@ -94,9 +96,9 @@ body > .app-frame { flex: 1 1 0; height: auto; min-height: 0; }
 .home-sunroof-card { flex-basis: 220px; }
 .home-sunroof-actions .action-button-grouped { min-height: 44px; }
 .home-sunroof-actions .button-text { font-size: .75rem !important; }
-.home-status-button { top: 18px; }
+.home-status-button { top: 30px; }
 .home-status-title { font-size: 2.625rem; line-height: .9; letter-spacing: 0; overflow-wrap: anywhere; }
-.home-map-hero #btnSecretSettings { right: 8px; }
+.home-map-hero #btnSecretSettings { top: 20px; right: 8px; }
 .finder-map-close { left: calc(var(--pwa-safe-left) + 18px); top: calc(var(--pwa-safe-top) + 56px); }
 .finder-map-controls { right: calc(var(--pwa-safe-right) + 18px); top: calc(var(--pwa-safe-top) + 56px); }
 /* Overscanned tiles must not scroll their absolute-positioned finder controls. */

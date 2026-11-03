@@ -97,3 +97,21 @@ reconnected, but the existing app retained the old page. App-switcher gestures
 did not dismiss it reliably; a user cold reopen was requested. Physical final
 spacing, home-indicator visibility and double-tap/pinch behavior remain pending,
 not proved by the desktop fixture.
+
+### Physical Follow-up at 11:27 KST
+
+After the user reopened the app, iPhone 16 Pro Mirroring showed the final layout:
+the badge/settings were visibly lower, aligned and readable, and the bottom tabs
+were higher with clearance below them. The settings target opened the settings
+tab, and the bottom vehicle tab returned to the unchanged home screen.
+
+Three mirrored double-click/tap sequences on the fuel label, service heading and
+observation timestamp left the page scale and element positions unchanged. No
+vehicle-command buttons were touched and no account/notification settings were
+changed. This is real-device mirrored input, not a manual finger gesture test.
+Pinch input is unavailable in this tool and remains unverified physically. The
+home-indicator space is present, but its persistent visibility was not observed
+in the final screenshots; do not claim the OS indicator is always visible.
+
+No further runtime changes or deployment were needed; this follow-up only
+records the physical results for the already deployed CSS.

@@ -178,7 +178,7 @@ def validate_result(result, count, frames=None):
     return result
 
 
-def codex_args(executable, job, model=None):
+def codex_args(executable, job, model=None, *, images=None, instructions=None):
     args = [str(executable), "exec", "--ignore-user-config", "--ignore-rules",
             "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--json",
             "--color", "never", "-C", str(job), "--output-schema", str(job / "schema.json"),
@@ -186,7 +186,7 @@ def codex_args(executable, job, model=None):
     for key, value in {"approval_policy": '"never"', "web_search": '"disabled"',
                        "tools.view_image": "false", "project_doc_max_bytes": "0",
                        "mcp_servers": "{}", "analytics.enabled": "false",
-                       "model_instructions_file": json.dumps(str(ROOT / "instructions.txt")),
+                       "model_instructions_file": json.dumps(str(instructions or ROOT / "instructions.txt")),
                        "model_reasoning_effort": '"medium"',
                        "forced_login_method": '"chatgpt"'}.items():
         args += ["-c", f"{key}={value}"]
@@ -194,7 +194,7 @@ def codex_args(executable, job, model=None):
         args += ["--disable", feature]
     if model:
         args += ["--model", model]
-    for frame in sorted(job.glob("frame-*.jpg")):
+    for frame in sorted(job.glob("frame-*.jpg")) if images is None else images:
         args += ["--image", str(frame)]
     return args + ["-"]
 
@@ -214,14 +214,12 @@ def model_prompt(frames):
             "Per-attachment capture provenance: " + json.dumps(provenance))
 
 
-def run_codex(executable, job, count, model=None, timeout=150):
-    frames = json.loads((job / "manifest.json").read_text(encoding="utf-8"))["frames"]
-    prompt = model_prompt(frames)
+def run_model(executable, job, prompt, model=None, timeout=150, *, images=None, instructions=None):
     env = {k: v for k, v in os.environ.items() if k.upper() not in
            {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_BASE_URL"}}
     # The installed CLI manages OAuth refresh in its original auth store. Never copy token files.
     with (job / "codex-events.jsonl").open("wb") as out, (job / "codex-stderr.log").open("wb") as err:
-        process = subprocess.Popen(codex_args(executable, job, model), stdin=subprocess.PIPE,
+        process = subprocess.Popen(codex_args(executable, job, model, images=images, instructions=instructions), stdin=subprocess.PIPE,
                                    stdout=out, stderr=err, env=env, cwd=job,
                                    start_new_session=os.name != "nt")
         try:
@@ -240,31 +238,61 @@ def run_codex(executable, job, count, model=None, timeout=150):
         raise RuntimeError("codex_failed_auth_limit_or_runtime")
     if (job / "codex-events.jsonl").stat().st_size > 2 * 1024 * 1024:
         raise RuntimeError("unexpected_model_output_size")
-    usage = None
+    usage, completed = None, False
     for line in (job / "codex-events.jsonl").read_text(encoding="utf-8").splitlines():
         event = json.loads(line)
+        if event.get("type") in ("turn.failed", "error"):
+            raise RuntimeError("codex_failed_auth_limit_or_runtime")
         item = event.get("item", {})
+        if event.get("type") == "item.completed" and item.get("type") == "error":
+            message = item.get("message", "")
+            # This CLI emits a transport fallback notice as an error item even
+            # when the turn subsequently completes. No tool is authorized here.
+            if isinstance(message, str) and message.startswith("Falling back from WebSockets to HTTPS transport."):
+                continue
+            raise RuntimeError("codex_failed_auth_limit_or_runtime")
         if event.get("type") in ("item.started", "item.completed") and item.get("type") not in (
                 "agent_message", "reasoning", None):
             raise RuntimeError("unexpected_tool_activity")
         if event.get("type") == "turn.completed":
             usage = event.get("usage")
+            completed = True
     answer = job / "answer.json"
     if not answer.exists() or answer.stat().st_size > 32_768:
         raise RuntimeError("missing_or_oversized_answer")
-    result = validate_result(json.loads(answer.read_text(encoding="utf-8")), count, frames)
+    if not completed:
+        raise RuntimeError("codex_failed_auth_limit_or_runtime")
+    return json.loads(answer.read_text(encoding="utf-8")), usage
+
+
+def run_codex(executable, job, count, model=None, timeout=150):
+    frames = json.loads((job / "manifest.json").read_text(encoding="utf-8"))["frames"]
+    result, usage = run_model(executable, job, model_prompt(frames), model, timeout)
+    result = validate_result(result, count, frames)
     return {"analysis": result, "usage": usage, "provider": "codex-chatgpt-oauth",
             "verification": "machine_read_not_human_verified"}
 
 
+def run_parking(executable, job, count, model=None, *, cancel=None):
+    from parking_scene import run_scene
+    return run_scene(executable, job, count, model, cancel=cancel)
+
+
 class Service:
-    def __init__(self, config, runner=run_codex):
+    def __init__(self, config, runner=None):
+        if runner is None:
+            runner = run_parking if config.get("multiStage", False) is True else run_codex
         self.config, self.runner = config, runner
+        if config.get("multiStage") is True or config.get("sceneShadow") is True:
+            import parking_scene
+            if not (ROOT / "instructions-scene.txt").is_file():
+                raise ValueError("scene_instructions_missing")
         self.root = Path(config["dataDir"]).resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock = threading.Lock()
         self.queue = queue.Queue(maxsize=8)
         self.worker = None
+        self.scene_active = False
         self.db = sqlite3.connect(self.root / "parking.sqlite", check_same_thread=False)
         self.db.execute("PRAGMA secure_delete=ON")
         self.db.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, device TEXT, event TEXT, parked REAL, signature TEXT, status TEXT, created REAL, result TEXT, error TEXT, UNIQUE(device,event))")
@@ -333,9 +361,71 @@ class Service:
                 "parkedAt": datetime.fromtimestamp(row[3], timezone.utc).isoformat(),
                 "status": row[4], "result": json.loads(row[5]) if row[5] else None, "error": row[6]}
 
+    def compare_scene(self, job_id, manifest):
+        """Observe new completions only; never replace or re-notify the baseline."""
+        job = self.root / job_id
+        report = {"status": "skipped", "reason": "expired", "affectsNotification": False}
+        try:
+            from parking_scene import TOTAL_TIMEOUT
+            if manifest["eventId"].startswith("snapshot-"):
+                report["reason"] = "not_parking_event"
+                return
+            if time.time() - timestamp(manifest["parkedAt"]) > 1800 - TOTAL_TIMEOUT - 120:
+                return
+            if not self.queue.empty():
+                report["reason"] = "new_job_waiting"
+                return
+            with self.lock:
+                recent_failure = self.db.execute(
+                    "SELECT 1 FROM jobs WHERE error='codex_failed_auth_limit_or_runtime' AND created>? LIMIT 1",
+                    (time.time() - 86400,)).fetchone()
+            if recent_failure:
+                report["reason"] = "recent_baseline_runtime_failure"
+                return
+            budget_file = self.root / "scene-budget.json"
+            today = datetime.now(timezone.utc).date().isoformat()
+            budget = {"day": today, "attempts": 0}
+            if budget_file.exists():
+                if budget_file.stat().st_size > 1024:
+                    raise ValueError("invalid_budget")
+                previous = json.loads(budget_file.read_text(encoding="utf-8"))
+                if (set(previous) != {"day", "attempts"} or type(previous["attempts"]) is not int
+                        or not 0 <= previous["attempts"] <= 24 or not isinstance(previous["day"], str)):
+                    raise ValueError("invalid_budget")
+                # A backwards clock cannot reset a previously reserved budget.
+                if previous["day"] >= today:
+                    budget = previous
+            limit = self.config.get("sceneMaxJobsPerDay", 8)
+            if type(limit) is not int or not 1 <= limit <= 24:
+                raise ValueError("invalid_budget")
+            if budget["attempts"] >= limit:
+                report["reason"] = "daily_limit"
+                return
+            budget["attempts"] += 1
+            temporary = budget_file.with_suffix(".tmp")
+            temporary.write_text(json.dumps(budget), encoding="utf-8")
+            os.replace(temporary, budget_file)
+            result = run_parking(self.config["codexExe"], job, len(manifest["frames"]), self.config.get("model"),
+                                 cancel=lambda: not self.queue.empty())
+            report = {"status": "completed", "affectsNotification": False, "result": result}
+        except Exception as exc:
+            reason = str(exc) if type(exc) is RuntimeError and str(exc) in {
+                "model_timeout", "unexpected_tool_activity", "codex_failed_auth_limit_or_runtime", "new_job_waiting"
+            } else "invalid_result_or_runtime"
+            report = {"status": "failed", "reason": reason, "affectsNotification": False}
+            logging.warning("scene_comparison_failed code=%s", reason)
+        finally:
+            try:
+                report["completedAt"] = utcnow()
+                (job / "scene-comparison.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                logging.warning("scene_comparison_write_failed")
+            self.scene_active = False
+
     def process_one(self):
         job_id = self.queue.get()
         job = self.root / job_id
+        comparison_manifest = None
         try:
             with self.lock:
                 self.db.execute("UPDATE jobs SET status='running' WHERE id=?", (job_id,))
@@ -343,12 +433,17 @@ class Service:
                 self.db.commit()
             logging.info("job_started id=%s", job_id)
             manifest = json.loads((job / "manifest.json").read_text(encoding="utf-8"))
+            if self.runner is run_parking:
+                from parking_scene import TOTAL_TIMEOUT
+                if time.time() - timestamp(manifest["parkedAt"]) > 1800 - TOTAL_TIMEOUT - 120:
+                    raise RuntimeError("parking_job_expired")
             result = self.runner(self.config["codexExe"], job, len(manifest["frames"]), self.config.get("model"))
             result.update({"completedAt": utcnow(), "frames": manifest["frames"],
                            "interpretation": "nearby_signs_not_exact_parking_space"})
             encoded = json.dumps(result, ensure_ascii=False)
             (job / "result.json").write_text(encoded, encoding="utf-8")
             with self.lock:
+                self.scene_active = self.config.get("sceneShadow") is True and self.runner is not run_parking
                 self.db.execute("UPDATE jobs SET status='completed',result=? WHERE id=?", (encoded, job_id))
                 if self.parking_notify is not None:
                     try:
@@ -357,16 +452,25 @@ class Service:
                         logging.warning("parking_notify_enqueue_failed")
                 self.db.commit()
             logging.info("job_completed id=%s frames=%d", job_id, len(manifest["frames"]))
+            if self.scene_active:
+                comparison_manifest = manifest
         except Exception as exc:
             # No exception contents: errors can contain credential-bearing stderr or image data.
             code = str(exc) if type(exc) is RuntimeError and str(exc) in {
                 "model_timeout", "codex_failed_auth_limit_or_runtime", "unexpected_tool_activity",
-                "unexpected_model_output_size", "missing_or_oversized_answer"} else "invalid_result_or_runtime"
+                "unexpected_model_output_size", "missing_or_oversized_answer", "parking_job_expired",
+                "scene_output_too_large"} else "invalid_result_or_runtime"
             with self.lock:
                 self.db.execute("UPDATE jobs SET status='failed',error=? WHERE id=?", (code, job_id))
                 self.db.commit()
             logging.error("job_failed id=%s code=%s class=%s", job_id, code, type(exc).__name__)
         finally:
+            if comparison_manifest is not None:
+                try:
+                    self.compare_scene(job_id, comparison_manifest)
+                except Exception:
+                    logging.warning("scene_comparison_unhandled_failure")
+            self.scene_active = False
             self.queue.task_done()
 
     def work(self):
@@ -424,6 +528,8 @@ def handler(service):
                 notify_alive = notifier is not None and notifier.thread is not None and notifier.thread.is_alive()
                 return self.reply(200 if alive else 503, {"ok": alive, "workerAlive": alive, "service": "parking-codex-v1", "maxFrames": MAX_FRAMES,
                                         "parkingNotifyConfigured": notifier is not None, "parkingNotifyAlive": notify_alive,
+                                        "sceneShadowConfigured": service.config.get("sceneShadow") is True,
+                                        "sceneBusy": service.scene_active,
                                         "queued": service.queue.qsize(), "authMode": "chatgpt-oauth"})
             if re.fullmatch(r"/jobs/[a-f0-9]{32}", self.path):
                 result = service.get(self.path[6:])

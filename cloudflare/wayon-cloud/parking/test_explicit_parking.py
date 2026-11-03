@@ -306,6 +306,7 @@ class PromptRunnerTests(unittest.TestCase):
                 self.assertIn(b'"phase": "parked"', prompt)
                 self.assertIn(b"not the exact parked location", prompt)
                 (job / "answer.json").write_text(json.dumps(answer))
+                (job / "codex-events.jsonl").write_text(json.dumps({"type": "turn.completed", "usage": {}}) + "\n")
             process.communicate.side_effect = communicate
             with patch.object(s.subprocess, "Popen", return_value=process) as popen, \
                     patch.object(s, "validate_result", return_value=answer) as validate:

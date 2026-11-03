@@ -1,5 +1,18 @@
 # My Traverse Next
 
+## MultiPack Battery Voltage (v40)
+
+Version `40 / 2.0-preview.31-multipack-voltage` uses the MultiPack/GMOne
+vehicle-status battery voltage in both the battery summary and vehicle-info
+card. Comma telemetry no longer overrides those values, regardless of callback
+order or Cloud-key presence. Missing MultiPack voltage displays `--V` in the
+info card, without falling back to Comma. Observation freshness, other battery
+fields, warning policies, controls and layout are unchanged.
+
+The iPhone PWA builds from this same HTML. Android update installation and PWA
+deployment were verified separately on the actual phones; see
+[`my_traverse_multipack_voltage_20261103.md`](../../docs/my_traverse_multipack_voltage_20261103.md).
+
 ## Parking Sign Notifications (v39)
 
 Version `39 / 2.0-preview.30-parking-sign` adds the `wayon_parking_sign` FCM

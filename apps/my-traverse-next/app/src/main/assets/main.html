@@ -11364,13 +11364,7 @@
             const infoVolts = document.getElementById('info-volts');
             if (!infoVolts) return;
 
-            if (hasWayonCloudKey()) {
-                infoVolts.textContent = hasMetricValue(latestWayonCloudVoltage)
-                    ? `${latestWayonCloudVoltage}V`
-                    : "수신 실패";
-                return;
-            }
-
+            // updateCarStatus supplies MultiPack voltage, independently of Comma telemetry.
             infoVolts.textContent = hasMetricValue(latestFirebaseBatteryVoltage)
                 ? `${latestFirebaseBatteryVoltage}V`
                 : "--V";
@@ -11972,8 +11966,7 @@
             const mainBattery = document.getElementById('val-battery');
             if (!mainBattery) return;
 
-            const useWayonCloud = hasWayonCloudKey();
-            const voltage = useWayonCloud ? latestWayonCloudVoltage : latestFirebaseBatteryVoltage;
+            const voltage = latestFirebaseBatteryVoltage;
 
             let batText = "";
             if (hasMetricValue(latestFirebaseBatteryLevel)) {
@@ -11983,22 +11976,19 @@
             if (hasMetricValue(voltage)) {
                 if (batText !== "") batText += " ";
                 batText += '<span class="unit" style="font-size:13px; font-weight:normal">(' + voltage + "V)</span>";
-            } else if (useWayonCloud) {
-                if (batText !== "") batText += " ";
-                batText += '<span class="unit" style="font-size:13px; font-weight:normal">(전압 수신 실패)</span>';
             }
 
             if (mainBattery) {
-                mainBattery.innerHTML = batText || (useWayonCloud ? "정보 수신 실패" : "--");
+                mainBattery.innerHTML = batText || "--";
             }
         }
 
         function updateWayonCloudState(voltage, updatedAt, driveState, speedText, latitude, longitude, address, gpsUpdatedAtEpochMs = null) {
             wayonCloudKeyActive = true;
             wayonCloudDataAvailable = true;
-            const voltageText = voltage && voltage !== "--" ? `${voltage}V` : "수신 실패";
             latestWayonCloudVoltage = hasMetricValue(voltage) ? voltage : null;
             renderBatterySummary();
+            updateInfoVoltsDisplay();
 
             const isDriving = String(driveState || "").toUpperCase() === "ONROAD";
             const locationKicker = document.getElementById('hero-location-kicker');
@@ -12022,11 +12012,6 @@
             if (speedPill && speedValue) {
                 speedValue.textContent = hasMetricValue(speedText) ? speedText : "-- km/h";
                 speedPill.classList.remove('visible');
-            }
-
-            const infoVolts = document.getElementById('info-volts');
-            if (infoVolts) {
-                infoVolts.textContent = voltageText;
             }
 
             updateHeroLocationMap(latitude, longitude, updatedAt, address, isDriving, gpsUpdatedAtEpochMs, true);

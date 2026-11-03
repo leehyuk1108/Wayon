@@ -42,8 +42,8 @@ android {
         applicationId = applicationIdOverride ?: "com.example.carcontroller.next"
         minSdk = 24
         targetSdk = 36
-        versionCode = 39
-        versionName = "2.0-preview.30-parking-sign"
+        versionCode = 40
+        versionName = "2.0-preview.31-multipack-voltage"
 
         buildConfigField(
             "String",

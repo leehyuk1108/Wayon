@@ -73,6 +73,19 @@ class InputTests(unittest.TestCase):
 
 
 class ResultTests(unittest.TestCase):
+    def test_prompt_reviews_small_letters_separately_with_full_image_dimensions(self):
+        frames = s.prepare_bundle(bundle())[0]["frames"]
+        prompt = s.model_prompt(frames)
+        self.assertIn("small colored badges", prompt)
+        self.assertIn("unclear letters stay ambiguous", prompt)
+        provenance = json.loads(prompt.split("Per-attachment capture provenance: ", 1)[1])
+        for item, frame in zip(provenance, frames):
+            self.assertEqual((item["width"], item["height"]), (frame["width"], frame["height"]))
+        instructions = (s.ROOT / "instructions.txt").read_text()
+        self.assertIn("parking P pictogram", instructions)
+        self.assertIn("do not concatenate separate signs", instructions)
+        self.assertIn("actually encloses the characters", instructions)
+
     def test_readable_and_unknown(self):
         self.assertEqual(s.validate_result(readable(), 3)["readings"][0]["text"], "204")
         s.validate_result({"readings": [], "exactParkingSpotKnown": False}, 3)

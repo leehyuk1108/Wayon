@@ -102,6 +102,32 @@ class PayloadTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "unsafe_notify_text"):
                     self.prepare(manifest, result)
 
+    def test_zone_and_pillar_are_independent_and_keep_separate_boxes(self):
+        manifest, result = source_result()
+        zone = copy.deepcopy(result["analysis"]["readings"][0])
+        zone.update(kind="zone", text="C")
+        for evidence in zone["evidence"]:
+            evidence["box"] = [0.01, 0.2, 0.09, 0.8]
+        result["analysis"]["readings"].insert(0, zone)
+        payload = self.prepare(manifest, result)[0]
+        self.assertEqual([(r["kind"], r["text"]) for r in payload["readings"]],
+                         [("zone", "C"), ("pillar", "204")])
+        self.assertNotEqual(payload["readings"][0]["evidence"][0]["box"],
+                            payload["readings"][1]["evidence"][0]["box"])
+        for alternatives in ([], ["C", "G"]):
+            zone.update(text=None, status="ambiguous", alternatives=alternatives)
+            self.assertEqual([(r["kind"], r["text"]) for r in self.prepare(manifest, result)[0]["readings"]],
+                             [("pillar", "204")])
+
+    def test_zone_cannot_borrow_pillar_temporal_or_image_corroboration(self):
+        manifest, result = source_result()
+        zone = copy.deepcopy(result["analysis"]["readings"][0])
+        zone.update(kind="zone", text="AB", evidence=zone["evidence"][:1])
+        result["analysis"]["readings"].append(zone)
+        with self.assertRaisesRegex(ValueError, "uncorroborated"):
+            self.prepare(manifest, result)
+
+
     def test_service_image_hash_and_temporal_validation_not_weakened(self):
         for mutation, error in (
                 (lambda f: f[1].update(sha256=f[0]["sha256"]), "uncorroborated"),

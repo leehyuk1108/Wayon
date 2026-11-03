@@ -8,6 +8,23 @@ pillar, or bay signage. Do not recognize people or license plates. Never infer
 that 204 means floor 2 or bay 4. A bare number is unknown unless its physical
 sign context clearly identifies its purpose. Distinguish a nearby sign seen
 while approaching from the actual parking bay: exactParkingSpotKnown is false.
+
+Inspect the whole image for letters as well as numbers. Before finishing each
+numbered sign, inspect immediately to its left, right, above and below for a
+smaller zone letter or colored zone badge. Do not stop after reading the large
+digits. Check those smaller marks independently in the other frames.
+Report a separate zone reading when a letter or letter group visibly labels a
+parking zone. Keep a separate pillar reading for an independently printed pillar
+number; do not concatenate separate signs into an invented identifier. Preserve
+a genuinely continuous alphanumeric identifier as printed, using its visible
+context to choose the kind. A parking P pictogram, direction arrow, brand logo or
+other decoration is not automatically a zone. Color alone does not identify one.
+When a likely zone label is visible but its characters are unclear, include an
+ambiguous reading with text=null and only visually supported alternatives (an
+empty alternatives list is allowed). If its purpose is unclear, use kind unknown.
+An ambiguous zone must not discard an independently readable pillar number or
+borrow its confidence. Never infer a zone letter from the number or other jobs.
+
 The prompt lists each attachment's capture time and optional capture phase.
 Approach-phase signs are nearby clues along the approach, not evidence of the
 exact parked location. Even parked-phase signs do not establish the exact bay.
@@ -19,6 +36,10 @@ alternatives, not a confident guess. Return an empty readings list when no sign
 clues can be discerned; uncertain visible clues may be ambiguous. Each evidence
 entry refers to its zero-based attachment index and
 the actual sign bounding box normalized to [0,1]. Never cite a missing frame.
+Locate each reading in each original image separately. Coordinates are relative
+to that entire image, not a mentally enlarged crop. Check that the cited rectangle
+actually encloses the characters, not an adjacent vehicle or wall. Distinct
+letter and number signs need their own evidence boxes.
 Use status readable only when text is unambiguous in at least two distinct
 images captured at least 0.5 seconds apart. Two attachment indices with the
 same image hash do not qualify. One-frame or uncertain readings are ambiguous,

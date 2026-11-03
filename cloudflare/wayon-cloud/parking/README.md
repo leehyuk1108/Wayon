@@ -35,6 +35,25 @@ vehicle control code is changed.
    have null text. Bare numbers do not imply a floor, and every result has
    `exactParkingSpotKnown: false` and `machine_read_not_human_verified`.
 
+## Zone letters
+
+The transcription reviews small alphabetic zone badges around each numbered
+sign, not just the larger digits. Separately printed zone letters and pillar
+numbers remain separate readings with their own evidence boxes. A continuous
+alphanumeric identifier stays as printed; neither a blue badge nor a generic
+parking P pictogram alone proves a zone.
+
+Readable zone letters use the same two-distinct-images/0.5-second requirement as
+numbers. A visible but unclear letter is recorded as ambiguous with null text;
+an independently readable number can still be notified. Existing notifications
+already support both zone and pillar labels, so this change needs no phone or
+Cloudflare deployment. Old jobs are not replayed or notified automatically.
+
+The model receives original image dimensions and is instructed to locate each
+sign in those full-image coordinates. Box validation checks structure, source
+identity and timing, not whether pixels actually contain the claimed text.
+Prompt instructions are not an independent visual verification mechanism.
+
 ## Explicit group contract
 
 Each wide entry from `GET /api/ai/snapshots` may have this optional metadata:

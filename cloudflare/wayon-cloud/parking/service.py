@@ -201,11 +201,15 @@ def codex_args(executable, job, model=None):
 
 def model_prompt(frames):
     provenance = [{"frameIndex": i, "capturedAt": f["capturedAt"], "camera": f["camera"],
-                   "phase": f.get("phase", "unspecified"), "sha256": f["sha256"]} for i, f in enumerate(frames)]
+                   "phase": f.get("phase", "unspecified"), "sha256": f["sha256"],
+                   "width": f["width"], "height": f["height"]} for i, f in enumerate(frames)]
     return (f"Transcribe parking signage from the {len(frames)} attached chronological frames, indexed 0 to {len(frames) - 1}. "
             "Frame phase is capture provenance, not sign location. Approach signs are nearby clues along the approach, "
             "not the exact parked location; parked frames also do not prove the exact bay. "
             "Unspecified phase must not be inferred. Matching sha256 values are duplicate images, not independent corroboration. "
+            "Inspect alphabetic zone labels, including small colored badges next to larger numbers. "
+            "Report separate zone letters and pillar numbers independently; unclear letters stay ambiguous even when digits are readable. "
+            "Evidence boxes use the full original image width and height listed below, not crop coordinates. "
             "Use only the images as visual evidence; return the schema JSON, no tools. Do not guess unreadable characters. "
             "Per-attachment capture provenance: " + json.dumps(provenance))
 

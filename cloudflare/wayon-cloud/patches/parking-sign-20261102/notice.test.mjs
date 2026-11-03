@@ -27,6 +27,16 @@ const withTimes = (parked, completed) => payload({parkedAt: iso(parked), complet
   readings: [{kind: 'pillar', text: 'B12', status: 'readable', evidence: [0, 1].map(i => ({frameIndex: i,
     box: [0, 0, 1, 1], capturedAt: iso(parked - 1000 + 1000 * i), sha256: String(i).repeat(64), phase: 'parked'}))}]});
 
+test('zone letter and pillar number both reach the existing notification text', async () => {
+  const p = payload();
+  const pillar = {...p.readings[0], kind: 'pillar', text: '204'};
+  p.readings = [{...structuredClone(pillar), kind: 'zone', text: 'C'}, pillar];
+  assert.equal((await f.call(p)).status, 202);
+  await f.done();
+  assert.ok(f.messages.length > 0);
+  assert.match(f.messages[0].data.notificationBody, /\uAD6C\uC5ED C.*\uAE30\uB465 204/);
+});
+
 test('hash-pinned patch reverses byte-for-byte; unknown, repeat and partial input refuse', () => {
   assert.equal(sha256(baseline), BASELINE_SHA256); assert.equal(sha256(candidate), OUTPUT_SHA256);
   assert.equal(unpatch(candidate), baseline);

@@ -372,7 +372,9 @@ class Service:
         device = identifier(device)
         with self.lock:
             row = self.db.execute("""SELECT id FROM jobs
-                WHERE device=? AND event NOT GLOB 'snapshot-*'
+                WHERE device=? AND lower(event) NOT GLOB 'snapshot-*'
+                AND lower(event) NOT GLOB 'test-*' AND lower(event) NOT GLOB 'simulation-*'
+                AND lower(event) NOT GLOB 'replay-*' AND lower(event) NOT GLOB 'synthetic-*'
                 ORDER BY parked DESC, created DESC, id DESC LIMIT 1""", (device,)).fetchone()
         return self.get(row[0]) if row else None
 
@@ -432,7 +434,9 @@ class Service:
         finally:
             try:
                 report["completedAt"] = utcnow()
-                (job / "scene-comparison.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+                temporary = job / "scene-comparison.pending"
+                temporary.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+                os.replace(temporary, job / "scene-comparison.json")
             except Exception:
                 logging.warning("scene_comparison_write_failed")
             self.scene_active = False

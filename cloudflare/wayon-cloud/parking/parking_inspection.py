@@ -12,6 +12,22 @@ import service
 MAX_REPORT = 196_608
 
 
+def same_surface(left, right):
+    # Containment alone is not identity: a small letter badge can sit beside a number.
+    compatible = left['kind'] == right['kind'] or 'unknown' in (left['kind'], right['kind'])
+    threshold = .65 if compatible else .9
+    for a in left['evidence']:
+        for b in right['evidence']:
+            if a['frameIndex'] != b['frameIndex']:
+                continue
+            x, y = a['box'], b['box']
+            overlap = max(0, min(x[2], y[2])-max(x[0], y[0])) * max(0, min(x[3], y[3])-max(x[1], y[1]))
+            union = (x[2]-x[0])*(x[3]-x[1]) + (y[2]-y[0])*(y[3]-y[1]) - overlap
+            if union > 0 and overlap / union >= threshold:
+                return True
+    return False
+
+
 def merge_inspection(baseline, extra, frames):
     service.validate_result(baseline, len(frames), frames)
     service.validate_result(extra["analysis"], len(frames), frames)
@@ -26,7 +42,7 @@ def merge_inspection(baseline, extra, frames):
         for text in [item["text"], *item["alternatives"]]:
             scene.safe_reading_text(text)
         matches = [(i, r) for i, r in enumerate(supplementary)
-                   if scene.common_evidence(base["evidence"], r["evidence"])]
+                   if same_surface(base, r)]
         conflicts = [r for _, r in matches if (
             (base["text"] and r["text"] and scene.canonical(base["text"]) != scene.canonical(r["text"]))
             or (base["kind"] != "unknown" and r["kind"] != "unknown" and base["kind"] != r["kind"])

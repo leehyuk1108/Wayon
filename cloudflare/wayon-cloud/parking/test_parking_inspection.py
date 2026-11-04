@@ -51,6 +51,17 @@ class Fusion(unittest.TestCase):
         self.assertEqual(result["readings"][1]["confidence"], "additional")
         self.assertNotIn("C203", json.dumps(result))
 
+    def test_nested_neighbor_badge_does_not_demote_number(self):
+        base = reading(box=[.1,.1,.5,.5])
+        for kind in ('zone', 'unknown', 'pillar'):
+            badge = reading('C', kind, [.1,.1,.3,.3])
+            for ambiguous in (False, True):
+                if ambiguous:
+                    badge.update(text=None,status='ambiguous',alternatives=['C'])
+                result = p.merge_inspection(analysis([base]),extra([badge]),frames())
+                self.assertEqual(result['readings'][0],{**base,'confidence':'baseline'})
+                self.assertEqual(len(result['readings']),2)
+
     def test_environment_cannot_supply_free_text(self):
         feature = {"type":"vent", "color":"gray", "label":"malicious text", "evidence":reading()["evidence"]}
         result = p.merge_inspection(analysis([]), extra(surroundings=[feature]), frames())
@@ -117,6 +128,13 @@ class BalancedViews(unittest.TestCase):
                 self.assertEqual(crop.tobytes(), expected.tobytes())
                 total += crop.width*crop.height
         self.assertLessEqual(total, scene.MAX_CROP_PIXELS)
+
+    def test_approach_and_cross_camera_tiles_never_assume_surface_identity(self):
+        for source in ([{**f,'phase':'approach'} for f in frames()],
+                       [{**f,'phase':'approach' if i==2 else 'parked','camera':'road' if i==0 else 'wide'} for i,f in enumerate(frames())]):
+            views = scene.make_views(self.job,source,[],coverage=True)
+            ids = [v['targetIndex'] for v in views]
+            self.assertEqual(len(ids),len(set(ids)))
 
 
 if __name__ == "__main__":

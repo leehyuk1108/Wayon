@@ -175,7 +175,9 @@ def make_views(job, frames, inventory, *, coverage=False):
                            "sourcePixelBox": box, "name": path.name, "pixelRepeatScale": scale,
                            "purpose": "target"})
     if coverage:
-        parked = [i for i, frame in enumerate(frames) if frame.get("phase") == "parked"]
+        camera_pools = [[i for i, frame in enumerate(frames) if frame.get("phase") == "parked" and frame['camera'] == camera]
+                        for camera in ('road', 'wide')]
+        parked = max(camera_pools, key=len)
         pool = parked if len(parked) >= 2 else list(range(len(frames)))
         pair = [pool[0], pool[-1]]
         for row in range(2):
@@ -193,7 +195,9 @@ def make_views(job, frames, inventory, *, coverage=False):
                     path = job / f"crop-{len(output):02d}.png"
                     with Image.open(job / f"frame-{idx:02d}.jpg") as image:
                         image.crop(tuple(box)).save(path)
-                    output.append({"viewIndex": len(output), "targetIndex": len(queues) + row * 3 + col,
+                    # Matching screen tiles during approach do not establish the same physical sign.
+                    identity = row * 3 + col if len(parked) >= 2 else idx * 6 + row * 3 + col
+                    output.append({"viewIndex": len(output), "targetIndex": len(queues) + identity,
                                    "sourceFrameIndex": idx, "sourcePixelBox": box, "name": path.name,
                                    "pixelRepeatScale": 1, "purpose": "overview"})
     return output

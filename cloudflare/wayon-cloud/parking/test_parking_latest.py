@@ -83,6 +83,12 @@ class LatestTests(unittest.TestCase):
         self.job(3, event="snapshot-", parked=600)
         self.assertEqual(self.request("/latest?device=device-a")[1]["jobId"], expected)
 
+    def test_latest_test_record_cannot_block_latest_real_parking(self):
+        expected = self.job(1,event='parking-real',parked=100)
+        for i,prefix in enumerate(('test','simulation','replay','synthetic','SNAPSHOT'),2):
+            self.job(i,event=prefix+'-fixture',parked=200+i)
+        self.assertEqual(self.service.latest('device-a')['jobId'],expected)
+
     def test_snapshot_filter_is_only_a_literal_prefix(self):
         expected = self.job(1, event="parking-snapshot-example")
         self.assertEqual(self.service.latest("device-a")["jobId"], expected)

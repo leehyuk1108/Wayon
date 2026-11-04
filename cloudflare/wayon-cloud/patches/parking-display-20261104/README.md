@@ -1,6 +1,7 @@
 # Parking Display KV Patch
 
-Source-only, not deployed. Never apply the dirty repository `src/worker.js`.
+Deployed on 2026-11-04 after the offline checks below. Never apply the dirty
+repository `src/worker.js`.
 `patch.mjs` accepts only the exact active baseline and the two pinned companion
 modules. It adds two routes and this fragment; reversal restores every original
 byte, including recognition, auth, notifications and Server API helpers.
@@ -85,3 +86,17 @@ completed observation; two baseline readings; completed inspection with six
 readings and one environment item; three frames. No production deployment or
 live consistency/latency claim is made. Existing dirty `src/worker.js` remained
 SHA256 `5298c38f8fcf2009b6165f442cf4c1814cb1eacb61257f0c79d3b5bf8bf5799a`.
+
+## Production Receipt
+
+The preceding paragraph describes the predeployment fixture, not current live
+results. Active version `3c8dd130-8a4e-4ee3-8522-0e64a486e5b7` was subsequently
+verified against the candidate hash, both unchanged companion modules and all
+24 unchanged bindings. No schema or secret changes were made.
+
+The actual Windows publisher received a successful acknowledgement, and the
+owner-key GET and authenticated PWA GET returned identical real observations.
+Unauthenticated reads were rejected and query-based owner substitution did not
+change the response. Fold7 v42 and desktop WebKit/Chrome rendered the actual
+latest observation. See `docs/parking_inspection_display_20261104.md` for the
+separate device, simulated-browser and recognition-accuracy limitations.

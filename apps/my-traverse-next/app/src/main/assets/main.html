@@ -11347,7 +11347,8 @@
             if (Number.isInteger(index)) openSnapshotViewerLatest(index);
         });
 
-        wayonSnapshotCard?.addEventListener('click', () => {
+        wayonSnapshotCard?.addEventListener('click', (event) => {
+            if (event.target.closest('.parking-inspection')) return;
             openSnapshotViewerLatest(0);
         });
 

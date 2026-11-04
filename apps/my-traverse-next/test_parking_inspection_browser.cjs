@@ -16,8 +16,8 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         const assets = path.join(__dirname, 'app/src/main/assets');
-        const html = fs.readFileSync(path.join(assets, 'main.html'), 'utf8')
-            .replace(/<script\b[^>]*>[^]*?<\/script>/g, '').replace(/<link\b[^>]*>/g, '');
+        const source = fs.readFileSync(path.join(assets, 'main.html'), 'utf8');
+        const html = source.replace(/<script\b[^>]*>[^]*?<\/script>/g, '').replace(/<link\b[^>]*>/g, '');
         await page.setContent(html);
         await page.addScriptTag({content: fs.readFileSync(path.join(assets, 'parking-inspection.js'), 'utf8')});
         await page.addScriptTag({content: fs.readFileSync(path.join(assets, 'vendor/lucide.min.js'), 'utf8')});
@@ -43,6 +43,25 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
         const content = page.locator('#parking-inspection-content');
         const details = content.locator('details');
         const summary = details.locator('summary');
+        const cardHandler = source.match(/wayonSnapshotCard\?\.addEventListener\('click',[\s\S]*?\n        \}\);/);
+        assert.ok(cardHandler, 'exercise the actual gallery card click handler');
+        await page.addScriptTag({content: `
+            const wayonSnapshotCard = document.getElementById('wayon-snapshot-card');
+            window.parkingSnapshotOpenCount = 0;
+            window.parkingRefreshCount = 0;
+            function openSnapshotViewerLatest() { window.parkingSnapshotOpenCount++; }
+            ${cardHandler[0]}
+            document.getElementById('parking-inspection-refresh').addEventListener('click', () => window.parkingRefreshCount++);
+        `});
+        await summary.click();
+        assert.notEqual(await details.getAttribute('open'), null);
+        assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 0, 'disclosure must not open a photo');
+        await summary.click();
+        await page.locator('#parking-inspection-refresh').click();
+        assert.equal(await page.evaluate(() => window.parkingRefreshCount), 1);
+        assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 0, 'refresh must not open a photo');
+        await page.locator('#wayon-snapshot-card .snapshot-card-title h4').click();
+        assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 1, 'existing card photo opening remains');
         assert.equal(await summary.textContent(), '\ud655\uc778 \ud544\uc694 29\uac74');
         assert.equal(await details.locator('li').count(), 29);
         assert.deepEqual(await content.locator(':scope > h6').allTextContents(),

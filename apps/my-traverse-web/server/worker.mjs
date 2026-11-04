@@ -4,7 +4,7 @@ import {accountLogin, executeCommand, COMMAND_SPECS, CommandError} from './comma
 import {databaseLimitResponse} from './database-error.mjs';
 
 const UPSTREAM = 'https://wayon-cloud.hyuklee.workers.dev';
-const GET_PATHS = new Set(['json','state','gmone/status','gmone/refresh','trips','snapshots','snapshot','live-captures','live-capture','impacts','ambient/status']);
+const GET_PATHS = new Set(['json','state','gmone/status','gmone/refresh','trips','snapshots','snapshot','live-captures','live-capture','impacts','ambient/status','parking/latest']);
 const MESSAGE = '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 const UPSTREAM_MESSAGES = Object.freeze({
   upstream_binding:'차량 정보 서비스 연결 설정을 확인해 주세요.',

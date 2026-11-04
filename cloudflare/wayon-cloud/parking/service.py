@@ -22,6 +22,7 @@ import time
 import unicodedata
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qsl
 
 from PIL import Image, ImageOps
 from jsonschema import Draft202012Validator
@@ -283,10 +284,12 @@ class Service:
         if runner is None:
             runner = run_parking if config.get("multiStage", False) is True else run_codex
         self.config, self.runner = config, runner
-        if config.get("multiStage") is True or config.get("sceneShadow") is True:
-            import parking_scene
+        if config.get("multiStage") is True or config.get("sceneShadow") is True or config.get("sceneDisplay") is True:
+            import parking_scene  # noqa: F401 - fail at startup if enabled code is missing
             if not (ROOT / "instructions-scene.txt").is_file():
                 raise ValueError("scene_instructions_missing")
+        if config.get("sceneDisplay") is True:
+            import parking_inspection  # noqa: F401 - fail at startup if display support is missing
         self.root = Path(config["dataDir"]).resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock = threading.Lock()
@@ -357,9 +360,21 @@ class Service:
             row = self.db.execute("SELECT id,device,event,parked,status,result,error FROM jobs WHERE id=?", (job_id,)).fetchone()
         if not row:
             return None
+        result = json.loads(row[5]) if row[5] else None
+        if result is not None and self.config.get("sceneDisplay") is True:
+            from parking_inspection import attach_inspection
+            result = attach_inspection(result, self.root / row[0])
         return {"jobId": row[0], "deviceId": row[1], "eventId": row[2],
                 "parkedAt": datetime.fromtimestamp(row[3], timezone.utc).isoformat(),
-                "status": row[4], "result": json.loads(row[5]) if row[5] else None, "error": row[6]}
+                "status": row[4], "result": result, "error": row[6]}
+
+    def latest(self, device):
+        device = identifier(device)
+        with self.lock:
+            row = self.db.execute("""SELECT id FROM jobs
+                WHERE device=? AND event NOT GLOB 'snapshot-*'
+                ORDER BY parked DESC, created DESC, id DESC LIMIT 1""", (device,)).fetchone()
+        return self.get(row[0]) if row else None
 
     def compare_scene(self, job_id, manifest):
         """Observe new completions only; never replace or re-notify the baseline."""
@@ -529,8 +544,22 @@ def handler(service):
                 return self.reply(200 if alive else 503, {"ok": alive, "workerAlive": alive, "service": "parking-codex-v1", "maxFrames": MAX_FRAMES,
                                         "parkingNotifyConfigured": notifier is not None, "parkingNotifyAlive": notify_alive,
                                         "sceneShadowConfigured": service.config.get("sceneShadow") is True,
+                                        "sceneDisplayConfigured": service.config.get("sceneDisplay") is True,
+                                        "displayPublisherConfigured": bool(service.config.get("inspectionExportDir")),
+                                        "displayPublisher": service.display_exporter.status() if getattr(service, "display_exporter", None) is not None else None,
                                         "sceneBusy": service.scene_active,
                                         "queued": service.queue.qsize(), "authMode": "chatgpt-oauth"})
+            path, _, query = self.path.partition("?")
+            if path == "/latest":
+                try:
+                    fields = parse_qsl(query, keep_blank_values=True, strict_parsing=True,
+                                       errors="strict", max_num_fields=1)
+                    if len(fields) != 1 or fields[0][0] != "device":
+                        raise ValueError("invalid_query")
+                    device = identifier(fields[0][1])
+                except ValueError:
+                    return self.reply(400, {"error": "invalid_query"})
+                return self.reply(200, service.latest(device))
             if re.fullmatch(r"/jobs/[a-f0-9]{32}", self.path):
                 result = service.get(self.path[6:])
                 return self.reply(200 if result else 404, result or {"error": "not_found"})
@@ -603,6 +632,14 @@ def main():
     service = Service(config)
     log = RotatingFileHandler(service.root / "service.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8")
     logging.basicConfig(level=logging.INFO, handlers=[log], format="%(asctime)s %(levelname)s %(message)s")
+    exporter = None
+    if config.get("inspectionExportDir"):
+        try:
+            from parking_export import ParkingExport
+            exporter = ParkingExport(service, Path(config["inspectionExportDir"]))
+        except Exception as exc:
+            logging.warning("parking_export_init_failed class=%s", type(exc).__name__)
+    service.display_exporter = exporter
     service.worker = threading.Thread(target=service.work, daemon=True)
     service.worker.start()
     if service.parking_notify is not None:
@@ -615,6 +652,7 @@ def main():
     server = BoundedServer(("127.0.0.1", int(config.get("port", 18765))), handler(service))
     server.timeout = 2
     cleanup_at = 0
+    export_at = 0
     logging.info("parking-codex-v1 listening on loopback")
     while True:
         server.handle_request()
@@ -625,6 +663,12 @@ def main():
         if time.monotonic() >= cleanup_at:
             service.cleanup()
             cleanup_at = time.monotonic() + 3600
+        if exporter is not None and time.monotonic() >= export_at:
+            export_at = time.monotonic() + 30
+            try:
+                exporter.update()
+            except Exception as exc:
+                logging.warning("parking_export_update_failed class=%s", type(exc).__name__)
 
 
 if __name__ == "__main__":

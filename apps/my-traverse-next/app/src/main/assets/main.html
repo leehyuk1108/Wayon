@@ -3676,6 +3676,74 @@
         }
 
         /* === Wayon Cloud Camera Records === */
+        .parking-inspection {
+            margin-bottom: 14px;
+            padding: 10px 0;
+            border-top: 1px solid #303030;
+            border-bottom: 1px solid #303030;
+            min-width: 0;
+            letter-spacing: 0;
+            overflow-wrap: anywhere;
+        }
+        .parking-inspection-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .parking-inspection-header h5 {
+            margin: 0;
+            color: #dedede;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .parking-inspection-refresh {
+            flex: 0 0 40px;
+            width: 40px;
+            height: 40px;
+            display: grid;
+            place-items: center;
+            border: 1px solid #3b3b3b;
+            border-radius: 6px;
+            background: transparent;
+            color: #ccc;
+            cursor: pointer;
+        }
+        .parking-inspection-refresh svg { width: 16px; height: 16px; }
+        .parking-inspection-refresh:disabled { opacity: 0.45; cursor: wait; }
+        .parking-inspection-refresh:focus-visible { outline: 2px solid #eee; outline-offset: 2px; }
+        .parking-inspection-heading { margin: 9px 0 4px; font-size: 12px; color: #ccc; }
+        .parking-inspection-uncertain { margin-top: 4px; min-width: 0; }
+        .parking-inspection-summary {
+            box-sizing: border-box;
+            min-height: 44px;
+            padding: 12px 0;
+            color: #ccc;
+            font-size: 12px;
+            line-height: 1.5;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .parking-inspection-summary:focus-visible { outline: 2px solid #eee; outline-offset: 2px; }
+        .parking-inspection-list { list-style: none; margin: 0; padding: 0; }
+        .parking-inspection-item { margin: 0 0 7px; min-width: 0; }
+        .parking-inspection-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+        .parking-inspection-value { min-width: 0; max-width: 100%; color: #e3e3e3; font-size: 13px; line-height: 1.5; }
+        .parking-inspection-badge {
+            max-width: 100%;
+            padding: 1px 5px;
+            border: 1px solid #484848;
+            border-radius: 4px;
+            color: #bfc7c4;
+            font-size: 10px;
+            line-height: 1.5;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        .parking-inspection-badge.conflict, .parking-inspection-badge.uncertain { color: #e5c477; border-color: #6b5b36; }
+        .parking-inspection-meta { display: block; margin: 3px 0; color: #aaa; font-size: 11px; line-height: 1.5; }
+        .parking-inspection-disclaimer { margin-top: 8px; }
+
         .snapshot-card-header {
             display: flex;
             align-items: flex-start;
@@ -8106,6 +8174,16 @@
                                 <span class="snapshot-status" id="wayon-snapshot-status">대기 중</span>
                             </div>
                         </div>
+                        <section class="parking-inspection" aria-labelledby="parking-inspection-title">
+                            <div class="parking-inspection-header">
+                                <h5 id="parking-inspection-title">AI 사진 단서</h5>
+                                <button type="button" class="parking-inspection-refresh" id="parking-inspection-refresh"
+                                    title="주차 사진 단서 새로고침" aria-label="주차 사진 단서 새로고침">
+                                    <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            <div id="parking-inspection-content" aria-live="polite"></div>
+                        </section>
                         <div class="snapshot-primary-actions">
                             <button type="button" class="snapshot-live-action" id="btnWayonLive">
                                 <span class="snapshot-live-main">
@@ -8827,6 +8905,7 @@
     <script src="vendor/maplibre/maplibre-gl.js"></script>
     <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
     <script src="vehicle_status.js"></script>
+    <script src="parking-inspection.js"></script>
     <script>
         // === JavaScript 로직 ===
 
@@ -8894,6 +8973,7 @@
         const WAYON_CLOUD_LIVE_CAPTURE_URL = "https://wayon-cloud.hyuklee.workers.dev/api/live-capture";
         const WAYON_CLOUD_TRIPS_URL = "https://wayon-cloud.hyuklee.workers.dev/api/trips";
         const WAYON_CLOUD_STATE_URL = "https://wayon-cloud.hyuklee.workers.dev/api/state";
+        const WAYON_CLOUD_PARKING_URL = "https://wayon-cloud.hyuklee.workers.dev/api/parking/latest";
         const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
         const snapshotObjectUrls = new Map();
         const liveCaptureObjectUrls = new Map();
@@ -10127,6 +10207,7 @@
             }
         }
         function populateWayonCloudKey(statusText) {
+            window.parkingInspectionView?.clear();
             wayonCloudKeyActive = false;
             wayonCloudDataAvailable = false;
             latestWayonCloudVoltage = null;
@@ -10139,6 +10220,7 @@
             }
         }
         function updateWayonCloudKeyInput(value) {
+            window.parkingInspectionView?.setToken(value);
             tripDetailCache.clear();
             wayonCloudKeyActive = hasMetricValue(value?.trim());
             if (!wayonCloudKeyActive) {
@@ -10158,6 +10240,7 @@
         }
 
         function updateGmoneAccountState(loggedIn, email, message, busy) {
+            window.parkingInspectionView?.setAccount(loggedIn, email);
             if (gmoneAccountStatus) {
                 gmoneAccountStatus.textContent = message || (loggedIn ? '로그인됨' : '로그인 필요');
                 gmoneAccountStatus.classList.toggle('connected', !!loggedIn);
@@ -10218,6 +10301,24 @@
         function getWayonCloudViewToken() {
             return wayonCloudKeyInput?.value?.trim() || "";
         }
+
+        window.parkingInspectionView = window.ParkingInspection?.createController({
+            endpoint: WAYON_CLOUD_PARKING_URL,
+            getToken: getWayonCloudViewToken,
+            request: (...args) => fetch(...args),
+            onChange: model => {
+                window.ParkingInspection.render(document.getElementById('parking-inspection-content'), model);
+                const button = document.getElementById('parking-inspection-refresh');
+                if (button) button.disabled = model.phase === 'loading';
+            },
+        });
+        document.getElementById('parking-inspection-refresh')?.addEventListener('click', () => {
+            window.parkingInspectionView?.refresh();
+        });
+        document.addEventListener('click', event => {
+            if (event.target.closest?.('#pwa-logout')) window.parkingInspectionView?.clear();
+        }, true);
+        window.addEventListener('traverseweb:sessionlost', () => window.parkingInspectionView?.clear());
 
         function renderHomeQuickIcon(container, name) {
             if (!container) return;
@@ -14100,6 +14201,7 @@
 
         function requestAppRefresh(source = 'manual') {
             console.log('Requesting refresh...');
+            if (document.getElementById('tab-extras')?.classList.contains('active')) window.parkingInspectionView?.refresh();
             refreshDoorLockState(true);
             if (window.Android) {
                 window.Android.refreshCarData();
@@ -14163,6 +14265,7 @@
                 return;
             }
             if (window.Android) {
+                window.parkingInspectionView?.clear();
                 window.Android.saveWayonCloudKey(key);
             }
         });
@@ -14174,6 +14277,7 @@
                 showStatus('멀티팩 아이디와 비밀번호를 입력하세요.', 'danger');
                 return;
             }
+            window.parkingInspectionView?.clear();
             window.Android?.loginGmone(email, password);
         });
 
@@ -14182,6 +14286,7 @@
         });
 
         btnGmoneLogout?.addEventListener('click', () => {
+            window.parkingInspectionView?.clear();
             window.Android?.logoutGmone();
         });
 
@@ -15629,6 +15734,7 @@
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
             if (targetTab) {
                 targetTab.classList.add('active');
+                if (targetTabId === 'tab-extras') window.parkingInspectionView?.open();
                 if (targetTabId === 'tab-control') {
                     window.syncControlPanelLayout?.();
                     refreshDoorLockState(true);

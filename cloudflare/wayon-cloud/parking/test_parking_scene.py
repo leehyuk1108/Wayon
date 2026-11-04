@@ -317,12 +317,14 @@ class Pipeline(unittest.TestCase):
         self.assertTrue(all(path.name.startswith("crop-") for path in calls[1][3]["images"]))
         self.assertTrue(all(path.name.startswith("frame-") for path in calls[2][3]["images"]))
 
-    def test_empty_scene_does_not_spend_extra_calls(self):
+    def test_empty_inventory_still_gets_one_blind_whole_scene_sweep(self):
         obj = observation([]); obj["features"] = []; obj["inventory"] = []
-        runner = Mock(return_value=(obj, {}))
+        runner = Mock(side_effect=[(obj, {}), ({"views": [
+            {"viewIndex": i, "readings": [], "features": []} for i in range(12)]}, {})])
         result = p.run_scene("not-executed", self.job, 3, runner=runner)
-        self.assertEqual(runner.call_count, 1)
+        self.assertEqual(runner.call_count, 2)
         self.assertEqual(result["analysis"]["readings"], [])
+        self.assertEqual(result["scene"]["coverage"]["overviewViews"], 12)
 
     def test_new_baseline_job_preempts_before_next_pass(self):
         runner=Mock(return_value=(observation(),{}))

@@ -53,6 +53,8 @@ data class WayonCloudState(
         put("speedKph", speedMps?.times(3.6))
         put("doorLocked", doorLocked)
         put("doorLockUpdatedAt", doorLockUpdatedAt)
+        // Comma CAN fuel/oil/battery/odometer readings; the WebView validates every number.
+        put("vehicleCare", rawJson?.optJSONObject("vehicleCare"))
     }.toString()
 }
 

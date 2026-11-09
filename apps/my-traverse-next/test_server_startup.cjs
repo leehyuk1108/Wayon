@@ -63,7 +63,7 @@ test('actual switchTab reads settings for the settings button, which is not a bo
     document: {activeElement: null, querySelector: () => null,
       getElementById: () => element, querySelectorAll: () => [element]},
     setTimeout() {}, requestAnimationFrame() {}, recenterVehicleAfterMapCollapse() {},
-    refreshDoorLockState() {}, syncWayonImpactAutoClear() {},
+    refreshDoorLockState() {}, syncWayonImpactAutoClear() {}, renderCanCare() {},
     vehicleCommandReady: true, gmoneSettingsBusy: false, gmoneSettingsCurrent: {},
     window: { Android: {
       refreshGmoneSettings() { settingsReads++; } } },

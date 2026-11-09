@@ -473,6 +473,33 @@ class ExampleUnitTest {
         val live = JSONObject(feed.state!!.toLiveStatusJson())
         assertEquals(72.0, live.getDouble("speedKph"), 0.0)
         assertTrue(live.getBoolean("openpilotActive"))
+        assertFalse(live.has("vehicleCare"))
+    }
+
+    @Test
+    fun cloudFeed_passesCommaVehicleCareToWebView() {
+        val raw = JSONObject()
+            .put("vehicleCare", JSONObject()
+                .put("fresh", false)
+                .put("observedAt", "2026-11-09T08:00:00Z")
+                .put("source", "traverseCan")
+                .put("fuelLevelPercent", 78.8)
+                .put("oilLifePercent", 25)
+                .put("odometerKm", 61466.2))
+        val state = JSONObject()
+            .put("updated_at", "2026-11-09T08:05:00Z")
+            .put("onroad", 0)
+            .put("raw_json", raw.toString())
+        val feed = WayonCloudFeedParser.parse(JSONObject()
+            .put("state", state)
+            .put("trips", JSONArray())
+            .put("snapshots", JSONArray())
+            .toString())
+
+        val care = JSONObject(feed.state!!.toLiveStatusJson()).getJSONObject("vehicleCare")
+        assertEquals(78.8, care.getDouble("fuelLevelPercent"), 0.0)
+        assertEquals(25, care.getInt("oilLifePercent"))
+        assertEquals("2026-11-09T08:00:00Z", care.getString("observedAt"))
     }
 
     @Test

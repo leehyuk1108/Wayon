@@ -389,3 +389,42 @@ test('actual PWA build copies the new module and rewrites its HTML endpoint with
     assert.match(built, /WAYON_CLOUD_PARKING_URL = "\/api\/wayon\/parking\/latest"/);
     assert.ok(built.indexOf('src="parking-inspection.js"') < built.indexOf('window.parkingInspectionView ='));
 });
+
+test('focus picks the latest parked exterior frame of the first readable sign, with its box', () => {
+    const frames = [
+        {phase: 'approach', camera: 'wide', capturedAt: '2026-11-02T00:59:00Z'},
+        {phase: 'parked', camera: 'wide', capturedAt: '2026-11-02T01:00:10Z'},
+        {phase: 'parked', camera: 'wide', capturedAt: '2026-11-02T01:00:20Z'},
+    ];
+    const value = payload({readings: [reading({text: '201', evidence: [
+        {frameIndex: 0, box: [0.1, 0.1, 0.2, 0.2]},
+        {frameIndex: 2, box: [0.4, 0.3, 0.5, 0.45]},
+        {frameIndex: 1, box: [0.41, 0.31, 0.51, 0.46]},
+    ]})]});
+    value.observation.result.frames = frames;
+    const before = JSON.stringify(value);
+    const focus = api.viewModel(value, now).focus;
+    assert.deepEqual(focus, {label: '기둥 201', capturedAt: '2026-11-02T01:00:20.000Z', camera: 'wide', phase: 'parked', box: [0.4, 0.3, 0.5, 0.45]});
+    assert.equal(JSON.stringify(value), before, 'the payload is not changed');
+});
+
+test('focus is null without a valid exterior frame time and box', () => {
+    const base = [{phase: 'parked', camera: 'wide', capturedAt: '2026-11-02T01:00:10Z'}];
+    const cases = [
+        [{frameIndex: 0, box: [0.5, 0.3, 0.4, 0.45]}],
+        [{frameIndex: 0, box: [0.4, 0.3, 1.5, 0.45]}],
+        [{frameIndex: 0, box: [0.4, 0.3, 0.5]}],
+        [{frameIndex: 3, box: [0.4, 0.3, 0.5, 0.45]}],
+    ];
+    for (const evidence of cases) {
+        const value = payload({readings: [reading({evidence})]});
+        value.observation.result.frames = base;
+        assert.equal(api.viewModel(value, now).focus, null, JSON.stringify(evidence));
+    }
+    for (const frame of [{phase: 'parked', camera: 'driver', capturedAt: '2026-11-02T01:00:10Z'}, {phase: 'parked', camera: 'wide'}]) {
+        const value = payload({readings: [reading({evidence: [{frameIndex: 0, box: [0.4, 0.3, 0.5, 0.45]}]})]});
+        value.observation.result.frames = [frame];
+        assert.equal(api.viewModel(value, now).focus, null, JSON.stringify(frame));
+    }
+    assert.equal(model({readings: [reading({status: 'ambiguous', text: null, confidence: 'uncertain'})]}).focus, null, 'unreadable signs give no focus');
+});

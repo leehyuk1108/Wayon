@@ -59,6 +59,26 @@
         return observationTime(value, now, '\uacb0\uacfc \uac31\uc2e0', '');
     }
 
+    // The first reliable sign's best evidence: a parked-phase exterior frame (latest first) and its normalized box,
+    // so the app can show that exact photo with the sign outlined. Null when no frame/box passes validation.
+    function focusFor(reading, frames, label) {
+        let best = null;
+        for (const evidence of list(reading.evidence, 12)) {
+            if (!record(evidence) || !Number.isInteger(evidence.frameIndex) || !Array.isArray(evidence.box) || evidence.box.length !== 4) continue;
+            const frame = frames[evidence.frameIndex];
+            const box = evidence.box;
+            if (!record(frame) || !['wide', 'road'].includes(frame.camera)) continue;
+            if (!box.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1) || !(box[0] < box[2] && box[1] < box[3])) continue;
+            const captured = Date.parse(frame.capturedAt || '');
+            if (!Number.isFinite(captured)) continue;
+            const rank = [frame.phase === 'parked' ? 1 : 0, captured];
+            if (best && (best.rank[0] > rank[0] || (best.rank[0] === rank[0] && best.rank[1] >= rank[1]))) continue;
+            best = { rank, focus: { label, capturedAt: new Date(captured).toISOString(), camera: frame.camera,
+                phase: frame.phase === 'parked' || frame.phase === 'approach' ? frame.phase : '', box: box.slice() } };
+        }
+        return best ? best.focus : null;
+    }
+
     function viewModel(payload, now = Date.now()) {
         if (!record(payload) || payload.ok !== true || !Object.prototype.hasOwnProperty.call(payload, 'observation')) throw new Error('invalid_response');
         if (payload.observation === null) return { phase: 'empty', message: '\uc800\uc7a5\ub41c \uc8fc\ucc28 \uc0ac\uc9c4 \ub2e8\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.' };
@@ -71,6 +91,7 @@
         const completed = inspection?.status === 'completed' && Array.isArray(inspection.readings);
         const readings = list(completed ? inspection.readings : result.analysis?.readings, completed ? 32 : 16);
         const known = [], uncertain = [];
+        let focus = null;
         for (const reading of readings) {
             if (!record(reading) || !own(KINDS, reading.kind) || !['readable', 'ambiguous'].includes(reading.status)) continue;
             const value = text(reading.text, 32);
@@ -82,6 +103,7 @@
                 confidence, badge: CONFIDENCE[confidence], evidence: evidenceLabel(reading.evidence, frames),
                 alternatives: alternatives.length ? `\ud6c4\ubcf4: ${alternatives.join(' / ')}` : '' };
             (reliable ? known : uncertain).push(item);
+            if (reliable && !focus) focus = focusFor(reading, frames, `${item.label} ${item.value}`);
         }
         const surroundings = completed ? list(inspection.surroundings, 3).filter(item => record(item) && own(FEATURES, item.type))
             .map(item => ({ value: text(item.label, 96) || FEATURES[item.type], evidence: evidenceLabel(item.evidence, frames) })) : [];
@@ -94,7 +116,7 @@
             : ['queued', 'running', 'pending'].includes(observation.status) ? '\uc0ac\uc9c4 \ud310\ub3c5 \uc911'
                 : observation.status === 'failed' ? '\uc0ac\uc9c4 \ud310\ub3c5 \uc2e4\ud328' : '';
         return { phase: 'ready', time: observationTime(observation.parkedAt, now), updatedTime: resultUpdateTime(payload.generatedAt, now), status,
-            known, uncertain, surroundings, coverage: coverageParts.join(' \u00b7 '),
+            known, uncertain, surroundings, focus, coverage: coverageParts.join(' \u00b7 '),
             disclaimer: 'AI \uc0ac\uc9c4 \ub2e8\uc11c \u00b7 \uc0ac\ub78c \ud655\uc778 \uc804 \u00b7 \uc815\ud655\ud55c \uc8fc\ucc28\uba74\uc740 \ud655\uc778\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.' };
     }
 

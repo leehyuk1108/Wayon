@@ -7822,6 +7822,66 @@
             display: none;
         }
 
+        /* AI가 표지를 읽은 주차 순간 사진과 판독 상자 */
+        #tab-extras .extras-hero-focus {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            overflow: hidden;
+            background: #17181b;
+        }
+
+        #tab-extras .extras-hero-focus[hidden] {
+            display: none;
+        }
+
+        #tab-extras .extras-hero-focus img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+            filter: brightness(0.9) contrast(1.06);
+        }
+
+        #tab-extras .extras-hero-focus::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 32%, rgba(0, 0, 0, 0.12) 55%, rgba(0, 0, 0, 0.78) 100%);
+            pointer-events: none;
+        }
+
+        #tab-extras .extras-focus-box {
+            position: absolute;
+            z-index: 2;
+            min-width: 18px;
+            min-height: 18px;
+            border: 2px solid #fff;
+            border-radius: 5px;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 18px rgba(255, 255, 255, 0.3);
+            pointer-events: none;
+        }
+
+        #tab-extras .extras-focus-label {
+            position: absolute;
+            left: -2px;
+            bottom: calc(100% + 5px);
+            padding: 3px 7px;
+            border-radius: 5px;
+            background: #fff;
+            color: #111214;
+            font-size: 10px;
+            font-weight: 850;
+            line-height: 1.2;
+            white-space: nowrap;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+        }
+
+        #tab-extras .extras-focus-box.label-below .extras-focus-label {
+            top: calc(100% + 5px);
+            bottom: auto;
+        }
+
         #tab-extras .extras-hero .snapshot-placeholder {
             position: absolute;
             inset: 0;
@@ -8773,6 +8833,12 @@
                     <section class="extras-hero" id="wayon-snapshot-card" aria-labelledby="extras-camera-title">
                         <div class="snapshot-grid" id="wayon-snapshot-grid">
                             <div class="snapshot-placeholder">Wayon Cloud 연결 후 표시됩니다.</div>
+                        </div>
+                        <div class="extras-hero-focus" id="parking-focus" hidden>
+                            <img id="parking-focus-img" alt="AI가 표지를 읽은 주차 순간 사진">
+                            <span class="extras-focus-box" id="parking-focus-box">
+                                <span class="extras-focus-label" id="parking-focus-label"></span>
+                            </span>
                         </div>
                         <span class="extras-hero-chip">
                             <i data-lucide="camera" aria-hidden="true"></i>
@@ -10966,6 +11032,94 @@
             return parts.join(' · ');
         }
 
+        // AI가 표지를 읽은 '주차 순간' 사진을 스냅샷 목록에서 같은 카메라·촬영 시각(2초 안)으로 찾아 큰 화면에 띄우고,
+        // 판독 상자를 그 사진 위에 그린다. 최근 목록에 없으면 전체 목록을 한 번 불러온다. 못 찾으면 최신 사진 그대로.
+        let parkingInspectionModel = null;
+        let parkingFocusRequestedAll = false;
+
+        function findParkingFocusSnapshot(focus) {
+            const target = Date.parse(focus?.capturedAt || '');
+            if (!Number.isFinite(target)) return null;
+            let best = null;
+            for (const snapshot of wayonCloudSnapshots) {
+                if (snapshot.camera !== focus.camera || !snapshot.kvKey) continue;
+                const diff = Math.abs(Date.parse(snapshot.capturedAt || '') - target);
+                if (Number.isFinite(diff) && diff <= 2000 && (!best || diff < best.diff)) best = { snapshot, diff };
+            }
+            return best ? best.snapshot : null;
+        }
+
+        function placeParkingFocusBox() {
+            const layer = document.getElementById('parking-focus');
+            const img = document.getElementById('parking-focus-img');
+            const box = document.getElementById('parking-focus-box');
+            const rect = parkingInspectionModel?.focus?.box;
+            const width = layer?.clientWidth, height = layer?.clientHeight;
+            if (!rect || !img?.naturalWidth || !img.naturalHeight || !width || !height) return;
+            const cx = (rect[0] + rect[2]) / 2, cy = (rect[1] + rect[3]) / 2;
+            const scale = Math.max(width / img.naturalWidth, height / img.naturalHeight);
+            const shownWidth = img.naturalWidth * scale, shownHeight = img.naturalHeight * scale;
+            const left = (width - shownWidth) * cx + rect[0] * shownWidth - 4;
+            const top = (height - shownHeight) * cy + rect[1] * shownHeight - 4;
+            box.style.left = `${left.toFixed(1)}px`;
+            box.style.top = `${top.toFixed(1)}px`;
+            box.style.width = `${((rect[2] - rect[0]) * shownWidth + 8).toFixed(1)}px`;
+            box.style.height = `${((rect[3] - rect[1]) * shownHeight + 8).toFixed(1)}px`;
+            box.classList.toggle('label-below', top < 26);
+        }
+
+        function updateParkingFocus() {
+            const layer = document.getElementById('parking-focus');
+            const img = document.getElementById('parking-focus-img');
+            if (!layer || !img) return;
+            const focus = parkingInspectionModel?.phase === 'ready' ? parkingInspectionModel.focus : null;
+            const snapshot = focus ? findParkingFocusSnapshot(focus) : null;
+            if (!snapshot) {
+                layer.hidden = true;
+                if (focus && !parkingFocusRequestedAll && !wayonSnapshotsLoadedAll && hasWayonCloudKey()) {
+                    parkingFocusRequestedAll = true;
+                    loadAllWayonSnapshots();
+                }
+                return;
+            }
+            document.getElementById('parking-focus-label').textContent = focus.label;
+            const cx = (focus.box[0] + focus.box[2]) / 2, cy = (focus.box[1] + focus.box[3]) / 2;
+            img.style.objectPosition = `${(cx * 100).toFixed(1)}% ${(cy * 100).toFixed(1)}%`;
+            img.onload = () => {
+                layer.hidden = false;
+                placeParkingFocusBox();
+            };
+            if (img.dataset.snapshotKey !== snapshot.kvKey) {
+                img.dataset.snapshotKey = snapshot.kvKey;
+                img.removeAttribute('src');
+                layer.hidden = true;
+                loadWayonSnapshotImage(img, snapshot);
+            } else if (img.complete && img.naturalWidth) {
+                layer.hidden = false;
+                placeParkingFocusBox();
+            }
+        }
+
+        window.addEventListener('resize', () => placeParkingFocusBox());
+
+        // 근거 사진을 누르면 최신 사진이 아니라 그 사진(같은 시각 묶음)을 사진 보기로 연다.
+        function openParkingFocusSnapshot() {
+            const snapshot = findParkingFocusSnapshot(parkingInspectionModel?.focus);
+            if (!snapshot) return openSnapshotViewerLatest(0);
+            activeSnapshotDate = snapshotDateKey(snapshot) || activeSnapshotDate;
+            const pairs = getSnapshotTimeGroups();
+            const pairIndex = Math.max(0, pairs.findIndex(pair => pair.snapshots?.some(item => item.kvKey === snapshot.kvKey)));
+            const ordered = orderedPairSnapshots(pairs[pairIndex]);
+            const index = ordered.findIndex(item => item.kvKey === snapshot.kvKey);
+            if (index >= 0) openSnapshotViewer(index, ordered, pairIndex);
+            else openSnapshotViewer(0, [snapshot], pairIndex);
+        }
+
+        document.getElementById('parking-focus')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openParkingFocusSnapshot();
+        });
+
         function renderParkingInspectionCaption(model) {
             const hero = document.getElementById('wayon-snapshot-card');
             const caption = document.getElementById('parking-inspection-card');
@@ -10991,6 +11145,8 @@
             onChange: model => {
                 window.ParkingInspection.render(document.getElementById('parking-inspection-content'), model);
                 renderParkingInspectionCaption(model);
+                parkingInspectionModel = model;
+                updateParkingFocus();
                 const button = document.getElementById('parking-inspection-refresh');
                 if (button) button.disabled = model.phase === 'loading';
             },
@@ -11143,13 +11299,15 @@
         }
 
         function normalizeSnapshotItem(snapshot) {
+            // 네이티브 해석기는 '...Z' 형식만 읽어서 '+00:00' 같은 시각(AI용 주차 사진 등)은 '--:--'로 넘긴다. 그때는 여기서 다시 계산한다.
+            const shownTime = snapshot.capturedAtDisplay || snapshot.captured_at_display || "";
             return {
                 ...snapshot,
                 id: snapshot.id || "",
                 camera: snapshot.camera || "",
                 cameraLabel: snapshot.cameraLabel || snapshot.camera_label || snapshotCameraLabel(snapshot),
                 capturedAt: snapshot.capturedAt || snapshot.captured_at || null,
-                capturedAtDisplay: snapshot.capturedAtDisplay || snapshot.captured_at_display || snapshotDateTimeDisplay(snapshot.capturedAt || snapshot.captured_at),
+                capturedAtDisplay: shownTime && shownTime !== "--:--" ? shownTime : snapshotDateTimeDisplay(snapshot.capturedAt || snapshot.captured_at),
                 kvKey: snapshot.kvKey || snapshot.kv_key || "",
                 sizeBytes: snapshot.sizeBytes ?? snapshot.size_bytes ?? null,
                 impactId: snapshot.impactId || snapshot.impact_id || "",
@@ -11740,6 +11898,7 @@
             wayonSnapshotGrid?.querySelectorAll('img[data-snapshot-key]').forEach((img, index) => {
                 loadWayonSnapshotImage(img, snapshots[index]);
             });
+            updateParkingFocus();
         }
 
         function loadWayonHistorySnapshotImages() {
@@ -16451,6 +16610,7 @@
             if (targetTab) {
                 targetTab.classList.add('active');
                 if (targetTabId === 'tab-extras') window.parkingInspectionView?.open();
+                if (targetTabId === 'tab-extras') requestAnimationFrame(() => placeParkingFocusBox());
                 if (targetTabId === 'tab-control') {
                     window.syncControlPanelLayout?.();
                     refreshDoorLockState(true);

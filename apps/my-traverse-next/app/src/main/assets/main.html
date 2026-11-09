@@ -7688,6 +7688,276 @@
             .ambient-card-summary-icon { width: 36px; height: 36px; }
             .ambient-card-body { padding: 4px 16px 18px; }
         }
+
+        /* === 부가기능 탭: 정보 탭과 같은 카드·글자·아이콘 톤 === */
+        #tab-extras {
+            background: #0b0b0c;
+        }
+
+        #tab-extras .extras-section {
+            gap: 8px;
+            padding: 14px 16px 34px;
+        }
+
+        #tab-extras .control-group-card {
+            padding: 13px;
+            border: 1px solid rgba(255, 255, 255, 0.075);
+            border-radius: 8px;
+            background: #151517;
+            box-shadow: none;
+        }
+
+        #tab-extras .control-group-card h4 {
+            margin: 0;
+            padding: 0;
+            border: 0;
+            color: #f4f4f6;
+            font-size: 14px;
+            font-weight: 720;
+            line-height: 1.3;
+        }
+
+        #tab-extras .extras-card-header,
+        #tab-extras .extras-card-heading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        #tab-extras .extras-card-header {
+            margin-bottom: 9px;
+        }
+
+        #tab-extras .extras-card-heading {
+            align-items: flex-start;
+        }
+
+        #tab-extras .extras-card-icon {
+            width: 26px;
+            height: 26px;
+            flex: 0 0 26px;
+            display: grid;
+            place-items: center;
+            border-radius: 6px;
+            background: #242427;
+            color: #a9a9ae;
+        }
+
+        #tab-extras .extras-card-icon svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        #tab-extras .feature-description {
+            margin: 0 0 12px;
+            color: #707076;
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        /* :where()로 묶어 실행 중·전송 중 같은 상태 색은 그대로 이긴다. */
+        :where(#tab-extras) .action-button-grouped {
+            min-height: 46px;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            background-color: #1f1f22;
+            box-shadow: none;
+            color: #ededf0;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        :where(#tab-extras) .action-button-grouped .button-text {
+            gap: 7px;
+        }
+
+        :where(#tab-extras) .action-button-grouped .button-text i {
+            color: #a9a9ae;
+            font-size: 12px;
+        }
+
+        #tab-extras #btnToggleHistory {
+            background-color: #1f1f22;
+            color: #ededf0;
+        }
+
+        #tab-extras #btnToggleHistory .button-text {
+            color: #ededf0;
+        }
+
+        #tab-extras .info-list {
+            gap: 7px;
+            margin-top: 0;
+        }
+
+        #tab-extras .info-row {
+            gap: 9px;
+        }
+
+        #tab-extras .info-icon {
+            width: 16px;
+            color: #707076;
+            font-size: 12px;
+        }
+
+        #tab-extras .info-value {
+            color: #d8d8dc;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        #tab-extras .stats-grid-text {
+            gap: 11px 12px;
+            margin-top: 12px;
+            padding-top: 11px;
+            border-top: 1px solid rgba(255, 255, 255, 0.075);
+        }
+
+        #tab-extras .stat-item {
+            gap: 3px;
+        }
+
+        #tab-extras .stat-label {
+            color: #707076;
+            font-size: 10px;
+            font-weight: 650;
+        }
+
+        #tab-extras .stat-value {
+            color: #f4f4f6;
+            font-size: 16px;
+            font-weight: 730;
+        }
+
+        #tab-extras .snapshot-card-header {
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        #tab-extras .snapshot-card-title {
+            min-width: 0;
+            gap: 3px;
+            padding-top: 4px;
+        }
+
+        #tab-extras .snapshot-card-subtitle {
+            color: #707076;
+            font-size: 11px;
+        }
+
+        #tab-extras .snapshot-status {
+            padding-top: 8px;
+            color: #8b8b91;
+            font-size: 10px;
+            font-weight: 720;
+        }
+
+        #tab-extras .parking-inspection {
+            border-color: rgba(255, 255, 255, 0.075);
+        }
+
+        #tab-extras .parking-inspection-refresh {
+            flex-basis: 34px;
+            width: 34px;
+            height: 34px;
+            border-color: rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            background: #1f1f22;
+            color: #a9a9ae;
+        }
+
+        #tab-extras .snapshot-live-action,
+        #tab-extras .snapshot-live-library,
+        #tab-extras .snapshot-primary-actions .snapshot-impact-action {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            background: #1f1f22;
+        }
+
+        #tab-extras .snapshot-live-icon,
+        #tab-extras .snapshot-live-library-icon {
+            width: 26px;
+            height: 26px;
+            border-radius: 6px;
+            background: #242427;
+            color: #a9a9ae;
+        }
+
+        #tab-extras .snapshot-live-library {
+            grid-template-columns: 26px minmax(0, 1fr) auto 12px;
+        }
+
+        #tab-extras .snapshot-impact-action {
+            color: #d8d8dc;
+            font-size: 12px;
+            font-weight: 720;
+        }
+
+        #tab-extras .snapshot-impact-action i {
+            color: #a9a9ae;
+        }
+
+        #tab-extras .snapshot-impact-action.has-impacts,
+        #tab-extras .snapshot-impact-action.has-impacts i {
+            color: #f0b55d;
+        }
+
+        #tab-extras .snapshot-primary-actions .snapshot-impact-action.has-impacts {
+            border-color: rgba(242, 173, 74, 0.22);
+        }
+
+        #tab-extras .snapshot-tile,
+        #tab-extras .snapshot-placeholder {
+            border-radius: 8px;
+        }
+
+        #tab-extras .ambient-card-collapsible {
+            padding: 0;
+        }
+
+        #tab-extras .ambient-card-summary {
+            grid-template-columns: 34px minmax(0, 1fr) auto 16px;
+            gap: 10px;
+            min-height: 66px;
+            padding: 0 13px;
+        }
+
+        #tab-extras .ambient-card-summary-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            background: #242427;
+            color: #a9a9ae;
+        }
+
+        #tab-extras .ambient-card-summary-icon i,
+        #tab-extras .ambient-card-summary-icon svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        #tab-extras .ambient-card-summary-copy strong {
+            color: #f4f4f6;
+            font-size: 14px;
+            font-weight: 720;
+        }
+
+        #tab-extras .ambient-card-summary-copy span {
+            color: #707076;
+            font-size: 10px;
+        }
+
+        #tab-extras .ambient-summary-state {
+            color: #8b8b91;
+            font-size: 10px;
+            font-weight: 720;
+        }
+
+        #tab-extras .ambient-card-body {
+            padding: 4px 13px 16px;
+        }
     </style>
 </head>
 
@@ -8125,10 +8395,19 @@
             </div>
 
             <div class="tab-panel" id="tab-extras">
+                <div class="info-overview-header">
+                    <div>
+                        <span class="info-overview-eyebrow">MY TRAVERSE</span>
+                        <h2>부가기능</h2>
+                    </div>
+                </div>
                 <div class="extras-section">
 
                     <div class="control-group-card card-full">
-                        <h4>최근 주행 기록</h4>
+                        <div class="extras-card-header">
+                            <span class="extras-card-icon"><i data-lucide="route" aria-hidden="true"></i></span>
+                            <h4>최근 주행 기록</h4>
+                        </div>
                         <div class="info-list" style="margin-top: 5px;">
                             <div class="info-row">
                                 <i class="fas fa-clock info-icon"></i>
@@ -8142,19 +8421,19 @@
 
                         <div class="stats-grid-text">
                             <div class="stat-item">
-                                <span class="stat-label">주행시간:</span>
+                                <span class="stat-label">주행시간</span>
                                 <span class="stat-value" id="saved-drive-time">--:--:--</span>
                             </div>
                             <div class="stat-item">
-                                <span class="stat-label">주행거리:</span>
+                                <span class="stat-label">주행거리</span>
                                 <span class="stat-value" id="saved-drive-dist">-- km</span>
                             </div>
                             <div class="stat-item">
-                                <span class="stat-label">최고속도:</span> <span class="stat-value" id="saved-top-speed">--
+                                <span class="stat-label">최고속도</span> <span class="stat-value" id="saved-top-speed">--
                                     km/h</span>
                             </div>
                             <div class="stat-item">
-                                <span class="stat-label">평균속도:</span> <span class="stat-value" id="saved-avg-speed">--
+                                <span class="stat-label">평균속도</span> <span class="stat-value" id="saved-avg-speed">--
                                     km/h</span>
                             </div>
                         </div>
@@ -8176,9 +8455,12 @@
 
                     <div class="control-group-card card-full" id="wayon-snapshot-card">
                         <div class="snapshot-card-header">
-                            <div class="snapshot-card-title">
-                                <h4>카메라 기록</h4>
-                                <span class="snapshot-card-subtitle">주차 및 충격 감지 시 촬영된 실외·실내 이미지</span>
+                            <div class="extras-card-heading">
+                                <span class="extras-card-icon"><i data-lucide="camera" aria-hidden="true"></i></span>
+                                <div class="snapshot-card-title">
+                                    <h4>카메라 기록</h4>
+                                    <span class="snapshot-card-subtitle">주차 및 충격 감지 시 촬영된 실외·실내 이미지</span>
+                                </div>
                             </div>
                             <div class="snapshot-card-actions">
                                 <span class="snapshot-status" id="wayon-snapshot-status">대기 중</span>
@@ -8224,7 +8506,10 @@
                     <div id="ambient-extras-slot" style="display: contents;"></div>
 
                     <div class="control-group-card card-full">
-                        <h4>환기 모드</h4>
+                        <div class="extras-card-header">
+                            <span class="extras-card-icon"><i data-lucide="wind" aria-hidden="true"></i></span>
+                            <h4>환기 모드</h4>
+                        </div>
                         <p class="feature-description">창문을 열어 5분간 환기한 후, 자동으로 창문을 닫습니다.</p>
                         <div class="button-row-grid-1">
                             <div class="action-button-grouped" id="btnVentilation" data-name="환기 모드">
@@ -8235,7 +8520,10 @@
                     </div>
 
                     <div class="control-group-card card-full">
-                        <h4>열 배출 모드</h4>
+                        <div class="extras-card-header">
+                            <span class="extras-card-icon"><i data-lucide="sun" aria-hidden="true"></i></span>
+                            <h4>열 배출 모드</h4>
+                        </div>
                         <p class="feature-description">탑승 전, 창문/선루프를 열고 시동을 켭니다. 5분 후 창문/선루프를 닫습니다. (시동 유지)</p>
                         <div class="button-row-grid-1">
                             <div class="action-button-grouped" id="btnHeatEject" data-name="열 배출 모드">
@@ -8246,7 +8534,10 @@
                     </div>
 
                     <div class="control-group-card card-full">
-                        <h4>내 차 찾기</h4>
+                        <div class="extras-card-header">
+                            <span class="extras-card-icon"><i data-lucide="megaphone" aria-hidden="true"></i></span>
+                            <h4>내 차 찾기</h4>
+                        </div>
                         <p class="feature-description">차량의 경적을 울려 위치를 확인합니다.</p>
                         <div class="button-row-grid-1">
                             <div class="action-button-grouped long-press" id="btnFindMyCar" data-cmd="PANIC"
@@ -10663,6 +10954,7 @@
             const impactCount = new Set(wayonCloudSnapshots.filter(isImpactSnapshot).map(snapshot => snapshot.impactId)).size;
             if (impactSnapshotCount) {
                 impactSnapshotCount.textContent = impactCount ? `충격 ${impactCount}` : "충격 기록";
+                btnImpactSnapshots?.classList.toggle('has-impacts', impactCount > 0);
             }
             if (wayonSnapshotStatus) {
                 const latest = snapshots[0];

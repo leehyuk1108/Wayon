@@ -7689,7 +7689,7 @@
             .ambient-card-body { padding: 4px 16px 18px; }
         }
 
-        /* === 부가기능 탭: 차량 탭과 같은 순서(큰 화면 → 5칸 명령 바 → 숫자 줄 → 카드 줄) === */
+        /* === 부가기능 탭: 차량 탭과 같은 순서(큰 주차 화면·AI 단서 → 5칸 명령 바 → 숫자 줄 → 카드 줄) === */
         #tab-extras {
             background: #0b0b0c;
         }
@@ -7699,6 +7699,13 @@
             flex-direction: column;
             gap: 22px;
             padding: 14px 0 40px;
+        }
+
+        #tab-extras .extras-top {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
         }
 
         #tab-extras .extras-block {
@@ -7757,7 +7764,7 @@
         /* 큰 화면: 최신 실외 사진 + 실내 사진 작은 창 + 주차 주소 */
         #tab-extras .extras-hero {
             position: relative;
-            height: 236px;
+            height: 252px;
             margin: 0 20px;
             overflow: hidden;
             isolation: isolate;
@@ -7913,12 +7920,69 @@
             font-weight: 680;
         }
 
+        /* AI 사진 단서 한 줄: 사진 위 반투명 칩, 누르면 아래에 판독 결과 */
+        #tab-extras .extras-hero-ai {
+            align-self: flex-start;
+            max-width: 100%;
+            min-height: 30px;
+            margin-top: 5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 10px 0 9px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.14);
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+            color: #fff;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 760;
+            text-shadow: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #tab-extras .extras-hero-ai[hidden] {
+            display: none;
+        }
+
+        #tab-extras .extras-hero-ai:active {
+            background: rgba(255, 255, 255, 0.22);
+        }
+
+        #tab-extras .extras-hero-ai svg {
+            flex: 0 0 13px;
+            width: 13px;
+            height: 13px;
+        }
+
+        #tab-extras .extras-hero-ai > span {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #tab-extras .extras-hero-ai .extras-hero-ai-chevron {
+            flex-basis: 12px;
+            width: 12px;
+            height: 12px;
+            opacity: 0.8;
+            transition: transform 0.2s ease;
+        }
+
+        #tab-extras .extras-hero-ai[aria-expanded="true"] .extras-hero-ai-chevron {
+            transform: rotate(180deg);
+        }
+
         /* 5칸 명령 바: 차량 탭 명령 바와 같은 모양. :where()로 묶어 실행 중·전송 중 색이 이긴다. */
         #tab-extras .extras-command-bar {
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
             min-height: 72px;
-            margin: -10px 20px 0;
+            margin: 0 20px;
             overflow: hidden;
             border-radius: 7px;
             background: #27282c;
@@ -8122,12 +8186,8 @@
             display: none;
         }
 
-        #tab-extras #parking-inspection-card[aria-expanded="true"] {
-            border-color: rgba(255, 255, 255, 0.22);
-        }
-
         #tab-extras .parking-inspection {
-            margin: 12px 20px 0;
+            margin: 0 20px;
             padding: 14px;
             border: 1px solid rgba(255, 255, 255, 0.065);
             border-radius: 7px;
@@ -8678,6 +8738,7 @@
                 </div>
                 <div class="extras-section">
 
+                    <div class="extras-top">
                     <section class="extras-hero" id="wayon-snapshot-card" aria-labelledby="extras-camera-title">
                         <div class="snapshot-grid" id="wayon-snapshot-grid">
                             <div class="snapshot-placeholder">Wayon Cloud 연결 후 표시됩니다.</div>
@@ -8689,10 +8750,25 @@
                         <div class="extras-hero-copy">
                             <span class="snapshot-card-title"><h4 id="extras-camera-title">LAST PARKED</h4></span>
                             <strong id="saved-location-text">저장된 위치 없음</strong>
-                            <span><span id="saved-location-time">--:--</span> 주차</span>
+                            <span id="saved-location-time">--:--</span>
+                            <button type="button" class="extras-hero-ai" id="parking-inspection-card"
+                                aria-expanded="false" aria-controls="parking-inspection-panel" aria-label="AI 사진 단서 자세히 보기">
+                                <i data-lucide="sparkles" aria-hidden="true"></i>
+                                <span id="parking-inspection-brief">주차 사진 단서 대기 중</span>
+                                <i class="extras-hero-ai-chevron" data-lucide="chevron-down" aria-hidden="true"></i>
+                            </button>
                         </div>
                     </section>
-
+                    <section class="parking-inspection" id="parking-inspection-panel" aria-labelledby="parking-inspection-title" hidden>
+                        <div class="parking-inspection-header">
+                            <h5 id="parking-inspection-title">AI 사진 단서</h5>
+                            <button type="button" class="parking-inspection-refresh" id="parking-inspection-refresh"
+                                title="주차 사진 단서 새로고침" aria-label="주차 사진 단서 새로고침">
+                                <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <div id="parking-inspection-content" aria-live="polite"></div>
+                    </section>
                     <section class="extras-command-bar" aria-label="빠른 실행">
                         <div class="action-button-grouped extras-quick" id="btnVentilation" data-name="환기 모드" role="button" tabindex="0">
                             <i class="extras-quick-icon" data-lucide="wind" aria-hidden="true"></i>
@@ -8719,6 +8795,7 @@
                             <span class="extras-quick-label" id="impact-snapshot-count">충격 기록</span>
                         </button>
                     </section>
+                    </div>
 
                     <section class="extras-block extras-trip" aria-labelledby="extras-trip-title">
                         <div class="extras-heading">
@@ -8750,7 +8827,6 @@
                     <section class="extras-block" aria-labelledby="extras-services-title">
                         <div class="extras-heading">
                             <strong id="extras-services-title">부가 서비스</strong>
-                            <span>밀어서 더 보기</span>
                         </div>
                         <div class="extras-rail">
                             <div class="extras-rail-card" id="btnLoadLocation" role="button" tabindex="0">
@@ -8760,14 +8836,6 @@
                                     <span>지도에서 보기</span>
                                 </span>
                             </div>
-                            <button type="button" class="extras-rail-card" id="parking-inspection-card"
-                                aria-expanded="false" aria-controls="parking-inspection-panel">
-                                <i class="extras-rail-icon" data-lucide="scan-search" aria-hidden="true"></i>
-                                <span class="extras-rail-copy">
-                                    <strong>AI 사진 단서</strong>
-                                    <span id="parking-inspection-brief">주차 사진 단서 대기 중</span>
-                                </span>
-                            </button>
                             <button type="button" class="extras-rail-card" id="btnWayonLiveCaptures">
                                 <i class="extras-rail-icon" data-lucide="images" aria-hidden="true"></i>
                                 <span class="extras-rail-copy">
@@ -8776,16 +8844,6 @@
                                 </span>
                             </button>
                         </div>
-                        <section class="parking-inspection" id="parking-inspection-panel" aria-labelledby="parking-inspection-title" hidden>
-                            <div class="parking-inspection-header">
-                                <h5 id="parking-inspection-title">AI 사진 단서</h5>
-                                <button type="button" class="parking-inspection-refresh" id="parking-inspection-refresh"
-                                    title="주차 사진 단서 새로고침" aria-label="주차 사진 단서 새로고침">
-                                    <i data-lucide="refresh-cw" aria-hidden="true"></i>
-                                </button>
-                            </div>
-                            <div id="parking-inspection-content" aria-live="polite"></div>
-                        </section>
                     </section>
 
                     <section class="extras-block" aria-labelledby="extras-ambient-title">
@@ -10872,6 +10930,16 @@
                 window.ParkingInspection.render(document.getElementById('parking-inspection-content'), model);
                 const brief = document.getElementById('parking-inspection-brief');
                 if (brief) brief.textContent = parkingInspectionBrief(model);
+                // 사진 위 AI 칩은 읽어 온 결과나 읽는 중일 때만 보인다(클라우드 미연결·오류면 숨김).
+                const clue = document.getElementById('parking-inspection-card');
+                if (clue) {
+                    clue.hidden = !(model?.phase === 'ready' || model?.phase === 'loading');
+                    if (clue.hidden) {
+                        clue.setAttribute('aria-expanded', 'false');
+                        const panel = document.getElementById('parking-inspection-panel');
+                        if (panel) panel.hidden = true;
+                    }
+                }
                 const button = document.getElementById('parking-inspection-refresh');
                 if (button) button.disabled = model.phase === 'loading';
             },
@@ -11921,7 +11989,7 @@
         });
 
         wayonSnapshotCard?.addEventListener('click', (event) => {
-            if (event.target.closest('.parking-inspection, .extras-rail-card')) return;
+            if (event.target.closest('.parking-inspection, .extras-rail-card, .extras-hero-ai')) return;
             openSnapshotViewerLatest(0);
         });
 

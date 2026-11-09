@@ -53,6 +53,18 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
             ${cardHandler[0]}
             document.getElementById('parking-inspection-refresh').addEventListener('click', () => window.parkingRefreshCount++);
         `});
+        // The extras tab folds the clues into one row; the row shows a one-line brief.
+        const briefSource = source.match(/function parkingInspectionBrief\(model\) \{[\s\S]*?\n        \}/);
+        assert.ok(briefSource, 'exercise the actual folded-row brief');
+        assert.equal(await page.evaluate(src => new Function(`${src}; return parkingInspectionBrief;`)()(
+            ParkingInspection.viewModel(window.parkingTestPayload, window.parkingTestNow)), briefSource[0]),
+            `기둥 ${'W'.repeat(32)} · 외 2개 · 확인 필요 29건`);
+        const outer = page.locator('#parking-inspection-disclosure');
+        assert.equal(await outer.getAttribute('open'), null, 'clues start folded');
+        assert.equal(await content.isVisible(), false);
+        await outer.locator(':scope > summary').click();
+        assert.notEqual(await outer.getAttribute('open'), null);
+        assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 0, 'opening the clue row must not open a photo');
         await summary.click();
         assert.notEqual(await details.getAttribute('open'), null);
         assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 0, 'disclosure must not open a photo');
@@ -83,7 +95,8 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
                 }).map(el => el.className?.baseVal ?? el.className);
                 const rows = visible.filter(el => el.classList.contains('parking-inspection-item')).map(bounds);
                 return {parent, overflow, rows, title: bounds(section.querySelector('h5')),
-                    button: bounds(section.querySelector('button')), next: bounds(section.nextElementSibling),
+                    button: bounds(section.querySelector('button')),
+                    next: bounds(section.nextElementSibling || section.closest('.control-group-card').nextElementSibling),
                     summary: bounds(section.querySelector('summary')),
                     unsafe: section.querySelectorAll('#parking-inspection-content img, #parking-inspection-content script').length,
                     icon: section.querySelectorAll('button svg').length};

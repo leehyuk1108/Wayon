@@ -100,7 +100,7 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
                 const rows = visible.filter(el => el.classList.contains('parking-inspection-item')).map(bounds);
                 return {parent, overflow, rows, title: bounds(section.querySelector('h5')),
                     button: bounds(section.querySelector('button')),
-                    next: bounds(section.nextElementSibling || section.closest('#wayon-snapshot-card').nextElementSibling),
+                    next: bounds(section.nextElementSibling || section.parentElement.nextElementSibling),
                     summary: bounds(section.querySelector('summary')),
                     unsafe: section.querySelectorAll('#parking-inspection-content img, #parking-inspection-content script').length,
                     icon: section.querySelectorAll('button svg').length};

@@ -1,5 +1,27 @@
 # My Traverse Next
 
+## CAN Fuel and Vehicle Care (v43)
+
+Version `43 / 2.0-preview.34-vehicle-care` shows comma CAN data that the
+MultiPack snapshot does not provide. Trip detail has a fuel section (litres,
+km/L, idle fuel, gauge start/end) from `analysis.fuel`
+(`wayon-trip-fuel-v1`); the trip list adds a km/L line. The vehicle tab adds
+"연비·차량 기록": 30-day economy, idle share, last refuel (a gauge rise of 8 %
+or more between consecutive trips), fuel level, oil life, 12V state of charge,
+charging voltage/current only while driving, and the odometer.
+
+`WayonCloudFeed.toLiveStatusJson()` now passes the telemetry `vehicleCare`
+block to the WebView; `vehicle_care.js` validates every number. Older trips
+show an empty text. The Worker is unchanged: it already stores the whole
+`analysis` object and the raw telemetry body. MultiPack cards, warning
+policies and controls are unchanged.
+
+Build: `./gradlew :app:testReleaseUnitTest :app:assembleRelease` with an init
+script that points Gradle's debug signing config at the original debug
+keystore (`~/.android/hylink-signing/original-debug.keystore`, certificate
+SHA-256 `55a14240…`). The default `~/.android/debug.keystore` on this Mac is a
+different key and cannot update the installed app.
+
 ## MultiPack Battery Voltage (v40)
 
 Version `40 / 2.0-preview.31-multipack-voltage` uses the MultiPack/GMOne

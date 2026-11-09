@@ -12,6 +12,8 @@
     const REFUEL_MIN_PERCENT = 8;
     const RECENT_DAYS = 30;
     const OIL_WARNING_PERCENT = 15;
+    // Telemetry arrives every few seconds while driving; an older "fresh" block is no longer live.
+    const LIVE_MAX_AGE_MS = 90 * 1000;
     const DAY_MS = 24 * 60 * 60 * 1000;
 
     function num(value) {
@@ -72,6 +74,7 @@
             oilLifePercent: percent(fuel.oilLifePercent),
             observedS: positive(fuel.observedS),
             partial: fuel.partial === true,
+            longGaps: positive(fuel.longGaps) ?? 0,
         };
     }
 
@@ -80,7 +83,8 @@
         if (!fuel) return null;
         const levels = fuel.levelStartPercent !== null && fuel.levelEndPercent !== null;
         const notes = [];
-        if (fuel.partial) notes.push("일부 구간만 읽은 주행이라 실제보다 적게 나올 수 있어요.");
+        if (fuel.partial) notes.push("일부 구간만 읽은 주행이라 사용 연료가 실제보다 적게 나올 수 있어요.");
+        if (fuel.longGaps > 0) notes.push("연료 신호가 끊긴 구간은 연료와 거리 모두 빼고 연비를 계산했어요.");
         notes.push("차량 CAN의 연료 사용량 눈금으로 계산한 값이라 몇 % 오차가 있을 수 있어요.");
         return {
             overview: [
@@ -145,7 +149,7 @@
             idlePercent: usedL > 0 ? idleL / usedL * 100 : null };
     }
 
-    function liveCare(live) {
+    function liveCare(live, nowMs = Date.now()) {
         const care = live && typeof live === "object" ? live.vehicleCare : null;
         if (!care || typeof care !== "object" || Array.isArray(care)) return null;
         const observedAt = Date.parse(care.observedAt);
@@ -154,8 +158,11 @@
             const number = num(care[key]);
             return number !== null && number >= low && number <= high ? number : null;
         };
+        const liveKeys = Array.isArray(care.liveKeys) ? care.liveKeys.filter(key => typeof key === "string") : [];
+        const fresh = care.fresh === true && nowMs - observedAt <= LIVE_MAX_AGE_MS && observedAt - nowMs <= LIVE_MAX_AGE_MS;
         return {
-            fresh: care.fresh === true,
+            fresh,
+            live: (key) => fresh && liveKeys.includes(key),
             observedAt,
             fuelLevelPercent: value("fuelLevelPercent", 0, 100),
             fuelLiters: value("fuelLiters", 0, 200),
@@ -169,13 +176,16 @@
 
     function careSummary(items, live, nowMs = Date.now(), options = {}) {
         const trips = fuelTrips(items, options.timeOf, options.normalize);
-        const care = liveCare(live);
+        const care = liveCare(live, nowMs);
+        const complete = options.historyComplete !== false;
         const rows = [];
         const recent = sumEconomy(trips.filter(trip => nowMs - trip.time <= RECENT_DAYS * DAY_MS));
+        // Until the full trip list has loaded, only the trips at hand are summarised: say so.
+        const period = complete ? `최근 ${RECENT_DAYS}일` : "불러온 기록";
         if (recent.count) {
-            rows.push({ label: `최근 ${RECENT_DAYS}일 연비`, value: recent.kmPerL === null ? "--"
+            rows.push({ label: `${period} 연비`, value: recent.kmPerL === null ? "--"
                 : `${fixed(recent.kmPerL, 1, " km/L")} · ${fixed(100 / recent.kmPerL, 1, " L/100km")}` });
-            rows.push({ label: `최근 ${RECENT_DAYS}일 주행`, value:
+            rows.push({ label: `${period} 주행`, value:
                 `${recent.count}회 · ${fixed(recent.distanceKm, 0, " km")} · ${fixed(recent.usedL, 1, " L")}` });
             if (recent.idlePercent !== null) rows.push({ label: "공회전 연료 비율", value: fixed(recent.idlePercent, 0, "%") });
         }
@@ -190,30 +200,36 @@
         }
         let oilWarning = false;
         if (care) {
+            // While driving, a reading the comma did not refresh just now is an earlier value.
+            const earlier = (key) => care.fresh && !care.live(key) ? " (지난 값)" : "";
             if (care.fuelLevelPercent !== null) {
                 rows.push({ label: "연료량", value: `${fixed(care.fuelLevelPercent, 0, "%")}`
-                    + (care.fuelLiters === null ? "" : ` · 약 ${fixed(care.fuelLiters, 0, " L")}`) });
+                    + (care.fuelLiters === null ? "" : ` · 약 ${fixed(care.fuelLiters, 0, " L")}`) + earlier("fuelLevelPercent") });
             }
             if (care.oilLifePercent !== null) {
                 oilWarning = care.oilLifePercent <= OIL_WARNING_PERCENT;
-                rows.push({ label: "엔진오일 수명", value: `${fixed(care.oilLifePercent, 0, "%")}${oilWarning ? " · 교환 시기" : ""}` });
+                rows.push({ label: "엔진오일 수명", value: `${fixed(care.oilLifePercent, 0, "%")}${oilWarning ? " · 교환 시기" : ""}`
+                    + earlier("oilLifePercent") });
             }
-            if (care.batterySocPercent !== null) rows.push({ label: "12V 배터리 충전", value: fixed(care.batterySocPercent, 0, "%") });
-            // Voltage and current mean something only while the engine runs (the alternator charges);
-            // a parked last-known 14 V would mislead.
-            if (care.fresh && care.batteryVoltage !== null) {
+            if (care.batterySocPercent !== null) {
+                rows.push({ label: "12V 배터리 충전", value: fixed(care.batterySocPercent, 0, "%") + earlier("batterySocPercent") });
+            }
+            // Voltage and current mean something only while the engine runs (the alternator charges):
+            // show them only when they are live right now, never a parked or stale 14 V.
+            if (care.live("batteryVoltage") && care.batteryVoltage !== null) {
                 const current = care.batteryCurrentA;
                 rows.push({ label: "배터리 전압", value: `${fixed(care.batteryVoltage, 1, " V")}`
                     + (current === null ? "" : ` · ${current >= 0 ? "충전" : "방전"} ${fixed(Math.abs(current), 0, " A")}`) });
             }
-            if (care.odometerKm !== null) rows.push({ label: "주행거리계", value: fixed(care.odometerKm, 0, " km") });
+            if (care.odometerKm !== null) rows.push({ label: "주행거리계", value: fixed(care.odometerKm, 0, " km") + earlier("odometerKm") });
         }
-        const meta = care ? (care.fresh ? "주행 중 실시간" : `마지막 수신 ${shortDateTime(care.observedAt)}`)
+        const meta = !complete ? "전체 주행 기록 불러오는 중"
+            : care ? (care.fresh ? "주행 중 실시간" : `마지막 수신 ${shortDateTime(care.observedAt)}`)
             : (trips.length ? `주행 기록 ${trips.length}회 기준` : "콤마 CAN");
         return { rows, meta, oilWarning, empty: rows.length === 0,
             emptyText: "다음 주행부터 콤마가 차량 CAN으로 연비와 차량 기록을 보내요." };
     }
 
-    return { TRIP_FUEL_SCHEMA, TANK_LITERS, REFUEL_MIN_PERCENT, RECENT_DAYS, OIL_WARNING_PERCENT,
+    return { TRIP_FUEL_SCHEMA, TANK_LITERS, REFUEL_MIN_PERCENT, RECENT_DAYS, OIL_WARNING_PERCENT, LIVE_MAX_AGE_MS,
         tripFuel, tripFuelView, fuelTrips, detectRefuels, sumEconomy, liveCare, careSummary };
 });

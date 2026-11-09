@@ -2835,6 +2835,11 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         }
     }
 
+    /** False while Wayon Cloud mode still shows only the latest trips from the startup feed. */
+    @JavascriptInterface
+    fun isDrivingHistoryComplete(): Boolean =
+        !WayonCloudMode.isEnabled(this) || wayonCloudFullHistoryLoaded
+
     @JavascriptInterface
     fun getDrivingHistory(): String {
         if (WayonCloudMode.isEnabled(this)) {

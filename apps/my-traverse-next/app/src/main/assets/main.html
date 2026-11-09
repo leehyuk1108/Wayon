@@ -12192,25 +12192,33 @@
         let canCareHistoryCache = null;
 
         function canCareHistory(refresh = false) {
-            if (Array.isArray(currentHistoryItems) && currentHistoryItems.length) return currentHistoryItems;
-            if (canCareHistoryCache && !refresh) return canCareHistoryCache;
-            canCareHistoryCache = [];
-            try {
-                if (window.Android?.getDrivingHistory) {
-                    canCareHistoryCache = normalizeHistoryItems(JSON.parse(window.Android.getDrivingHistory()));
+            // Re-read the native list on request or while nothing is cached yet (it may have arrived since).
+            if (refresh || !Array.isArray(canCareHistoryCache) || !canCareHistoryCache.length) {
+                try {
+                    if (window.Android?.getDrivingHistory) {
+                        canCareHistoryCache = normalizeHistoryItems(JSON.parse(window.Android.getDrivingHistory()));
+                    }
+                } catch (error) {
+                    console.error('Failed to read driving history for vehicle care', error);
                 }
-            } catch (error) {
-                console.error('Failed to read driving history for vehicle care', error);
-                canCareHistoryCache = [];
             }
-            return canCareHistoryCache;
+            if (Array.isArray(canCareHistoryCache) && canCareHistoryCache.length) return canCareHistoryCache;
+            return Array.isArray(currentHistoryItems) ? currentHistoryItems : [];
+        }
+
+        function canCareHistoryComplete() {
+            try {
+                return typeof window.Android?.isDrivingHistoryComplete !== 'function' || window.Android.isDrivingHistoryComplete() === true;
+            } catch (_) {
+                return true;
+            }
         }
 
         function renderCanCare(refreshHistory = false) {
             const section = document.getElementById('can-care-section');
             if (!section || !window.VehicleCareReport) return;
             const summary = window.VehicleCareReport.careSummary(canCareHistory(refreshHistory), wayonLiveStateCurrent, Date.now(),
-                { timeOf: tripTimestamp, normalize: normalizeDriveAnalysis });
+                { timeOf: tripTimestamp, normalize: normalizeDriveAnalysis, historyComplete: canCareHistoryComplete() });
             document.getElementById('can-care-meta').textContent = summary.meta;
             section.classList.toggle('warning', summary.oilWarning);
             if (summary.empty) {
@@ -12507,6 +12515,7 @@
             if (historyTab && historyTab.classList.contains('active')) {
                 loadHistory();
             }
+            if (document.getElementById('tab-info')?.classList.contains('active')) renderCanCare(true);
         }
 
         function requestWayonTripsRefresh(force = false) {
@@ -15872,6 +15881,8 @@
                     if (detailsShell) detailsShell.open = false;
                     targetTab.scrollTop = 0;
                     renderCanCare(true);
+                    // The startup list holds only the latest trips; fetch the full one for the 30-day figures.
+                    if (!canCareHistoryComplete()) requestWayonTripsRefresh();
                 } else if (targetTabId === 'tab-settings' && userInitiated && vehicleCommandReady && !gmoneSettingsBusy && !Object.keys(gmoneSettingsCurrent).length) {
                     window.Android?.refreshGmoneSettings();
                 }

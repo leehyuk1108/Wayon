@@ -80,7 +80,9 @@ test('small gauge wobble is not a refuel and old trips leave the 30-day window',
 test('live readings: fresh shows charging voltage, last-known hides it, oil warning at 15%', () => {
     const live = { vehicleCare: { fresh: true, observedAt: '2026-11-20T08:59:00Z', source: 'traverseCan',
         fuelLevelPercent: 78.8, fuelLiters: 64.6, oilLifePercent: 14, odometerKm: 61466.2, batteryVoltage: 14.12,
-        batteryCurrentA: 24.3, batterySocPercent: 82 } };
+        batteryCurrentA: 24.3, batterySocPercent: 82,
+        liveKeys: ['fuelLevelPercent', 'fuelLiters', 'oilLifePercent', 'odometerKm', 'batteryVoltage', 'batteryCurrentA',
+            'batterySocPercent'] } };
     const fresh = care.careSummary([], live, NOW, options);
     const rows = Object.fromEntries(fresh.rows.map(row => [row.label, row.value]));
     assert.equal(rows['연료량'], '79% · 약 65 L');
@@ -94,6 +96,36 @@ test('live readings: fresh shows charging voltage, last-known hides it, oil warn
     assert.equal(parked.rows.some(row => row.label === '배터리 전압'), false);
     assert.match(parked.meta, /^마지막 수신 11\/20 /);
     assert.equal(parked.oilWarning, false);
+});
+
+test('a fresh block that is old, or a reading not refreshed just now, is not shown as live', () => {
+    const base = { fresh: true, source: 'traverseCan', fuelLevelPercent: 50, batteryVoltage: 14.1, batteryCurrentA: 20,
+        batterySocPercent: 90, liveKeys: ['fuelLevelPercent', 'batteryVoltage', 'batteryCurrentA', 'batterySocPercent'] };
+    const dayOld = care.careSummary([], { vehicleCare: { ...base, observedAt: new Date(NOW - DAY).toISOString() } }, NOW, options);
+    assert.equal(dayOld.rows.some(row => row.label === '배터리 전압'), false);
+    assert.match(dayOld.meta, /^마지막 수신/);
+    const partial = care.careSummary([], { vehicleCare: { ...base, observedAt: new Date(NOW - 5000).toISOString(),
+        liveKeys: ['oilLifePercent'], oilLifePercent: 40 } }, NOW, options);
+    const rows = Object.fromEntries(partial.rows.map(row => [row.label, row.value]));
+    assert.equal(partial.meta, '주행 중 실시간');
+    assert.equal(rows['배터리 전압'], undefined, 'battery sensor dropped out: no stale charging voltage');
+    assert.equal(rows['연료량'], '50% (지난 값)');
+    assert.equal(rows['엔진오일 수명'], '40%');
+    assert.equal(rows['12V 배터리 충전'], '90% (지난 값)');
+});
+
+test('until the full trip list loads the figures say they cover only the loaded trips', () => {
+    const items = [trip(1, fuel()), trip(2, fuel())];
+    const summary = care.careSummary(items, null, NOW, { ...options, historyComplete: false });
+    assert.equal(summary.rows[0].label, '불러온 기록 연비');
+    assert.equal(summary.meta, '전체 주행 기록 불러오는 중');
+    assert.equal(care.careSummary(items, null, NOW, options).rows[0].label, '최근 30일 연비');
+});
+
+test('a trip with an engine-record gap says its km/L left that stretch out', () => {
+    const view = care.tripFuelView({ fuel: fuel({ longGaps: 1 }) });
+    assert.ok(view.notes.some(note => /끊긴 구간/.test(note)));
+    assert.ok(!care.tripFuelView({ fuel: fuel() }).notes.some(note => /끊긴 구간/.test(note)));
 });
 
 test('bad live values are dropped and nothing known gives the empty text', () => {
@@ -131,7 +163,8 @@ const context = vm.createContext({
     renderGmoneRows: (id, rows) => rendered.push([id, rows]),
     console,
 });
-for (const name of ['escapeHtml', 'detailRows', 'normalizeDriveAnalysis', 'renderDriveReportFuel', 'canCareHistory', 'renderCanCare']) {
+for (const name of ['escapeHtml', 'detailRows', 'normalizeDriveAnalysis', 'renderDriveReportFuel', 'canCareHistory',
+    'canCareHistoryComplete', 'renderCanCare']) {
     const match = html.match(new RegExp(`        function ${name}\\([^]*?\\n        }`));
     assert.ok(match, name);
     vm.runInContext(match[0], context);
@@ -160,7 +193,21 @@ test('info tab section uses history from the bridge once and renders rows or the
     assert.equal(element('can-care-meta').textContent, '주행 기록 1회 기준');
     context.renderCanCare();
     assert.equal(reads, 1, 'cached between live updates');
-    context.window.Android = { getDrivingHistory: () => '[]' };
+    // A tab revisit re-reads the native list even when the history tab filled currentHistoryItems.
+    vm.runInContext('currentHistoryItems = [{ time: 1, analysis: {} }];', context);
+    context.window.Android.getDrivingHistory = () => { reads += 1; return JSON.stringify([trip(1, fuel()), trip(2, fuel())]); };
+    context.renderCanCare(true);
+    assert.equal(reads, 2);
+    assert.match(rendered.at(-1)[1][1].value, /^2회/);
+    // An empty first read is retried on the next live update instead of being cached forever.
+    vm.runInContext('currentHistoryItems = []; canCareHistoryCache = null;', context);
+    let calls = 0;
+    context.window.Android = { getDrivingHistory: () => (++calls === 1 ? '[]' : JSON.stringify([trip(1, fuel())])),
+        isDrivingHistoryComplete: () => false };
     context.renderCanCare(true);
     assert.match(element('can-care-list').children[0].textContent, /다음 주행부터/);
+    context.renderCanCare();
+    assert.equal(calls, 2);
+    assert.equal(rendered.at(-1)[1][0].label, '불러온 기록 연비');
+    assert.equal(element('can-care-meta').textContent, '전체 주행 기록 불러오는 중');
 });

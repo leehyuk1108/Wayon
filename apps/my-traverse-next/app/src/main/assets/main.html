@@ -7903,8 +7903,37 @@
             letter-spacing: 0.08em;
         }
 
-        #tab-extras .extras-hero-copy strong {
+        #tab-extras .extras-hero-time {
+            letter-spacing: 0.02em;
+        }
+
+        /* 사진 설명: AI가 읽은 표지가 있으면 그게 제목, 주소·AI 메모가 아래 줄 */
+        #tab-extras .extras-hero-spot {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: #fff;
+            font: inherit;
+            text-align: left;
+            text-shadow: inherit;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #tab-extras .extras-hero-spot-title,
+        #tab-extras .extras-hero-ai-note {
+            display: none;
+        }
+
+        #tab-extras .extras-hero-address {
             display: -webkit-box;
+            max-width: 100%;
             overflow: hidden;
             -webkit-box-orient: vertical;
             -webkit-line-clamp: 2;
@@ -7914,66 +7943,68 @@
             line-height: 1.22;
         }
 
-        #tab-extras .extras-hero-copy > span {
-            color: rgba(255, 255, 255, 0.74);
-            font-size: 11px;
-            font-weight: 680;
-        }
-
-        /* AI 사진 단서 한 줄: 사진 위 반투명 칩, 누르면 아래에 판독 결과 */
-        #tab-extras .extras-hero-ai {
-            align-self: flex-start;
+        #tab-extras .extras-hero.has-ai .extras-hero-spot-title {
             max-width: 100%;
-            min-height: 30px;
-            margin-top: 5px;
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 0 10px 0 9px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.14);
-            -webkit-backdrop-filter: blur(10px);
-            backdrop-filter: blur(10px);
+            gap: 8px;
             color: #fff;
-            font: inherit;
-            font-size: 11px;
-            font-weight: 760;
-            text-shadow: none;
-            cursor: pointer;
-            -webkit-tap-highlight-color: transparent;
+            font-size: 24px;
+            font-weight: 850;
+            line-height: 1.12;
+            letter-spacing: -0.01em;
         }
 
-        #tab-extras .extras-hero-ai[hidden] {
-            display: none;
-        }
-
-        #tab-extras .extras-hero-ai:active {
-            background: rgba(255, 255, 255, 0.22);
-        }
-
-        #tab-extras .extras-hero-ai svg {
-            flex: 0 0 13px;
-            width: 13px;
-            height: 13px;
-        }
-
-        #tab-extras .extras-hero-ai > span {
+        #tab-extras .extras-hero.has-ai #parking-inspection-spot {
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        #tab-extras .extras-hero-ai .extras-hero-ai-chevron {
-            flex-basis: 12px;
-            width: 12px;
-            height: 12px;
-            opacity: 0.8;
+        #tab-extras .extras-hero-ai-badge {
+            flex: 0 0 auto;
+            padding: 2px 6px;
+            border: 1px solid rgba(255, 255, 255, 0.32);
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.14);
+            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 850;
+            letter-spacing: 0.06em;
+            line-height: 1.2;
+            text-shadow: none;
+        }
+
+        #tab-extras .extras-hero.has-ai .extras-hero-address {
+            display: block;
+            overflow: hidden;
+            color: rgba(255, 255, 255, 0.86);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.3;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #tab-extras .extras-hero.has-ai .extras-hero-ai-note {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            color: rgba(255, 255, 255, 0.66);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        #tab-extras .extras-hero-ai-chevron {
+            width: 13px;
+            height: 13px;
             transition: transform 0.2s ease;
         }
 
-        #tab-extras .extras-hero-ai[aria-expanded="true"] .extras-hero-ai-chevron {
+        #tab-extras .extras-hero-spot[aria-expanded="true"] .extras-hero-ai-chevron {
             transform: rotate(180deg);
         }
 
@@ -8748,14 +8779,18 @@
                             <span class="snapshot-status" id="wayon-snapshot-status">대기 중</span>
                         </span>
                         <div class="extras-hero-copy">
-                            <span class="snapshot-card-title"><h4 id="extras-camera-title">LAST PARKED</h4></span>
-                            <strong id="saved-location-text">저장된 위치 없음</strong>
-                            <span id="saved-location-time">--:--</span>
-                            <button type="button" class="extras-hero-ai" id="parking-inspection-card"
-                                aria-expanded="false" aria-controls="parking-inspection-panel" aria-label="AI 사진 단서 자세히 보기">
-                                <i data-lucide="sparkles" aria-hidden="true"></i>
-                                <span id="parking-inspection-brief">주차 사진 단서 대기 중</span>
-                                <i class="extras-hero-ai-chevron" data-lucide="chevron-down" aria-hidden="true"></i>
+                            <span class="snapshot-card-title"><h4 id="extras-camera-title">LAST PARKED<span class="extras-hero-time"> · <span id="saved-location-time">--:--</span></span></h4></span>
+                            <button type="button" class="extras-hero-spot" id="parking-inspection-card"
+                                aria-expanded="false" aria-controls="parking-inspection-panel">
+                                <span class="extras-hero-spot-title">
+                                    <span id="parking-inspection-spot"></span>
+                                    <span class="extras-hero-ai-badge" aria-hidden="true">AI</span>
+                                </span>
+                                <span class="extras-hero-address" id="saved-location-text">저장된 위치 없음</span>
+                                <span class="extras-hero-ai-note">
+                                    <span id="parking-inspection-brief">주차 사진 단서 대기 중</span>
+                                    <i class="extras-hero-ai-chevron" data-lucide="chevron-down" aria-hidden="true"></i>
+                                </span>
                             </button>
                         </div>
                     </section>
@@ -10922,24 +10957,40 @@
             return parts.join(' · ');
         }
 
+        // 주차 사진 설명에 AI 결과를 합친다: 읽은 표지가 있으면 큰 제목("기둥 201 부근"), 주소는 그 아래,
+        // 마지막 줄에 "AI 추정 · 확인 필요 N건". 결과가 없으면 주소가 제목으로 돌아간다.
+        function parkingInspectionNote(model) {
+            const parts = ['AI 추정'];
+            if (model?.known?.length > 1) parts.push(`외 ${model.known.length - 1}개`);
+            if (model?.uncertain?.length) parts.push(`확인 필요 ${model.uncertain.length}건`);
+            return parts.join(' · ');
+        }
+
+        function renderParkingInspectionCaption(model) {
+            const hero = document.getElementById('wayon-snapshot-card');
+            const caption = document.getElementById('parking-inspection-card');
+            const spot = document.getElementById('parking-inspection-spot');
+            const note = document.getElementById('parking-inspection-brief');
+            const ready = model?.phase === 'ready' && (model.known?.length || model.uncertain?.length);
+            const first = ready ? model.known?.[0] : null;
+            hero?.classList.toggle('has-ai', !!ready);
+            if (spot) spot.textContent = first ? `${first.label ? `${first.label} ` : ''}${first.value} 부근` : '주차 표지 확인 필요';
+            if (note) note.textContent = parkingInspectionNote(model);
+            caption?.setAttribute('aria-label', ready ? `AI 사진 단서: ${parkingInspectionBrief(model)}` : '주차 사진 보기');
+            if (!ready) {
+                caption?.setAttribute('aria-expanded', 'false');
+                const panel = document.getElementById('parking-inspection-panel');
+                if (panel) panel.hidden = true;
+            }
+        }
+
         window.parkingInspectionView = window.ParkingInspection?.createController({
             endpoint: WAYON_CLOUD_PARKING_URL,
             getToken: getWayonCloudViewToken,
             request: (...args) => fetch(...args),
             onChange: model => {
                 window.ParkingInspection.render(document.getElementById('parking-inspection-content'), model);
-                const brief = document.getElementById('parking-inspection-brief');
-                if (brief) brief.textContent = parkingInspectionBrief(model);
-                // 사진 위 AI 칩은 읽어 온 결과나 읽는 중일 때만 보인다(클라우드 미연결·오류면 숨김).
-                const clue = document.getElementById('parking-inspection-card');
-                if (clue) {
-                    clue.hidden = !(model?.phase === 'ready' || model?.phase === 'loading');
-                    if (clue.hidden) {
-                        clue.setAttribute('aria-expanded', 'false');
-                        const panel = document.getElementById('parking-inspection-panel');
-                        if (panel) panel.hidden = true;
-                    }
-                }
+                renderParkingInspectionCaption(model);
                 const button = document.getElementById('parking-inspection-refresh');
                 if (button) button.disabled = model.phase === 'loading';
             },
@@ -10950,6 +11001,7 @@
         const parkingInspectionCard = document.getElementById('parking-inspection-card');
         parkingInspectionCard?.addEventListener('click', (event) => {
             event.stopPropagation();
+            if (!document.getElementById('wayon-snapshot-card')?.classList.contains('has-ai')) return openSnapshotViewerLatest(0);
             const panel = document.getElementById('parking-inspection-panel');
             panel.hidden = !panel.hidden;
             parkingInspectionCard.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
@@ -11989,7 +12041,7 @@
         });
 
         wayonSnapshotCard?.addEventListener('click', (event) => {
-            if (event.target.closest('.parking-inspection, .extras-rail-card, .extras-hero-ai')) return;
+            if (event.target.closest('.parking-inspection, .extras-rail-card, .extras-hero-spot')) return;
             openSnapshotViewerLatest(0);
         });
 

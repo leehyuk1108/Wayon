@@ -62,8 +62,22 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
         assert.equal(await page.evaluate(src => new Function(`${src}; return parkingInspectionBrief;`)()(
             ParkingInspection.viewModel(window.parkingTestPayload, window.parkingTestNow)), briefSource[0]),
             `기둥 ${'W'.repeat(32)} · 외 2개 · 확인 필요 29건`);
+        // The parked photo's caption carries the clues: spot as the title, note underneath.
+        const noteSource = source.match(/function parkingInspectionNote\(model\) \{[\s\S]*?\n        \}/);
+        const captionSource = source.match(/function renderParkingInspectionCaption\(model\) \{[\s\S]*?\n        \}/);
+        assert.ok(noteSource && captionSource, 'exercise the actual photo caption');
         const clueCard = page.locator('#parking-inspection-card');
-        assert.equal(await clueCard.getAttribute('aria-expanded'), 'false', 'clues start folded behind the rail card');
+        await clueCard.click();
+        assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 1, 'without clues the caption opens the photo');
+        assert.equal(await clueCard.getAttribute('aria-expanded'), 'false');
+        await page.evaluate(src => new Function(`${src}; return renderParkingInspectionCaption;`)()(
+            ParkingInspection.viewModel(window.parkingTestPayload, window.parkingTestNow)),
+            [briefSource[0], noteSource[0], captionSource[0]].join('\n'));
+        assert.equal(await page.locator('#wayon-snapshot-card.has-ai').count(), 1);
+        assert.equal(await page.locator('#parking-inspection-spot').textContent(), `기둥 ${'W'.repeat(32)} 부근`);
+        assert.equal(await page.locator('#parking-inspection-brief').textContent(), 'AI 추정 · 외 2개 · 확인 필요 29건');
+        await page.evaluate(() => { window.parkingSnapshotOpenCount = 0; });
+        assert.equal(await clueCard.getAttribute('aria-expanded'), 'false', 'clues start folded under the photo caption');
         assert.equal(await content.isVisible(), false);
         await clueCard.click();
         assert.equal(await clueCard.getAttribute('aria-expanded'), 'true');

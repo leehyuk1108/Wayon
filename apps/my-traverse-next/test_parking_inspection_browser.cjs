@@ -45,12 +45,15 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
         const summary = details.locator('summary');
         const cardHandler = source.match(/wayonSnapshotCard\?\.addEventListener\('click',[\s\S]*?\n        \}\);/);
         assert.ok(cardHandler, 'exercise the actual gallery card click handler');
+        const clueCardHandler = source.match(/const parkingInspectionCard = [\s\S]*?\n        \}\);/);
+        assert.ok(clueCardHandler, 'exercise the actual clue card toggle');
         await page.addScriptTag({content: `
             const wayonSnapshotCard = document.getElementById('wayon-snapshot-card');
             window.parkingSnapshotOpenCount = 0;
             window.parkingRefreshCount = 0;
             function openSnapshotViewerLatest() { window.parkingSnapshotOpenCount++; }
             ${cardHandler[0]}
+            ${clueCardHandler[0]}
             document.getElementById('parking-inspection-refresh').addEventListener('click', () => window.parkingRefreshCount++);
         `});
         // The extras tab folds the clues into one row; the row shows a one-line brief.
@@ -59,12 +62,13 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
         assert.equal(await page.evaluate(src => new Function(`${src}; return parkingInspectionBrief;`)()(
             ParkingInspection.viewModel(window.parkingTestPayload, window.parkingTestNow)), briefSource[0]),
             `기둥 ${'W'.repeat(32)} · 외 2개 · 확인 필요 29건`);
-        const outer = page.locator('#parking-inspection-disclosure');
-        assert.equal(await outer.getAttribute('open'), null, 'clues start folded');
+        const clueCard = page.locator('#parking-inspection-card');
+        assert.equal(await clueCard.getAttribute('aria-expanded'), 'false', 'clues start folded behind the rail card');
         assert.equal(await content.isVisible(), false);
-        await outer.locator(':scope > summary').click();
-        assert.notEqual(await outer.getAttribute('open'), null);
-        assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 0, 'opening the clue row must not open a photo');
+        await clueCard.click();
+        assert.equal(await clueCard.getAttribute('aria-expanded'), 'true');
+        assert.equal(await content.isVisible(), true);
+        assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 0, 'opening the clue card must not open a photo');
         await summary.click();
         assert.notEqual(await details.getAttribute('open'), null);
         assert.equal(await page.evaluate(() => window.parkingSnapshotOpenCount), 0, 'disclosure must not open a photo');

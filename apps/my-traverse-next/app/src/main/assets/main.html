@@ -7689,7 +7689,7 @@
             .ambient-card-body { padding: 4px 16px 18px; }
         }
 
-        /* === 부가기능 탭: 차량 탭처럼 섹션 제목은 카드 밖, 카드는 평평하게, 핵심만 크게 === */
+        /* === 부가기능 탭: 차량 탭 'Vehicle services'와 같은 가로 카드 줄 === */
         #tab-extras {
             background: #0b0b0c;
         }
@@ -7697,25 +7697,24 @@
         #tab-extras .extras-section {
             display: flex;
             flex-direction: column;
-            gap: 26px;
-            padding: 18px 18px 40px;
+            gap: 22px;
+            padding: 16px 0 40px;
         }
 
         #tab-extras .extras-block {
             display: flex;
             flex-direction: column;
-            gap: 10px;
             min-width: 0;
         }
 
         #tab-extras .extras-heading {
             display: flex;
-            align-items: baseline;
+            align-items: center;
             justify-content: space-between;
             gap: 12px;
             min-width: 0;
             margin: 0;
-            padding: 0 2px;
+            padding: 0 20px 10px;
         }
 
         #tab-extras .extras-heading strong,
@@ -7724,309 +7723,202 @@
             padding: 0;
             border: 0;
             color: #ededee;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 800;
             line-height: 1.2;
         }
 
         #tab-extras .extras-heading > span {
-            max-width: 58%;
+            max-width: 60%;
             overflow: hidden;
-            color: #6f7075;
-            font-size: 11px;
-            font-weight: 700;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        #tab-extras .extras-heading-link {
-            padding: 4px 0 4px 10px;
-            border: 0;
-            background: none;
-            color: #8a8b90;
-            font: inherit;
-            font-size: 11px;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        #tab-extras .extras-card {
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            background: #1b1c1f;
-        }
-
-        /* 최근 주행 */
-        #tab-extras .extras-trip {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            padding: 16px;
-        }
-
-        #tab-extras .extras-trip-place {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-width: 0;
-            color: #f2f2f3;
-            font-size: 14px;
-            font-weight: 720;
-        }
-
-        #tab-extras .extras-trip-place svg {
-            flex: 0 0 16px;
-            width: 16px;
-            height: 16px;
-            color: #9c9da2;
-        }
-
-        #tab-extras .extras-trip-place span {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        #tab-extras .extras-trip-stats {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 8px;
-        }
-
-        #tab-extras .stat-item {
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        #tab-extras .stat-value {
-            overflow: hidden;
-            color: #f4f4f5;
-            font-size: clamp(13px, 3.9vw, 16px);
-            font-weight: 780;
-            letter-spacing: -0.01em;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        #tab-extras .stat-label {
-            color: #6f7075;
+            padding: 0;
+            color: #696a6e;
             font-size: 10px;
             font-weight: 700;
-        }
-
-        #tab-extras .extras-pill-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        #tab-extras .extras-pill {
-            min-height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 7px;
-            border-radius: 999px;
-            background: #26272b;
-            color: #e6e6e8;
-            font-size: 12px;
-            font-weight: 750;
-            cursor: pointer;
-            -webkit-tap-highlight-color: transparent;
-            transition: background 0.16s ease, transform 0.16s ease;
-        }
-
-        #tab-extras #btnToggleHistory {
-            background: #26272b;
-            color: #e6e6e8;
-        }
-
-        #tab-extras .extras-pill:active {
-            transform: scale(0.98);
-            background: #2e2f34;
-        }
-
-        #tab-extras .extras-pill svg {
-            width: 14px;
-            height: 14px;
-            color: #9c9da2;
-        }
-
-        /* 카메라 기록 */
-        #tab-extras .snapshot-card-header {
-            margin: 0;
+            line-height: 1.2;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         #tab-extras .snapshot-card-title {
             display: block;
         }
 
-        #tab-extras .snapshot-status {
-            padding: 0;
-            color: #6f7075;
-            font-size: 11px;
-            font-weight: 700;
-            line-height: 1.2;
+        #tab-extras .extras-rail {
+            display: flex;
+            gap: 10px;
+            padding: 0 20px 2px;
+            overflow-x: auto;
+            overscroll-behavior-inline: contain;
+            scroll-snap-type: x mandatory;
+            scroll-padding-inline: 20px;
+            scrollbar-width: none;
         }
 
-        #tab-extras .snapshot-grid {
-            gap: 8px;
+        #tab-extras .extras-rail::-webkit-scrollbar {
+            display: none;
         }
 
-        #tab-extras .snapshot-tile {
-            aspect-ratio: 4 / 3;
-            border-radius: 8px;
-        }
-
+        #tab-extras .extras-rail-card,
+        #tab-extras .snapshot-tile,
         #tab-extras .snapshot-placeholder {
-            grid-column: 1 / -1;
-            min-height: 120px;
-            display: grid;
-            place-items: center;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            background: #141517;
-            color: #6f7075;
-            font-size: 12px;
-        }
-
-        #tab-extras .extras-segment {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
-        }
-
-        #tab-extras .extras-segment-item {
+            position: relative;
+            flex: 0 0 178px;
+            width: 178px;
             min-width: 0;
-            min-height: 64px;
-            padding: 10px 6px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            background: #1b1c1f;
-            color: #ededee;
+            height: 118px;
+            min-height: 118px;
+            margin: 0;
+            border-radius: 7px;
+            scroll-snap-align: start;
+            overflow: hidden;
+        }
+
+        /* :where()로 묶어 실행 중·전송 중·길게 누르기 상태 색이 그대로 이긴다. */
+        :where(#tab-extras) .extras-rail-card {
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.065);
+            background-color: #202125;
+            box-shadow: none;
+            color: #f1f1f2;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 7px;
+            align-items: stretch;
+            justify-content: space-between;
+            gap: 0;
             font: inherit;
+            text-align: left;
+            cursor: pointer;
             -webkit-tap-highlight-color: transparent;
             transition: background 0.16s ease, transform 0.16s ease;
         }
 
-        #tab-extras .extras-segment-item:active {
-            transform: scale(0.98);
-            background: #222327;
+        #tab-extras .extras-rail-card:active {
+            transform: scale(0.985);
         }
 
-        #tab-extras .extras-segment-item svg {
+        :where(#tab-extras) .extras-rail-card:active {
+            background-color: #292a2e;
+        }
+
+        #tab-extras #btnToggleHistory {
+            background-color: #202125;
+            color: #f1f1f2;
+        }
+
+        #tab-extras .extras-rail-icon {
+            position: relative;
+            z-index: 2;
             width: 18px;
             height: 18px;
             color: #b9bbbf;
         }
 
-        #tab-extras .extras-segment-label {
-            max-width: 100%;
+        #tab-extras .extras-rail-copy {
+            position: relative;
+            z-index: 2;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        #tab-extras .extras-rail-copy strong {
             overflow: hidden;
+            color: #f2f2f3;
             font-size: 12px;
-            font-weight: 760;
+            font-weight: 830;
             line-height: 1.15;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
+        #tab-extras .extras-rail-copy strong.extras-rail-value {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+        }
+
+        #tab-extras .extras-rail-copy > span {
+            overflow: hidden;
+            color: #8d8e92;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1.35;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #tab-extras .extras-rail-copy > span.extras-rail-multi {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            white-space: normal;
+        }
+
         #tab-extras .extras-count {
             margin-left: 5px;
-            color: #7f8085;
-            font-weight: 700;
+            color: #8d8e92;
+            font-weight: 760;
         }
 
         #tab-extras .extras-count:empty {
             display: none;
         }
 
-        #tab-extras .extras-visually-hidden {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-            clip: rect(0 0 0 0);
-            white-space: nowrap;
-        }
-
-        #tab-extras .snapshot-impact-action.has-impacts .extras-segment-label,
-        #tab-extras .snapshot-impact-action.has-impacts svg {
+        #tab-extras #btnImpactSnapshots.has-impacts strong,
+        #tab-extras #btnImpactSnapshots.has-impacts .extras-rail-icon {
             color: #f0b55d;
         }
 
-        /* 접는 줄: AI 사진 단서 */
-        #tab-extras .extras-fold-row {
-            min-height: 56px;
+        #tab-extras #btnImpactSnapshots.has-impacts {
+            border-color: rgba(242, 173, 74, 0.24);
+        }
+
+        #tab-extras #parking-inspection-card[aria-expanded="true"] {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 카메라 사진은 가로 줄의 앞쪽 카드 두 장으로 */
+        #tab-extras .snapshot-grid {
+            display: contents;
+        }
+
+        #tab-extras .snapshot-tile {
+            aspect-ratio: auto;
+            border: 1px solid rgba(255, 255, 255, 0.065);
+            background: #17181b;
+        }
+
+        #tab-extras .snapshot-placeholder {
             display: grid;
-            grid-template-columns: 18px minmax(0, 1fr) 16px;
-            align-items: center;
-            gap: 12px;
-            padding: 0 14px;
-            list-style: none;
-            cursor: pointer;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        #tab-extras .extras-fold-row::-webkit-details-marker {
-            display: none;
-        }
-
-        #tab-extras .extras-fold-icon {
-            width: 18px;
-            height: 18px;
-            color: #b9bbbf;
-        }
-
-        #tab-extras .extras-fold-copy {
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-        }
-
-        #tab-extras .extras-fold-copy strong {
-            color: #ededee;
-            font-size: 13px;
-            font-weight: 760;
-        }
-
-        #tab-extras .extras-fold-copy span {
-            overflow: hidden;
-            color: #7f8085;
+            place-items: center;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.065);
+            background: #17181b;
+            color: #77787d;
             font-size: 11px;
-            font-weight: 600;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        #tab-extras .extras-row-chevron {
-            width: 16px;
-            height: 16px;
-            color: #6a6b70;
-            transition: transform 0.2s ease;
-        }
-
-        #tab-extras details[open] > summary .extras-row-chevron {
-            transform: rotate(180deg);
+            font-weight: 650;
+            line-height: 1.45;
+            text-align: center;
         }
 
         #tab-extras .parking-inspection {
-            margin: 0;
-            padding: 2px 14px 14px;
-            border: 0;
+            margin: 12px 20px 0;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.065);
+            border-radius: 7px;
+            background: #17181b;
+        }
+
+        #tab-extras .parking-inspection[hidden] {
+            display: none;
         }
 
         #tab-extras .parking-inspection-header h5 {
-            color: #7f8085;
-            font-size: 11px;
-            font-weight: 700;
+            color: #ededee;
+            font-size: 12px;
+            font-weight: 800;
         }
 
         #tab-extras .parking-inspection-refresh {
@@ -8039,7 +7931,14 @@
             color: #b9bbbf;
         }
 
-        /* 앰비언트 조명: 한 카드 안의 두 줄 */
+        /* 앰비언트 조명: 같은 색의 카드 하나에 두 줄 */
+        #tab-extras .extras-card {
+            margin: 0 20px;
+            border: 1px solid rgba(255, 255, 255, 0.065);
+            border-radius: 7px;
+            background: #202125;
+        }
+
         #tab-extras .extras-ambient-rows {
             overflow: hidden;
         }
@@ -8053,7 +7952,7 @@
         }
 
         #tab-extras .extras-ambient-rows .ambient-card-collapsible + .ambient-card-collapsible {
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.055);
         }
 
         #tab-extras .ambient-card-summary {
@@ -8068,20 +7967,21 @@
         }
 
         #tab-extras .ambient-card-summary-copy strong {
-            color: #ededee;
-            font-size: 13px;
-            font-weight: 760;
+            color: #f2f2f3;
+            font-size: 12px;
+            font-weight: 830;
         }
 
         #tab-extras .ambient-card-summary-copy span {
-            margin-top: 3px;
-            color: #7f8085;
-            font-size: 11px;
+            margin-top: 4px;
+            color: #8d8e92;
+            font-size: 10px;
+            font-weight: 700;
         }
 
         #tab-extras .ambient-summary-state {
             color: #a4a5aa;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
         }
 
@@ -8093,7 +7993,7 @@
 
         #tab-extras .ambient-card-body {
             padding: 4px 14px 16px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.055);
         }
 
         #tab-extras .ambient-card-body h4 {
@@ -8107,107 +8007,47 @@
 
         #tab-extras .ambient-card-body .feature-description {
             margin: 3px 0 0;
-            color: #7f8085;
+            color: #8d8e92;
             font-size: 11px;
         }
 
-        /* 원격 실행: 아이콘과 이름만 있는 세 칸. :where()로 묶어 실행 중·전송 중·길게 누르기 색이 이긴다. */
-        #tab-extras .extras-remote-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
-        }
-
-        :where(#tab-extras) .action-button-grouped {
-            min-height: 46px;
-            padding: 8px 12px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            background-color: #1b1c1f;
-            box-shadow: none;
-            color: #ededee;
-            font-size: 13px;
-            font-weight: 700;
-        }
-
-        :where(#tab-extras) .extras-action {
-            min-height: 92px;
-            padding: 12px 6px;
-            gap: 5px;
-        }
-
+        /* 원격 실행 카드: 실행 중이면 주황 바탕, 남은 시간 표시 */
         #tab-extras .extras-action .button-text {
-            margin-top: 3px;
-            font-size: 13px;
-            font-weight: 780;
-            line-height: 1.2;
+            display: block;
+            transition: none;
         }
 
-        #tab-extras .extras-action-icon {
-            position: relative;
-            z-index: 2;
-            width: 20px;
-            height: 20px;
-            color: #b9bbbf;
+        #tab-extras .extras-action .extras-action-sub {
+            display: block;
         }
 
-        #tab-extras .extras-action-sub,
         #tab-extras .extras-action .timer-display {
-            position: relative;
-            z-index: 2;
             margin: 0;
-            color: #6f7075;
-            font-size: 10px;
-            font-weight: 650;
-            white-space: nowrap;
+            color: inherit;
+            font-size: 11px;
+            font-weight: 760;
         }
 
         #tab-extras .extras-action.active .extras-action-sub {
             display: none;
         }
 
-        #tab-extras .extras-action.active .timer-display {
-            color: rgba(20, 16, 12, 0.78);
-            font-size: 11px;
-            font-weight: 760;
+        #tab-extras .extras-action:is(.active, .sending, .success, .holding, .cooldown) .extras-rail-icon,
+        #tab-extras .extras-action:is(.active, .sending, .success, .holding, .cooldown) .extras-rail-copy > span {
+            color: rgba(20, 16, 12, 0.74);
         }
 
-        #tab-extras .extras-action:is(.active, .sending, .success, .holding, .cooldown) .extras-action-icon,
-        #tab-extras .extras-action:is(.active, .sending, .success, .holding, .cooldown) .extras-action-sub {
-            color: rgba(20, 16, 12, 0.72);
-        }
-
-        #tab-extras .extras-action.danger .extras-action-icon,
-        #tab-extras .extras-action.danger .extras-action-sub {
+        #tab-extras .extras-action.danger .extras-rail-icon,
+        #tab-extras .extras-action.danger .extras-rail-copy > span {
             color: rgba(255, 255, 255, 0.82);
         }
 
-        #tab-extras .extras-remote-help {
-            display: grid;
-            grid-template-columns: auto minmax(0, 1fr);
-            gap: 8px 14px;
-            margin: 2px 0 0;
-            padding: 14px;
-            border-radius: 8px;
-            background: #141517;
+        #tab-extras .extras-action:is(.active, .sending, .success, .holding, .cooldown) .button-text {
+            color: #14100c;
         }
 
-        #tab-extras .extras-remote-help[hidden] {
-            display: none;
-        }
-
-        #tab-extras .extras-remote-help dt {
-            color: #d8d8db;
-            font-size: 11px;
-            font-weight: 760;
-            white-space: nowrap;
-        }
-
-        #tab-extras .extras-remote-help dd {
-            margin: 0;
-            color: #85868b;
-            font-size: 11px;
-            line-height: 1.5;
+        #tab-extras .extras-action.danger .button-text {
+            color: #fff;
         }
     </style>
 </head>
@@ -8659,38 +8499,21 @@
                             <strong id="extras-trip-title">최근 주행</strong>
                             <span id="saved-location-time">--:--</span>
                         </div>
-                        <div class="extras-card extras-trip">
-                            <div class="extras-trip-place">
-                                <i data-lucide="map-pin" aria-hidden="true"></i>
-                                <span id="saved-location-text">저장된 위치 없음</span>
+                        <div class="extras-rail">
+                            <div class="extras-rail-card" id="btnToggleHistory" role="button" tabindex="0" aria-label="주행 이력 보기">
+                                <i class="extras-rail-icon" data-lucide="route" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong class="extras-rail-value" id="saved-drive-dist">-- km</strong>
+                                    <span><span id="saved-drive-time">--:--:--</span> · 평균 <span id="saved-avg-speed">-- km/h</span></span>
+                                    <span>최고 <span id="saved-top-speed">-- km/h</span></span>
+                                </span>
                             </div>
-                            <div class="extras-trip-stats">
-                                <div class="stat-item">
-                                    <span class="stat-value" id="saved-drive-dist">-- km</span>
-                                    <span class="stat-label">거리</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span class="stat-value" id="saved-drive-time">--:--:--</span>
-                                    <span class="stat-label">시간</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span class="stat-value" id="saved-avg-speed">-- km/h</span>
-                                    <span class="stat-label">평균</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span class="stat-value" id="saved-top-speed">-- km/h</span>
-                                    <span class="stat-label">최고</span>
-                                </div>
-                            </div>
-                            <div class="extras-pill-row">
-                                <div class="extras-pill" id="btnLoadLocation" role="button" tabindex="0">
-                                    <i data-lucide="map" aria-hidden="true"></i>
-                                    <span>주차 위치</span>
-                                </div>
-                                <div class="extras-pill" id="btnToggleHistory" role="button" tabindex="0">
-                                    <i data-lucide="history" aria-hidden="true"></i>
-                                    <span>주행 이력</span>
-                                </div>
+                            <div class="extras-rail-card" id="btnLoadLocation" role="button" tabindex="0" aria-label="주차 위치 보기">
+                                <i class="extras-rail-icon" data-lucide="map-pin" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong>주차 위치</strong>
+                                    <span class="extras-rail-multi" id="saved-location-text">저장된 위치 없음</span>
+                                </span>
                             </div>
                         </div>
                     </section>
@@ -8702,44 +8525,50 @@
                             </div>
                             <span class="snapshot-status" id="wayon-snapshot-status">대기 중</span>
                         </div>
-                        <div class="snapshot-grid" id="wayon-snapshot-grid">
-                            <div class="snapshot-placeholder">Wayon Cloud 연결 후 표시됩니다.</div>
-                        </div>
-                        <div class="extras-segment extras-camera-actions">
-                            <button type="button" class="extras-segment-item" id="btnWayonLive">
-                                <i data-lucide="video" aria-hidden="true"></i>
-                                <span class="extras-segment-label">360° Live</span>
+                        <div class="extras-rail">
+                            <div class="snapshot-grid" id="wayon-snapshot-grid">
+                                <div class="snapshot-placeholder">Wayon Cloud 연결 후 표시됩니다.</div>
+                            </div>
+                            <button type="button" class="extras-rail-card" id="btnWayonLive">
+                                <i class="extras-rail-icon" data-lucide="video" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong>360° Live</strong>
+                                    <span>실시간 카메라 보기</span>
+                                </span>
                             </button>
-                            <button type="button" class="extras-segment-item snapshot-impact-action" id="btnImpactSnapshots">
-                                <i data-lucide="shield-alert" aria-hidden="true"></i>
-                                <span class="extras-segment-label" id="impact-snapshot-count">충격 기록</span>
+                            <button type="button" class="extras-rail-card" id="btnImpactSnapshots">
+                                <i class="extras-rail-icon" data-lucide="shield-alert" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong id="impact-snapshot-count">충격 기록</strong>
+                                    <span>충격 감지 때 찍힌 사진</span>
+                                </span>
                             </button>
-                            <button type="button" class="extras-segment-item" id="btnWayonLiveCaptures">
-                                <i data-lucide="images" aria-hidden="true"></i>
-                                <span class="extras-segment-label">Live 저장<span class="extras-count" id="wayon-live-capture-count"></span></span>
-                                <span class="extras-visually-hidden" id="wayon-live-capture-summary">저장 기록 확인</span>
+                            <button type="button" class="extras-rail-card" id="btnWayonLiveCaptures">
+                                <i class="extras-rail-icon" data-lucide="images" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong>Live 저장<span class="extras-count" id="wayon-live-capture-count"></span></strong>
+                                    <span id="wayon-live-capture-summary">저장 기록 확인</span>
+                                </span>
                             </button>
-                        </div>
-                        <details class="extras-card extras-fold parking-inspection-disclosure" id="parking-inspection-disclosure">
-                            <summary class="extras-fold-row">
-                                <i class="extras-fold-icon" data-lucide="scan-search" aria-hidden="true"></i>
-                                <span class="extras-fold-copy">
+                            <button type="button" class="extras-rail-card" id="parking-inspection-card"
+                                aria-expanded="false" aria-controls="parking-inspection-panel">
+                                <i class="extras-rail-icon" data-lucide="scan-search" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
                                     <strong>AI 사진 단서</strong>
                                     <span id="parking-inspection-brief">주차 사진 단서 대기 중</span>
                                 </span>
-                                <i class="extras-row-chevron" data-lucide="chevron-down" aria-hidden="true"></i>
-                            </summary>
-                            <section class="parking-inspection" aria-labelledby="parking-inspection-title">
-                                <div class="parking-inspection-header">
-                                    <h5 id="parking-inspection-title">판독 결과</h5>
-                                    <button type="button" class="parking-inspection-refresh" id="parking-inspection-refresh"
-                                        title="주차 사진 단서 새로고침" aria-label="주차 사진 단서 새로고침">
-                                        <i data-lucide="refresh-cw" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                <div id="parking-inspection-content" aria-live="polite"></div>
-                            </section>
-                        </details>
+                            </button>
+                        </div>
+                        <section class="parking-inspection" id="parking-inspection-panel" aria-labelledby="parking-inspection-title" hidden>
+                            <div class="parking-inspection-header">
+                                <h5 id="parking-inspection-title">AI 사진 단서</h5>
+                                <button type="button" class="parking-inspection-refresh" id="parking-inspection-refresh"
+                                    title="주차 사진 단서 새로고침" aria-label="주차 사진 단서 새로고침">
+                                    <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            <div id="parking-inspection-content" aria-live="polite"></div>
+                        </section>
                     </section>
 
                     <section class="extras-block" aria-labelledby="extras-ambient-title">
@@ -8752,38 +8581,35 @@
                     <section class="extras-block" aria-labelledby="extras-remote-title">
                         <div class="extras-heading">
                             <strong id="extras-remote-title">원격 실행</strong>
-                            <button type="button" class="extras-heading-link" id="extras-remote-help-toggle"
-                                aria-expanded="false" aria-controls="extras-remote-help">설명</button>
+                            <span>밀어서 더 보기</span>
                         </div>
-                        <div class="extras-remote-grid">
-                            <div class="action-button-grouped extras-action" id="btnVentilation" data-name="환기 모드" role="button" tabindex="0">
-                                <i class="extras-action-icon" data-lucide="wind" aria-hidden="true"></i>
-                                <span class="button-text">환기</span>
-                                <span class="extras-action-sub">5분</span>
-                                <span class="timer-display" id="ventilation-timer"></span>
+                        <div class="extras-rail">
+                            <div class="action-button-grouped extras-rail-card extras-action" id="btnVentilation" data-name="환기 모드" role="button" tabindex="0">
+                                <i class="extras-rail-icon" data-lucide="wind" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong class="button-text">환기</strong>
+                                    <span class="extras-action-sub">창문 열고 5분 뒤 닫기</span>
+                                    <span class="timer-display" id="ventilation-timer"></span>
+                                </span>
                             </div>
-                            <div class="action-button-grouped extras-action" id="btnHeatEject" data-name="열 배출 모드" role="button" tabindex="0">
-                                <i class="extras-action-icon" data-lucide="sun" aria-hidden="true"></i>
-                                <span class="button-text">열 배출</span>
-                                <span class="extras-action-sub">5분 · 시동</span>
-                                <span class="timer-display" id="heat-eject-timer"></span>
+                            <div class="action-button-grouped extras-rail-card extras-action" id="btnHeatEject" data-name="열 배출 모드" role="button" tabindex="0">
+                                <i class="extras-rail-icon" data-lucide="sun" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong class="button-text">열 배출</strong>
+                                    <span class="extras-action-sub">창문·선루프 열고 시동 · 5분</span>
+                                    <span class="timer-display" id="heat-eject-timer"></span>
+                                </span>
                             </div>
-                            <div class="action-button-grouped extras-action long-press" id="btnFindMyCar" data-cmd="PANIC"
+                            <div class="action-button-grouped extras-rail-card extras-action long-press" id="btnFindMyCar" data-cmd="PANIC"
                                 data-name="경적 울리기" role="button" tabindex="0">
                                 <div class="long-press-fill"></div>
-                                <i class="extras-action-icon" data-lucide="megaphone" aria-hidden="true"></i>
-                                <span class="button-text">경적</span>
-                                <span class="extras-action-sub">길게 누르기</span>
+                                <i class="extras-rail-icon" data-lucide="megaphone" aria-hidden="true"></i>
+                                <span class="extras-rail-copy">
+                                    <strong class="button-text">경적</strong>
+                                    <span class="extras-action-sub">길게 눌러 경적 울리기</span>
+                                </span>
                             </div>
                         </div>
-                        <dl class="extras-remote-help" id="extras-remote-help" hidden>
-                            <dt>환기</dt>
-                            <dd>창문을 열어 5분간 환기한 뒤 자동으로 닫습니다. 한 번 더 누르면 멈춥니다.</dd>
-                            <dt>열 배출</dt>
-                            <dd>탑승 전 창문·선루프를 열고 시동을 켭니다. 5분 뒤 창문·선루프를 닫고 시동은 유지합니다.</dd>
-                            <dt>경적</dt>
-                            <dd>길게 누르면 경적을 울려 주차된 차 위치를 알려 줍니다.</dd>
-                        </dl>
                     </section>
 
                 </div>
@@ -10870,6 +10696,14 @@
         document.getElementById('parking-inspection-refresh')?.addEventListener('click', () => {
             window.parkingInspectionView?.refresh();
         });
+        const parkingInspectionCard = document.getElementById('parking-inspection-card');
+        parkingInspectionCard?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const panel = document.getElementById('parking-inspection-panel');
+            panel.hidden = !panel.hidden;
+            parkingInspectionCard.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+            if (!panel.hidden) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
         document.addEventListener('click', event => {
             if (event.target.closest?.('#pwa-logout')) window.parkingInspectionView?.clear();
         }, true);
@@ -11904,7 +11738,7 @@
         });
 
         wayonSnapshotCard?.addEventListener('click', (event) => {
-            if (event.target.closest('.parking-inspection, .parking-inspection-disclosure, .extras-camera-actions')) return;
+            if (event.target.closest('.parking-inspection, .extras-rail-card')) return;
             openSnapshotViewerLatest(0);
         });
 
@@ -13315,15 +13149,6 @@
         btnHeatEject.addEventListener('click', () => {
             if (btnHeatEject.classList.contains('disabled')) return;
             if (window.Android) window.Android.handleHeatEjectToggle();
-        });
-
-        const extrasRemoteHelpToggle = document.getElementById('extras-remote-help-toggle');
-        const extrasRemoteHelp = document.getElementById('extras-remote-help');
-        extrasRemoteHelpToggle?.addEventListener('click', () => {
-            const open = extrasRemoteHelp.hidden;
-            extrasRemoteHelp.hidden = !open;
-            extrasRemoteHelpToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-            extrasRemoteHelpToggle.textContent = open ? '닫기' : '설명';
         });
 
         // 4. 자동 새로고침 토글 리스너

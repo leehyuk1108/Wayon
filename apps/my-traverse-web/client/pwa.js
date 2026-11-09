@@ -10,6 +10,18 @@
     <input id="pwa-password" type="password" autocomplete="current-password" required maxlength="128">
     <button type="submit">로그인</button><p id="pwa-error" role="alert"></p></form>`;
   document.body.append(login);
+  // A device that has logged in before shows the app at once and checks the session behind it; the
+  // password form appears only when the server says the session is gone. The hint holds no secret.
+  const AUTH_HINT = 'traverse-web-authenticated';
+  const hint = (value) => {
+    try {
+      if (value === undefined) return window.localStorage?.getItem(AUTH_HINT) === '1';
+      if (value) window.localStorage?.setItem(AUTH_HINT, '1'); else window.localStorage?.removeItem(AUTH_HINT);
+    } catch { /* storage can be unavailable; the session check still decides */ }
+    return false;
+  };
+  login.hidden = true;
+  document.body.dataset.pwa = hint() ? 'resuming' : 'checking';
 
   async function api(path, body, method = 'POST') {
     const csrfToken = window.TraverseWeb?.csrfToken() || session?.csrfToken;
@@ -29,6 +41,7 @@
   function lock() {
     authRevision++;
     session = null;
+    hint(false);
     window.TraverseWeb?.stop();
     document.body.dataset.pwa = 'locked';
     login.hidden = false;
@@ -40,6 +53,7 @@
     if (revision !== authRevision) return;
     if (!result.authenticated) { lock(); return; }
     session = result;
+    hint(true);
     login.hidden = true;
     document.body.dataset.pwa = 'ready';
     login.querySelector('input').value = '';

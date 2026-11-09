@@ -19,14 +19,14 @@ function element() {
   };
 }
 
-function harness(sessionResponse = fixtureSession, sessionStatus = 200) {
+function harness(sessionResponse = fixtureSession, sessionStatus = 200, localStorage = undefined) {
   const login = element(), actions = element(), body = element(), created = [login, actions];
   const events = {}, calls = [], routes = new Map(), notices = [];
   let starts = 0, stops = 0, rechecks = 0, token = '', replacements = 0;
   let unsubscribe = async () => true;
   const subscription = {toJSON:() => ({endpoint:'https://fixture.invalid'}), unsubscribe:() => unsubscribe()};
   const registration = {pushManager:{getSubscription:async () => subscription}};
-  const window = {PushManager:{}, Notification:{},
+  const window = {PushManager:{}, Notification:{}, localStorage,
     TraverseWeb:{
       start:async session => { starts++; token = session.csrfToken; return true; },
       stop:() => { stops++; token = ''; },
@@ -162,4 +162,46 @@ test('late bootstrap cannot reopen the app after an expiry event', async () => {
   assert.equal(h.body.dataset.pwa, 'locked');
   assert.equal(h.login.hidden, false);
   assert.equal(h.counts.starts, 0);
+});
+
+function memoryStorage(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {getItem:key => values.has(key) ? values.get(key) : null, setItem:(key, value) => values.set(key, String(value)),
+    removeItem:key => values.delete(key), values};
+}
+
+test('first open waits on the session without flashing the password form, then locks when unauthenticated', async () => {
+  const storage = memoryStorage();
+  const h = harness({authenticated:false}, 200, storage);
+  assert.equal(h.body.dataset.pwa, 'checking');
+  assert.equal(h.login.hidden, true, 'no password form before the session answer');
+  await tick();
+  assert.equal(h.body.dataset.pwa, 'locked');
+  assert.equal(h.login.hidden, false);
+  assert.equal(storage.values.has('traverse-web-authenticated'), false);
+});
+
+test('a device that logged in before resumes straight into the app and keeps its hint', async () => {
+  const storage = memoryStorage({'traverse-web-authenticated':'1'});
+  const h = harness(fixtureSession, 200, storage);
+  assert.equal(h.body.dataset.pwa, 'resuming', 'app shell is visible while the session is checked');
+  assert.equal(h.login.hidden, true);
+  await tick();
+  assert.equal(h.body.dataset.pwa, 'ready');
+  assert.equal(h.login.hidden, true);
+  assert.equal(storage.values.get('traverse-web-authenticated'), '1');
+});
+
+test('an expired session on a resuming device shows the form and clears the hint; storage failures are harmless', async () => {
+  const storage = memoryStorage({'traverse-web-authenticated':'1'});
+  const h = harness({authenticated:false}, 200, storage);
+  await tick();
+  assert.equal(h.body.dataset.pwa, 'locked');
+  assert.equal(h.login.hidden, false);
+  assert.equal(storage.values.has('traverse-web-authenticated'), false);
+  const broken = {getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); }, removeItem() { throw Error('blocked'); }};
+  const b = harness(fixtureSession, 200, broken);
+  assert.equal(b.body.dataset.pwa, 'checking');
+  await tick();
+  assert.equal(b.body.dataset.pwa, 'ready');
 });

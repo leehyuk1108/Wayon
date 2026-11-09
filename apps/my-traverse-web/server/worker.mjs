@@ -98,7 +98,11 @@ async function composedFeed(env) {
 async function sessionInfo(session,env) {
   let loggedIn=false;
   if (session.account) {
-    try { loggedIn=(await decrypt(session.account,env.ACCOUNT_ENCRYPTION_KEY)).expiresAtMs>Date.now(); }
+    try {
+      const stored=await decrypt(session.account,env.ACCOUNT_ENCRYPTION_KEY);
+      // A remembered account (this device's encrypted session only) logs in again before each command.
+      loggedIn=stored.expiresAtMs>Date.now() || rememberedCredentials(stored)!==null;
+    }
     catch { loggedIn=false; }
   }
   return {authenticated:true,csrfToken:session.csrf,account:{loggedIn,email:session.email || ''},
@@ -107,7 +111,7 @@ async function sessionInfo(session,env) {
 
 async function accountRoute(request, env, session) {
   if (request.method === 'DELETE') {
-    await env.DB.prepare('UPDATE sessions SET account=NULL,email=NULL WHERE id=?').bind(session.id).run();
+    await env.DB.prepare('UPDATE sessions SET account=NULL,email=NULL,account_rev=account_rev+1 WHERE id=?').bind(session.id).run();
     return json({loggedIn:false,email:''});
   }
   if (request.method !== 'POST') return json({error:'method_not_allowed'},405);
@@ -136,10 +140,50 @@ async function accountRoute(request, env, session) {
     return json({ok:false,state:'blocked',code,message},status);
   }
   if (!await accountMatches(account,env)) return json({message:'등록된 차량 계정과 일치하지 않습니다.'},403);
-  await env.DB.prepare('UPDATE sessions SET account=?,email=? WHERE id=?')
-    .bind(await encrypt(account,env.ACCOUNT_ENCRYPTION_KEY),email.trim(),session.id).run();
-  return json({loggedIn:true,email:email.trim(),message:'로그인되었습니다.'});
+  // Like the Android app, keep the multipack login on this device: the credentials live only in this
+  // web session's encrypted row (deleted on logout, account sign-out or session expiry), never in the browser.
+  // Store only if no sign-out or other login happened meanwhile (revision) and the web session is still valid.
+  const stored = await env.DB.prepare('UPDATE sessions SET account=?,email=?,account_rev=account_rev+1 WHERE id=? AND account_rev=? AND expires>? RETURNING id')
+    .bind(await encrypt({...account,renew:{email:email.trim(),password}},env.ACCOUNT_ENCRYPTION_KEY),email.trim(),session.id,session.account_rev ?? 0,Date.now()).first();
+  if (!stored) return json({ok:false,state:'blocked',code:'account_changed',message:'로그인 중에 계정 상태가 바뀌었습니다. 다시 로그인해 주세요.'},409);
+  return json({loggedIn:true,email:email.trim(),message:'로그인되었습니다. 이 기기에서 로그인이 유지됩니다.'});
 }
+
+// Expired web sessions keep no multipack login (token or remembered password).
+async function forgetExpiredAccounts(env) {
+  await env.DB.prepare('UPDATE sessions SET account=NULL,email=NULL,account_rev=account_rev+1 WHERE expires<=? AND account IS NOT NULL')
+    .bind(Date.now()).run();
+}
+
+function rememberedCredentials(stored) {
+  const renew=stored?.renew;
+  return renew && typeof renew.email==='string' && typeof renew.password==='string' && renew.email && renew.password
+    && renew.email.length<=254 && renew.password.length<=256 ? {email:renew.email,password:renew.password} : null;
+}
+
+// Fresh multipack token for a remembered account, swapped in only if the session still holds the same ciphertext.
+async function renewAccount(env, session, stored, credentials) {
+  try {
+    const fresh=await accountLogin(credentials.email,credentials.password);
+    if (!await accountMatches(fresh,env)) return {failure:'account_binding_mismatch',clear:true};
+    const cipher=await encrypt({...fresh,renew:credentials},env.ACCOUNT_ENCRYPTION_KEY);
+    const swapped=await env.DB.prepare('UPDATE sessions SET account=? WHERE id=? AND account=? AND expires>? RETURNING id')
+      .bind(cipher,session.id,session.account,Date.now()).first();
+    if (!swapped) return {failure:'account_revoked',clear:false};
+    return {account:fresh,cipher};
+  } catch (error) {
+    if (error instanceof CommandError && error.code==='login_rejected' && error.explicit===true) return {failure:'account_login_rejected',clear:true};
+    if (error instanceof CommandError) return {failure:'account_refresh_failed',clear:false};
+    throw error;
+  }
+}
+
+const RENEW_MESSAGES={
+  account_login_rejected:'명령을 보내지 않았습니다. 멀티팩 비밀번호가 바뀌었거나 로그인이 거부되었습니다. 설정에서 다시 로그인해 주세요.',
+  account_binding_mismatch:'명령을 보내지 않았습니다. 등록된 차량 계정과 일치하지 않아 로그인을 해제했습니다.',
+  account_revoked:'명령을 보내지 않았습니다. 멀티팩 로그인이 바뀌었습니다. 다시 시도해 주세요.',
+  account_refresh_failed:'명령을 보내지 않았습니다. 멀티팩 로그인을 갱신하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+};
 
 async function command(request, env, session) {
   if (request.method !== 'POST') return json({error:'method_not_allowed'},405);
@@ -162,7 +206,22 @@ async function command(request, env, session) {
     const claim = await env.DB.prepare('INSERT OR IGNORE INTO command_claims(id,session_id,command,created) VALUES(?,?,?,?)')
       .bind(requestId,session.id,cmd,now).run();
     if (!claim.meta.changes) return json({error:'request_conflict'},409);
-    const account = await decrypt(session.account,env.ACCOUNT_ENCRYPTION_KEY);
+    const stored = await decrypt(session.account,env.ACCOUNT_ENCRYPTION_KEY);
+    const credentials = rememberedCredentials(stored);
+    let account = stored;
+    if (credentials) {
+      const renewed = await renewAccount(env,session,stored,credentials);
+      if (renewed.failure) {
+        const blocked={ok:false,state:'blocked',command:cmd,code:renewed.failure,message:RENEW_MESSAGES[renewed.failure],
+          dispatched:false,vehicleConfirmed:false,retryable:false,failureStage:'account-refresh'};
+        await env.DB.prepare('UPDATE command_claims SET result=? WHERE id=?').bind(JSON.stringify(blocked),requestId).run();
+        if (renewed.clear) await env.DB.prepare('UPDATE sessions SET account=NULL,email=NULL,account_rev=account_rev+1 WHERE id=? AND account=?')
+          .bind(session.id,session.account).run();
+        return json(blocked);
+      }
+      session = {...session,account:renewed.cipher};
+      account = renewed.account;
+    }
     if (!await accountMatches(account,env)) throw new Error('account_binding_mismatch');
     const liveState = await upstreamJson(env,'/api/state');
     if (liveState?.state?.device_id !== env.DEVICE_ID) throw new Error('device_binding_mismatch');
@@ -197,8 +256,8 @@ async function command(request, env, session) {
       result={...result,cooldownUntilMs,retryAfterMs:180000};
     }
     await env.DB.prepare('UPDATE command_claims SET result=? WHERE id=?').bind(JSON.stringify(result),requestId).run();
-    if (result.code === 'session_expired') {
-      await env.DB.prepare('UPDATE sessions SET account=NULL,email=NULL WHERE id=? AND account=?')
+    if (result.code === 'session_expired' && !credentials) {
+      await env.DB.prepare('UPDATE sessions SET account=NULL,email=NULL,account_rev=account_rev+1 WHERE id=? AND account=?')
         .bind(session.id,session.account).run();
     }
     // Only definite non-dispatch can release this request's suppression marker.
@@ -236,11 +295,15 @@ export async function handle(request, env, ctx) {
     const {password} = await readJson(request,1024);
     if (typeof password !== 'string' || password.length > 128 || !await equal(await digest(password), env.LOGIN_CODE_HASH)) return json({message:'비밀번호가 맞지 않습니다.'},401);
     const token = randomToken(), csrf=randomToken();
+    await forgetExpiredAccounts(env);
     await env.DB.prepare('INSERT INTO sessions(id,csrf,expires) VALUES(?,?,?)').bind(await digest(token),csrf,Date.now()+SESSION_SECONDS*1000).run();
     return json({ok:true},200,{'set-cookie':sessionCookie(token)});
   }
   const session = await sessionFor(request,env);
-  if (path === '/api/session' && request.method === 'GET') return json(session ? await sessionInfo(session,env) : {authenticated:false});
+  if (path === '/api/session' && request.method === 'GET') {
+    await forgetExpiredAccounts(env);
+    return json(session ? await sessionInfo(session,env) : {authenticated:false});
+  }
   if (!session) return json({error:'unauthorized',message:'로그인이 필요합니다.'},401);
   if (request.method !== 'GET' && !await equal(request.headers.get('x-csrf-token'),session.csrf)) return json({error:'csrf_rejected'},403);
   if (path === '/api/logout' && request.method === 'POST') {
@@ -322,4 +385,8 @@ export default {async fetch(request,env,ctx) {
     if (error instanceof UpstreamError) return secure(json(upstreamFailure(error),502));
     return secure(json({error:'request_failed',message:MESSAGE},400));
   }
+},
+// Daily cleanup: expired web sessions lose their multipack login even if no device opens the app again.
+async scheduled(controller,env,ctx) {
+  ctx.waitUntil(forgetExpiredAccounts(env));
 }};

@@ -613,7 +613,7 @@
       if (result.command !== commandName || (Object.hasOwn(result, "requestId") && result.requestId !== requestId)) {
         throw new Error("Command response does not match the request.");
       }
-      if (["account_invalid_or_expired", "session_expired"].includes(result.code)) {
+      if (["account_invalid_or_expired", "session_expired", "account_login_rejected", "account_binding_mismatch"].includes(result.code)) {
         sessionRevision++;
         session.capabilities.commands = false;
         account = { ...account, loggedIn: false, message: "\uba40\ud2f0\ud329 \uc778\uc99d\uc774 \ub9cc\ub8cc\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \ub85c\uadf8\uc778\ud574 \uc8fc\uc138\uc694." };

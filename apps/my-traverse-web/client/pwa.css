@@ -1,4 +1,5 @@
-body[data-pwa="locked"] > :not(#pwa-login):not(script) { visibility: hidden !important; }
+body[data-pwa="locked"] > :not(#pwa-login):not(script),
+body[data-pwa="checking"] > :not(#pwa-login):not(script) { visibility: hidden !important; }
 #pwa-login { position: fixed; inset: 0; z-index: 100000; background: #0b0b0b; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
 #pwa-login[hidden] { display: none; }
 #pwa-login form { width: 100%; max-width: 340px; }

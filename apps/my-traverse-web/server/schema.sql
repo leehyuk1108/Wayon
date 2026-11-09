@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires INTEGER NOT NULL,
-  account TEXT, email TEXT
+  account TEXT, email TEXT, account_rev INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS rate_limits (
   id TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL

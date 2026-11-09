@@ -23,7 +23,7 @@ html = html.replace('<head>', `<head>
 html = html.replace('</head>', '    <link rel="stylesheet" href="/pwa.css">\n</head>')
   .replace('initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover',
     'initial-scale=1.0, viewport-fit=cover');
-html = html.replace('<body', '<body data-pwa="locked"');
+html = html.replace('<body', '<body data-pwa="checking"');
 await writeFile(root + 'public/index.html', html);
 await unlink(root + 'public/main.html');
 for (const name of ['bridge.js','pwa.js','pwa.css','sw.js','manifest.webmanifest']) {

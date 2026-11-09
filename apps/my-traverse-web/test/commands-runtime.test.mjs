@@ -384,3 +384,125 @@ test('workerd keeps existing trip detail paths unchanged rather than routing the
   assert.equal(result.status,200); assert.deepEqual(result.body,{id:'trip-0',route:[]});
   assert.deepEqual(wayonCalls,['/api/trips/trip-0?limit=3']); assert.deepEqual(ops(),[]);
 });
+
+async function rememberAccount(overrides = {}) {
+  const now = Date.now();
+  const cipher = await encrypt({version: 1, ...OWNER, token: 'RUNTIME_OLD_TOKEN_NOT_REAL', vehicleCount: 1,
+    issuedAtMs: now - ACCOUNT_TTL_MS - 60_000, expiresAtMs: now - 60_000,
+    renew: {email: EMAIL, password: PASSWORD}, ...overrides}, SECRET);
+  await db.prepare('UPDATE sessions SET account=? WHERE id=?').bind(cipher, sessionId).run();
+  return cipher;
+}
+
+test('workerd remembers the multipack login on this session and keeps controls available after token expiry', async () => {
+  await reset();
+  const login = await call('/api/account', {email: EMAIL, password: PASSWORD});
+  assert.equal(login.body.loggedIn, true);
+  const row = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  const stored = await decrypt(row.account, SECRET);
+  assert.deepEqual(stored.renew, {email: EMAIL, password: PASSWORD}, 'credentials stay inside the encrypted row');
+  assert.ok(!JSON.stringify(login.body).includes(PASSWORD), 'never returned to the browser');
+  await rememberAccount();
+  const session = await call('/api/session');
+  assert.equal(session.body.account.loggedIn, true);
+  assert.equal(session.body.capabilities.commands, true);
+  assert.ok(!JSON.stringify(session.body).includes(PASSWORD));
+});
+
+test('workerd logs a remembered account in again before the command and swaps only its own row', async () => {
+  await reset();
+  const old = await rememberAccount();
+  const result = await command('DOOR_LOCK');
+  assert.equal(result.body.ok, true, JSON.stringify(result.body));
+  assert.deepEqual(ops().slice(0, 1), [8], 'fresh login first');
+  assert.ok(ops().includes(19));
+  assert.equal(protocol.find(p => p.header.id === 19).login.token_key, 'RUNTIME_TOKEN_NOT_REAL', 'command uses the fresh token');
+  const row = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  assert.notEqual(row.account, old);
+  const stored = await decrypt(row.account, SECRET);
+  assert.equal(stored.token, 'RUNTIME_TOKEN_NOT_REAL');
+  assert.deepEqual(stored.renew, {email: EMAIL, password: PASSWORD});
+});
+
+test('workerd rejected remembered password clears the login without sending the command', async () => {
+  await reset();
+  await rememberAccount();
+  reply = async p => p.header.id === 8 ? Response.json({login: {success: '1'}, body: {success: '1'}}) : undefined;
+  const result = await command('DOOR_LOCK');
+  assert.equal(result.body.code, 'account_login_rejected');
+  assert.equal(result.body.dispatched, false);
+  assert.deepEqual(ops(), [8], 'no command after a rejected login');
+  const row = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  assert.equal(row.account, null);
+  assert.equal((await call('/api/session')).body.account.loggedIn, false);
+});
+
+test('workerd transport failure while renewing keeps the remembered login and sends nothing', async () => {
+  await reset();
+  const old = await rememberAccount();
+  reply = async p => p.header.id === 8 ? new Response('down', {status: 503}) : undefined;
+  const result = await command('DOOR_LOCK');
+  assert.equal(result.body.code, 'account_refresh_failed');
+  assert.equal(result.body.dispatched, false);
+  assert.deepEqual(ops(), [8]);
+  const row = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  assert.equal(row.account, old);
+  assert.equal((await call('/api/session')).body.account.loggedIn, true);
+});
+
+test('workerd malformed renewal reply keeps the remembered login and sends nothing', async () => {
+  await reset();
+  const old = await rememberAccount();
+  reply = async p => p.header.id === 8 ? Response.json({}) : undefined;
+  const result = await command('DOOR_LOCK');
+  assert.equal(result.body.code, 'account_refresh_failed');
+  assert.deepEqual(ops(), [8]);
+  const row = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  assert.equal(row.account, old, 'a damaged reply is not a password refusal');
+});
+
+test('workerd account sign-out during an in-flight login wins; the late login is not stored', async () => {
+  await reset();
+  await db.prepare('UPDATE sessions SET account=NULL,email=NULL WHERE id=?').bind(sessionId).run();
+  reply = async p => {
+    if (p.header.id !== 8) return undefined;
+    const out = await mf.dispatchFetch(ORIGIN + '/api/account', {method: 'DELETE',
+      headers: {cookie: `${COOKIE}=${TOKEN}`, origin: ORIGIN, 'sec-fetch-site': 'same-origin', 'x-csrf-token': 'runtime-csrf'}});
+    assert.equal(out.status, 200); await out.json();
+    return Response.json(loginReply());
+  };
+  const result = await call('/api/account', {email: EMAIL, password: PASSWORD});
+  assert.equal(result.status, 409);
+  assert.equal(result.body.code, 'account_changed');
+  const row = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  assert.equal(row.account, null);
+});
+
+test('workerd clears multipack logins of expired web sessions on the next session check', async () => {
+  await reset();
+  const expiredId = await digest('e'.repeat(43));
+  const cipher = await encrypt({version: 1, ...OWNER, token: 'RUNTIME_TOKEN_NOT_REAL', vehicleCount: 1,
+    issuedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 60_000, renew: {email: EMAIL, password: PASSWORD}}, SECRET);
+  await db.prepare('INSERT INTO sessions(id,csrf,expires,account,email) VALUES(?,?,?,?,?)')
+    .bind(expiredId, 'expired-csrf', Date.now() - 1, cipher, EMAIL).run();
+  assert.equal((await call('/api/session')).body.authenticated, true);
+  const expired = await db.prepare('SELECT account,email FROM sessions WHERE id=?').bind(expiredId).first();
+  assert.equal(expired.account, null); assert.equal(expired.email, null);
+  const live = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  assert.equal(live.account, storedCipher, 'valid sessions are untouched');
+});
+
+test('workerd daily scheduled cleanup clears expired multipack logins without any request', async () => {
+  await reset();
+  const expiredId = await digest('s'.repeat(43));
+  const cipher = await encrypt({version: 1, ...OWNER, token: 'RUNTIME_TOKEN_NOT_REAL', vehicleCount: 1,
+    issuedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 60_000, renew: {email: EMAIL, password: PASSWORD}}, SECRET);
+  await db.prepare('INSERT INTO sessions(id,csrf,expires,account,email) VALUES(?,?,?,?,?)')
+    .bind(expiredId, 'expired-csrf', Date.now() - 1, cipher, EMAIL).run();
+  const worker = await mf.getWorker();
+  await worker.scheduled({cron: '23 18 * * *', scheduledTime: new Date()});
+  const expired = await db.prepare('SELECT account,email FROM sessions WHERE id=?').bind(expiredId).first();
+  assert.equal(expired.account, null); assert.equal(expired.email, null);
+  const live = await db.prepare('SELECT account FROM sessions WHERE id=?').bind(sessionId).first();
+  assert.equal(live.account, storedCipher);
+});

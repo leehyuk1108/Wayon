@@ -304,7 +304,13 @@ export async function accountLogin(email, password, fetchFn = fetch) {
   const client = new Protocol(null, fetchFn, Date.now, sleepMs);
   const response = await client.post(8, {}, {email: email.trim(), password});
   const login = response.login;
-  if (!object(login) || !object(response.body) || integer(login.success) !== 0 || integer(response.body.success) !== 0) fail("login_rejected");
+  if (!object(login) || !object(response.body) || integer(login.success) !== 0 || integer(response.body.success) !== 0) {
+    // Same code as before; `explicit` marks a well-formed refusal (both success fields are integers) so a
+    // remembered login is erased only for a real refusal, not for a damaged or incomplete reply.
+    const error = new CommandError("login_rejected");
+    error.explicit = object(login) && object(response.body) && integer(login.success) !== null && integer(response.body.success) !== null;
+    throw error;
+  }
   const uuid = boundedString(login.user_info_uuid, 128) ? login.user_info_uuid : login.user_info?.user_uuid;
   if (!boundedString(uuid, 128) || !boundedString(login.token_key, 4096) || !object(login.car_info)) fail("invalid_login_response");
   const vehicles = Object.keys(login.car_info);

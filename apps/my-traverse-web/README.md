@@ -17,7 +17,8 @@ For the optional real-browser XSS regression test, set
 `npm run dev` starts local Wrangler. Production uses the ignored
 `wrangler.local.json`; do not commit deployment credentials, D1 identifiers,
 session cookies or captured vehicle data. Apply `server/schema.sql` to a separate
-D1 database. Existing installations also need the `push_claims.result` column.
+D1 database. Existing installations also need the `push_claims.result` column and
+`server/migrations/20261110_account_rev.sql` (apply before deploying that Worker).
 
 ## Boundaries
 
@@ -31,13 +32,22 @@ D1 database. Existing installations also need the `push_claims.result` column.
 - Command support is deliberately off unless `COMMANDS_ENABLED=1` and verified
   `GMONE_UUID_HASH` and `GMONE_VEHICLE_HASH` pins are present. Both account and
   fixed Comma device identity are checked; email alone is insufficient.
-- Commands require a separate 15-minute GMOne account session. The explicit
-  15-command allowlist covers locks, remote start/stop, windows, trunk, lights,
-  panic and sunroof. Native Bluetooth, module writes and timed ventilation are
-  not implemented in the PWA. GMOne passwords are not retained for auto-login.
+- Commands require a GMOne account login on the web session. Like the Android
+  app, the typed email/password are kept for that web session only, encrypted
+  inside its D1 `account` value (never sent to the browser), and a fresh GMOne
+  login is made right before each command. Web logout, account sign-out and
+  web-session expiry remove them; only a well-formed GMOne refusal erases them
+  during a command, while transport or malformed replies keep them and send
+  nothing. An `account_rev` revision rejects a login that finishes after a
+  sign-out. Sessions created before 2026-11-10 must sign in to GMOne once more.
+  The explicit 15-command allowlist covers locks, remote start/stop, windows,
+  trunk, lights, panic and sunroof. Native Bluetooth, module writes and timed
+  ventilation are not implemented in the PWA.
 - Foreground restoration and periodic session checks refresh command grants
   without restarting live video. Expired account grants do not disable ordinary
-  vehicle viewing; an expired web login locks the web app.
+  vehicle viewing; an expired web login locks the web app. A device that logged
+  in before opens straight into the app (a non-secret local hint) and shows the
+  password form only when the server says the session is gone.
 - Source tests use mock commands only. Server acceptance is not evidence that a
   vehicle physically completed a command. Unknown results are never replayed.
 - Service-worker caching is limited to icons, never vehicle data or API replies.

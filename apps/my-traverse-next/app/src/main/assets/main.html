@@ -5674,7 +5674,8 @@
 
         .drive-report-overview {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(0, 1fr);
             margin: 0 -4px;
             padding: 18px 0;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -5682,7 +5683,7 @@
 
         .drive-report-overview-item {
             min-width: 0;
-            padding: 0 9px;
+            padding: 0 4px;
             border-right: 1px solid rgba(255, 255, 255, 0.08);
         }
 
@@ -5703,7 +5704,9 @@
             margin-top: 7px;
             overflow: hidden;
             color: #f2f2f2;
-            font-size: 17px;
+            /* Five values share one row (distance, time, average, top speed, km/L): scale with the
+               phone width so "123.45 km" still fits on a ~400px cover screen. */
+            font-size: clamp(12px, 3.3vw, 17px);
             font-weight: 730;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -6343,55 +6346,10 @@
             transform: translateY(-50%);
         }
 
-        .drive-report-fuel-overview {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            row-gap: 14px;
-            padding: 2px 0 14px;
-            border-bottom: 0;
-        }
-
-        .drive-report-fuel-overview .drive-report-overview-item:nth-child(2n) { border-right: 0; }
-
         .drive-report-fuel-note {
-            margin: 8px 0 0;
+            margin: 0 0 10px;
             color: rgba(255, 255, 255, 0.4);
             font-size: 11px;
-            line-height: 1.45;
-        }
-
-        .list-fuel-line {
-            margin: -2px 0 8px;
-            color: #9a9a9a;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .list-fuel-line i { margin-right: 3px; color: #6f6f6f; font-size: 11px; }
-
-        #tab-info .can-care-section {
-            margin: 0 16px 14px;
-            padding: 12px 14px 8px;
-            border: 1px solid rgba(255, 255, 255, 0.075);
-            border-radius: 8px;
-            background: #151517;
-        }
-
-        .can-care-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-        }
-
-        .can-care-title { color: #e4e4e4; font-size: 12px; font-weight: 720; }
-        .can-care-title i { margin-right: 7px; color: #8a8a8a; }
-        .can-care-section.warning .can-care-title i { color: var(--warning-strong-color); }
-        .can-care-meta { color: #777; font-size: 10px; font-weight: 650; text-align: right; }
-
-        .can-care-note {
-            margin: 4px 0;
-            color: #666;
-            font-size: 10px;
             line-height: 1.45;
         }
 
@@ -8103,15 +8061,6 @@
 
                 </div>
 
-                <section class="can-care-section" id="can-care-section">
-                    <div class="can-care-head">
-                        <span class="can-care-title"><i class="fas fa-gas-pump" aria-hidden="true"></i>연비·차량 기록</span>
-                        <span class="can-care-meta" id="can-care-meta">콤마 CAN</span>
-                    </div>
-                    <div class="gmone-kv-list" id="can-care-list"></div>
-                    <p class="can-care-note">콤마가 차량 CAN에서 직접 읽은 값이에요. 위 카드(원격 서비스)와 수집 시점이 다를 수 있어요.</p>
-                </section>
-
                 <section class="gmone-details-section" id="gmone-details-section">
                     <details class="gmone-details-shell">
                         <summary class="gmone-details-summary">
@@ -8836,14 +8785,8 @@
                 <div class="drive-report-overview-item"><span>주행시간</span><strong id="trip-detail-duration">--</strong></div>
                 <div class="drive-report-overview-item"><span>평균속도</span><strong id="trip-detail-avg">--</strong></div>
                 <div class="drive-report-overview-item"><span>최고속도</span><strong id="trip-detail-top">--</strong></div>
+                <div class="drive-report-overview-item"><span>연비</span><strong id="trip-detail-economy">--</strong></div>
             </div>
-            <section class="drive-report-section" id="drive-report-fuel-section">
-                <div class="drive-report-section-head">
-                    <h2 class="drive-report-section-title">연료</h2>
-                    <span class="drive-report-section-meta">차량 CAN</span>
-                </div>
-                <div id="drive-report-fuel-content"></div>
-            </section>
             <section class="drive-report-section" id="drive-report-health-section">
                 <div class="drive-report-section-head">
                     <h2 class="drive-report-section-title">운전자 상태</h2>
@@ -12189,49 +12132,6 @@
             window.syncControlPanelLayout?.();
         }
 
-        let canCareHistoryCache = null;
-
-        function canCareHistory(refresh = false) {
-            // Re-read the native list on request or while nothing is cached yet (it may have arrived since).
-            if (refresh || !Array.isArray(canCareHistoryCache) || !canCareHistoryCache.length) {
-                try {
-                    if (window.Android?.getDrivingHistory) {
-                        canCareHistoryCache = normalizeHistoryItems(JSON.parse(window.Android.getDrivingHistory()));
-                    }
-                } catch (error) {
-                    console.error('Failed to read driving history for vehicle care', error);
-                }
-            }
-            if (Array.isArray(canCareHistoryCache) && canCareHistoryCache.length) return canCareHistoryCache;
-            return Array.isArray(currentHistoryItems) ? currentHistoryItems : [];
-        }
-
-        function canCareHistoryComplete() {
-            try {
-                return typeof window.Android?.isDrivingHistoryComplete !== 'function' || window.Android.isDrivingHistoryComplete() === true;
-            } catch (_) {
-                return true;
-            }
-        }
-
-        function renderCanCare(refreshHistory = false) {
-            const section = document.getElementById('can-care-section');
-            if (!section || !window.VehicleCareReport) return;
-            const summary = window.VehicleCareReport.careSummary(canCareHistory(refreshHistory), wayonLiveStateCurrent, Date.now(),
-                { timeOf: tripTimestamp, normalize: normalizeDriveAnalysis, historyComplete: canCareHistoryComplete() });
-            document.getElementById('can-care-meta').textContent = summary.meta;
-            section.classList.toggle('warning', summary.oilWarning);
-            if (summary.empty) {
-                const list = document.getElementById('can-care-list');
-                const empty = document.createElement('div');
-                empty.className = 'gmone-empty';
-                empty.textContent = summary.emptyText;
-                list.replaceChildren(empty);
-                return;
-            }
-            renderGmoneRows('can-care-list', summary.rows);
-        }
-
         function updateWayonLiveState(rawState) {
             let state = rawState;
             if (typeof rawState === 'string') {
@@ -12241,7 +12141,6 @@
             renderAmbientModeSummary();
             updateGmoneControlPanel(gmoneDetailsCurrent);
             renderVehicleReport(gmoneDetailsCurrent);
-            if (document.getElementById('tab-info')?.classList.contains('active')) renderCanCare();
         }
 
         function updateWayonImpactState(rawState) {
@@ -12515,7 +12414,6 @@
             if (historyTab && historyTab.classList.contains('active')) {
                 loadHistory();
             }
-            if (document.getElementById('tab-info')?.classList.contains('active')) renderCanCare(true);
         }
 
         function requestWayonTripsRefresh(force = false) {
@@ -15401,22 +15299,20 @@
                     ["주의 경고", reportValue(attention.alertCount, "회")],
                     ["시스템 알림", reportValue(system.alertCount, "회")],
                     [analysis?.dataQuality?.partial === true ? "분석 범위" : "분석 신뢰도", reportAnalysisConfidence(analysis)],
-                ])}</details>`;
+                ])}</details>${fuelDetailsHtml(analysis)}`;
         }
 
-        function renderDriveReportFuel(analysis) {
-            const container = document.getElementById("drive-report-fuel-content");
-            if (!container) return;
+        function renderDriveReportEconomy(analysis) {
+            const element = document.getElementById("trip-detail-economy");
+            if (!element) return;
+            element.textContent = window.VehicleCareReport?.tripFuelView(analysis)?.economyText ?? "--";
+        }
+
+        function fuelDetailsHtml(analysis) {
             const view = window.VehicleCareReport?.tripFuelView(analysis);
-            if (!view) {
-                container.innerHTML = `<div class="drive-report-empty">연료 기록은 2026년 11월 9일 업데이트 이후 주행부터 표시돼요.</div>`;
-                return;
-            }
-            container.innerHTML = `
-                <div class="drive-report-overview drive-report-fuel-overview">${view.overview.map(([label, value]) =>
-                    `<div class="drive-report-overview-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
-                <details class="drive-report-details"><summary>연료 상세</summary>${detailRows(view.rows)}</details>
-                ${view.notes.map(note => `<p class="drive-report-fuel-note">${escapeHtml(note)}</p>`).join("")}`;
+            if (!view) return "";
+            return `<details class="drive-report-details"><summary>연료</summary>${detailRows(view.rows)}${
+                view.notes.map(note => `<p class="drive-report-fuel-note">${escapeHtml(note)}</p>`).join("")}</details>`;
         }
 
         function renderDriveReport(item) {
@@ -15446,7 +15342,7 @@
             document.getElementById("drive-report-summary-text").textContent = driveReportSummaryText(analysis, health);
             document.getElementById("drive-report-op-usage").textContent = opUsage === null ? "--" : `${Math.round(opUsage)}%`;
             document.getElementById("drive-report-op-bar-fill").style.width = `${Math.max(0, Math.min(100, opUsage ?? 0))}%`;
-            renderDriveReportFuel(analysis);
+            renderDriveReportEconomy(analysis);
             renderDriveReportHealth(health);
             renderDriveReportAutomation(analysis, health);
             renderDriveReportBlackbox(analysis);
@@ -15734,8 +15630,11 @@
                 const startAddr = simplifyTripAddress(item.startAddress);
                 const endAddr = simplifyTripAddress(item.endAddress || item.address);
                 const fuelView = window.VehicleCareReport?.tripFuelView(normalizeDriveAnalysis(item.analysis));
-                const fuelLine = fuelView
-                    ? `<div class="list-fuel-line"><i class="fas fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(fuelView.listText)}</div>`
+                const economyStat = fuelView
+                    ? `<div class="grid-item" style="align-items:center;">
+                                  <span class="grid-label">연비</span>
+                                  <span class="grid-value">${escapeHtml(fuelView.economyText)}</span>
+                              </div>`
                     : "";
                 const routeText = `${escapeHtml(startAddr)} <i class="fas fa-arrow-right" style="margin: 0 4px; font-size: 10px; color: #666;"></i> ${escapeHtml(endAddr)}`;
 
@@ -15757,7 +15656,6 @@
                          </div>
                          
                          <div class="list-big-dist">${distKm.toFixed(2)}<span style="font-size:16px; color:#888; font-weight:400;">km</span></div>
-                         ${fuelLine}
 
 
                          <div class="list-stats-box">
@@ -15773,6 +15671,7 @@
                                   <span class="grid-label">최고</span>
                                   <span class="grid-value">${parseInt(topSpd)} km/h</span>
                               </div>
+                              ${economyStat}
                          </div>
                      </div>
                  `;
@@ -15880,9 +15779,6 @@
                     const detailsShell = targetTab.querySelector('.gmone-details-shell');
                     if (detailsShell) detailsShell.open = false;
                     targetTab.scrollTop = 0;
-                    renderCanCare(true);
-                    // The startup list holds only the latest trips; fetch the full one for the 30-day figures.
-                    if (!canCareHistoryComplete()) requestWayonTripsRefresh();
                 } else if (targetTabId === 'tab-settings' && userInitiated && vehicleCommandReady && !gmoneSettingsBusy && !Object.keys(gmoneSettingsCurrent).length) {
                     window.Android?.refreshGmoneSettings();
                 }

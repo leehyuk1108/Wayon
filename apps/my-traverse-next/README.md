@@ -1,20 +1,19 @@
 # My Traverse Next
 
-## CAN Fuel and Vehicle Care (v43)
+## Trip Fuel in the Drive Report and Full Trip List (v43)
 
-Version `43 / 2.0-preview.34-vehicle-care` shows comma CAN data that the
-MultiPack snapshot does not provide. Trip detail has a fuel section (litres,
-km/L, idle fuel, gauge start/end) from `analysis.fuel`
-(`wayon-trip-fuel-v1`); the trip list adds a km/L line. The vehicle tab adds
-"연비·차량 기록": 30-day economy, idle share, last refuel (a gauge rise of 8 %
-or more between consecutive trips), fuel level, oil life, 12V state of charge,
-charging voltage/current only while driving, and the odometer.
+Version `43 / 2.0-preview.34-vehicle-care` shows comma CAN trip fuel from
+`analysis.fuel` (`wayon-trip-fuel-v1`) inside the existing drive report: km/L
+sits beside distance, time, average and top speed in trip detail (the five
+values scale with the phone width), each trip card gains a fourth 연비 stat
+when the trip has fuel data, and 상세 분석 gets a 연료 group (litres, idle fuel,
+L/100km, gauge start/end, counted distance, oil life). Older trips are
+unchanged. The Worker is unchanged: it already stores the whole `analysis`.
 
-`WayonCloudFeed.toLiveStatusJson()` now passes the telemetry `vehicleCare`
-block to the WebView; `vehicle_care.js` validates every number. Older trips
-show an empty text. The Worker is unchanged: it already stores the whole
-`analysis` object and the raw telemetry body. MultiPack cards, warning
-policies and controls are unchanged.
+The full trip list request now steps down from 1000 to 600 and 300 trips on a
+server error. On 2026-11-09 the Worker answered 700 trips (15.8 MB) but threw
+Cloudflare 1101 / HTTP 500 for 850 and 1000, so the app had been left with the
+25 startup trips.
 
 Build: `./gradlew :app:testReleaseUnitTest :app:assembleRelease` with an init
 script that points Gradle's debug signing config at the original debug

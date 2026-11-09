@@ -215,7 +215,11 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         const val PREF_KEY_DTC_OBSERVATION_HISTORY = "DTC_OBSERVATION_HISTORY_V1"
         const val PREF_KEY_LAST_WAYON_ONROAD = "LAST_WAYON_ONROAD"
         private val WAYON_CLOUD_JSON_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/json"
-        private val WAYON_CLOUD_TRIPS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/trips?limit=1000"
+        private val WAYON_CLOUD_TRIPS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/trips?limit="
+        // The Worker throws (HTTP 500, Cloudflare 1101) above ~800 trips with full analyses
+        // (2026-11-09: 700 answered with 15.8 MB, 850 failed), so step down instead of showing
+        // only the 25 startup trips.
+        private val WAYON_CLOUD_TRIP_LIMITS = listOf(1000, 600, 300)
         private val WAYON_CLOUD_GMONE_REFRESH_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/gmone/refresh"
         private val WAYON_CLOUD_AMBIENT_COMMAND_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/ambient/command"
         private val WAYON_CLOUD_AMBIENT_STATUS_URL = "${BuildConfig.WAYON_CLOUD_URL}/api/ambient/status"
@@ -1394,7 +1398,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         wayonCloudTripsRefreshJob = launch(Dispatchers.IO) {
             try {
                 val feed = withResolvedWayonAddresses(
-                    WayonCloudFeedParser.parse(fetchWayonCloudGet(WAYON_CLOUD_TRIPS_URL, key)),
+                    WayonCloudFeedParser.parse(fetchWayonCloudTrips(key)),
                 )
                 val historyJson = feed.historyJson
                 launch(Dispatchers.Main) {
@@ -1453,6 +1457,21 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
         }
         wayonAddressCache[cacheKey] = resolved
         return resolved
+    }
+
+    private fun fetchWayonCloudTrips(key: String): String {
+        var lastError: IOException? = null
+        for (limit in WAYON_CLOUD_TRIP_LIMITS) {
+            try {
+                return fetchWayonCloudGet("$WAYON_CLOUD_TRIPS_URL$limit", key)
+            } catch (error: IOException) {
+                // Only a server error suggests a smaller list may work; anything else is final.
+                if (error.message?.startsWith("HTTP 5") != true) throw error
+                Log.w("MainActivity", "Wayon Cloud trips limit $limit failed (${error.message}); trying fewer")
+                lastError = error
+            }
+        }
+        throw lastError ?: IOException("no trip limit tried")
     }
 
     private fun fetchWayonCloudGet(url: String, key: String): String {
@@ -2834,11 +2853,6 @@ class MainActivity : AppCompatActivity(), CoroutineScope by CoroutineScope(Dispa
             startHeatEject()
         }
     }
-
-    /** False while Wayon Cloud mode still shows only the latest trips from the startup feed. */
-    @JavascriptInterface
-    fun isDrivingHistoryComplete(): Boolean =
-        !WayonCloudMode.isEnabled(this) || wayonCloudFullHistoryLoaded
 
     @JavascriptInterface
     fun getDrivingHistory(): String {

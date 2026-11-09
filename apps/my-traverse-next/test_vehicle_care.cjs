@@ -6,35 +6,28 @@ const test = require('node:test');
 const care = require('./app/src/main/assets/vehicle_care.js');
 const html = fs.readFileSync(`${__dirname}/app/src/main/assets/main.html`, 'utf8');
 
-const DAY = 24 * 60 * 60 * 1000;
-const NOW = Date.parse('2026-11-20T09:00:00Z');
-
 function fuel(overrides = {}) {
     return { schemaVersion: 'wayon-trip-fuel-v1', source: 'traverseCan', usedL: 3.42, idleL: 0.61, idlePercent: 17.8,
         distanceKm: 25.3, kmPerL: 7.4, lPer100Km: 13.5, levelStartPercent: 78.8, levelEndPercent: 74.1,
         levelStartL: 64.6, levelEndL: 60.8, odometerStartKm: 61346.2, odometerEndKm: 61371.5, oilLifePercent: 25,
-        observedS: 1520, partial: false, ...overrides };
+        observedS: 1520, partial: false, longGaps: 0, ...overrides };
 }
 
-function trip(daysAgo, fuelBlock) {
-    return { time: NOW - daysAgo * DAY, analysis: fuelBlock === undefined ? {} : { schemaVersion: 'x', fuel: fuelBlock } };
-}
-
-const options = { timeOf: item => item.time };
-
-test('trip fuel view formats the overview, details and notes', () => {
+test('trip fuel view gives the km/L for the drive report and the fuel detail rows', () => {
     const view = care.tripFuelView({ fuel: fuel() });
-    assert.deepEqual(view.overview, [['사용 연료', '3.4 L'], ['연비', '7.4 km/L'], ['공회전 연료', '0.6 L · 18%'],
-        ['연료량', '79% → 74%']]);
-    assert.deepEqual(view.rows.slice(0, 4), [['100 km당', '13.5 L'], ['계기판 기준 거리', '25.3 km'],
-        ['남은 연료', '64.6 → 60.8 L'], ['엔진오일 수명', '25%']]);
-    assert.equal(view.rows[4][1], '25분');
-    assert.equal(view.listText, '7.4 km/L · 3.4 L');
+    assert.equal(view.economyText, '7.4 km/L');
+    assert.deepEqual(view.rows.slice(0, 6), [['사용 연료', '3.4 L'], ['공회전 연료', '0.6 L · 18%'], ['100 km당', '13.5 L'],
+        ['연료량', '79% → 74%'], ['남은 연료', '64.6 → 60.8 L'], ['연비 계산 거리', '25.3 km']]);
+    assert.equal(view.rows[6][1], '25%');
+    assert.equal(view.rows[7][1], '25분');
     assert.equal(view.notes.length, 1);
-    const partial = care.tripFuelView({ fuel: fuel({ partial: true, kmPerL: undefined }) });
-    assert.match(partial.notes[0], /일부 구간/);
-    assert.equal(partial.overview[1][1], '--');
-    assert.equal(partial.listText, '3.4 L 사용');
+});
+
+test('short trips have no km/L; partial and gap trips explain themselves', () => {
+    const view = care.tripFuelView({ fuel: fuel({ kmPerL: undefined, lPer100Km: undefined, partial: true, longGaps: 2 }) });
+    assert.equal(view.economyText, '--');
+    assert.ok(view.notes.some(note => /일부 구간/.test(note)));
+    assert.ok(view.notes.some(note => /끊긴 구간/.test(note)));
 });
 
 test('missing, foreign or malformed fuel blocks are ignored', () => {
@@ -47,167 +40,38 @@ test('missing, foreign or malformed fuel blocks are ignored', () => {
     assert.equal(odd.idlePercent, null);
 });
 
-test('refuel is a gauge jump between consecutive trips and drives the since-refuel figures', () => {
-    const items = [ // newest first, like the app's history list
-        trip(1, fuel({ usedL: 6, distanceKm: 60, idleL: 1, levelStartPercent: 97, levelEndPercent: 90 })),
-        trip(2, fuel({ usedL: 4, distanceKm: 40, idleL: 0, levelStartPercent: 99, levelEndPercent: 97 })),
-        trip(3, fuel({ usedL: 5, distanceKm: 50, idleL: 1, levelStartPercent: 12, levelEndPercent: 6 })),
-        trip(4, undefined),
-    ];
-    const trips = care.fuelTrips(items, item => item.time);
-    assert.equal(trips.length, 3);
-    const refuels = care.detectRefuels(trips);
-    assert.equal(refuels.length, 1);
-    assert.equal(Math.round(refuels[0].addedL), 76); // 6% -> 99% of 82 L
-    const summary = care.careSummary(items, null, NOW, options);
-    const rows = Object.fromEntries(summary.rows.map(row => [row.label, row.value]));
-    assert.equal(rows['최근 30일 연비'], '10.0 km/L · 10.0 L/100km');
-    assert.equal(rows['최근 30일 주행'], '3회 · 150 km · 15.0 L');
-    assert.equal(rows['공회전 연료 비율'], '13%');
-    assert.match(rows['마지막 주유'], /약 \+76 L \(6% → 99%\)/);
-    assert.equal(rows['주유 후'], '100 km · 10.0 L · 10.0 km/L');
-    assert.equal(summary.meta, '주행 기록 3회 기준');
-});
-
-test('small gauge wobble is not a refuel and old trips leave the 30-day window', () => {
-    const items = [trip(1, fuel({ levelStartPercent: 80, levelEndPercent: 78 })),
-        trip(2, fuel({ levelStartPercent: 79, levelEndPercent: 75 })), trip(45, fuel())];
-    assert.equal(care.detectRefuels(care.fuelTrips(items, item => item.time)).length, 0);
-    const rows = care.careSummary(items, null, NOW, options).rows;
-    assert.equal(rows.find(row => row.label === '최근 30일 주행').value.startsWith('2회'), true);
-});
-
-test('live readings: fresh shows charging voltage, last-known hides it, oil warning at 15%', () => {
-    const live = { vehicleCare: { fresh: true, observedAt: '2026-11-20T08:59:00Z', source: 'traverseCan',
-        fuelLevelPercent: 78.8, fuelLiters: 64.6, oilLifePercent: 14, odometerKm: 61466.2, batteryVoltage: 14.12,
-        batteryCurrentA: 24.3, batterySocPercent: 82,
-        liveKeys: ['fuelLevelPercent', 'fuelLiters', 'oilLifePercent', 'odometerKm', 'batteryVoltage', 'batteryCurrentA',
-            'batterySocPercent'] } };
-    const fresh = care.careSummary([], live, NOW, options);
-    const rows = Object.fromEntries(fresh.rows.map(row => [row.label, row.value]));
-    assert.equal(rows['연료량'], '79% · 약 65 L');
-    assert.equal(rows['엔진오일 수명'], '14% · 교환 시기');
-    assert.equal(rows['12V 배터리 충전'], '82%');
-    assert.equal(rows['배터리 전압'], '14.1 V · 충전 24 A');
-    assert.equal(rows['주행거리계'], '61,466 km');
-    assert.equal(fresh.meta, '주행 중 실시간');
-    assert.equal(fresh.oilWarning, true);
-    const parked = care.careSummary([], { vehicleCare: { ...live.vehicleCare, fresh: false, oilLifePercent: 60 } }, NOW, options);
-    assert.equal(parked.rows.some(row => row.label === '배터리 전압'), false);
-    assert.match(parked.meta, /^마지막 수신 11\/20 /);
-    assert.equal(parked.oilWarning, false);
-});
-
-test('a fresh block that is old, or a reading not refreshed just now, is not shown as live', () => {
-    const base = { fresh: true, source: 'traverseCan', fuelLevelPercent: 50, batteryVoltage: 14.1, batteryCurrentA: 20,
-        batterySocPercent: 90, liveKeys: ['fuelLevelPercent', 'batteryVoltage', 'batteryCurrentA', 'batterySocPercent'] };
-    const dayOld = care.careSummary([], { vehicleCare: { ...base, observedAt: new Date(NOW - DAY).toISOString() } }, NOW, options);
-    assert.equal(dayOld.rows.some(row => row.label === '배터리 전압'), false);
-    assert.match(dayOld.meta, /^마지막 수신/);
-    const partial = care.careSummary([], { vehicleCare: { ...base, observedAt: new Date(NOW - 5000).toISOString(),
-        liveKeys: ['oilLifePercent'], oilLifePercent: 40 } }, NOW, options);
-    const rows = Object.fromEntries(partial.rows.map(row => [row.label, row.value]));
-    assert.equal(partial.meta, '주행 중 실시간');
-    assert.equal(rows['배터리 전압'], undefined, 'battery sensor dropped out: no stale charging voltage');
-    assert.equal(rows['연료량'], '50% (지난 값)');
-    assert.equal(rows['엔진오일 수명'], '40%');
-    assert.equal(rows['12V 배터리 충전'], '90% (지난 값)');
-});
-
-test('until the full trip list loads the figures say they cover only the loaded trips', () => {
-    const items = [trip(1, fuel()), trip(2, fuel())];
-    const summary = care.careSummary(items, null, NOW, { ...options, historyComplete: false });
-    assert.equal(summary.rows[0].label, '불러온 기록 연비');
-    assert.equal(summary.meta, '전체 주행 기록 불러오는 중');
-    assert.equal(care.careSummary(items, null, NOW, options).rows[0].label, '최근 30일 연비');
-});
-
-test('a trip with an engine-record gap says its km/L left that stretch out', () => {
-    const view = care.tripFuelView({ fuel: fuel({ longGaps: 1 }) });
-    assert.ok(view.notes.some(note => /끊긴 구간/.test(note)));
-    assert.ok(!care.tripFuelView({ fuel: fuel() }).notes.some(note => /끊긴 구간/.test(note)));
-});
-
-test('bad live values are dropped and nothing known gives the empty text', () => {
-    assert.equal(care.liveCare({ vehicleCare: { observedAt: 'nope', fuelLevelPercent: 50 } }), null);
-    const bad = care.liveCare({ vehicleCare: { observedAt: '2026-11-20T08:00:00Z', fuelLevelPercent: 150,
-        batteryVoltage: 40, oilLifePercent: '25', odometerKm: true } });
-    assert.equal(bad.fuelLevelPercent, null);
-    assert.equal(bad.batteryVoltage, null);
-    assert.equal(bad.oilLifePercent, 25);
-    assert.equal(bad.odometerKm, null);
-    const empty = care.careSummary([], null, NOW, options);
-    assert.equal(empty.empty, true);
-    assert.match(empty.emptyText, /다음 주행부터/);
-});
-
-// main.html renderers, run against a minimal fake DOM.
+// main.html renderers against a minimal fake DOM.
 const elements = new Map();
 function element(id) {
-    if (!elements.has(id)) {
-        elements.set(id, { textContent: '', innerHTML: '', style: {}, children: [], classes: new Set(),
-            classList: { toggle(name, on) { on ? this.owner.classes.add(name) : this.owner.classes.delete(name); } },
-            replaceChildren(...nodes) { this.children = nodes; } });
-        elements.get(id).classList.owner = elements.get(id);
-    }
+    if (!elements.has(id)) elements.set(id, { textContent: '', innerHTML: '', style: {} });
     return elements.get(id);
 }
-const rendered = [];
 const context = vm.createContext({
-    document: { getElementById: element, createElement: () => ({ className: '', textContent: '' }) },
+    document: { getElementById: element },
     window: { VehicleCareReport: care },
-    currentHistoryItems: [],
-    wayonLiveStateCurrent: null,
-    normalizeHistoryItems: items => items,
-    tripTimestamp: item => item.time,
-    renderGmoneRows: (id, rows) => rendered.push([id, rows]),
-    console,
+    reportDuration: () => '--',
 });
-for (const name of ['escapeHtml', 'detailRows', 'normalizeDriveAnalysis', 'renderDriveReportFuel', 'canCareHistory',
-    'canCareHistoryComplete', 'renderCanCare']) {
+for (const name of ['escapeHtml', 'detailRows', 'reportNumber', 'reportValue', 'reportConfidenceLabel', 'reportAnalysisConfidence',
+    'renderDriveReportEconomy', 'fuelDetailsHtml', 'renderDriveReportDetails']) {
     const match = html.match(new RegExp(`        function ${name}\\([^]*?\\n        }`));
     assert.ok(match, name);
     vm.runInContext(match[0], context);
 }
-vm.runInContext('var canCareHistoryCache = null;', context);
 
-test('trip detail fuel section renders the overview and an empty text for old trips', () => {
-    context.renderDriveReportFuel({ fuel: fuel() });
-    const markup = element('drive-report-fuel-content').innerHTML;
-    assert.match(markup, /drive-report-fuel-overview/);
-    assert.match(markup, /<span>연비<\/span><strong>7\.4 km\/L<\/strong>/);
-    assert.match(markup, /<summary>연료 상세<\/summary>/);
-    assert.match(markup, /drive-report-fuel-note/);
-    context.renderDriveReportFuel({ schemaVersion: 'wayon-drive-report-v2' });
-    assert.match(element('drive-report-fuel-content').innerHTML, /업데이트 이후 주행부터/);
+test('drive report shows km/L beside distance, time and speeds, and a fuel group in the details', () => {
+    assert.match(html, /<span>최고속도<\/span><strong id="trip-detail-top">--<\/strong><\/div>\s*<div class="drive-report-overview-item"><span>연비<\/span><strong id="trip-detail-economy">/);
+    const analysis = { schemaVersion: 'wayon-drive-report-v2', fuel: fuel() };
+    context.renderDriveReportEconomy(analysis);
+    assert.equal(element('trip-detail-economy').textContent, '7.4 km/L');
+    context.renderDriveReportDetails(analysis);
+    assert.match(element('drive-report-details').innerHTML, /<summary>연료<\/summary>.*사용 연료.*3\.4 L/s);
+    context.renderDriveReportEconomy({ schemaVersion: 'wayon-drive-report-v2' });
+    assert.equal(element('trip-detail-economy').textContent, '--');
+    context.renderDriveReportDetails({ schemaVersion: 'wayon-drive-report-v2' });
+    assert.doesNotMatch(element('drive-report-details').innerHTML, /<summary>연료<\/summary>/);
 });
 
-test('info tab section uses history from the bridge once and renders rows or the empty text', () => {
-    element('can-care-section');
-    let reads = 0;
-    context.window.Android = { getDrivingHistory: () => { reads += 1; return JSON.stringify([trip(1, fuel())]); } };
-    context.renderCanCare(true);
-    assert.equal(reads, 1);
-    assert.equal(rendered.at(-1)[0], 'can-care-list');
-    assert.equal(rendered.at(-1)[1][0].label, '최근 30일 연비');
-    assert.equal(element('can-care-meta').textContent, '주행 기록 1회 기준');
-    context.renderCanCare();
-    assert.equal(reads, 1, 'cached between live updates');
-    // A tab revisit re-reads the native list even when the history tab filled currentHistoryItems.
-    vm.runInContext('currentHistoryItems = [{ time: 1, analysis: {} }];', context);
-    context.window.Android.getDrivingHistory = () => { reads += 1; return JSON.stringify([trip(1, fuel()), trip(2, fuel())]); };
-    context.renderCanCare(true);
-    assert.equal(reads, 2);
-    assert.match(rendered.at(-1)[1][1].value, /^2회/);
-    // An empty first read is retried on the next live update instead of being cached forever.
-    vm.runInContext('currentHistoryItems = []; canCareHistoryCache = null;', context);
-    let calls = 0;
-    context.window.Android = { getDrivingHistory: () => (++calls === 1 ? '[]' : JSON.stringify([trip(1, fuel())])),
-        isDrivingHistoryComplete: () => false };
-    context.renderCanCare(true);
-    assert.match(element('can-care-list').children[0].textContent, /다음 주행부터/);
-    context.renderCanCare();
-    assert.equal(calls, 2);
-    assert.equal(rendered.at(-1)[1][0].label, '불러온 기록 연비');
-    assert.equal(element('can-care-meta').textContent, '전체 주행 기록 불러오는 중');
+test('trip list card adds 연비 as a fourth stat only when the trip has fuel data', () => {
+    assert.match(html, /const economyStat = fuelView[\s\S]*?<span class="grid-label">연비<\/span>/);
+    assert.match(html, /<span class="grid-label">최고<\/span>[\s\S]*?<\/div>\s*\$\{economyStat\}\s*<\/div>/);
 });

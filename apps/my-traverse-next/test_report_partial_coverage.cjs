@@ -12,7 +12,7 @@ function element(id) {
 const context = vm.createContext({
     document: { getElementById: element },
     reportDuration: () => '--', driveReportSummaryText: () => 'unchanged summary',
-    renderDriveReportFuel() {}, renderDriveReportHealth() {}, renderDriveReportAutomation() {}, renderDriveReportBlackbox() {}, renderDriveReportMoments() {},
+    renderDriveReportEconomy() {}, fuelDetailsHtml: () => '', renderDriveReportHealth() {}, renderDriveReportAutomation() {}, renderDriveReportBlackbox() {}, renderDriveReportMoments() {},
 });
 for (const name of ['reportNumber', 'normalizeDriveAnalysis', 'reportValue', 'reportConfidenceLabel',
     'reportAnalysisConfidence', 'reportConditionLabel', 'escapeHtml', 'detailRows', 'renderDriveReportDetails', 'renderDriveReport']) {

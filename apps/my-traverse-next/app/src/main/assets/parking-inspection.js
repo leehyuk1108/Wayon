@@ -99,6 +99,8 @@
                 : !completed && reading.status === 'readable' ? 'baseline' : 'uncertain';
             const reliable = reading.status === 'readable' && value && !['conflict', 'uncertain'].includes(confidence);
             const alternatives = list(reading.alternatives, 4).map(value => text(value, 32)).filter(Boolean);
+            // 글자도 후보도 없는 '판독 불명'은 위치를 알려 주지 못하므로 목록에서 뺀다(길가 간판마다 하나씩 생긴다).
+            if (!value && !alternatives.length) continue;
             const item = { label: KINDS[reading.kind], value: value || '\ud310\ub3c5 \ubd88\uba85',
                 confidence, badge: CONFIDENCE[confidence], evidence: evidenceLabel(reading.evidence, frames),
                 alternatives: alternatives.length ? `\ud6c4\ubcf4: ${alternatives.join(' / ')}` : '' };

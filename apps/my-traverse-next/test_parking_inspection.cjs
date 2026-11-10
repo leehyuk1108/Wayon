@@ -177,7 +177,7 @@ test('uncertain details retain all 32 rows, alternatives, badges and evidence wi
 
 test('known signs and environment candidates stay outside details, with the human-review disclaimer', () => {
     const root = dom();
-    const result = model({readings: [reading(), reading({status: 'ambiguous', text: null})],
+    const result = model({readings: [reading(), reading({status: 'ambiguous', text: null, alternatives: ['B13']})],
         surroundings: [{type: 'vent', label: 'ENVIRONMENT-CANDIDATE', evidence}]});
     api.render(root, result);
     const content = root.children[0];
@@ -427,4 +427,22 @@ test('focus is null without a valid exterior frame time and box', () => {
         assert.equal(api.viewModel(value, now).focus, null, JSON.stringify(frame));
     }
     assert.equal(model({readings: [reading({status: 'ambiguous', text: null, confidence: 'uncertain'})]}).focus, null, 'unreadable signs give no focus');
+});
+
+test('unread signs with neither text nor a candidate are left out; candidates and low-confidence text stay', () => {
+    // The 2026-11-10 street case: one readable sign, seven unread shop signs of which only one had a candidate.
+    const unread = Array.from({length: 6}, () => reading({kind: 'unknown', status: 'ambiguous', text: null, confidence: 'uncertain'}));
+    const result = model({readings: [reading({kind: 'unknown', text: 'READ', confidence: 'additional'}), ...unread,
+        reading({kind: 'unknown', status: 'ambiguous', text: null, confidence: 'uncertain', alternatives: ["AMBER'S ENGLISH"]}),
+        reading({kind: 'pillar', status: 'readable', text: 'B7', confidence: 'conflict'}),
+        reading({kind: 'zone', status: 'ambiguous', text: null, confidence: 'uncertain', alternatives: ['   ']})]});
+    assert.deepEqual(result.known.map(r => r.value), ['READ']);
+    assert.deepEqual(result.uncertain.map(r => [r.value, r.alternatives]),
+        [['판독 불명', "후보: AMBER'S ENGLISH"], ['B7', '']]);
+    const root = dom();
+    api.render(root, result);
+    assert.equal(descendants(root).find(node => node.tagName === 'summary').textContent, '확인 필요 2건');
+    api.render(root, model({readings: unread}));
+    assert.equal(descendants(root).filter(node => node.tagName === 'details').length, 0, 'nothing to check, no fold');
+    assert.match(root.textContent, /확인된 사진 단서가 없습니다/);
 });

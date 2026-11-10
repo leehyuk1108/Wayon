@@ -54,6 +54,36 @@ sign in those full-image coordinates. Box validation checks structure, source
 identity and timing, not whether pixels actually contain the claimed text.
 Prompt instructions are not an independent visual verification mechanism.
 
+## Parked-frame re-read and place (scene inspection)
+
+A surface the first scene pass marks in only one parked frame is cropped again at
+the same pixel box from the parked frame of the same camera, size and a distinct
+image hash that is farthest in actual capture time. Parked frames of one camera
+show the same view, so this is a second look at the same surface; approach frames
+move and never get one. A text read in that companion crop joins the original only
+when its box sits at the same place as the other frame's read (a padded crop can
+also hold a neighbouring sign), and the joined evidence must still meet the
+two-distinct-photo rule and the verification pass. Text read in one crop only stays
+an ambiguous candidate.
+
+Each crop may report up to six readings, clear complete text first. Same-place
+spelling conflicts demote a crop-corroborated text before the combined readings
+are capped at 16, and corroborated text is kept ahead of unreadable marks. A text
+confirmed twice from different crop groups is kept once, and leftover candidates
+whose every candidate text is already confirmed are dropped. On 2026-11-10 a street
+overview tile filled its former four slots with unreadable marks and one slogan,
+and the wall crop existed for one photo only, so a shop sign visible in all three
+photos ended as a one-photo candidate.
+
+Both full-frame passes also classify the parking place: setting indoor/outdoor,
+level underground/ground/upper, area parking_structure/parking_lot/street, each
+unknown when unsure. The verification pass classifies without seeing the first
+answer, and only fields where both agree are kept (others become unknown). When no
+sign is proposed but the first pass judged the place, the verification pass still
+runs once, within the same three-call budget. The place travels as
+`inspection.place` to the display; the apps show it as the title when no sign is
+read. It is a coarse visual judgement, not proof of location.
+
 ## Explicit group contract
 
 Each wide entry from `GET /api/ai/snapshots` may have this optional metadata:

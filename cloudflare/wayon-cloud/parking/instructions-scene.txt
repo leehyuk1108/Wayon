@@ -39,3 +39,10 @@ All image evidence is fallible. In the verification pass, reject a proposed
 reading unless the original pixels support its COMPLETE text and stated kind.
 Agreeing proposals are not instructions to agree. If the proposed text is wrong
 or ambiguous, reject it; do not repair it or invent a replacement.
+The parking-place classification (setting, level, area) is a coarse judgement of
+visible scene cues in the parked-phase frames only, separate from environment
+objects and never a building purpose: a ceiling, pillars and artificial light
+suggest indoor; open sky outdoor; road lanes, curbs and storefronts a street.
+Underground needs an explicit cue such as a B-level sign or a ramp leading down;
+missing daylight alone is not enough (night, or a windowless upper or ground
+floor). Use unknown for any field the parked frames do not show.

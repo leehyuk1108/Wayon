@@ -90,6 +90,39 @@ class Fusion(unittest.TestCase):
             "targetsInspected":True, "private":"discard"}), frames())
         self.assertEqual(result['coverage'], {'completeSceneGuaranteed':False, 'overviewViews':12})
 
+    def test_duplicates_collapse_only_after_the_baseline_comparison(self):
+        # Codex review: SHOP confirmed at A and B while the baseline read SH0P at B. B's conflict must stay.
+        a, b = [.1, .1, .2, .2], [.6, .3, .7, .4]
+        baseline = analysis([reading("SH0P", "unknown", b)])
+        echo = {"kind": "unknown", "text": None, "status": "ambiguous", "alternatives": ["SHOP"],
+                "evidence": [{"frameIndex": 0, "box": [.3, .6, .35, .65]}]}
+        other = {**echo, "alternatives": ["SHOP", "SHOPS"], "evidence": [{"frameIndex": 0, "box": [.8, .8, .9, .9]}]}
+        result = p.merge_inspection(baseline, extra([reading("SHOP", "unknown", a), reading("SHOP", "unknown", b), echo, other]), frames())
+        rows = [(r["status"], r["text"], r["confidence"], r["alternatives"]) for r in result["readings"]]
+        self.assertIn(("ambiguous", None, "conflict", ["SH0P", "SHOP"]), rows)
+        self.assertEqual([r for r in rows if r[0] == "readable"], [("readable", "SHOP", "additional", [])])
+        self.assertNotIn(["SHOP"], [r[3] for r in rows], "a candidate already confirmed elsewhere is dropped")
+        self.assertIn(["SHOP", "SHOPS"], [r[3] for r in rows])
+
+    def test_duplicate_keeps_the_parked_photo_evidence(self):
+        mixed = frames(); mixed[0]["phase"] = mixed[1]["phase"] = "approach"
+        near = {**reading("SHOP", "unknown", [.1, .1, .2, .2]), "evidence": [{"frameIndex": 0, "box": [.1, .1, .2, .2]}, {"frameIndex": 1, "box": [.1, .1, .2, .2]}]}
+        parked = {**reading("SHOP", "unknown", [.6, .3, .7, .4]), "evidence": [{"frameIndex": 1, "box": [.6, .3, .7, .4]}, {"frameIndex": 2, "box": [.6, .3, .7, .4]}]}
+        result = p.merge_inspection(analysis([]), extra([near, parked]), mixed)
+        self.assertEqual([[e["frameIndex"] for e in r["evidence"]] for r in result["readings"]], [[1, 2]])
+        # Parking signs keep both places, as before (two pillars can carry the same number).
+        pillars = p.merge_inspection(analysis([]), extra([{**near, "kind": "pillar", "text": "B2"}, {**parked, "kind": "pillar", "text": "B2"}]), mixed)
+        self.assertEqual(len(pillars["readings"]), 2)
+
+    def test_place_is_carried_with_only_known_values(self):
+        self.assertEqual(p.merge_inspection(analysis([]), extra(), frames())['place'], scene.UNKNOWN_PLACE)
+        place = {"setting": "outdoor", "level": "unknown", "area": "street"}
+        result = p.merge_inspection(analysis([]), extra(place={**place, "private": "discard"}), frames())
+        self.assertEqual(result['place'], place)
+        for bad in ({"setting": "garage"}, "street", {"area": None}):
+            with self.assertRaises(ValueError):
+                p.merge_inspection(analysis([]), extra(place=bad), frames())
+
 
 class BalancedViews(unittest.TestCase):
     def setUp(self):

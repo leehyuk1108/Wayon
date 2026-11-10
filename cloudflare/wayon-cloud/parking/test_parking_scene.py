@@ -28,11 +28,13 @@ def reading(text="203", kind="pillar", box=None):
 def observation(readings=None):
     return {"readings": [reading()] if readings is None else readings, "exactParkingSpotKnown": False,
             "inventory": [{"surface": "pillar", "legibility": "partial", "evidence": evidence()}],
-            "features": [{"type": "vent", "color": "gray", "evidence": evidence([.6,.2,.8,.4])}]}
+            "features": [{"type": "vent", "color": "gray", "evidence": evidence([.6,.2,.8,.4])}],
+            "place": dict(p.UNKNOWN_PLACE)}
 
 
 def verdict(proposals):
-    return {"decisions": [{"id": item["id"], "confirmed": True, "evidence": item["evidence"]} for item in proposals]}
+    return {"decisions": [{"id": item["id"], "confirmed": True, "evidence": item["evidence"]} for item in proposals],
+            "place": dict(p.UNKNOWN_PLACE)}
 
 
 def crop_result(obj, views, sources=None):
@@ -261,14 +263,14 @@ class Agreement(unittest.TestCase):
         for decisions in (original["decisions"]*2,
                           [*original["decisions"], {"id":"r99","confirmed":False,"evidence":[]}]):
             with self.assertRaises((ValueError, ValidationError)):
-                p.reconcile(obj, obj, props, {"decisions": decisions}, frames())
+                p.reconcile(obj, obj, props, {"decisions": decisions, "place": dict(p.UNKNOWN_PLACE)}, frames())
 
     def test_missing_or_uncorroborated_verdict_preserves_other_readings(self):
         obj=observation([reading(),reading("Z","zone",[.7,.3,.75,.4])])
         props=p.candidate_pairs(obj,obj,frames())
         check=verdict(props); check["decisions"][1]["evidence"]=check["decisions"][1]["evidence"][:1]
         for decisions in (check["decisions"],check["decisions"][:1]):
-            result,_=p.reconcile(obj,obj,props,{"decisions":decisions},frames())
+            result,_=p.reconcile(obj,obj,props,{"decisions":decisions,"place":dict(p.UNKNOWN_PLACE)},frames())
             self.assertEqual([r["text"] for r in result["readings"] if r["status"]=="readable"],["203"])
 
     def test_wide_join_of_separate_signs_rejected_without_banning_real_identifiers(self):
@@ -276,6 +278,28 @@ class Agreement(unittest.TestCase):
         b=observation([reading("AB12","pillar",[.19,.29,.73,.34])])
         self.assertFalse(any(x["category"]=="reading" for x in p.candidate_pairs(a,b,frames())))
         self.assertTrue(any(x["category"]=="reading" for x in p.candidate_pairs(b,b,frames())))
+
+    def test_same_text_confirmed_twice_keeps_each_place_for_the_display_fusion(self):
+        # Collapsing happens later, after each place was compared with the baseline.
+        sign=reading("AMBER'S ENGLISH","unknown",[.86,.39,.94,.42])
+        again=reading("AMBER'S ENGLISH","unknown",[.70,.39,.78,.42])
+        first=observation([sign]); second=observation([sign,again])
+        props=p.candidate_pairs(first,second,frames())
+        analysis,_=p.reconcile(first,second,props,verdict(props),frames())
+        self.assertEqual(len([r for r in analysis["readings"] if r["text"]=="AMBER'S ENGLISH"]),2)
+
+    def test_place_needs_two_blind_agreeing_classifications(self):
+        obj=observation()
+        obj["place"]={"setting":"outdoor","level":"ground","area":"street"}
+        props=p.candidate_pairs(obj,obj,frames())
+        check=verdict(props); check["place"]={"setting":"outdoor","level":"unknown","area":"street"}
+        _,details=p.reconcile(obj,obj,props,check,frames())
+        self.assertEqual(details["place"],{"setting":"outdoor","level":"unknown","area":"street"})
+        check["place"]={"setting":"indoor","level":"underground","area":"parking_structure"}
+        _,details=p.reconcile(obj,obj,props,check,frames())
+        self.assertEqual(details["place"],p.UNKNOWN_PLACE)
+        with self.assertRaises(ValidationError):
+            p.reconcile(obj,obj,props,{**check,"place":{**check["place"],"area":"garage"}},frames())
 
     def test_no_claim_of_independent_viewpoints(self):
         f = frames(); f[0]["phase"] = "approach"
@@ -316,6 +340,45 @@ class Pipeline(unittest.TestCase):
         self.assertTrue(all(view["sourceFrameIndex"] in range(3) for view in result["scene"]["views"]))
         self.assertTrue(all(path.name.startswith("crop-") for path in calls[1][3]["images"]))
         self.assertTrue(all(path.name.startswith("frame-") for path in calls[2][3]["images"]))
+
+    def test_place_alone_gets_a_blind_verification_pass(self):
+        # Nothing readable, but the first pass judged the place: the verifier classifies it again
+        # without seeing that answer, and only agreeing fields survive.
+        obj=observation([]); obj["features"]=[]; obj["inventory"]=[]
+        obj["place"]={"setting":"indoor","level":"underground","area":"parking_structure"}
+        prompts=[]
+        def runner(exe, directory, prompt, model, timeout, **kwargs):
+            prompts.append(prompt)
+            if len(prompts)==1: return copy.deepcopy(obj), {}
+            if len(prompts)==2: return {"views":[{"viewIndex":i,"readings":[],"features":[]} for i in range(12)]}, {}
+            return {"decisions":[],"place":{"setting":"indoor","level":"underground","area":"unknown"}}, {}
+        result=p.run_scene("not-executed",self.job,3,runner=runner)
+        self.assertEqual(len(prompts),3)
+        self.assertNotIn('"setting"',prompts[2])
+        self.assertNotIn('"underground"',prompts[2])
+        self.assertEqual(result["scene"]["place"],{"setting":"indoor","level":"underground","area":"unknown"})
+        self.assertEqual(result["analysis"]["readings"],[])
+        self.assertIn("parked-phase frames [0, 1, 2]",prompts[0])
+        self.assertIn("parked-phase frames [0, 1, 2]",prompts[2])
+
+    def test_place_is_never_judged_from_approach_frames(self):
+        moving=[{**f,"phase":"approach"} for f in frames()]
+        (self.job/"manifest.json").write_text(json.dumps({"frames": moving}))
+        obj=observation([]); obj["features"]=[]; obj["inventory"]=[]
+        obj["place"]={"setting":"outdoor","level":"ground","area":"street"}
+        prompts=[]
+        def runner(exe, directory, prompt, model, timeout, **kwargs):
+            prompts.append(prompt)
+            if len(prompts)==1: return copy.deepcopy(obj), {}
+            return {"views":[{"viewIndex":i,"readings":[],"features":[]} for i in range(12)]}, {}
+        result=p.run_scene("not-executed",self.job,3,runner=runner)
+        self.assertEqual(len(prompts),2,"an approach-only place never triggers the verification pass")
+        self.assertIn("no parked-phase frame",prompts[0])
+        self.assertEqual(result["scene"]["place"],p.UNKNOWN_PLACE)
+        # Even an agreeing verifier cannot place approach-only frames.
+        check={"decisions":[],"place":dict(obj["place"])}
+        _,details=p.reconcile(obj,obj,[],check,moving)
+        self.assertEqual(details["place"],p.UNKNOWN_PLACE)
 
     def test_empty_inventory_still_gets_one_blind_whole_scene_sweep(self):
         obj = observation([]); obj["features"] = []; obj["inventory"] = []
@@ -384,7 +447,7 @@ class Pipeline(unittest.TestCase):
         second=p.collect_crop_results(empty,views,frames(),obj["inventory"])
         props=p.candidate_pairs(obj,second,frames())
         self.assertEqual(props,[])
-        analysis,_=p.reconcile(obj,second,props,{"decisions":[]},frames())
+        analysis,_=p.reconcile(obj,second,props,{"decisions":[],"place":dict(p.UNKNOWN_PLACE)},frames())
         self.assertEqual(analysis["readings"][0]["status"],"ambiguous")
 
     def test_crop_missing_and_forged_view_indices_rejected(self):
@@ -396,18 +459,147 @@ class Pipeline(unittest.TestCase):
 
     def test_same_text_on_different_targets_cannot_supply_two_frame_proof(self):
         sources=frames()
-        targets=[{"surface":"pillar","evidence":[evidence()[0]]},
-                 {"surface":"pillar","evidence":[evidence([.7,.3,.8,.4])[1]]}]
+        first,second=evidence()[0],evidence([.7,.3,.8,.4])[1]
+        targets=[{"surface":"pillar","evidence":[first]},
+                 {"surface":"pillar","evidence":[second]}]
         views=p.make_views(self.job,sources,targets)
-        obj=observation([reading("Z","zone"),reading("Z","zone",[.7,.3,.8,.4])])
+        # Each sign is visible only where its own target was marked. The companion re-read of
+        # the same pixels in the other parked frame finds nothing, so neither target can borrow
+        # the other target's frame as its second source.
+        obj=observation([{**reading("Z","zone"),"evidence":[first]},
+                         {**reading("Z","zone",[.7,.3,.8,.4]),"evidence":[second]}])
         result=p.collect_crop_results(crop_result(obj,views),views,sources,[])
         self.assertEqual(len(result["readings"]),2)
         self.assertTrue(all(r["status"]=="ambiguous" for r in result["readings"]))
-        paired=[{"surface":"pillar","evidence":r["evidence"]} for r in obj["readings"]]
+        both=observation([reading("Z","zone"),reading("Z","zone",[.7,.3,.8,.4])])
+        paired=[{"surface":"pillar","evidence":r["evidence"]} for r in both["readings"]]
         views=p.make_views(self.job,sources,paired)
-        result=p.collect_crop_results(crop_result(obj,views),views,sources,[])
+        result=p.collect_crop_results(crop_result(both,views),views,sources,[])
         self.assertEqual(len(result["readings"]),2)
         self.assertTrue(all(r["status"]=="readable" for r in result["readings"]))
+
+    def test_single_frame_parked_surface_is_reread_in_the_other_parked_frame(self):
+        # 2026-11-10: the first pass marked the sign wall in frame 0 only, so the shop sign was
+        # cropped from one photo and could never meet the two-photo rule.
+        sources=frames()
+        wall=[{"surface":"wall","legibility":"clear","evidence":[{"frameIndex":0,"box":[.6,.1,.95,.6]}]}]
+        views=p.make_views(self.job,sources,wall)
+        self.assertEqual([(v["targetIndex"],v["sourceFrameIndex"]) for v in views],[(0,0),(0,2)])
+        self.assertEqual(views[0]["sourcePixelBox"],views[1]["sourcePixelBox"])
+        sign=reading("AMBER'S ENGLISH","unknown",[.7,.3,.9,.36])
+        second=p.collect_crop_results(crop_result(observation([sign]),views),views,sources,[])
+        self.assertEqual([(r["text"],r["status"],[e["frameIndex"] for e in r["evidence"]]) for r in second["readings"]],
+                         [("AMBER'S ENGLISH","readable",[0,2])])
+        # Visible in one photo only: still a candidate, never confirmed.
+        once={**sign,"evidence":[sign["evidence"][0]]}
+        second=p.collect_crop_results(crop_result(observation([once]),views),views,sources,[])
+        self.assertEqual([(r["text"],r["status"],r["alternatives"]) for r in second["readings"]],
+                         [(None,"ambiguous",["AMBER'S ENGLISH"])])
+
+    def test_companion_needs_a_stationary_distinct_parked_frame(self):
+        wall=[{"surface":"wall","legibility":"clear","evidence":[{"frameIndex":1,"box":[.6,.1,.95,.6]}]}]
+        moving=[{**f,"phase":"approach"} for f in frames()]
+        self.assertEqual([v["sourceFrameIndex"] for v in p.make_views(self.job,moving,wall)],[1])
+        mixed=frames(); mixed[0]["camera"]="road"; mixed[2]["sha256"]=mixed[1]["sha256"]
+        self.assertEqual([v["sourceFrameIndex"] for v in p.make_views(self.job,mixed,wall)],[1])
+        unspecified=[{k:v for k,v in f.items() if k!="phase"} for f in frames()]
+        self.assertEqual([v["sourceFrameIndex"] for v in p.make_views(self.job,unspecified,wall)],[1])
+        # The middle frame takes the farthest parked frame; ties prefer the later one.
+        self.assertEqual([v["sourceFrameIndex"] for v in p.make_views(self.job,frames(),wall)],[1,2])
+        # A surface already seen in two frames keeps its own first/last pair.
+        pair=[{"surface":"wall","legibility":"clear","evidence":evidence()}]
+        self.assertEqual([v["sourceFrameIndex"] for v in p.make_views(self.job,frames(),pair)],[0,2])
+
+    def test_clear_text_is_not_crowded_out_by_unreadable_marks(self):
+        self.assertEqual(p.CROP_SCHEMA["properties"]["views"]["items"]["properties"]["readings"]["maxItems"], 6)
+        self.assertIn("clearly readable complete text first", p.crop_prompt([{"viewIndex": 0}]))
+        sources=frames()
+        view=lambda i,target,frame: {"viewIndex":i,"targetIndex":target,"sourceFrameIndex":frame,
+                                     "sourcePixelBox":[0,0,400,240],"companion":False}
+        # Sixteen distinct unreadable targets come first; the clear sign's two photos come last.
+        views=[view(i,i,0) for i in range(16)]+[view(16,16,0),view(17,16,2)]
+        mark=lambda i: {"kind":"unknown","text":None,"status":"ambiguous","alternatives":[],"box":[i/20,.05,(i+.8)/20,.1]}
+        shop={"kind":"unknown","text":"SHOP","status":"readable","alternatives":[],"box":[.5,.5,.6,.6]}
+        result={"views":[{"viewIndex":i,"readings":[mark(i)],"features":[]} for i in range(16)]+
+                [{"viewIndex":i,"readings":[dict(shop)],"features":[]} for i in (16,17)]}
+        second=p.collect_crop_results(result,views,sources,[])
+        self.assertEqual(len(second["readings"]),16)
+        self.assertEqual([r["text"] for r in second["readings"] if r["status"]=="readable"],["SHOP"])
+
+    def test_cap_never_drops_the_conflict_that_blocks_a_confirmation(self):
+        sources=frames()
+        views=[{"viewIndex":i,"targetIndex":i//2,"sourceFrameIndex":(i%2)*2,"sourcePixelBox":[0,0,400,240],
+                "companion":False} for i in range(8)]
+        word=lambda t,j: {"kind":"unknown","text":f"W{t}{j}" if (t,j)!=(0,0) else "SHOP","status":"readable",
+                          "alternatives":[],"box":[.1+.2*j,.1+.2*t,.15+.2*j,.15+.2*t]}
+        result={"views":[{"viewIndex":i,"readings":[word(i//2,j) for j in range(4)],"features":[]} for i in range(8)]}
+        # Sixteen readable groups plus one other spelling at SHOP's place in one photo.
+        result["views"][0]["readings"].append({"kind":"unknown","text":None,"status":"ambiguous",
+                                               "alternatives":["SH0P"],"box":[.1,.1,.15,.15]})
+        second=p.collect_crop_results(result,views,sources,[])
+        self.assertLessEqual(len(second["readings"]),16)
+        self.assertNotIn("SHOP",[r["text"] for r in second["readings"] if r["status"]=="readable"])
+        shop=[r for r in second["readings"] if "SHOP" in r["alternatives"]]
+        self.assertEqual([r["alternatives"] for r in shop],[["SHOP","SH0P"]])
+        props=p.candidate_pairs(observation([]),second,sources)
+        self.assertNotIn("SHOP",[x.get("text") for x in props])
+
+    def test_companion_read_of_a_neighbouring_sign_is_not_a_second_photo(self):
+        # Two different signs with the same letter: A seen in frame 0 only, B (just right of A,
+        # inside A's padded crop) in frame 2 only. A's companion crop shows B, not A.
+        sources=frames()
+        a,b=[.2,.3,.22,.32],[.225,.3,.24,.32]
+        self.assertFalse(p.same_box(a,b))
+        targets=[{"surface":"wall","legibility":"partial","evidence":[{"frameIndex":0,"box":a}]},
+                 {"surface":"wall","legibility":"partial","evidence":[{"frameIndex":2,"box":b}]}]
+        views=p.make_views(self.job,sources,targets)
+        self.assertTrue(any(v["companion"] and v["sourceFrameIndex"]==2 and v["targetIndex"]==0 for v in views))
+        obj=observation([{**reading("Z","zone",a),"evidence":[{"frameIndex":0,"box":a}]},
+                         {**reading("Z","zone",b),"evidence":[{"frameIndex":2,"box":b}]}])
+        second=p.collect_crop_results(crop_result(obj,views),views,sources,[])
+        self.assertTrue(all(r["status"]=="ambiguous" for r in second["readings"]))
+        self.assertEqual(p.candidate_pairs(observation([]),second,sources),[])
+
+    def test_companion_uses_the_farthest_actual_capture_time(self):
+        uneven=frames()
+        for frame,second in zip(uneven,("00.000","01.000","01.100")):
+            frame["capturedAt"]=f"2026-11-04T00:00:{second}+00:00"
+        wall=[{"surface":"wall","legibility":"clear","evidence":[{"frameIndex":1,"box":[.6,.1,.95,.6]}]}]
+        self.assertEqual([v["sourceFrameIndex"] for v in p.make_views(self.job,uneven,wall)],[1,0])
+        broken=frames(); broken[0]["capturedAt"]="not-a-time"
+        self.assertEqual([v["sourceFrameIndex"] for v in p.make_views(self.job,broken,wall)],[1])
+
+    def test_realistic_full_crop_answer_fits_the_answer_file_limit(self):
+        text=lambda i: f"{i} 초등 중등 고등 영어 전문"
+        answer={"views":[{"viewIndex":v,"readings":[{"kind":"unknown","text":text(i),"status":"readable","alternatives":[],
+                                                      "box":[0.123456,0.234567,0.345678,0.456789]} for i in range(p.MAX_CROP_READINGS)],
+                          "features":[{"type":"vent","color":"gray","box":[0.123456,0.234567,0.345678,0.456789]}]*2}
+                         for v in range(p.MAX_CROPS)]}
+        p.Draft202012Validator(p.CROP_SCHEMA).validate(answer)
+        self.assertLess(len(json.dumps(answer,ensure_ascii=False,separators=(",",":")).encode("utf-8")),32_768)
+
+    def test_pipeline_confirms_a_sign_first_marked_in_one_parked_frame(self):
+        wall=[{"surface":"wall","legibility":"clear","evidence":[{"frameIndex":0,"box":[.6,.1,.95,.6]}]}]
+        first={"readings":[],"exactParkingSpotKnown":False,"inventory":wall,"features":[],"place":dict(p.UNKNOWN_PLACE)}
+        sign=reading("AMBER'S ENGLISH","unknown",[.7,.3,.9,.36]); calls=[]
+        def runner(exe, directory, prompt, model, timeout, **kwargs):
+            calls.append(prompt)
+            if len(calls)==1: return copy.deepcopy(first), {}
+            if len(calls)==2:
+                # As on 2026-11-10, the overview tiles miss the sign; only the wall's own crops read it.
+                views=p.make_views(self.job,frames(),wall,coverage=True)
+                result=crop_result(observation([sign]),views)
+                for entry in result["views"]:
+                    if views[entry["viewIndex"]]["purpose"]=="overview": entry["readings"]=[]
+                return result, {}
+            proposals=json.loads(prompt.split("\nProposals: ",1)[1])
+            return verdict(proposals), {}
+        result=p.run_scene("not-executed",self.job,3,runner=runner)
+        self.assertEqual(len(calls),3)
+        self.assertNotIn("AMBER", calls[1])
+        readable=[r for r in result["analysis"]["readings"] if r["status"]=="readable"]
+        self.assertEqual([(r["text"],sorted({e["frameIndex"] for e in r["evidence"]})) for r in readable],
+                         [("AMBER'S ENGLISH",[0,2])])
 
     def test_large_crop_and_bad_reading_are_local_rejections(self):
         obj=observation()

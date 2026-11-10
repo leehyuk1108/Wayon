@@ -28,6 +28,33 @@ def same_surface(left, right):
     return False
 
 
+def has_parked_evidence(item, frames):
+    return any(frames[e["frameIndex"]].get("phase") == "parked" for e in item["evidence"])
+
+
+def collapse_display_duplicates(readings, frames):
+    """Display cleanup after every place was compared with the baseline, for kind=unknown only.
+
+    Shop signs and slogans read again from another crop group are one row, keeping the parked-photo
+    evidence when a duplicate has it; their one-photo candidates whose every candidate text is already
+    confirmed add nothing to check. Floor/zone/pillar/bay rows stay separate (two pillars can share a
+    number), and conflict rows always stay, since they carry a baseline disagreement."""
+    kept, rows = [], {}
+    for item in readings:
+        if item["kind"] == "unknown" and item["status"] == "readable" and item["confidence"] != "conflict":
+            key = scene.canonical(item["text"])
+            if key in rows:
+                if has_parked_evidence(item, frames) and not has_parked_evidence(kept[rows[key]], frames):
+                    kept[rows[key]] = item
+                continue
+            rows[key] = len(kept)
+        kept.append(item)
+    confirmed = {scene.canonical(item["text"]) for item in kept if item["status"] == "readable" and item["kind"] == "unknown"}
+    return [item for item in kept if not (
+        item["kind"] == "unknown" and item["status"] != "readable" and item["confidence"] == "uncertain" and item["text"] is None
+        and item["alternatives"] and all(scene.canonical(text) in confirmed for text in item["alternatives"]))]
+
+
 def merge_inspection(baseline, extra, frames):
     service.validate_result(baseline, len(frames), frames)
     service.validate_result(extra["analysis"], len(frames), frames)
@@ -79,6 +106,7 @@ def merge_inspection(baseline, extra, frames):
             scene.safe_reading_text(text)
         item["confidence"] = "additional" if item["status"] == "readable" else "uncertain"
         readings.append(item)
+    readings = collapse_display_duplicates(readings, frames)
     details = extra.get("scene", {})
     if not isinstance(details, dict) or not isinstance(details.get("surroundings", []), list):
         raise ValueError("invalid_scene_details")
@@ -99,8 +127,15 @@ def merge_inspection(baseline, extra, frames):
         value = source.get(key)
         if type(value) is int and 0 <= value <= 96:
             coverage[key] = value
+    # Two blind full-frame classifications already had to agree per field in the scene run.
+    source_place = details.get("place", scene.UNKNOWN_PLACE)
+    if not isinstance(source_place, dict):
+        raise ValueError("invalid_place")
+    place = {key: source_place.get(key, "unknown") for key in scene.PLACE_VALUES}
+    if any(value not in scene.PLACE_VALUES[key] for key, value in place.items()):
+        raise ValueError("invalid_place")
     return {"version": 1, "status": "completed", "readings": readings[:32], "surroundings": surroundings,
-            "coverage": coverage,
+            "coverage": coverage, "place": place,
             "exactParkingSpotKnown": False, "humanVerified": False,
             "interpretation": "nearby_clues_not_exact_parking_space"}
 

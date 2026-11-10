@@ -79,6 +79,27 @@
         return best ? best.focus : null;
     }
 
+    // 서버가 사진 전체를 두 번 따로 보고 같은 답을 낸 칸만 온다(나머지는 unknown).
+    const PLACE = Object.freeze({
+        setting: { indoor: '실내', outdoor: '야외' },
+        level: { underground: '지하', ground: '지상', upper: '위층' },
+        area: { parking_structure: '주차장', parking_lot: '주차장', street: '길가' },
+    });
+
+    // 예: 지하 주차장, 야외 주차장, 지상 실내 주차장, 길가 주차, 실내 주차. 모두 모르면 빈 문자열.
+    function describePlace(place) {
+        if (!record(place)) return '';
+        const pick = key => own(PLACE[key], place[key]) ? place[key] : '';
+        const setting = pick('setting'), level = pick('level'), area = pick('area');
+        if (area === 'street') return '길가 주차';
+        const parts = [];
+        if (level && !(level === 'ground' && setting === 'outdoor')) parts.push(PLACE.level[level]);
+        if (setting && level !== 'underground') parts.push(PLACE.setting[setting]);
+        if (area) parts.push(PLACE.area[area]);
+        else if (parts.length) parts.push('주차');
+        return parts.join(' ');
+    }
+
     function viewModel(payload, now = Date.now()) {
         if (!record(payload) || payload.ok !== true || !Object.prototype.hasOwnProperty.call(payload, 'observation')) throw new Error('invalid_response');
         if (payload.observation === null) return { phase: 'empty', message: '\uc800\uc7a5\ub41c \uc8fc\ucc28 \uc0ac\uc9c4 \ub2e8\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.' };
@@ -90,8 +111,7 @@
         // A completed inspection already contains the fused baseline and new readings.
         const completed = inspection?.status === 'completed' && Array.isArray(inspection.readings);
         const readings = list(completed ? inspection.readings : result.analysis?.readings, completed ? 32 : 16);
-        const known = [], uncertain = [];
-        let focus = null;
+        const known = [], uncertain = [], knownReadings = [];
         for (const reading of readings) {
             if (!record(reading) || !own(KINDS, reading.kind) || !['readable', 'ambiguous'].includes(reading.status)) continue;
             const value = text(reading.text, 32);
@@ -104,9 +124,17 @@
             const item = { label: KINDS[reading.kind], value: value || '\ud310\ub3c5 \ubd88\uba85',
                 confidence, badge: CONFIDENCE[confidence], evidence: evidenceLabel(reading.evidence, frames),
                 alternatives: alternatives.length ? `\ud6c4\ubcf4: ${alternatives.join(' / ')}` : '' };
-            (reliable ? known : uncertain).push(item);
-            if (reliable && !focus) focus = focusFor(reading, frames, `${item.label} ${item.value}`);
+            if (reliable) knownReadings.push({ item, reading });
+            else uncertain.push(item);
         }
+        // 제목과 사진 상자는 첫 표지를 쓴다. 용도 모를 숫자만 있는 글자(간판 전화번호 등)는 위치를 말해 주지
+        // 못하므로 글자가 있는 표지 뒤로 보낸다(안정 정렬이라 나머지 순서는 그대로).
+        const digitsOnly = ({ item }) => item.label === KINDS.unknown && !/\p{L}/u.test(item.value);
+        knownReadings.sort((a, b) => digitsOnly(a) - digitsOnly(b));
+        known.push(...knownReadings.map(entry => entry.item));
+        const top = knownReadings[0];
+        const focus = top ? focusFor(top.reading, frames, `${top.item.label} ${top.item.value}`) : null;
+        const placeLabel = completed ? describePlace(inspection.place) : '';
         const surroundings = completed ? list(inspection.surroundings, 3).filter(item => record(item) && own(FEATURES, item.type))
             .map(item => ({ value: text(item.label, 96) || FEATURES[item.type], evidence: evidenceLabel(item.evidence, frames) })) : [];
         const coverage = completed && record(inspection.coverage) ? inspection.coverage : {};
@@ -118,7 +146,7 @@
             : ['queued', 'running', 'pending'].includes(observation.status) ? '\uc0ac\uc9c4 \ud310\ub3c5 \uc911'
                 : observation.status === 'failed' ? '\uc0ac\uc9c4 \ud310\ub3c5 \uc2e4\ud328' : '';
         return { phase: 'ready', time: observationTime(observation.parkedAt, now), updatedTime: resultUpdateTime(payload.generatedAt, now), status,
-            known, uncertain, surroundings, focus, coverage: coverageParts.join(' \u00b7 '),
+            known, uncertain, surroundings, focus, placeLabel, coverage: coverageParts.join(' \u00b7 '),
             disclaimer: 'AI \uc0ac\uc9c4 \ub2e8\uc11c \u00b7 \uc0ac\ub78c \ud655\uc778 \uc804 \u00b7 \uc815\ud655\ud55c \uc8fc\ucc28\uba74\uc740 \ud655\uc778\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.' };
     }
 
@@ -139,6 +167,12 @@
             append(fragment, 'p', 'parking-inspection-meta', model.time);
             if (model.updatedTime) append(fragment, 'p', 'parking-inspection-meta', model.updatedTime);
             if (model.status) append(fragment, 'p', 'parking-inspection-meta', model.status);
+            if (model.placeLabel) {
+                append(fragment, 'h6', 'parking-inspection-heading', '주차 환경');
+                const place = append(append(fragment, 'ul', 'parking-inspection-list', ''), 'li', 'parking-inspection-item', '');
+                append(append(place, 'div', 'parking-inspection-line', ''), 'span', 'parking-inspection-value', model.placeLabel);
+                append(place, 'span', 'parking-inspection-meta', 'AI 추정 · 사진 전체 판단 두 번 일치');
+            }
             for (const [heading, items, collapsed] of [['\uc77d\uc740 \ud45c\uc9c0', model.known],
                 ['\uc8fc\ubcc0 \ud658\uacbd \ud6c4\ubcf4', model.surroundings], ['\ud655\uc778 \ud544\uc694', model.uncertain, true]]) {
                 if (!items.length) continue;
@@ -155,7 +189,7 @@
                     append(row, 'span', 'parking-inspection-meta', item.evidence);
                 }
             }
-            if (!model.known.length && !model.uncertain.length && !model.surroundings.length) append(fragment, 'p', 'parking-inspection-meta', '\ud655\uc778\ub41c \uc0ac\uc9c4 \ub2e8\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.');
+            if (!model.known.length && !model.uncertain.length && !model.surroundings.length && !model.placeLabel) append(fragment, 'p', 'parking-inspection-meta', '\ud655\uc778\ub41c \uc0ac\uc9c4 \ub2e8\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.');
             if (model.coverage) append(fragment, 'p', 'parking-inspection-meta', model.coverage + ' \u00b7 \uc804\uccb4 \uc7a5\uba74 \ud655\uc778 \ubcf4\uc7a5 \uc5c6\uc74c');
             append(fragment, 'p', 'parking-inspection-meta parking-inspection-disclaimer', model.disclaimer);
         }

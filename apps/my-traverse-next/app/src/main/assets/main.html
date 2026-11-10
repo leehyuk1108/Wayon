@@ -11033,6 +11033,7 @@
             const parts = [];
             const first = model.known?.[0];
             if (first) parts.push(first.label ? `${first.label} ${first.value}` : first.value);
+            else if (model.placeLabel) parts.push(model.placeLabel);
             if (model.known?.length > 1) parts.push(`외 ${model.known.length - 1}개`);
             if (model.uncertain?.length) parts.push(`확인 필요 ${model.uncertain.length}건`);
             if (!parts.length) parts.push(model.status || '확인된 단서 없음');
@@ -11134,10 +11135,12 @@
             const caption = document.getElementById('parking-inspection-card');
             const spot = document.getElementById('parking-inspection-spot');
             const note = document.getElementById('parking-inspection-brief');
-            const ready = model?.phase === 'ready' && (model.known?.length || model.uncertain?.length);
+            const ready = model?.phase === 'ready' && (model.known?.length || model.uncertain?.length || model.placeLabel);
             const first = ready ? model.known?.[0] : null;
             hero?.classList.toggle('has-ai', !!ready);
-            if (spot) spot.textContent = first ? `${first.label ? `${first.label} ` : ''}${first.value} 부근` : '주차 표지 확인 필요';
+            // 읽은 표지가 없으면 AI가 본 주차 환경(지하 주차장, 길가 주차 등)을 제목으로 쓴다.
+            if (spot) spot.textContent = first ? `${first.label ? `${first.label} ` : ''}${first.value} 부근`
+                : model?.placeLabel || '주차 표지 확인 필요';
             if (note) note.textContent = parkingInspectionNote(model);
             caption?.setAttribute('aria-label', ready ? `AI 사진 단서: ${parkingInspectionBrief(model)}` : '주차 사진 보기');
             if (!ready) {

@@ -446,3 +446,42 @@ test('unread signs with neither text nor a candidate are left out; candidates an
     assert.equal(descendants(root).filter(node => node.tagName === 'details').length, 0, 'nothing to check, no fold');
     assert.match(root.textContent, /확인된 사진 단서가 없습니다/);
 });
+
+test('a digit-only sign of unknown purpose never titles the photo over a worded sign', () => {
+    // 2026-11-10 replay: the shop phone number sorted before the shop name.
+    const phone = reading({kind: 'unknown', text: '010.7317.6725', confidence: 'additional', evidence: [{frameIndex: 1, box: [0.8, 0.4, 0.9, 0.45]}]});
+    const shop = reading({kind: 'unknown', text: "AMBER'S ENGLISH", confidence: 'additional', evidence: [{frameIndex: 1, box: [0.8, 0.3, 0.9, 0.35]}]});
+    const value = payload({readings: [phone, shop]});
+    value.observation.result.frames[1].capturedAt = '2026-11-02T01:00:00Z';
+    const result = api.viewModel(value, now);
+    assert.deepEqual(result.known.map(r => r.value), ["AMBER'S ENGLISH", '010.7317.6725']);
+    assert.equal(result.focus.label, "표지 AMBER'S ENGLISH");
+    assert.deepEqual(result.focus.box, [0.8, 0.3, 0.9, 0.35]);
+    // A pillar number keeps its place: only unknown-purpose digits move back.
+    const pillar = model({readings: [reading({text: '203'}), shop]});
+    assert.deepEqual(pillar.known.map(r => r.value), ['203', "AMBER'S ENGLISH"]);
+});
+
+test('the parking place reads as one short phrase and gets its own section', () => {
+    const cases = [
+        [{setting: 'indoor', level: 'underground', area: 'parking_structure'}, '지하 주차장'],
+        [{setting: 'outdoor', level: 'ground', area: 'parking_lot'}, '야외 주차장'],
+        [{setting: 'indoor', level: 'ground', area: 'parking_structure'}, '지상 실내 주차장'],
+        [{setting: 'outdoor', level: 'ground', area: 'street'}, '길가 주차'],
+        [{setting: 'unknown', level: 'unknown', area: 'street'}, '길가 주차'],
+        [{setting: 'indoor', level: 'unknown', area: 'unknown'}, '실내 주차'],
+        [{setting: 'unknown', level: 'underground', area: 'unknown'}, '지하 주차'],
+        [{setting: 'unknown', level: 'unknown', area: 'unknown'}, ''],
+        [{setting: 'garage', level: '<b>', area: null}, ''],
+        ['street', ''],
+    ];
+    for (const [place, label] of cases) assert.equal(model({readings: [], place}).placeLabel, label, JSON.stringify(place));
+    assert.equal(model({readings: []}).placeLabel, '', 'older results without a place');
+    const root = dom();
+    api.render(root, model({readings: [], place: cases[0][0]}));
+    assert.deepEqual(root.children[0].children.filter(node => node.tagName === 'h6').map(node => node.textContent), ['주차 환경']);
+    assert.match(root.textContent, /지하 주차장/);
+    assert.doesNotMatch(root.textContent, /확인된 사진 단서가 없습니다/);
+    api.render(root, model({readings: [], place: cases[7][0]}));
+    assert.equal(descendants(root).filter(node => node.tagName === 'h6').length, 0);
+});

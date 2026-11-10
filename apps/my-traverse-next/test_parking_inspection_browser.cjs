@@ -100,6 +100,21 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
         assert.match(timestamps[0], /^\uad00\uce21 .*2026.*11.*02.*2\uc77c \uc804$/);
         assert.match(timestamps[1], /^\uacb0\uacfc \uac31\uc2e0 .*2026.*11.*04.*2\ubd84 \uc804$/);
         assert.match(await content.locator('.parking-inspection-disclaimer').textContent(), /AI.*\uc0ac\ub78c \ud655\uc778 \uc804/);
+        // No sign read: the AI-judged place titles the photo; with nothing at all the old prompt stays.
+        const captionSources = [briefSource[0], noteSource[0], captionSource[0]].join('\n');
+        await page.evaluate(src => new Function(`${src}; return renderParkingInspectionCaption;`)()(
+            {phase: 'ready', known: [], uncertain: [], surroundings: [], placeLabel: '\uc9c0\ud558 \uc8fc\ucc28\uc7a5'}), captionSources);
+        assert.equal(await page.locator('#parking-inspection-spot').textContent(), '\uc9c0\ud558 \uc8fc\ucc28\uc7a5');
+        assert.equal(await page.locator('#wayon-snapshot-card.has-ai').count(), 1);
+        assert.equal(await page.locator('#parking-inspection-brief').textContent(), 'AI \ucd94\uc815');
+        await page.evaluate(src => new Function(`${src}; return renderParkingInspectionCaption;`)()(
+            {phase: 'ready', known: [], uncertain: [], surroundings: [], placeLabel: ''}), captionSources);
+        assert.equal(await page.locator('#parking-inspection-spot').textContent(), '\uc8fc\ucc28 \ud45c\uc9c0 \ud655\uc778 \ud544\uc694');
+        assert.equal(await page.locator('#wayon-snapshot-card.has-ai').count(), 0);
+        await page.evaluate(src => new Function(`${src}; return renderParkingInspectionCaption;`)()(
+            ParkingInspection.viewModel(window.parkingTestPayload, window.parkingTestNow)), captionSources);
+        await clueCard.click();
+        assert.equal(await clueCard.getAttribute('aria-expanded'), 'true');
 
         async function checkLayout(width, state) {
             await page.locator('.parking-inspection').scrollIntoViewIfNeeded();

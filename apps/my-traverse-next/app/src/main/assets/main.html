@@ -15269,6 +15269,9 @@
         let tripDetailEndMarker = null;
         let tripDetailMomentMarkers = [];
         let tripDetailInitialView = null;
+        // 주행 상세는 목록 값으로 한 번, 상세 값으로 한 번 그린다. 지도 그리기는 다음 프레임에 실행되므로
+        // 마지막 요청만 그리게 하고, 그 직전에 지운다(앞 요청의 선·표시가 남지 않게).
+        let tripDetailRenderToken = 0;
         let tripDetailMapSettleTimer = null;
         let blackboxPlaybackObjectUrl = null;
         let blackboxPlaybackEndS = null;
@@ -16261,6 +16264,10 @@
             const routePoints = tripRoutePoints(item);
             const coords = routePoints.map(point => point.latLng);
             const speeds = speedRange(routePoints);
+            // 경로 없이 출발·도착만 있는 목록 값은, 곧 받을 실제 경로 대신 직선을 그리지 않는다.
+            const routeLoading = !(Array.isArray(item.route) && item.route.length) && !!item.id
+                && hasWayonCloudKey() && !item.reportDetailLoaded;
+            const renderToken = ++tripDetailRenderToken;
             const empty = document.getElementById('trip-detail-empty');
             const speedScale = document.getElementById('trip-detail-speed-scale');
             const speedMin = document.getElementById('trip-detail-speed-min');
@@ -16278,7 +16285,8 @@
             }
 
             requestAnimationFrame(() => {
-                if (!map) return;
+                if (!map || renderToken !== tripDetailRenderToken) return;
+                clearTripDetailMap();
                 map.invalidateSize({ pan: false });
                 if (coords.length < 2) {
                     if (empty) empty.style.display = 'flex';
@@ -16290,7 +16298,7 @@
                 }
 
                 if (empty) empty.style.display = 'none';
-                for (let i = 0; i < routePoints.length - 1; i++) {
+                for (let i = 0; !routeLoading && i < routePoints.length - 1; i++) {
                     const first = routePoints[i];
                     const second = routePoints[i + 1];
                     const layer = L.polyline([first.latLng, second.latLng], {

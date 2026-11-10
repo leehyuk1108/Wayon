@@ -179,3 +179,88 @@ test('offline Chromium: native disclosure, separate timestamps, candidate labels
         await context.close();
     } finally { await browser.close(); }
 });
+
+test('offline Chromium: the AI-read photo sits in the opened clues, never over the latest hero photo', {
+    skip: !process.env.PARKING_PLAYWRIGHT_MODULE,
+}, async () => {
+    const {chromium} = require(process.env.PARKING_PLAYWRIGHT_MODULE);
+    const browser = await chromium.launch({headless: true, executablePath: process.env.PARKING_BROWSER_EXECUTABLE,
+        args: ['--disable-background-networking', '--disable-component-update', '--disable-sync', '--no-first-run']});
+    try {
+        const context = await browser.newContext({offline: true, serviceWorkers: 'block'});
+        await context.route('**/*', route => route.abort());
+        const page = await context.newPage();
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        const assets = path.join(__dirname, 'app/src/main/assets');
+        const source = fs.readFileSync(path.join(assets, 'main.html'), 'utf8');
+        await page.setContent(source.replace(/<script\b[^>]*>[^]*?<\/script>/g, '').replace(/<link\b[^>]*>/g, ''));
+        const pick = pattern => { const match = source.match(pattern); assert.ok(match, `actual source for ${pattern}`); return match[0]; };
+        const functions = [
+            pick(/function findParkingFocusSnapshot\(focus\) \{[\s\S]*?\n        \}/),
+            pick(/function placeParkingFocusBox\(rect\) \{[\s\S]*?\n        \}/),
+            pick(/function updateParkingFocus\(\) \{[\s\S]*?\n        \}/),
+            pick(/document\.getElementById\('parking-focus-open'\)\?\.addEventListener\('click',[\s\S]*?\n        \}\);/),
+        ];
+        // The real 16:31 case: the sign was read at the top right, where the cabin picture-in-picture sits on the hero.
+        await page.addScriptTag({content: `
+            var parkingInspectionModel = null, parkingFocusRequestedAll = false, wayonSnapshotsLoadedAll = true;
+            var wayonCloudSnapshots = [
+                {camera: 'wide', kvKey: 'latest', capturedAt: '2026-11-10T07:31:00Z', capturedAtDisplay: '16:31'},
+                {camera: 'wide', kvKey: 'parked', capturedAt: '2026-11-10T05:31:02.400Z', capturedAtDisplay: '14:31'},
+            ];
+            window.focusOpenCount = 0;
+            const canvas = Object.assign(document.createElement('canvas'), {width: 1280, height: 960});
+            const draw = canvas.getContext('2d');
+            draw.fillStyle = '#556'; draw.fillRect(0, 0, 1280, 960);
+            draw.fillStyle = '#fc0'; draw.fillRect(0.72 * 1280, 0.04 * 960, 0.12 * 1280, 0.08 * 960);
+            window.focusImageUrl = canvas.toDataURL('image/png');
+            function hasWayonCloudKey() { return true; }
+            function loadAllWayonSnapshots() { window.loadAllCount = (window.loadAllCount || 0) + 1; }
+            function snapshotCameraLabel(snapshot) { return snapshot.camera === 'wide' ? '전방' : snapshot.camera; }
+            function loadWayonSnapshotImage(img) { img.src = window.focusImageUrl; }
+            function openParkingFocusSnapshot() { window.focusOpenCount++; }
+            ${functions.join('\n')}
+        `});
+        await page.evaluate(() => {
+            document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-extras').classList.add('active');
+            document.getElementById('parking-inspection-panel').hidden = false;
+            parkingInspectionModel = {phase: 'ready', focus: {label: "표지 AMBER'S ENGLISH", capturedAt: '2026-11-10T05:31:02Z',
+                camera: 'wide', phase: 'parked', box: [0.72, 0.04, 0.84, 0.12]}};
+            updateParkingFocus();
+        });
+        const figure = page.locator('#parking-focus');
+        await figure.waitFor({state: 'visible'});
+        assert.equal(await page.locator('#wayon-snapshot-card #parking-focus, #wayon-snapshot-card img[alt*="AI"]').count(), 0,
+            'the hero keeps the latest photo; nothing from the AI photo is layered on it');
+        assert.equal(await page.locator('#parking-inspection-panel > #parking-focus').count(), 1);
+        assert.equal(await page.locator('#parking-focus-caption').textContent(), 'AI가 읽은 사진 · 14:31 전방');
+        assert.equal(await page.evaluate(() => window.loadAllCount || 0), 0);
+        for (const width of [320, 390, 768]) {
+            await page.setViewportSize({width, height: 900});
+            const geometry = await page.evaluate(() => {
+                const r = id => document.getElementById(id).getBoundingClientRect();
+                const label = document.getElementById('parking-focus-label').getBoundingClientRect();
+                return {img: r('parking-focus-img'), frame: r('parking-focus-open'), box: r('parking-focus-box'), label};
+            });
+            const {img, frame, box, label} = geometry;
+            const near = (actual, expected, what) => assert.ok(Math.abs(actual - expected) <= 1.5, `${what} at ${width}: ${actual} vs ${expected}`);
+            near(img.height, img.width * 0.75, 'photo keeps its own aspect ratio');
+            near(box.left, img.left + 0.72 * img.width - 4, 'box left');
+            near(box.top, img.top + 0.04 * img.height - 4, 'box top');
+            near(box.width, 0.12 * img.width + 8, 'box width');
+            near(box.height, 0.08 * img.height + 8, 'box height');
+            for (const [name, rect] of [['box', box], ['label', label]]) {
+                assert.ok(rect.left >= frame.left - 0.5 && rect.right <= frame.right + 0.5
+                    && rect.top >= frame.top - 0.5 && rect.bottom <= frame.bottom + 0.5, `${name} inside the photo at ${width}`);
+            }
+        }
+        await page.locator('#parking-focus-open').click();
+        assert.equal(await page.evaluate(() => window.focusOpenCount), 1, 'tapping the AI photo opens that photo');
+        await page.evaluate(() => { parkingInspectionModel = {phase: 'ready', focus: null}; updateParkingFocus(); });
+        assert.equal(await figure.isVisible(), false, 'no AI focus, no photo');
+        assert.deepEqual(errors, []);
+        await context.close();
+    } finally { await browser.close(); }
+});

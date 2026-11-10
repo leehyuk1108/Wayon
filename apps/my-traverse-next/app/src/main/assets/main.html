@@ -7822,50 +7822,50 @@
             display: none;
         }
 
-        /* AI가 표지를 읽은 주차 순간 사진과 판독 상자 */
-        #tab-extras .extras-hero-focus {
-            position: absolute;
-            inset: 0;
-            z-index: 1;
-            overflow: hidden;
-            background: #17181b;
+        /* AI가 표지를 읽은 주차 순간 사진과 판독 상자: 큰 사진은 늘 최신, 이 사진은 펼친 판독 결과 안에만 */
+        #tab-extras .parking-focus {
+            margin: 12px 0 4px;
         }
 
-        #tab-extras .extras-hero-focus[hidden] {
+        #tab-extras .parking-focus[hidden] {
             display: none;
         }
 
-        #tab-extras .extras-hero-focus img {
-            width: 100%;
-            height: 100%;
+        #tab-extras .parking-focus-frame {
+            position: relative;
             display: block;
-            object-fit: cover;
-            filter: brightness(0.9) contrast(1.06);
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            border: 0;
+            border-radius: 6px;
+            background: #0f1012;
+            cursor: pointer;
         }
 
-        #tab-extras .extras-hero-focus::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 32%, rgba(0, 0, 0, 0.12) 55%, rgba(0, 0, 0, 0.78) 100%);
-            pointer-events: none;
+        #tab-extras .parking-focus-frame img {
+            display: block;
+            width: 100%;
+            height: auto;
         }
 
-        #tab-extras .extras-focus-box {
+        #tab-extras .parking-focus-box {
             position: absolute;
-            z-index: 2;
-            min-width: 18px;
-            min-height: 18px;
+            min-width: 14px;
+            min-height: 14px;
             border: 2px solid #fff;
-            border-radius: 5px;
-            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 18px rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 14px rgba(255, 255, 255, 0.28);
             pointer-events: none;
         }
 
-        #tab-extras .extras-focus-label {
+        #tab-extras .parking-focus-label {
             position: absolute;
             left: -2px;
-            bottom: calc(100% + 5px);
+            bottom: calc(100% + 4px);
+            max-width: 220px;
+            overflow: hidden;
             padding: 3px 7px;
             border-radius: 5px;
             background: #fff;
@@ -7873,13 +7873,26 @@
             font-size: 10px;
             font-weight: 850;
             line-height: 1.2;
+            text-overflow: ellipsis;
             white-space: nowrap;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
         }
 
-        #tab-extras .extras-focus-box.label-below .extras-focus-label {
-            top: calc(100% + 5px);
+        #tab-extras .parking-focus-box.label-below .parking-focus-label {
+            top: calc(100% + 4px);
             bottom: auto;
+        }
+
+        #tab-extras .parking-focus-box.label-end .parking-focus-label {
+            left: auto;
+            right: -2px;
+        }
+
+        #tab-extras .parking-focus figcaption {
+            margin-top: 7px;
+            color: #8d8f94;
+            font-size: 11px;
+            font-weight: 650;
         }
 
         #tab-extras .extras-hero .snapshot-placeholder {
@@ -8834,12 +8847,6 @@
                         <div class="snapshot-grid" id="wayon-snapshot-grid">
                             <div class="snapshot-placeholder">Wayon Cloud 연결 후 표시됩니다.</div>
                         </div>
-                        <div class="extras-hero-focus" id="parking-focus" hidden>
-                            <img id="parking-focus-img" alt="AI가 표지를 읽은 주차 순간 사진">
-                            <span class="extras-focus-box" id="parking-focus-box">
-                                <span class="extras-focus-label" id="parking-focus-label"></span>
-                            </span>
-                        </div>
                         <span class="extras-hero-chip">
                             <i data-lucide="camera" aria-hidden="true"></i>
                             <span class="snapshot-status" id="wayon-snapshot-status">대기 중</span>
@@ -8868,6 +8875,15 @@
                                 <i data-lucide="refresh-cw" aria-hidden="true"></i>
                             </button>
                         </div>
+                        <figure class="parking-focus" id="parking-focus" hidden>
+                            <button type="button" class="parking-focus-frame" id="parking-focus-open" aria-label="AI가 읽은 사진 크게 보기">
+                                <img id="parking-focus-img" alt="AI가 표지를 읽은 주차 순간 사진">
+                                <span class="parking-focus-box" id="parking-focus-box">
+                                    <span class="parking-focus-label" id="parking-focus-label"></span>
+                                </span>
+                            </button>
+                            <figcaption id="parking-focus-caption">AI가 읽은 사진</figcaption>
+                        </figure>
                         <div id="parking-inspection-content" aria-live="polite"></div>
                     </section>
                     <section class="extras-command-bar" aria-label="빠른 실행">
@@ -11032,8 +11048,9 @@
             return parts.join(' · ');
         }
 
-        // AI가 표지를 읽은 '주차 순간' 사진을 스냅샷 목록에서 같은 카메라·촬영 시각(2초 안)으로 찾아 큰 화면에 띄우고,
-        // 판독 상자를 그 사진 위에 그린다. 최근 목록에 없으면 전체 목록을 한 번 불러온다. 못 찾으면 최신 사진 그대로.
+        // AI가 표지를 읽은 '주차 순간' 사진을 스냅샷 목록에서 같은 카메라·촬영 시각(2초 안)으로 찾아, 펼친 판독 결과 맨 위에
+        // 판독 상자와 함께 보여 준다. 큰 사진은 늘 최신 사진이다(근거 사진으로 덮으면 이전 사진이 뜨고, 상자가 실내 작은
+        // 사진 밑에 깔릴 수 있다). 최근 목록에 없으면 전체 목록을 한 번 불러온다. 못 찾으면 근거 사진 없이 결과만.
         let parkingInspectionModel = null;
         let parkingFocusRequestedAll = false;
 
@@ -11049,33 +11066,27 @@
             return best ? best.snapshot : null;
         }
 
-        function placeParkingFocusBox() {
-            const layer = document.getElementById('parking-focus');
-            const img = document.getElementById('parking-focus-img');
+        // 사진을 원래 비율 그대로(잘림 없이) 보여 주므로 정규화 상자를 비율 그대로 옮기면 된다. 상자는 4px 여유를 둔다.
+        function placeParkingFocusBox(rect) {
             const box = document.getElementById('parking-focus-box');
-            const rect = parkingInspectionModel?.focus?.box;
-            const width = layer?.clientWidth, height = layer?.clientHeight;
-            if (!rect || !img?.naturalWidth || !img.naturalHeight || !width || !height) return;
-            const cx = (rect[0] + rect[2]) / 2, cy = (rect[1] + rect[3]) / 2;
-            const scale = Math.max(width / img.naturalWidth, height / img.naturalHeight);
-            const shownWidth = img.naturalWidth * scale, shownHeight = img.naturalHeight * scale;
-            const left = (width - shownWidth) * cx + rect[0] * shownWidth - 4;
-            const top = (height - shownHeight) * cy + rect[1] * shownHeight - 4;
-            box.style.left = `${left.toFixed(1)}px`;
-            box.style.top = `${top.toFixed(1)}px`;
-            box.style.width = `${((rect[2] - rect[0]) * shownWidth + 8).toFixed(1)}px`;
-            box.style.height = `${((rect[3] - rect[1]) * shownHeight + 8).toFixed(1)}px`;
-            box.classList.toggle('label-below', top < 26);
+            if (!box || !rect) return;
+            const pct = value => `${(value * 100).toFixed(2)}%`;
+            box.style.left = `calc(${pct(rect[0])} - 4px)`;
+            box.style.top = `calc(${pct(rect[1])} - 4px)`;
+            box.style.width = `calc(${pct(rect[2] - rect[0])} + 8px)`;
+            box.style.height = `calc(${pct(rect[3] - rect[1])} + 8px)`;
+            box.classList.toggle('label-below', rect[1] < 0.14);
+            box.classList.toggle('label-end', rect[0] > 0.55);
         }
 
         function updateParkingFocus() {
-            const layer = document.getElementById('parking-focus');
+            const figure = document.getElementById('parking-focus');
             const img = document.getElementById('parking-focus-img');
-            if (!layer || !img) return;
+            if (!figure || !img) return;
             const focus = parkingInspectionModel?.phase === 'ready' ? parkingInspectionModel.focus : null;
-            const snapshot = focus ? findParkingFocusSnapshot(focus) : null;
+            const snapshot = focus?.box ? findParkingFocusSnapshot(focus) : null;
             if (!snapshot) {
-                layer.hidden = true;
+                figure.hidden = true;
                 if (focus && !parkingFocusRequestedAll && !wayonSnapshotsLoadedAll && hasWayonCloudKey()) {
                     parkingFocusRequestedAll = true;
                     loadAllWayonSnapshots();
@@ -11083,24 +11094,22 @@
                 return;
             }
             document.getElementById('parking-focus-label').textContent = focus.label;
-            const cx = (focus.box[0] + focus.box[2]) / 2, cy = (focus.box[1] + focus.box[3]) / 2;
-            img.style.objectPosition = `${(cx * 100).toFixed(1)}% ${(cy * 100).toFixed(1)}%`;
-            img.onload = () => {
-                layer.hidden = false;
-                placeParkingFocusBox();
-            };
+            const caption = document.getElementById('parking-focus-caption');
+            if (caption) {
+                const when = [snapshot.capturedAtDisplay, snapshotCameraLabel(snapshot)].filter(Boolean).join(' ');
+                caption.textContent = when ? `AI가 읽은 사진 · ${when}` : 'AI가 읽은 사진';
+            }
+            placeParkingFocusBox(focus.box);
+            img.onload = () => { figure.hidden = false; };
             if (img.dataset.snapshotKey !== snapshot.kvKey) {
                 img.dataset.snapshotKey = snapshot.kvKey;
                 img.removeAttribute('src');
-                layer.hidden = true;
+                figure.hidden = true;
                 loadWayonSnapshotImage(img, snapshot);
             } else if (img.complete && img.naturalWidth) {
-                layer.hidden = false;
-                placeParkingFocusBox();
+                figure.hidden = false;
             }
         }
-
-        window.addEventListener('resize', () => placeParkingFocusBox());
 
         // 근거 사진을 누르면 최신 사진이 아니라 그 사진(같은 시각 묶음)을 사진 보기로 연다.
         function openParkingFocusSnapshot() {
@@ -11115,7 +11124,7 @@
             else openSnapshotViewer(0, [snapshot], pairIndex);
         }
 
-        document.getElementById('parking-focus')?.addEventListener('click', (event) => {
+        document.getElementById('parking-focus-open')?.addEventListener('click', (event) => {
             event.stopPropagation();
             openParkingFocusSnapshot();
         });
@@ -16610,7 +16619,6 @@
             if (targetTab) {
                 targetTab.classList.add('active');
                 if (targetTabId === 'tab-extras') window.parkingInspectionView?.open();
-                if (targetTabId === 'tab-extras') requestAnimationFrame(() => placeParkingFocusBox());
                 if (targetTabId === 'tab-control') {
                     window.syncControlPanelLayout?.();
                     refreshDoorLockState(true);

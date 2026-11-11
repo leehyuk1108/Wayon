@@ -83,3 +83,25 @@ test('a trip with no cloud route to load still connects its start and end', () =
     h.flush();
     assert.equal(h.lines(), 1);
 });
+
+test('the trip detail shows stored vehicle speeds before GPS-point speeds', async () => {
+    const context = { Number, Math, Array, JSON, Map, console, tripDetailCache: new Map(),
+        WAYON_CLOUD_TRIPS_URL: 'https://cloud.test/api/trips', hasWayonCloudKey: () => true, getWayonCloudViewToken: () => 'key',
+        encodeURIComponent };
+    let reply;
+    context.fetch = async () => ({ ok: true, json: async () => reply });
+    vm.createContext(context);
+    vm.runInContext([...['normalizeTripRoute', 'routeMaxSpeedText', 'fetchWayonTripDetail'].map(pick),
+        'this.fetchWayonTripDetail = fetchWayonTripDetail;'].join('\n'), context);
+    const route = [{ latitude: 37.5, longitude: 126.6, speedMps: 31.2 }, { latitude: 37.6, longitude: 126.7, speedMps: 10 }];
+    // 2026-11-10 23:11: route points stop in tunnels (112 km/h); the vehicle peaked near 149 km/h.
+    reply = { id: 'new', route, vehicle_max_speed_mps: 41.28, vehicle_avg_speed_mps: 5120 / 915 };
+    const fresh = await context.fetchWayonTripDetail({ id: 'new', topSpeed: '112 km/h', avgSpeed: '20 km/h' });
+    assert.equal(fresh.topSpeed, '149 km/h');
+    assert.equal(fresh.avgSpeed, '20 km/h');
+    // Trips saved before the change carry no vehicle speeds and keep the route-based maximum.
+    reply = { id: 'old', route };
+    const old = await context.fetchWayonTripDetail({ id: 'old', topSpeed: '-- km/h', avgSpeed: '18 km/h' });
+    assert.equal(old.topSpeed, '112 km/h');
+    assert.equal(old.avgSpeed, '18 km/h');
+});

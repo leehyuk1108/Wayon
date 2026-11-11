@@ -15409,12 +15409,16 @@
 
             const detail = await response.json();
             const route = normalizeTripRoute(detail.route);
+            // 새로 저장된 주행은 차량 속도 기준 최고·평균 속도가 함께 온다(GPS 경로 점은 터널에서 끊긴다).
+            const vehicleSpeedText = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0
+                ? `${Math.round(Number(value) * 3.6)} km/h` : null;
             const merged = {
                 ...item,
                 ...detail,
                 route,
                 routePointCount: route.length || Number(detail.route_point_count || item.routePointCount || 0),
-                topSpeed: routeMaxSpeedText(route, item.topSpeed || "-- km/h"),
+                topSpeed: vehicleSpeedText(detail.vehicle_max_speed_mps) || routeMaxSpeedText(route, item.topSpeed || "-- km/h"),
+                avgSpeed: vehicleSpeedText(detail.vehicle_avg_speed_mps) || item.avgSpeed,
                 reportDetailLoaded: true,
             };
             tripDetailCache.set(item.id, merged);

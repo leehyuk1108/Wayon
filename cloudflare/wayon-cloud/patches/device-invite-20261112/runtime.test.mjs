@@ -41,15 +41,15 @@ async function fixture(script, {migrated = true, legacy = 'fixture-legacy'} = {}
     outboundService: () => new Response(null, {status: 599}),
     handleRuntimeStdio(stdout, stderr) { for (const s of [stdout, stderr]) s.on('data', d => logs.push(String(d))); }});
   const db = await mf.getD1Database('DB');
-  await db.exec('CREATE TABLE wayon_devices(device_id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, created_at TEXT, updated_at TEXT, last_seen_at TEXT, revoked_at TEXT);');
+  // The production DDL (tables and indexes, read from sqlite_master on 2026-11-12, no data).
+  for (const statement of readFileSync(join(root, 'prod-schema-20261112.sql'), 'utf8').split(/;\n/).map(x => x.trim()).filter(Boolean)) {
+    await db.prepare(statement).run();
+  }
   await db.prepare('INSERT INTO wayon_devices VALUES(?,?,?,?,?,NULL)').bind(OWNER, hash(OWNER_KEY), 'c', 'u', 'unchanged').run();
-  await db.exec('CREATE TABLE trips(id TEXT PRIMARY KEY, device_id TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT NOT NULL, ' +
-    'duration_s INTEGER, distance_m REAL, start_lat REAL, start_lon REAL, end_lat REAL, end_lon REAL, ' +
-    'route_point_count INTEGER NOT NULL DEFAULT 0, route_json TEXT NOT NULL, source TEXT, route_name TEXT, segment_count INTEGER, ' +
-    "avg_speed_mps REAL, max_speed_mps REAL, analysis_json TEXT NOT NULL DEFAULT '{}', report_json TEXT, " +
-    "health_json TEXT NOT NULL DEFAULT '{}', health_updated_at TEXT, created_at TEXT NOT NULL, speed_stats INTEGER);");
   await db.prepare('INSERT INTO trips(id,device_id,started_at,ended_at,duration_s,distance_m,route_point_count,route_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
     .bind(OWNER + '-00000001', OWNER, '2026-11-09T01:00:00Z', '2026-11-09T01:10:00Z', 600, 3000, 0, '[]', '2026-11-09T01:10:00Z').run();
+  await db.prepare("INSERT INTO latest_state(device_id,updated_at,onroad,ignition,enabled,voltage_v,raw_json) VALUES(?,?,0,0,1,12.34,'{}')")
+    .bind(OWNER, '2026-11-12T01:00:00.000Z').run();
   if (migrated) await db.exec(readFileSync(new URL('./migration.sql', import.meta.url), 'utf8').replace(/--.*\n/g, '').replace(/\n/g, ' '));
   const call = async (path, {method = 'POST', key, body} = {}) => {
     const r = await mf.dispatchFetch('https://isolated.test' + path, {method,
@@ -181,7 +181,7 @@ test('only authenticated, non-invited devices create invites, within the active 
       const r = await f.invite();
       if (r.status !== 200) refused = r;
     }
-    assert.deepEqual([refused?.status, refused?.body], [429, {error: 'invite_limit'}]);
+    assert.deepEqual([refused?.status, refused?.body], [429, {error: 'invite_daily_limit'}]);
     const today = (await f.db.prepare('SELECT COUNT(*) AS n FROM wayon_device_invites WHERE created_by = ?').bind(OWNER).first()).n;
     assert.equal(today, 10);
     // A revoked owner key cannot invite.
@@ -258,8 +258,13 @@ test('owner responses are identical before and after the patch, and the migratio
       const out = [];
       for (const path of paths) {
         const r = await f.call(path, {method: 'GET', key: OWNER_KEY});
-        out.push([path, r.status, r.text.replace(/"(generatedAt|serverTime|now|checkedAt)":"[^"]*"/g, '"$1":"T"')]);
+        // Real answers first: equal errors would prove nothing.
+        assert.equal(r.status, 200, path + ' ' + r.text.slice(0, 160));
+        assert.ok(r.body && typeof r.body === 'object', path);
+        out.push([path, r.status, r.text.replace(/"(vehicleStatus":\{"ok":false,"source":"unavailable","updatedAt)":"[^"]*"/g, '"$1":"T"')]);
       }
+      assert.match(out[0][2], /12\.34/);
+      assert.match(out[1][2], new RegExp(OWNER + '-00000001'));
       return out;
     } finally { await f.dispose(); }
   };
@@ -276,5 +281,34 @@ test('without the migration the invite endpoints fail closed and registration st
     const r = await f.register(NEW, NEW_KEY, 'A'.repeat(32));
     assert.equal(r.status, 503);
     assert.equal(await f.device(NEW), null);
+  } finally { await f.dispose(); }
+});
+
+test('a key already used by another device is refused by the production UNIQUE constraint and writes nothing', async () => {
+  const f = await fixture(candidate);
+  try {
+    const made = await f.invite();
+    const r = await f.register(NEW, OWNER_KEY, made.body.code);
+    assert.equal(r.status, 503);
+    assert.equal(await f.device(NEW), null);
+    assert.equal((await f.invites())[0].used_at, null);
+    assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wayon_device_origins').first()).n, 0);
+    assert.equal((await f.register(NEW, NEW_KEY, made.body.code)).status, 200);
+  } finally { await f.dispose(); }
+});
+
+test('the active-code count reads only recent rows of the creator', async () => {
+  const f = await fixture(candidate);
+  try {
+    const old = new Date(Date.now() - 2 * 864e5).toISOString();
+    const rows = Array.from({length: 400}, (_, i) => f.db.prepare(
+      'INSERT INTO wayon_device_invites (code_hash, created_by, created_at, expires_at, used_at, used_by) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind('h' + i, OWNER, old, old, old, 'x' + i));
+    await f.db.batch(rows);
+    const plan = (await f.db.prepare('EXPLAIN QUERY PLAN SELECT COUNT(*) FROM wayon_device_invites WHERE created_by = ? AND created_at > ? AND used_at IS NULL AND expires_at > ?')
+      .bind(OWNER, old, old).all()).results.map(r => r.detail).join(' | ');
+    assert.match(plan, /idx_wayon_device_invites_creator \(created_by=\? AND created_at>\?\)/);
+    const made = await f.invite();
+    assert.equal(made.status, 200);
   } finally { await f.dispose(); }
 });

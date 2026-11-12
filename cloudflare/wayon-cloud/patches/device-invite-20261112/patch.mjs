@@ -6,13 +6,13 @@ import {sha256, replaceOnce} from '../fast-vehicle-state-20261028/patch.mjs';
 
 // Applied on top of trip-vehicle-speed-20261111 (the active bundle since 2026-11-11).
 export const BASELINE_SHA256 = '23c4a22573ef958fc57a513752553865c40514798009b69d1c57f9d32f399811';
-export const OUTPUT_SHA256 = '351b044dbcd0e295fb7da59839d2a12e19eeede2a898034b577c1f3c38b42532';
+export const OUTPUT_SHA256 = '1708b3bd15df67aea507de28e9068170cc119462c18e6344b2355fbbb93a657f';
 
 // Lets another comma register itself from Carrot Web with a one-time invite that an owner device creates.
 // - POST /api/devices/invites (device key): a random 32-character base32 code (160 bits), valid for
 //   30 minutes and usable once. Only its SHA-256 is stored (migration.sql). A device registered with an
 //   invite (recorded for good in wayon_device_origins) cannot create invites; a device holds at most three
-//   unused codes and creates at most ten a day, checked in the same statement that stores the code.
+//   unused codes and creates at most ten in any 24 hours, checked in the same statement that stores the code.
 // - POST /api/devices/register {deviceId, key, invite}: for a device ID that does not exist yet, spends the
 //   invite and creates the device and its origin in one D1 batch whose later statements depend on the
 //   spend, so a code registers exactly one device, a refused request writes nothing, and a code from a
@@ -46,15 +46,20 @@ async function handleDeviceInviteCreate(request, env) {
     const nowText = new Date(now).toISOString();
     const code = newDeviceInviteCode();
     const expiresAt = new Date(now + DEVICE_INVITE_TTL_MS).toISOString();
-    // One statement, so concurrent requests cannot pass the limits together.
+    // One statement, so concurrent requests cannot pass the limits together. Both counts read only this
+    // creator's recent rows through (created_by, created_at): an unexpired code is younger than the TTL.
+    const activeSql = "SELECT COUNT(*) FROM wayon_device_invites WHERE created_by = ? AND created_at > ? AND used_at IS NULL AND expires_at > ?";
+    const recent = new Date(now - DEVICE_INVITE_TTL_MS).toISOString();
     const written = await env.DB.prepare(
       "INSERT INTO wayon_device_invites (code_hash, created_by, created_at, expires_at) SELECT ?, ?, ?, ? " +
-      "WHERE (SELECT COUNT(*) FROM wayon_device_invites WHERE created_by = ? AND used_at IS NULL AND expires_at > ?) < ? " +
-      "AND (SELECT COUNT(*) FROM wayon_device_invites WHERE created_by = ? AND created_at > ?) < ?"
+      "WHERE (" + activeSql + ") < ? AND (SELECT COUNT(*) FROM wayon_device_invites WHERE created_by = ? AND created_at > ?) < ?"
     ).bind(await sha256Hex(code), identity.deviceId, nowText, expiresAt,
-      identity.deviceId, nowText, DEVICE_INVITE_ACTIVE_LIMIT,
+      identity.deviceId, recent, nowText, DEVICE_INVITE_ACTIVE_LIMIT,
       identity.deviceId, new Date(now - 864e5).toISOString(), DEVICE_INVITE_DAILY_LIMIT).run();
-    if (written.meta?.changes !== 1) return json({ error: "invite_limit" }, 429);
+    if (written.meta?.changes !== 1) {
+      const active = await env.DB.prepare("SELECT (" + activeSql + ") AS count").bind(identity.deviceId, recent, nowText).first();
+      return json({ error: Number(active?.count || 0) >= DEVICE_INVITE_ACTIVE_LIMIT ? "invite_limit" : "invite_daily_limit" }, 429);
+    }
     return json({ ok: true, code, expiresAt });
   } catch {
     return json({ error: "invite_unavailable" }, 503);

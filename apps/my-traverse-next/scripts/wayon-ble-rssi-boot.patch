@@ -1,0 +1,12 @@
+--- continue.sh
++++ continue.sh
+@@ -5,5 +5,9 @@
+   sudo -n /data/wayon-tailscale/bootstrap.sh >/dev/null 2>&1 &
+ fi
+ 
++if [[ -x /data/wayon-rssi/wayon-ble-rssi-bootstrap.sh ]]; then
++  sudo -n /data/wayon-rssi/wayon-ble-rssi-bootstrap.sh >/dev/null 2>&1 &
++fi
++
+ cd /data/openpilot
+ exec ./launch_openpilot.sh

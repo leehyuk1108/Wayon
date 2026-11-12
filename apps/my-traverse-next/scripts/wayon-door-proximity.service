@@ -1,0 +1,17 @@
+[Unit]
+Description=Wayon parked proximity door validation
+After=bluetooth.service
+ConditionPathExists=/data/wayon-door/proximity.key
+
+[Service]
+User=comma
+ExecStart=/data/wayon-door-tools/wayon-door-proximity.sh monitor
+NoNewPrivileges=true
+UMask=0077
+Nice=15
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=12
+
+[Install]
+WantedBy=multi-user.target

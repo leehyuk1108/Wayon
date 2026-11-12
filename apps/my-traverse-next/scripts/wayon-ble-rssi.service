@@ -1,0 +1,20 @@
+[Unit]
+Description=Wayon on-demand parked BLE diagnostics
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=comma
+WorkingDirectory=/data/wayon-rssi
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=/data/openpilot/pydeps:/data/openpilot:/data/pythonpath
+ExecStart=/usr/local/venv/bin/python3 -u /data/wayon-rssi/comma_rssi_receiver.py --wayon-token-file /data/wayon-rssi/relay.token --log /data/wayon-rssi-state/runs.json
+NoNewPrivileges=true
+UMask=0077
+Nice=15
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=8
+
+[Install]
+WantedBy=multi-user.target

@@ -6,7 +6,7 @@ import {sha256, replaceOnce} from '../fast-vehicle-state-20261028/patch.mjs';
 
 // Applied on top of trip-vehicle-speed-20261111 (the active bundle since 2026-11-11).
 export const BASELINE_SHA256 = '23c4a22573ef958fc57a513752553865c40514798009b69d1c57f9d32f399811';
-export const OUTPUT_SHA256 = '1708b3bd15df67aea507de28e9068170cc119462c18e6344b2355fbbb93a657f';
+export const OUTPUT_SHA256 = '255084947ea55d92f6e54d8629ce24a641029b71a0f7d6b15160e498909b7b46';
 
 // Lets another comma register itself from Carrot Web with a one-time invite that an owner device creates.
 // - POST /api/devices/invites (device key): a random 32-character base32 code (160 bits), valid for
@@ -57,8 +57,14 @@ async function handleDeviceInviteCreate(request, env) {
       identity.deviceId, recent, nowText, DEVICE_INVITE_ACTIVE_LIMIT,
       identity.deviceId, new Date(now - 864e5).toISOString(), DEVICE_INVITE_DAILY_LIMIT).run();
     if (written.meta?.changes !== 1) {
-      const active = await env.DB.prepare("SELECT (" + activeSql + ") AS count").bind(identity.deviceId, recent, nowText).first();
-      return json({ error: Number(active?.count || 0) >= DEVICE_INVITE_ACTIVE_LIMIT ? "invite_limit" : "invite_daily_limit" }, 429);
+      // Why it was refused, from one consistent read of both counts; if neither limit holds any more (a
+      // code was spent meanwhile), the caller may simply retry.
+      const counts = await env.DB.prepare(
+        "SELECT (" + activeSql + ") AS active, (SELECT COUNT(*) FROM wayon_device_invites WHERE created_by = ? AND created_at > ?) AS daily"
+      ).bind(identity.deviceId, recent, nowText, identity.deviceId, new Date(now - 864e5).toISOString()).first();
+      const error = Number(counts?.active || 0) >= DEVICE_INVITE_ACTIVE_LIMIT ? "invite_limit"
+        : Number(counts?.daily || 0) >= DEVICE_INVITE_DAILY_LIMIT ? "invite_daily_limit" : "invite_retry";
+      return json({ error }, 429);
     }
     return json({ ok: true, code, expiresAt });
   } catch {

@@ -312,3 +312,17 @@ test('the active-code count reads only recent rows of the creator', async () => 
     assert.equal(made.status, 200);
   } finally { await f.dispose(); }
 });
+
+test('a refusal whose cause has gone by the time it is explained asks for a retry, not a 24-hour wait', async () => {
+  // The guarded INSERT is refused, then a code is spent before the cause is read. A trigger that skips the
+  // insert stands in for that order: when it is explained, neither limit holds.
+  const f = await fixture(candidate);
+  try {
+    assert.equal((await f.invite()).status, 200);
+    await f.db.prepare('CREATE TRIGGER skip_insert BEFORE INSERT ON wayon_device_invites BEGIN SELECT RAISE(IGNORE); END').run();
+    const raced = await f.invite();
+    assert.deepEqual([raced.status, raced.body], [429, {error: 'invite_retry'}]);
+    await f.db.prepare('DROP TRIGGER skip_insert').run();
+    assert.equal((await f.invite()).status, 200);
+  } finally { await f.dispose(); }
+});

@@ -59,6 +59,10 @@ RISE_WINDOW_S = 10.0
 RISE_MIN_DB = 7
 RISE_MIN_SAMPLES = 3
 RISE_FLOOR_BELOW_NEAR_DB = 3
+# A phone at the desk spiked once onto the floor straight from its plateau (18:22, 18:26: previous reading
+# -22, -27), while every walk up to the car came through readings within 3 dB of it (18:08, 18:09: -21).
+RISE_PREVIOUS_S = 1.5
+RISE_PREVIOUS_BELOW_FLOOR_DB = 3
 LOCK_COOLDOWN_S = 10
 LOCK_GRACE_S = 10
 UNLOCK_COOLDOWN_S = 8
@@ -159,7 +163,11 @@ class Approach:
     """A jump well above the last seconds' level onto the doorstep, before the near threshold is reached.
 
     Walking up to the car shows as one step from a slow plateau, while a phone lying still drifts slowly."""
-    if value < self.rise_floor():
+    floor = self.rise_floor()
+    if value < floor:
+      return False
+    recent = [reading for at, reading in self.history if 0 < now - at <= RISE_PREVIOUS_S]
+    if not recent or recent[-1] < floor - RISE_PREVIOUS_BELOW_FLOOR_DB:
       return False
     prior = [reading for at, reading in self.history if 0 < now - at <= RISE_WINDOW_S]
     return len(prior) >= RISE_MIN_SAMPLES and value - median(prior) >= RISE_MIN_DB

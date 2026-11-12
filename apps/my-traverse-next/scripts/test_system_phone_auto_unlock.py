@@ -993,7 +993,13 @@ class UnlockTest(unittest.IsolatedAsyncioTestCase):
   def test_sudden_rise_unlocks_before_the_near_threshold(self):
     p = Approach(-14, -17)
     t = self._armed_on_plateau(p)
-    self.assertIs(p.transition(t, -15, enable_lock=True), DoorCommand.UNLOCK)
+    self.assertIsNone(p.transition(t, -15, enable_lock=True))  # straight from the plateau: not trusted alone
+    self.assertIs(p.transition(t + .2, -15, enable_lock=True), DoorCommand.UNLOCK)
+    self.assertEqual(p.unlock_trigger, "rise")
+    p = Approach(-14, -17)
+    t = self._armed_on_plateau(p)
+    self.assertIsNone(p.transition(t, -19, enable_lock=True))
+    self.assertIs(p.transition(t + .2, -15, enable_lock=True), DoorCommand.UNLOCK)
     self.assertEqual(p.unlock_trigger, "rise")
     # A slow drift (1 dB per reading) is not a step: it waits for the near threshold.
     p = Approach(-14, -17)
@@ -1008,6 +1014,7 @@ class UnlockTest(unittest.IsolatedAsyncioTestCase):
     p = Approach(-14, -17)
     for t in (0, 1, 2):  # three weak readings in under 3 s do not confirm a departure
       p.transition(t, -28, enable_lock=True)
+    p.record(2.3, -19)
     self.assertFalse(p.armed)
     self.assertTrue(p.sudden_rise(2.5, -15))
     self.assertIsNone(p.transition(2.5, -15, enable_lock=True))
@@ -1024,13 +1031,16 @@ class UnlockTest(unittest.IsolatedAsyncioTestCase):
     p.record(1, -28)
     self.assertFalse(p.sudden_rise(2, -15))  # only two earlier readings
     p.record(2, -28)
+    self.assertFalse(p.sudden_rise(3, -15))  # the reading just before is still on the plateau
+    p.record(2.8, -19)
     self.assertTrue(p.sudden_rise(3, -15))
+    self.assertFalse(p.sudden_rise(5, -15))  # that reading is older than 1.5 s
     self.assertFalse(p.sudden_rise(13.5, -15))  # the earlier readings left the 10 s window
     self.assertEqual(Approach(-12, -15).rise_floor(), -14)
 
   async def test_fast_reading_can_unlock_on_a_sudden_rise(self):
     def reading(t):
-      return -28 if t < 10 else -24 if t < 13.3 else -15  # -24 is inside the fast zone (near - 10)
+      return -28 if t < 10 else -24 if t < 13.0 else -19 if t < 13.3 else -15  # -24: inside the fast zone
 
     run = await self._run_timed_monitor(Approach(-14, -17), reading, execute=True,
                                         stop=lambda t, sent: bool(sent) or t > 30)
@@ -1048,4 +1058,23 @@ class UnlockTest(unittest.IsolatedAsyncioTestCase):
     for at, value in readings:
       self.assertIsNone(p.transition(at, value, enable_lock=True), (at, value))
     self.assertIs(p.transition(t + 3.6, -19, enable_lock=True), DoorCommand.UNLOCK)
+    self.assertEqual(p.unlock_trigger, "rise")
+
+  def test_desk_spike_from_the_plateau_does_not_unlock_but_a_walk_through_the_doorstep_does(self):
+    # Thresholds -16/-19 (floor -18). 18:22 and 18:26: one -18 right after -22 or -27 at the desk.
+    for before in ((-33, -32, -30, -34, -33, -32, -22, -22), (-38, -35, -36, -40, -28, -27, -28, -30, -27)):
+      p = Approach(-16, -19)
+      t = self._armed_on_plateau(p, level=-33)
+      for value in before:
+        self.assertIsNone(p.transition(t, value, enable_lock=True))
+        t = round(t + .2, 3)
+      self.assertIsNone(p.transition(t, -18, enable_lock=True), before)
+    # 18:09: the walk came through -21 just before the -18.
+    p = Approach(-16, -19)
+    t = self._armed_on_plateau(p, level=-30)
+    for value in (-24, -34, -33, -34, -33, -26, -26, -28, -32, -30, -21, -22, -22, -24, -25, -21, -21, -21, -21,
+                  -22, -21):
+      self.assertIsNone(p.transition(t, value, enable_lock=True))
+      t = round(t + .2, 3)
+    self.assertIs(p.transition(t, -18, enable_lock=True), DoorCommand.UNLOCK)
     self.assertEqual(p.unlock_trigger, "rise")
